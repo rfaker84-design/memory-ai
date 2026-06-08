@@ -19,18 +19,29 @@ type TimelineEvent = {
   description: string | null;
 };
 
-export default function MemoryDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default function MemoryDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
 
   const [memory, setMemory] = useState<Memory | null>(null);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
-  const [eventYear, setEventYear] = useState("");
-  const [eventTitle, setEventTitle] = useState("");
-  const [eventDescription, setEventDescription] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const [editName, setEditName] = useState("");
+  const [editRelationship, setEditRelationship] = useState("");
+  const [editLifeStory, setEditLifeStory] = useState("");
+
+  const [newEventTitle, setNewEventTitle] = useState("");
+  const [newEventYear, setNewEventYear] = useState("");
+  const [newEventDesc, setNewEventDesc] = useState("");
+
+  const loadMemory = async () => {
+    const { data, error } = await supabase.from("memories").select("*").eq("id", id).single();
+    if (error) return alert("读取记忆体失败：" + error.message);
+    setMemory(data);
+    setEditName(data.name);
+    setEditRelationship(data.relationship);
+    setEditLifeStory(data.life_story || "");
+  };
 
   const loadEvents = async () => {
     const { data, error } = await supabase
@@ -38,149 +49,180 @@ export default function MemoryDetailPage({
       .select("*")
       .eq("memory_id", id)
       .order("event_year", { ascending: true });
-
-    if (error) {
-      alert("读取时间线失败：" + error.message);
-      return;
-    }
-
+    if (error) return alert("读取时间线失败：" + error.message);
     setEvents(data || []);
   };
 
   useEffect(() => {
-    const loadMemory = async () => {
-      const { data, error } = await supabase
-        .from("memories")
-        .select("*")
-        .eq("id", id)
-        .single();
-
-      if (error) {
-        alert("读取失败：" + error.message);
-        return;
-      }
-
-      setMemory(data);
-    };
-
     loadMemory();
     loadEvents();
   }, [id]);
 
-  const addEvent = async () => {
-    if (!eventTitle.trim()) {
-      alert("请填写事件标题");
-      return;
-    }
+  const updateMemory = async () => {
+    setLoading(true);
+    const { error } = await supabase
+      .from("memories")
+      .update({ name: editName, relationship: editRelationship, life_story: editLifeStory })
+      .eq("id", id);
+    setLoading(false);
+    if (error) return alert("更新失败：" + error.message);
+    alert("记忆体更新成功");
+    await loadMemory();
+  };
 
+  const deleteMemory = async () => {
+    if (!confirm("确认删除整个记忆体？操作不可恢复")) return;
+    const { error } = await supabase.from("memories").delete().eq("id", id);
+    if (error) return alert("删除失败：" + error.message);
+    alert("记忆体已删除");
+    window.location.href = "/memories";
+  };
+
+  const addEvent = async () => {
+    if (!newEventTitle.trim()) return alert("请输入事件标题");
     const { error } = await supabase.from("timeline_events").insert([
       {
         memory_id: id,
-        event_year: eventYear ? Number(eventYear) : null,
-        title: eventTitle,
-        description: eventDescription,
+        event_year: newEventYear ? Number(newEventYear) : null,
+        title: newEventTitle,
+        description: newEventDesc,
       },
     ]);
-
-    if (error) {
-      alert("添加失败：" + error.message);
-      return;
-    }
-
-    setEventYear("");
-    setEventTitle("");
-    setEventDescription("");
-
+    if (error) return alert("添加事件失败：" + error.message);
+    setNewEventTitle("");
+    setNewEventYear("");
+    setNewEventDesc("");
     await loadEvents();
   };
 
-  if (!memory) {
-    return <main className="p-8">加载中...</main>;
-  }
+  const deleteEvent = async (eventId: string) => {
+    if (!confirm("确认删除此事件？")) return;
+    const { error } = await supabase.from("timeline_events").delete().eq("id", eventId);
+    if (error) return alert("删除失败：" + error.message);
+    await loadEvents();
+  };
+
+  const updateEvent = async (event: TimelineEvent) => {
+    const title = prompt("编辑事件标题", event.title);
+    if (!title) return;
+    const description = prompt("编辑事件描述", event.description || "");
+    const yearStr = prompt("编辑年份", event.event_year?.toString() || "");
+    const year = yearStr ? Number(yearStr) : null;
+    const { error } = await supabase
+      .from("timeline_events")
+      .update({ title, description, event_year: year })
+      .eq("id", event.id);
+    if (error) return alert("更新失败：" + error.message);
+    await loadEvents();
+  };
+
+  if (!memory) return <main className="p-8">加载中...</main>;
 
   return (
     <main className="min-h-screen bg-neutral-50 px-6 py-12">
       <div className="mx-auto max-w-3xl rounded-2xl bg-white p-8 shadow-sm">
+        <h1 className="text-3xl font-bold">编辑记忆体</h1>
+
         {memory.photo_url && (
           <img
             src={memory.photo_url}
             alt={memory.name}
-            className="mb-6 h-64 w-64 rounded-2xl object-cover"
+            className="my-4 h-64 w-64 rounded-2xl object-cover"
           />
         )}
 
-        <h1 className="text-3xl font-bold">{memory.name}</h1>
-
-        <p className="mt-2 text-neutral-500">
-          关系：{memory.relationship}
-        </p>
-
-        <div className="mt-8">
-          <h2 className="mb-3 text-xl font-semibold">人生故事</h2>
-          <p className="whitespace-pre-wrap text-neutral-700">
-            {memory.life_story || "暂无人生故事"}
-          </p>
-        </div>
-
-        <div className="mt-10 border-t pt-8">
-          <h2 className="mb-4 text-xl font-semibold">人生时间线</h2>
-
-          <div className="mb-6 grid gap-3">
-            <input
-              className="rounded-lg border p-3"
-              placeholder="年份，例如 1992"
-              value={eventYear}
-              onChange={(e) => setEventYear(e.target.value)}
-            />
-
-            <input
-              className="rounded-lg border p-3"
-              placeholder="事件标题，例如：第一次外出打工"
-              value={eventTitle}
-              onChange={(e) => setEventTitle(e.target.value)}
-            />
-
-            <textarea
-              className="rounded-lg border p-3"
-              placeholder="事件描述"
-              rows={3}
-              value={eventDescription}
-              onChange={(e) => setEventDescription(e.target.value)}
-            />
-
-            <button
-              onClick={addEvent}
-              className="w-fit rounded-lg bg-black px-6 py-3 text-white"
-            >
-              添加人生事件
+        <div className="mt-4 space-y-2">
+          <input
+            className="w-full rounded-lg border p-2"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            placeholder="姓名"
+          />
+          <input
+            className="w-full rounded-lg border p-2"
+            value={editRelationship}
+            onChange={(e) => setEditRelationship(e.target.value)}
+            placeholder="关系"
+          />
+          <textarea
+            className="w-full rounded-lg border p-2"
+            rows={4}
+            value={editLifeStory}
+            onChange={(e) => setEditLifeStory(e.target.value)}
+            placeholder="人生故事"
+          />
+          <div className="flex gap-2 mt-2">
+            <button onClick={updateMemory} className="bg-black text-white px-4 py-2 rounded">
+              保存修改
+            </button>
+            <button onClick={deleteMemory} className="bg-red-600 text-white px-4 py-2 rounded">
+              删除记忆体
             </button>
           </div>
-
-          {events.length === 0 ? (
-            <p className="text-neutral-500">还没有时间线事件。</p>
-          ) : (
-            <div className="space-y-4">
-              {events.map((event) => (
-                <div key={event.id} className="rounded-xl bg-neutral-50 p-4">
-                  <p className="text-sm text-neutral-500">
-                    {event.event_year || "未知年份"}
-                  </p>
-                  <h3 className="mt-1 font-semibold">{event.title}</h3>
-                  <p className="mt-2 whitespace-pre-wrap text-neutral-700">
-                    {event.description || "暂无描述"}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
-        <a
-          href={`/memory-chat/${memory.id}`}
-          className="mt-8 inline-block rounded-lg bg-black px-6 py-3 text-white"
-        >
-          和TA聊天
-        </a>
+        <div className="mt-8">
+          <h2 className="text-xl font-semibold">人生时间线</h2>
+          <div className="mt-2 space-y-2">
+            {events.length === 0 ? (
+              <p>暂无事件</p>
+            ) : (
+              events.map((event) => (
+                <div
+                  key={event.id}
+                  className="flex justify-between items-center bg-neutral-100 p-2 rounded"
+                >
+                  <div>
+                    {event.event_year || "未知年份"}：{event.title}{" "}
+                    {event.description ? `- ${event.description}` : ""}
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      className="bg-yellow-500 px-2 rounded text-white"
+                      onClick={() => updateEvent(event)}
+                    >
+                      编辑
+                    </button>
+                    <button
+                      className="bg-red-600 px-2 rounded text-white"
+                      onClick={() => deleteEvent(event.id)}
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="mt-4 flex flex-col gap-2">
+            <input
+              className="rounded-lg border p-2"
+              placeholder="年份"
+              value={newEventYear}
+              onChange={(e) => setNewEventYear(e.target.value)}
+            />
+            <input
+              className="rounded-lg border p-2"
+              placeholder="事件标题"
+              value={newEventTitle}
+              onChange={(e) => setNewEventTitle(e.target.value)}
+            />
+            <textarea
+              className="rounded-lg border p-2"
+              placeholder="事件描述"
+              rows={2}
+              value={newEventDesc}
+              onChange={(e) => setNewEventDesc(e.target.value)}
+            />
+            <button
+              onClick={addEvent}
+              className="bg-black text-white px-4 py-2 rounded"
+            >
+              添加事件
+            </button>
+          </div>
+        </div>
       </div>
     </main>
   );

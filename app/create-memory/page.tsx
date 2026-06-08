@@ -7,12 +7,17 @@ export default function CreateMemoryPage() {
   const [name, setName] = useState("");
   const [relationship, setRelationship] = useState("");
   const [lifeStory, setLifeStory] = useState("");
-  const [photo, setPhoto] = useState<File | null>(null);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async () => {
-    if (!name.trim() || !relationship.trim()) {
-      alert("请填写姓名和关系");
+  const handleCreate = async () => {
+    if (!name.trim()) {
+      alert("请输入姓名");
+      return;
+    }
+
+    if (!relationship.trim()) {
+      alert("请输入关系");
       return;
     }
 
@@ -20,30 +25,24 @@ export default function CreateMemoryPage() {
 
     let photoUrl: string | null = null;
 
-    if (photo) {
-      const fileName = `${Date.now()}-${photo.name}`;
+    if (photoFile) {
+      const fileName = `${Date.now()}-${photoFile.name}`;
 
       const { error: uploadError } = await supabase.storage
         .from("photos")
-        .upload(fileName, photo);
+        .upload(fileName, photoFile);
 
       if (uploadError) {
-        alert("照片上传失败：" + uploadError.message);
         setLoading(false);
+        alert(uploadError.message);
         return;
       }
 
-      const { data, error: signedError } = await supabase.storage
+      const { data } = supabase.storage
         .from("photos")
-        .createSignedUrl(fileName, 60 * 60 * 24 * 365);
+        .getPublicUrl(fileName);
 
-      if (signedError) {
-        alert("照片地址生成失败：" + signedError.message);
-        setLoading(false);
-        return;
-      }
-
-      photoUrl = data.signedUrl;
+      photoUrl = data.publicUrl;
     }
 
     const { error } = await supabase.from("memories").insert([
@@ -58,27 +57,26 @@ export default function CreateMemoryPage() {
     setLoading(false);
 
     if (error) {
-      alert("保存失败：" + error.message);
+      alert(error.message);
       return;
     }
 
-    alert("保存成功");
+    alert("创建成功");
+
     setName("");
     setRelationship("");
     setLifeStory("");
-    setPhoto(null);
+    setPhotoFile(null);
+
+    window.location.href = "/memories";
   };
 
   return (
     <main className="min-h-screen bg-neutral-50 px-6 py-12">
       <div className="mx-auto max-w-2xl rounded-2xl bg-white p-8 shadow-sm">
-        <h1 className="mb-2 text-3xl font-bold text-neutral-900">
-          创建亲人记忆体
+        <h1 className="mb-6 text-3xl font-bold">
+          创建记忆体
         </h1>
-
-        <p className="mb-8 text-neutral-600">
-          上传照片并记录故事，创建 AI 记忆体。
-        </p>
 
         <input
           className="mb-4 w-full rounded-lg border p-3"
@@ -89,15 +87,15 @@ export default function CreateMemoryPage() {
 
         <input
           className="mb-4 w-full rounded-lg border p-3"
-          placeholder="关系，例如：父亲、母亲、爷爷"
+          placeholder="关系（父亲、母亲、爷爷等）"
           value={relationship}
           onChange={(e) => setRelationship(e.target.value)}
         />
 
         <textarea
           className="mb-4 w-full rounded-lg border p-3"
+          rows={6}
           placeholder="人生故事"
-          rows={8}
           value={lifeStory}
           onChange={(e) => setLifeStory(e.target.value)}
         />
@@ -105,16 +103,18 @@ export default function CreateMemoryPage() {
         <input
           type="file"
           accept="image/*"
-          className="mb-6"
-          onChange={(e) => setPhoto(e.target.files?.[0] || null)}
+          className="mb-6 w-full"
+          onChange={(e) =>
+            setPhotoFile(e.target.files?.[0] || null)
+          }
         />
 
         <button
-          onClick={handleSubmit}
+          onClick={handleCreate}
           disabled={loading}
-          className="rounded-lg bg-black px-6 py-3 text-white disabled:opacity-50"
+          className="w-full rounded-lg bg-black px-6 py-3 text-white"
         >
-          {loading ? "保存中..." : "保存记忆体"}
+          {loading ? "创建中..." : "创建记忆体"}
         </button>
       </div>
     </main>

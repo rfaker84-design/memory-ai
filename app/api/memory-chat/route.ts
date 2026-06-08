@@ -1,10 +1,16 @@
 ﻿import OpenAI from "openai";
+import { createClient } from "@supabase/supabase-js";
 
 const client = new OpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY,
   baseURL: "https://api.deepseek.com",
   timeout: 60000,
 });
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export async function POST(request: Request) {
   try {
@@ -20,6 +26,16 @@ export async function POST(request: Request) {
           )
           .join("\n")
       : "暂无时间线";
+
+    if (body.memory_id && body.question) {
+      await supabaseAdmin.from("chat_messages").insert([
+        {
+          memory_id: body.memory_id,
+          role: "user",
+          content: body.question,
+        },
+      ]);
+    }
 
     const completion = await client.chat.completions.create({
       model: "deepseek-chat",
@@ -48,8 +64,21 @@ ${body.question}
       ],
     });
 
+    const answer =
+      completion.choices[0]?.message?.content || "暂时没有生成回答。";
+
+    if (body.memory_id && answer) {
+      await supabaseAdmin.from("chat_messages").insert([
+        {
+          memory_id: body.memory_id,
+          role: "assistant",
+          content: answer,
+        },
+      ]);
+    }
+
     return Response.json({
-      answer: completion.choices[0]?.message?.content || "暂时没有生成回答。",
+      answer,
     });
   } catch (error: any) {
     console.error("AI Error:", error);
