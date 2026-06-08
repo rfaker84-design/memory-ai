@@ -47,8 +47,7 @@ export async function POST(request: Request) {
         },
         {
           role: "user",
-          content: `
-亲人姓名：${body.name}
+          content: `亲人姓名：${body.name}
 关系：${body.relationship}
 
 人生故事：
@@ -58,8 +57,7 @@ ${body.life_story || "暂无"}
 ${timelineText}
 
 用户问题：
-${body.question}
-`,
+${body.question}`,
         },
       ],
     });
@@ -77,12 +75,9 @@ ${body.question}
       ]);
     }
 
-    return Response.json({
-      answer,
-    });
+    return Response.json({ answer });
   } catch (error: any) {
     console.error("AI Error:", error);
-
     return Response.json(
       { error: error?.message || "AI回答失败" },
       { status: 500 }
