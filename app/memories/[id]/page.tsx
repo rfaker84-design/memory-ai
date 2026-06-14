@@ -9,7 +9,7 @@ type Memory = {
   relationship: string;
   life_story: string | null;
   photo_url: string | null;
-  voice_url: string | null;
+  voice_sample_url: string | null;
   user_phone: string | null;
 };
 
@@ -143,10 +143,10 @@ export default function MemoryDetailPage({
         <h1 className="text-3xl font-bold">{memory.name}</h1>
         <p className="mt-2 text-neutral-500">关系：{memory.relationship}</p>
 
-        {memory.voice_url && (
+        {memory.voice_sample_url && (
           <div className="mt-6 rounded-xl bg-neutral-100 p-4">
-            <p className="mb-2 font-semibold">亲人原始声音</p>
-            <audio controls className="w-full" src={memory.voice_url} />
+            <p className="mb-2 font-semibold">亲人声音样本</p>
+            <audio controls className="w-full" src={memory.voice_sample_url} />
           </div>
         )}
 

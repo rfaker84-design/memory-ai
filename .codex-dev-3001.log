@@ -8,14 +8,18 @@
    - Environments: .env.local
 
  ✓ Starting...
- ✓ Ready in 912ms
- ○ Compiling /chat ...
- ✓ Compiled /chat in 2.6s
- GET /memories 200 in 2026ms
- GET /chat 200 in 2935ms
- GET /chat 200 in 81ms
- GET /memories 200 in 72ms
- ✓ Compiled /memory-chat/[id] in 199ms
- GET /memory-chat/e984fc26-43f4-417b-b8a0-737cf0f00e74 200 in 552ms
- ✓ Compiled /memories/[id] in 211ms
- GET /memories/e984fc26-43f4-417b-b8a0-737cf0f00e74 200 in 547ms
+ ✓ Ready in 995ms
+ ○ Compiling /memories ...
+ ✓ Compiled /memories in 2.5s
+ GET /chat 200 in 2822ms
+ GET /memories 200 in 2868ms
+ ✓ Compiled /avatar-center in 222ms
+ GET /avatar-center 200 in 294ms
+ ✓ Compiled /create-memory in 192ms
+ GET /create-memory 200 in 266ms
+ ✓ Compiled /login in 171ms
+ GET /login 200 in 232ms
+ ✓ Compiled /memories/[id] in 184ms
+ ○ Compiling /_error ...
+ ✓ Compiled /_error in 840ms
+[?25h

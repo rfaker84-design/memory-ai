@@ -24,85 +24,98 @@ export default function CreateMemoryPage() {
     setPhone(savedPhone);
   }, []);
 
-  const uploadFile = async (bucket: string, file: File): Promise<string | null> => {
-    const fileName = `${Date.now()}-${file.name}`;
+  const uploadFile = async (url: string, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
 
-    const { error } = await supabase.storage
-      .from(bucket)
-      .upload(fileName, file, { upsert: true });
+    const res = await fetch(url, {
+      method: "POST",
+      body: formData,
+    });
 
-    if (error) {
-      alert(`${bucket} 上传失败：${error.message}`);
-      return null;
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || "上传失败");
     }
 
-    const { data } = supabase.storage.from(bucket).getPublicUrl(fileName);
-    return data.publicUrl;
+    return data.url;
+  };
+
+  const generateProfile = async () => {
+    const res = await fetch("/api/generate-profile", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name, relationship, lifeStory }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) return null;
+
+    try {
+      return JSON.parse(data.result);
+    } catch {
+      return null;
+    }
   };
 
   const handleCreate = async () => {
-    if (!phone) return alert("请先登录");
-    if (!name.trim()) return alert("请输入姓名");
-    if (!relationship.trim()) return alert("请输入关系");
-    if (!authorized) return alert("请确认你拥有上传资料的合法授权");
+    try {
+      if (!name.trim()) return alert("请输入姓名");
+      if (!relationship.trim()) return alert("请输入关系");
+      if (!lifeStory.trim()) return alert("请输入人生故事");
+      if (!authorized) return alert("请确认授权");
 
-    setLoading(true);
+      setLoading(true);
 
-    let photoUrl: string | null = null;
-    let voiceUrl: string | null = null;
+      const photoUrl = photoFile
+        ? await uploadFile("/api/upload", photoFile)
+        : null;
 
-    if (photoFile) {
-      photoUrl = await uploadFile("photos", photoFile);
-      if (!photoUrl) {
-        setLoading(false);
+      const voiceUrl = voiceFile
+        ? await uploadFile("/api/upload-voice", voiceFile)
+        : null;
+
+      const profile = await generateProfile();
+
+      const { error } = await supabase.from("memories").insert([
+        {
+          user_phone: phone,
+          name,
+          relationship,
+          life_story: lifeStory,
+          photo_url: photoUrl,
+          voice_sample_url: voiceUrl,
+          voice_clone_status: voiceUrl ? "pending" : "not_started",
+          personality_tags: profile?.personality_tags || "",
+          speech_style: profile?.speech_style || "",
+          catch_phrases: profile?.catch_phrases || "",
+          values_belief: profile?.values_belief || "",
+        },
+      ]);
+
+      if (error) {
+        alert(error.message);
         return;
       }
+
+      alert("创建成功，数字人格资料已保存");
+      window.location.href = "/memories";
+    } catch (error) {
+      console.error(error);
+      alert("创建失败");
+    } finally {
+      setLoading(false);
     }
-
-    if (voiceFile) {
-      if (voiceFile.size > 20 * 1024 * 1024) {
-        setLoading(false);
-        alert("语音文件不能超过20MB");
-        return;
-      }
-
-      voiceUrl = await uploadFile("voice-files", voiceFile);
-      if (!voiceUrl) {
-        setLoading(false);
-        return;
-      }
-    }
-
-    const { error } = await supabase.from("memories").insert([
-      {
-        user_phone: phone,
-        name,
-        relationship,
-        life_story: lifeStory,
-        photo_url: photoUrl,
-        voice_url: voiceUrl,
-      },
-    ]);
-
-    setLoading(false);
-
-    if (error) {
-      alert("创建失败：" + error.message);
-      return;
-    }
-
-    alert("创建成功");
-    window.location.href = "/memories";
   };
 
   return (
     <main className="min-h-screen bg-neutral-50 px-6 py-12">
       <div className="mx-auto max-w-2xl rounded-2xl bg-white p-8 shadow-sm">
-        <h1 className="mb-6 text-3xl font-bold">创建记忆体</h1>
-
-        <p className="mb-4 text-sm text-neutral-500">
-          当前账号：{phone || "未登录"}
-        </p>
+        <h1 className="mb-6 text-3xl font-bold">创建数字人格</h1>
 
         <input
           className="mb-4 w-full rounded-lg border p-3"
@@ -113,21 +126,21 @@ export default function CreateMemoryPage() {
 
         <input
           className="mb-4 w-full rounded-lg border p-3"
-          placeholder="关系（父亲、母亲、爷爷等）"
+          placeholder="关系，例如：父亲、母亲、爷爷"
           value={relationship}
           onChange={(e) => setRelationship(e.target.value)}
         />
 
         <textarea
           className="mb-4 w-full rounded-lg border p-3"
-          rows={6}
-          placeholder="人生故事"
+          rows={8}
+          placeholder="请尽量详细描述TA的性格、经历、说话方式、口头禅、习惯、价值观、与你之间的回忆。"
           value={lifeStory}
           onChange={(e) => setLifeStory(e.target.value)}
         />
 
-        <div className="mb-4 rounded-lg border p-3">
-          <p className="mb-2 font-semibold">上传照片</p>
+        <div className="mb-4 rounded-xl border p-4">
+          <p className="mb-2 font-medium">上传照片</p>
           <input
             type="file"
             accept="image/*"
@@ -135,33 +148,33 @@ export default function CreateMemoryPage() {
           />
         </div>
 
-        <div className="mb-4 rounded-lg border p-3">
-          <p className="mb-2 font-semibold">上传语音</p>
+        <div className="mb-4 rounded-xl border p-4">
+          <p className="mb-2 font-medium">上传声音样本</p>
+          <p className="mb-3 text-sm text-neutral-500">
+            建议上传10秒以上清晰人声，后续用于声音克隆训练。
+          </p>
           <input
             type="file"
-            accept="audio/*,.mp3,.wav,.m4a"
+            accept="audio/*"
             onChange={(e) => setVoiceFile(e.target.files?.[0] || null)}
           />
-          <p className="mt-2 text-sm text-neutral-500">
-            支持 mp3 / wav / m4a，最大20MB
-          </p>
         </div>
 
-        <label className="mb-6 flex gap-2 text-sm text-neutral-700">
+        <label className="mb-6 flex gap-2 text-sm">
           <input
             type="checkbox"
             checked={authorized}
             onChange={(e) => setAuthorized(e.target.checked)}
           />
-          我确认已获得照片、声音及相关资料的合法使用授权。
+          我确认拥有相关照片、声音、故事和资料的合法授权
         </label>
 
         <button
           onClick={handleCreate}
           disabled={loading}
-          className="w-full rounded-lg bg-black px-6 py-3 text-white disabled:opacity-50"
+          className="w-full rounded-lg bg-black py-3 text-white disabled:opacity-50"
         >
-          {loading ? "创建中..." : "创建记忆体"}
+          {loading ? "正在创建数字人格..." : "创建数字人格"}
         </button>
       </div>
     </main>

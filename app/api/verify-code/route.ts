@@ -5,9 +5,14 @@ const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+type VerifyCodeRequest = {
+  phone?: string;
+  code?: string;
+};
+
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body = (await request.json()) as VerifyCodeRequest;
     const phone = String(body.phone || "").trim();
     const code = String(body.code || "").trim();
 
@@ -48,9 +53,10 @@ export async function POST(request: Request) {
       success: true,
       phone,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "登录失败";
     return Response.json(
-      { error: error?.message || "登录失败" },
+      { error: message },
       { status: 500 }
     );
   }

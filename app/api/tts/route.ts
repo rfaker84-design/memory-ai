@@ -15,9 +15,17 @@ const client = new TtsClient({
   },
 });
 
+type TtsRequest = {
+  text?: string;
+};
+
 export async function POST(request: Request) {
   try {
-    const { text } = await request.json();
+    const { text } = (await request.json()) as TtsRequest;
+
+    if (!text?.trim()) {
+      return Response.json({ error: "请输入要转换的文字" }, { status: 400 });
+    }
 
     const result = await client.TextToVoice({
       Text: text,
@@ -30,12 +38,13 @@ export async function POST(request: Request) {
     return Response.json({
       audioBase64: result.Audio,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(error);
+    const message = error instanceof Error ? error.message : "TTS失败";
 
     return Response.json(
       {
-        error: error.message || "TTS失败",
+        error: message,
       },
       {
         status: 500,

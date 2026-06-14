@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { use, useEffect, useRef, useState } from "react";
+import { use, useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../../../src/lib/supabase";
 
 type Memory = {
@@ -8,6 +8,7 @@ type Memory = {
   name: string;
   relationship: string;
   life_story: string | null;
+  personality_profile: string | null;
   photo_url: string | null;
   user_phone: string | null;
 };
@@ -34,8 +35,9 @@ export default function MemoryChatPage({
 }) {
   const { id } = use(params);
 
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const sendingRef = useRef(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const [phone, setPhone] = useState("");
   const [memory, setMemory] = useState<Memory | null>(null);
@@ -46,7 +48,7 @@ export default function MemoryChatPage({
   const [ttsLoading, setTtsLoading] = useState(false);
   const [audioUrl, setAudioUrl] = useState("");
 
-  const loadMessages = async () => {
+  const loadMessages = useCallback(async () => {
     const { data } = await supabase
       .from("chat_messages")
       .select("*")
@@ -54,7 +56,7 @@ export default function MemoryChatPage({
       .order("created_at", { ascending: true });
 
     setMessages((data || []) as ChatMessage[]);
-  };
+  }, [id]);
 
   useEffect(() => {
     const savedPhone = window.localStorage.getItem("yijian_phone");
@@ -89,39 +91,25 @@ export default function MemoryChatPage({
         .order("event_year", { ascending: true });
 
       setEvents(eventData || []);
-
       await loadMessages();
     };
 
     loadData();
-
-    return () => {
-      if (audioUrl) URL.revokeObjectURL(audioUrl);
-    };
-  }, [id]);
+  }, [id, loadMessages]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
   const handleAsk = async () => {
+    if (sendingRef.current) return;
     if (!memory || !question.trim() || !phone) return;
 
+    sendingRef.current = true;
     setLoading(true);
-    setAudioUrl("");
 
-    const currentQuestion = question;
+    const currentQuestion = question.trim();
     setQuestion("");
-
-    const tempUserMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      memory_id: memory.id,
-      role: "user",
-      content: currentQuestion,
-      created_at: new Date().toISOString(),
-    };
-
-    setMessages((prev) => [...prev, tempUserMessage]);
 
     const res = await fetch("/api/memory-chat", {
       method: "POST",
@@ -134,6 +122,7 @@ export default function MemoryChatPage({
         name: memory.name,
         relationship: memory.relationship,
         life_story: memory.life_story,
+        personality_profile: memory.personality_profile,
         timeline: events,
         question: currentQuestion,
       }),
@@ -141,25 +130,14 @@ export default function MemoryChatPage({
 
     const data = await res.json();
 
-    setLoading(false);
-
     if (!res.ok) {
       alert(data.error || "AI回答失败");
-      await loadMessages();
-      return;
     }
 
-    const tempAssistantMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      memory_id: memory.id,
-      role: "assistant",
-      content: data.answer,
-      created_at: new Date().toISOString(),
-    };
-
-    setMessages((prev) => [...prev, tempAssistantMessage]);
-
     await loadMessages();
+
+    setLoading(false);
+    sendingRef.current = false;
   };
 
   const generateVoice = async (text: string) => {
@@ -176,7 +154,6 @@ export default function MemoryChatPage({
     });
 
     const data = await res.json();
-
     setTtsLoading(false);
 
     if (!res.ok) {
@@ -194,20 +171,11 @@ export default function MemoryChatPage({
     const blob = new Blob([bytes], { type: "audio/mpeg" });
     const url = URL.createObjectURL(blob);
 
-    if (audioUrl) URL.revokeObjectURL(audioUrl);
-
     setAudioUrl(url);
 
     setTimeout(() => {
       audioRef.current?.play();
     }, 100);
-  };
-
-  const stopVoice = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-    }
   };
 
   if (!memory) return <main className="p-8">加载中...</main>;
@@ -265,10 +233,8 @@ export default function MemoryChatPage({
           )}
 
           {loading && (
-            <div className="flex justify-start">
-              <div className="rounded-2xl bg-neutral-100 px-4 py-3 text-neutral-500">
-                AI正在思考中...
-              </div>
+            <div className="rounded-2xl bg-neutral-100 px-4 py-3 text-neutral-500">
+              AI正在思考中...
             </div>
           )}
 
@@ -283,22 +249,13 @@ export default function MemoryChatPage({
           onChange={(e) => setQuestion(e.target.value)}
         />
 
-        <div className="mt-4 flex flex-wrap gap-3">
-          <button
-            onClick={handleAsk}
-            disabled={loading}
-            className="rounded-lg bg-black px-6 py-3 text-white disabled:opacity-50"
-          >
-            {loading ? "思考中..." : "发送"}
-          </button>
-
-          <button
-            onClick={stopVoice}
-            className="rounded-lg bg-neutral-600 px-6 py-3 text-white"
-          >
-            停止播放
-          </button>
-        </div>
+        <button
+          onClick={handleAsk}
+          disabled={loading}
+          className="mt-4 rounded-lg bg-black px-6 py-3 text-white disabled:opacity-50"
+        >
+          {loading ? "思考中..." : "发送"}
+        </button>
 
         {audioUrl && (
           <div className="mt-6 rounded-lg bg-neutral-100 p-4">
@@ -306,16 +263,6 @@ export default function MemoryChatPage({
             <audio ref={audioRef} controls className="w-full" src={audioUrl} />
           </div>
         )}
-
-        <div className="mt-8 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          <p className="font-semibold">AI生成内容提示</p>
-          <p className="mt-2">
-            本页面中的对话内容由人工智能根据用户提供的资料生成，仅用于纪念、回忆整理与情感陪伴。
-          </p>
-          <p className="mt-2">
-            AI回答不代表真实人物的真实观点、真实意愿或真实表达，不应作为医疗、法律、投资或其他重要决策依据。
-          </p>
-        </div>
       </div>
     </main>
   );

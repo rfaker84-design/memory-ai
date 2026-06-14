@@ -5,9 +5,13 @@ const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+type SendCodeRequest = {
+  phone?: string;
+};
+
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body = (await request.json()) as SendCodeRequest;
     const phone = String(body.phone || "").trim();
 
     if (!phone) {
@@ -31,9 +35,10 @@ export async function POST(request: Request) {
       success: true,
       code,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "验证码发送失败";
     return Response.json(
-      { error: error?.message || "验证码发送失败" },
+      { error: message },
       { status: 500 }
     );
   }

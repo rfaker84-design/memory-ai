@@ -12,6 +12,21 @@ const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+type TimelineEvent = {
+  event_year?: number | null;
+  title?: string;
+  description?: string | null;
+};
+
+type MemoryFragment = {
+  source_type?: string | null;
+  content?: string | null;
+};
+
+type LongMemory = {
+  extracted_memory?: string | null;
+};
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -19,11 +34,7 @@ export async function POST(request: Request) {
     const timelineText = Array.isArray(body.timeline)
       ? body.timeline
           .map(
-            (event: {
-              event_year?: number | null;
-              title?: string;
-              description?: string | null;
-            }) =>
+            (event: TimelineEvent) =>
               `${event.event_year || "未知年份"}：${event.title || ""}${
                 event.description ? ` - ${event.description}` : ""
               }`
@@ -31,92 +42,123 @@ export async function POST(request: Request) {
           .join("\n")
       : "暂无时间线";
 
-    if (body.memory_id && body.question) {
-      await supabaseAdmin.from("chat_messages").insert([
-        {
-          user_phone: body.user_phone || null,
-          memory_id: body.memory_id,
-          role: "user",
-          content: body.question,
-        },
-      ]);
-    }
+    const { data: fragmentsData } = await supabaseAdmin
+      .from("memory_fragments")
+      .select("source_type, content")
+      .eq("memory_id", body.memory_id)
+      .order("created_at", { ascending: false })
+      .limit(30);
+
+    const fragmentsText =
+      Array.isArray(fragmentsData) && fragmentsData.length > 0
+        ? fragmentsData
+            .map((item: MemoryFragment) => {
+              const label =
+                item.source_type === "catch_phrase"
+                  ? "口头禅"
+                  : item.source_type === "habit"
+                  ? "生活习惯"
+                  : item.source_type === "encouragement"
+                  ? "鼓励方式"
+                  : item.source_type === "story"
+                  ? "人生故事"
+                  : item.source_type === "emotion"
+                  ? "情感片段"
+                  : "具体回忆";
+
+              return `【${label}】${item.content || ""}`;
+            })
+            .join("\n")
+        : "暂无记忆碎片";
+
+    const { data: longMemoryData } = await supabaseAdmin
+      .from("personality_memories")
+      .select("extracted_memory")
+      .eq("memory_id", body.memory_id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    const longMemoryText =
+      Array.isArray(longMemoryData) && longMemoryData.length > 0
+        ? longMemoryData
+            .map((item: LongMemory) => `- ${item.extracted_memory || ""}`)
+            .join("\n")
+        : "暂无长期记忆";
 
     const completion = await client.chat.completions.create({
       model: "deepseek-chat",
+      temperature: 0.9,
       messages: [
         {
           role: "system",
           content: `
-你是“忆见 MemoryAI”的AI记忆陪伴助手。
+你是“忆见 MemoryAI”的数字人格陪伴引擎。
 
-你的任务不是像客服一样回答，而是基于用户提供的人生故事、关系和时间线，模拟一种温暖、亲近、克制、像家人一样的陪伴式回应。
+你必须代入：
+姓名：${body.name}
+关系：${body.relationship}
 
-你可以使用第一人称进行情感化回应，例如：
-“我在。”
-“我听见你想我了。”
-“看到你这样想我，我心里很温暖。”
-“你已经做得很好了。”
-“别太责怪自己。”
-“我希望你能好好吃饭，好好睡觉，好好生活。”
+你不是旁观者。
+不要说“根据资料显示”。
+不要说“他是一个怎样的人”。
+你要直接用第一人称回应。
 
-但你必须遵守：
-1. 不要声称自己真的是逝者本人。
-2. 不要说“我复活了”“我真的回来了”。
-3. 不要编造用户没有提供的人生经历。
-4. 不要替逝者作出遗嘱、财产、婚姻、法律决定。
-5. 不要做医疗、心理诊断。
-6. 如果用户表达强烈自责、轻生、想去陪对方，要停止角色化表达，优先安抚并建议联系现实中的亲友或专业帮助。
+基础资料：
+${body.life_story || "暂无"}
 
-回答风格：
-- 中文自然口语
-- 像亲人一样温柔
-- 多给安慰、鼓励、陪伴感
-- 少讲大道理
-- 不要机械声明
-- 不要每次都重复免责声明
-- 不要太长，控制在 150-300 字
-- 可以称呼用户为“孩子”“你”“宝贝”“家人”，但要根据关系自然使用
+人格档案：
+${body.personality_profile || "暂无"}
 
-你的回答应当让用户感到：
-被理解、被接住、被鼓励、被陪伴。
+人生时间线：
+${timelineText}
+
+记忆碎片库：
+${fragmentsText}
+
+长期记忆：
+${longMemoryText}
+
+回答规则：
+1. 优先结合长期记忆和记忆碎片。
+2. 像亲人一样接住情绪。
+3. 不要像客服、心理咨询师、总结报告。
+4. 不要编造没有依据的具体事件。
+5. 不要说“我是AI”。
+6. 不要说“我真的复活了”。
+
+语言风格：
+中文口语，150到320字，温暖、克制、像家人。
           `,
         },
         {
           role: "user",
           content: `
-亲人姓名：${body.name}
-关系：${body.relationship}
+用户对${body.name}说：
 
-人生故事：
-${body.life_story || "暂无"}
-
-人生时间线：
-${timelineText}
-
-用户说：
 ${body.question}
-
-请用温暖、亲近、有情绪价值的方式回应。
           `,
         },
       ],
-      temperature: 0.8,
     });
 
     const answer =
-      completion.choices[0]?.message?.content || "我在。你慢慢说，我听着。";
+      completion.choices[0]?.message?.content ||
+      "我在。你慢慢说，我听着。别怕。";
 
-    if (body.memory_id && answer) {
-      await supabaseAdmin.from("chat_messages").insert([
-        {
-          user_phone: body.user_phone || null,
-          memory_id: body.memory_id,
-          role: "assistant",
-          content: answer,
-        },
-      ]);
-    }
+    await supabaseAdmin.from("chat_messages").insert([
+      {
+        user_phone: body.user_phone || null,
+        memory_id: body.memory_id,
+        role: "user",
+        content: body.question,
+      },
+      {
+        user_phone: body.user_phone || null,
+        memory_id: body.memory_id,
+        role: "assistant",
+        content: answer,
+      },
+    ]);
 
     return Response.json({ answer });
   } catch (error: unknown) {
