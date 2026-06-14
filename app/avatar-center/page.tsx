@@ -13,6 +13,8 @@ type Memory = {
   voice_clone_status: string | null;
   avatar_status: string | null;
   avatar_video_url: string | null;
+  personality_profile: string | null;
+  catch_phrases: string | null;
 };
 
 type AvatarJob = {
@@ -41,6 +43,23 @@ const statusLabel: Record<string, string> = {
   cancelled: "已取消",
   not_started: "未开始",
 };
+
+function CompletionBar({ label, pct }: { label: string; pct: number }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-neutral-600">{label}</span>
+        <span className="font-medium">{pct}%</span>
+      </div>
+      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-neutral-200">
+        <div
+          className={"h-full rounded-full transition-all duration-700 " + (pct >= 80 ? "bg-emerald-500" : pct >= 40 ? "bg-amber-500" : "bg-neutral-400")}
+          style={{ width: pct + "%" }}
+        />
+      </div>
+    </div>
+  );
+}
 
 function formatStatus(status?: string | null) {
   if (!status) return "未开始";
