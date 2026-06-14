@@ -1,0 +1,8 @@
+const phone = localStorage.getItem("yijian_phone");
+
+const { data } = await supabase
+  .from("memories")
+  .select("*")
+  .eq("id", id)
+  .eq("user_phone", phone)
+  .single();

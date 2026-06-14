@@ -1,0 +1,21 @@
+
+> memory-ai@0.1.0 dev
+> next dev --turbopack -p 3001
+
+   ▲ Next.js 15.5.19 (Turbopack)
+   - Local:        http://localhost:3001
+   - Network:      http://192.168.1.248:3001
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 912ms
+ ○ Compiling /chat ...
+ ✓ Compiled /chat in 2.6s
+ GET /memories 200 in 2026ms
+ GET /chat 200 in 2935ms
+ GET /chat 200 in 81ms
+ GET /memories 200 in 72ms
+ ✓ Compiled /memory-chat/[id] in 199ms
+ GET /memory-chat/e984fc26-43f4-417b-b8a0-737cf0f00e74 200 in 552ms
+ ✓ Compiled /memories/[id] in 211ms
+ GET /memories/e984fc26-43f4-417b-b8a0-737cf0f00e74 200 in 547ms

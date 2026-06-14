@@ -1,63 +1,114 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
-import { supabase } from "../../src/lib/supabase";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [devCode, setDevCode] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = async () => {
-    if (!email.trim()) {
-      alert("请输入邮箱");
+  const sendCode = async () => {
+    if (!phone.trim()) return alert("请输入手机号");
+
+    setLoading(true);
+
+    const res = await fetch("/api/send-code", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ phone }),
+    });
+
+    const data = await res.json();
+
+    setLoading(false);
+
+    if (!res.ok) {
+      alert(data.error || "发送失败");
+      return;
+    }
+
+    setDevCode(data.code);
+    alert("验证码已生成");
+  };
+
+  const login = async () => {
+    if (!phone.trim() || !code.trim()) {
+      alert("请输入手机号和验证码");
       return;
     }
 
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: "http://localhost:3000",
+    const res = await fetch("/api/verify-code", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
       },
+      body: JSON.stringify({ phone, code }),
     });
+
+    const data = await res.json();
 
     setLoading(false);
 
-    if (error) {
-      alert("发送失败：" + error.message);
+    if (!res.ok) {
+      alert(data.error || "登录失败");
       return;
     }
 
-    alert("登录链接已发送到邮箱");
+    localStorage.setItem("yijian_phone", data.phone);
+
+    alert("登录成功");
+    window.location.href = "/memories";
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-neutral-100">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow">
-        <h1 className="mb-6 text-center text-3xl font-bold">
-          登录忆见 AI
-        </h1>
+    <main className="flex min-h-screen items-center justify-center bg-neutral-50 px-6">
+      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-sm">
+        <h1 className="text-3xl font-bold">忆见登录</h1>
+
+        <p className="mt-2 text-neutral-500">
+          手机号登录
+        </p>
 
         <input
-          type="email"
-          placeholder="请输入邮箱"
-          className="w-full rounded-lg border p-3"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          className="mt-6 w-full rounded-lg border p-3"
+          placeholder="请输入手机号"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
         />
 
         <button
-          onClick={handleLogin}
+          onClick={sendCode}
           disabled={loading}
-          className="mt-4 w-full rounded-lg bg-black px-4 py-3 text-white"
+          className="mt-4 w-full rounded-lg bg-black py-3 text-white disabled:opacity-50"
         >
-          {loading ? "发送中..." : "发送登录链接"}
+          {loading ? "处理中..." : "获取验证码"}
         </button>
 
-        <p className="mt-4 text-center text-sm text-neutral-500">
-          通过邮箱验证码登录
-        </p>
+        {devCode && (
+          <div className="mt-4 rounded-lg bg-yellow-50 p-3 text-sm text-yellow-800">
+            内测验证码：{devCode}
+          </div>
+        )}
+
+        <input
+          className="mt-4 w-full rounded-lg border p-3"
+          placeholder="请输入验证码"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+        />
+
+        <button
+          onClick={login}
+          disabled={loading}
+          className="mt-4 w-full rounded-lg bg-blue-600 py-3 text-white disabled:opacity-50"
+        >
+          登录
+        </button>
       </div>
     </main>
   );

@@ -17,10 +17,20 @@ const notoSerifSC = Noto_Serif_SC({
 });
 
 export const metadata: Metadata = {
-  title: "忆见 MemoryAI — 让记忆继续陪伴未来",
-  description: "通过 AI 保存亲人的声音、故事与记忆。",
+  title: "忆见 MemoryAI",
+  description: "AI记忆陪伴平台",
+
+  manifest: "/manifest.json",
+
   icons: {
-    icon: "/favicon.svg",
+    icon: "/icon-192.png",
+    apple: "/icon-192.png",
+  },
+
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "忆见",
   },
 };
 
