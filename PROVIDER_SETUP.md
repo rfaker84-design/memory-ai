@@ -15,6 +15,41 @@
 
 ---
 
+
+### 6. ????
+
+```bash
+# ??????
+curl https://yijianmemory.cn/api/health
+```
+
+?????
+
+```json
+{
+  "status": "healthy",
+  "checks": {
+    "supabase": "ok",
+    "deepseek": "configured",
+    "tencent_cloud": "configured",
+    "cos": "configured",
+    "voice_clone": "manual_v1 (default)",
+    "avatar": "adapter_v1 (default)"
+  }
+}
+```
+
+### 7. ????
+
+```bash
+# SSH ????????
+bash scripts/deploy.sh
+```
+
+????????? `scripts/deploy.sh` ?? `REPO_URL`?
+
+---
+
 ## ????
 
 ```
