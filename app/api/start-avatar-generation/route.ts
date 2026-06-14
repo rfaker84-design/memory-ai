@@ -1,13 +1,14 @@
-﻿import { createClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/src/server/supabaseAdmin";
+import { getAvatarProvider } from "@/src/server/avatar-generation";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+type StartAvatarGenerationRequest = {
+  memory_id?: string;
+  provider?: string;
+};
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body = (await request.json()) as StartAvatarGenerationRequest;
     const { memory_id } = body;
 
     if (!memory_id) {
@@ -16,7 +17,7 @@ export async function POST(request: Request) {
 
     const { data: memory, error: memoryError } = await supabaseAdmin
       .from("memories")
-      .select("photo_url")
+      .select("id, user_phone, photo_url, name, voice_model_url")
       .eq("id", memory_id)
       .single();
 
@@ -24,15 +25,24 @@ export async function POST(request: Request) {
       return Response.json({ error: "请先上传照片" }, { status: 400 });
     }
 
+    const provider = getAvatarProvider(body.provider);
+
     const { data: job, error: jobError } = await supabaseAdmin
       .from("avatar_jobs")
       .insert([
         {
+          user_phone: memory.user_phone,
           memory_id,
           job_type: "avatar_video",
-          provider: "adapter_v1",
+          provider: provider.id,
           status: "pending",
+          progress: 0,
           input_url: memory.photo_url,
+          provider_request: {
+            memory_id,
+            input_url: memory.photo_url,
+            provider: provider.id,
+          },
         },
       ])
       .select("*")
@@ -45,20 +55,70 @@ export async function POST(request: Request) {
       );
     }
 
-    await supabaseAdmin
-      .from("memories")
-      .update({
-        avatar_status: "generating",
-        avatar_job_id: job.id,
-        avatar_provider: "adapter_v1",
-      })
-      .eq("id", memory_id);
+    // Call provider to start processing
+    try {
+      const providerJob = await provider.createJob({
+        jobId: job.id,
+        memoryId: memory_id,
+        photoUrl: memory.photo_url,
+        name: memory.name,
+        voiceModelUrl: memory.voice_model_url,
+      });
 
-    return Response.json({
-      success: true,
-      job_id: job.id,
-    });
-  } catch {
-    return Response.json({ error: "启动数字人生成失败" }, { status: 500 });
+      await supabaseAdmin
+        .from("avatar_jobs")
+        .update({
+          provider: providerJob.provider,
+          provider_job_id: providerJob.providerJobId,
+          status: providerJob.status,
+          progress: providerJob.progress,
+          provider_request: providerJob.providerRequest,
+          provider_response: providerJob.providerResponse,
+        })
+        .eq("id", job.id);
+
+      await supabaseAdmin
+        .from("memories")
+        .update({
+          avatar_status: "generating",
+          avatar_job_id: job.id,
+          avatar_provider: provider.id,
+          avatar_error: null,
+        })
+        .eq("id", memory_id);
+
+      return Response.json({
+        success: true,
+        job_id: job.id,
+        provider: providerJob.provider,
+        status: providerJob.status,
+        progress: providerJob.progress,
+      });
+    } catch (providerError: unknown) {
+      const message =
+        providerError instanceof Error ? providerError.message : "数字人厂商调用失败";
+
+      await supabaseAdmin
+        .from("avatar_jobs")
+        .update({
+          status: "failed",
+          error_message: message,
+        })
+        .eq("id", job.id);
+
+      await supabaseAdmin
+        .from("memories")
+        .update({
+          avatar_status: "failed",
+          avatar_error: message,
+        })
+        .eq("id", memory_id);
+
+      return Response.json({ error: message }, { status: 500 });
+    }
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error ? error.message : "启动数字人生成失败";
+    return Response.json({ error: message }, { status: 500 });
   }
 }

@@ -13,8 +13,10 @@
     "cos-nodejs-sdk-v5": "^2.15.4",
     "next": "^15.3.3",
     "openai": "^6.42.0",
+    "pg": "^8.21.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "tencentcloud-sdk-nodejs-asr": "^4.1.247",
     "tencentcloud-sdk-nodejs-tts": "^4.1.237"
   },
   "devDependencies": {
