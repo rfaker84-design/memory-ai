@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import COS from "cos-nodejs-sdk-v5";
 
 const cos = new COS({

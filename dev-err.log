@@ -1,0 +1,69 @@
+ ⨯ ./components/world/WorldShell.tsx
+Error:   [31mx[0m Unterminated string constant
+     ,-[[36;1;4mC:\Users\Administrator\MemoryAi\components\world\WorldShell.tsx[0m:156:1]
+ [2m153[0m | }) {
+ [2m154[0m |   const [input, setInput] = useState("");
+ [2m155[0m |   const [messages, setMessages] = useState<Array<{ role: string; content: string }>>([
+ [2m156[0m |     { role: "assistant", content: "浣犲ソ銆? },
+     : [35;1m                                  ^^^^^^^^^^^^^[0m
+ [2m157[0m |   ]);
+ [2m158[0m | 
+ [2m159[0m |   const send = () => {
+     `----
+  [31mx[0m Expected ',', got ']'
+     ,-[[36;1;4mC:\Users\Administrator\MemoryAi\components\world\WorldShell.tsx[0m:157:1]
+ [2m154[0m |   const [input, setInput] = useState("");
+ [2m155[0m |   const [messages, setMessages] = useState<Array<{ role: string; content: string }>>([
+ [2m156[0m |     { role: "assistant", content: "浣犲ソ銆? },
+ [2m157[0m |   ]);
+     : [35;1m  ^[0m
+ [2m158[0m | 
+ [2m159[0m |   const send = () => {
+ [2m160[0m |     if (!input.trim()) return;
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./components/world/WorldShell.tsx
+./app/page.tsx
+ ⨯ Error: Could not find the module "C:\Users\Administrator\MemoryAi\node_modules\next\dist\next-devtools\userspace\app\segment-explorer-node.js#SegmentViewNode" in the React Client Manifest. This is probably a bug in the React Server Components bundler.
+    at stringify (<anonymous>) {
+  digest: '4229668756'
+}
+ ⨯ Error: Could not find the module "C:\Users\Administrator\MemoryAi\node_modules\next\dist\next-devtools\userspace\app\segment-explorer-node.js#SegmentViewNode" in the React Client Manifest. This is probably a bug in the React Server Components bundler.
+    at stringify (<anonymous>)
+    at stringify (<anonymous>) {
+  digest: '4059646544'
+}
+ ⨯ Error: Could not find the module "C:\Users\Administrator\MemoryAi\node_modules\next\dist\next-devtools\userspace\app\segment-explorer-node.js#SegmentViewNode" in the React Client Manifest. This is probably a bug in the React Server Components bundler.
+    at stringify (<anonymous>)
+    at stringify (<anonymous>) {
+  digest: '4059646544'
+}
+ ⨯ Error: Could not find the module "C:\Users\Administrator\MemoryAi\node_modules\next\dist\next-devtools\userspace\app\segment-explorer-node.js#SegmentViewNode" in the React Client Manifest. This is probably a bug in the React Server Components bundler.
+    at stringify (<anonymous>)
+    at stringify (<anonymous>) {
+  digest: '4059646544'
+}
+ ⨯ Error: Could not find the module "C:\Users\Administrator\MemoryAi\node_modules\next\dist\next-devtools\userspace\app\segment-explorer-node.js#SegmentViewNode" in the React Client Manifest. This is probably a bug in the React Server Components bundler.
+    at stringify (<anonymous>) {
+  digest: '4229668756'
+}
+ ⨯ Error: Could not find the module "C:\Users\Administrator\MemoryAi\node_modules\next\dist\next-devtools\userspace\app\segment-explorer-node.js#SegmentViewNode" in the React Client Manifest. This is probably a bug in the React Server Components bundler.
+    at stringify (<anonymous>) {
+  digest: '4229668756'
+}
+ ⨯ [TypeError: __webpack_modules__[moduleId] is not a function] {
+  digest: '630169789'
+}
+ ⨯ Error: Could not find the module "C:\Users\Administrator\MemoryAi\node_modules\next\dist\next-devtools\userspace\app\segment-explorer-node.js#SegmentViewNode" in the React Client Manifest. This is probably a bug in the React Server Components bundler.
+    at stringify (<anonymous>) {
+  digest: '4229668756'
+}
+[TypeError: __webpack_modules__[moduleId] is not a function]
+ ⨯ [TypeError: __webpack_modules__[moduleId] is not a function]
+ ⨯ [TypeError: __webpack_modules__[moduleId] is not a function] {
+  page: '/'
+}

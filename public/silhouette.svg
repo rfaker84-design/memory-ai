@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 400">
+  <defs>
+    <radialGradient id="bodyGrad" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#4a3520"/>
+      <stop offset="100%" stop-color="#2a1a10"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="45%" r="50%">
+      <stop offset="0%" stop-color="#ffd2a6" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#ffd2a6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="200" height="400" fill="url(#glow)"/>
+  <circle cx="100" cy="50" r="22" fill="url(#bodyGrad)"/>
+  <rect x="90" y="72" width="20" height="16" rx="3" fill="url(#bodyGrad)"/>
+  <path d="M100 88l-30 12a80 80 0 00-12 10l-12 272 22 0 4-160 4-14h28l4 14 4 160 22 0-12-272a80 80 0 00-12-10z" fill="url(#bodyGrad)"/>
+  <circle cx="100" cy="50" r="22" fill="none" stroke="#ffd2a6" stroke-width="1" opacity="0.3"/>
+  <path d="M100 88l-30 12a80 80 0 00-12 10l-12 272M100 88l30 12a80 80 0 0112 10l12 272" fill="none" stroke="#ffd2a6" stroke-width="0.8" opacity="0.2"/>
+  <circle cx="100" cy="200" r="25" fill="#ffd2a6" opacity="0.06"/>
+</svg>

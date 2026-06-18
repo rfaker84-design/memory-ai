@@ -40,12 +40,14 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
   const { id } = use(params);
 
   const sendingRef = useRef(false);
+  const roundRef = useRef(0);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const [memory, setMemory] = useState<Memory | null>(null);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const messagesRef = useRef<ChatMessage[]>([]);
   const [fragments, setFragments] = useState<MemoryFragment[]>([]);
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
@@ -59,7 +61,7 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
       .select("*")
       .eq("memory_id", id)
       .order("created_at", { ascending: true });
-    setMessages((data || []) as ChatMessage[]);
+    const msgs = (data || []) as ChatMessage[]; messagesRef.current = msgs; setMessages(msgs);
   }, [id]);
 
   useEffect(() => {
@@ -144,23 +146,23 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
     emotion: "情感片段",
   };
 
-  if (!memory) return <main className="flex min-h-screen items-center justify-center bg-neutral-950"><p className="text-white/40">加载中...</p></main>;
+  if (!memory) return <main className="flex min-h-screen items-center justify-center"><p className="text-[#A89888] font-light">正在准备...</p></main>;
 
   return (
-    <main className="min-h-screen bg-neutral-950">
+    <main className="min-h-screen">
       {/* Header */}
-      <header className="sticky top-0 z-10 border-b border-white/5 bg-neutral-950/80 backdrop-blur">
+      <header className="sticky top-0 z-10 border-b border-white/5 bg-[#F7F2EA]/80 backdrop-blur">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-6 py-4">
-          <Link href="/" className="text-white/40 hover:text-white/60">&larr;</Link>
+          <Link href="/" className="text-[#A89888] hover:text-[#7A6E62]">&larr;</Link>
           <div className="flex items-center gap-4 text-sm">
-            <Link href={"/timeline/" + id} className="text-white/30 hover:text-white/50">时间轴</Link>
-            <Link href={"/heirloom/" + id} className="text-white/30 hover:text-white/50">留下的东西</Link>
+            <Link href={"/timeline/" + id} className="text-[#7A6E62] hover:text-[#A89888]">时间轴</Link>
+            <Link href={"/heirloom/" + id} className="text-[#7A6E62] hover:text-[#A89888]">留下的东西</Link>
           </div>
           <div className="text-center">
-            <p className="text-sm text-white/60">{memory.name}</p>
+            <p className="text-sm text-[#7A6E62]">{memory.name}</p>
             <p className="text-xs text-emerald-400/80">正在陪伴你</p>
           </div>
-          <Link href={"/voice-chat/" + id} className="text-white/40 hover:text-white/60">🎙️</Link>
+          <Link href={"/voice-chat/" + id} className="text-[#A89888] hover:text-[#7A6E62]">🎙️</Link>
         </div>
       </header>
 
@@ -172,37 +174,37 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
               {memory.photo_url ? (
                 <img src={memory.photo_url} alt={memory.name} className="h-full w-full object-cover" />
               ) : (
-                <div className="flex h-full items-center justify-center bg-white/5 text-4xl text-white/40">{memory.name.charAt(0)}</div>
+                <div className="flex h-full items-center justify-center bg-[#3D3226]/[0.06] text-4xl text-[#A89888]">{memory.name.charAt(0)}</div>
               )}
             </div>
-            <h2 className="text-2xl font-semibold text-white">{memory.name}</h2>
-            <p className="mt-1 text-white/40">{memory.relationship}</p>
+            <h2 className="text-2xl font-semibold text-[#3D3226]">{memory.name}</h2>
+            <p className="mt-1 text-[#A89888]">{memory.relationship}</p>
             <p className="mt-2 text-sm text-emerald-400/60">正在陪伴你</p>
 
             {/* Fragments */}
             {fragments.length > 0 && (
               <div className="mt-10 space-y-3 text-left">
-                <p className="text-xs uppercase tracking-wider text-white/20">TA的记忆碎片</p>
+                <p className="text-xs uppercase tracking-wider text-[#A89888]">TA的记忆碎片</p>
                 {fragments.slice(0, 4).map((f, i) => (
-                  <div key={i} className="rounded-xl bg-white/5 px-4 py-3">
-                    <p className="text-xs text-white/30">{fragmentLabels[f.source_type] || f.source_type}</p>
-                    <p className="mt-1 text-sm leading-relaxed text-white/70">{f.content}</p>
+                  <div key={i} className="rounded-xl bg-[#3D3226]/[0.06] px-4 py-3">
+                    <p className="text-xs text-[#7A6E62]">{fragmentLabels[f.source_type] || f.source_type}</p>
+                    <p className="mt-1 text-sm leading-relaxed text-[#5C4A3A]">{f.content}</p>
                   </div>
                 ))}
               </div>
             )}
 
             {memory.speech_style && (
-              <div className="mt-6 rounded-xl bg-white/5 px-4 py-3 text-left">
-                <p className="text-xs text-white/30">说话风格</p>
-                <p className="mt-1 text-sm leading-relaxed text-white/60">{memory.speech_style}</p>
+              <div className="mt-6 rounded-xl bg-[#3D3226]/[0.06] px-4 py-3 text-left">
+                <p className="text-xs text-[#7A6E62]">说话风格</p>
+                <p className="mt-1 text-sm leading-relaxed text-[#7A6E62]">{memory.speech_style}</p>
               </div>
             )}
 
             {memory.catch_phrases && (
-              <div className="mt-3 rounded-xl bg-white/5 px-4 py-3 text-left">
-                <p className="text-xs text-white/30">TA常说的话</p>
-                <p className="mt-1 text-sm leading-relaxed text-white/60">{memory.catch_phrases}</p>
+              <div className="mt-3 rounded-xl bg-[#3D3226]/[0.06] px-4 py-3 text-left">
+                <p className="text-xs text-[#7A6E62]">TA常说的话</p>
+                <p className="mt-1 text-sm leading-relaxed text-[#7A6E62]">{memory.catch_phrases}</p>
               </div>
             )}
           </div>
@@ -212,15 +214,15 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
         <div className="space-y-4 py-6">
           {messages.map((msg) => (
             <div key={msg.id} className={"flex " + (msg.role === "user" ? "justify-end" : "justify-start")}>
-              <div className={"max-w-[80%] rounded-2xl px-5 py-3 " + (msg.role === "user" ? "bg-white text-black" : "bg-white/5 text-white/90")}>
+              <div className={"max-w-[80%] rounded-2xl px-5 py-3 " + (msg.role === "user" ? "bg-[#C4A882]/25 text-[#3D3226]" : "bg-[#3D3226]/[0.06] text-[#3D3226]")}>
                 {msg.role === "assistant" && (
-                  <p className="mb-1 text-xs text-white/30">{memory.name}</p>
+                  <p className="mb-1 text-xs text-[#7A6E62]">{memory.name}</p>
                 )}
                 <p className="whitespace-pre-wrap text-[15px] leading-relaxed">{msg.content}</p>
                 {msg.role === "assistant" && (
                   <button onClick={() => generateVoice(msg.content)} disabled={ttsLoading}
                     className="mt-2 text-xs text-blue-400 hover:text-blue-300 disabled:opacity-30">
-                    {ttsLoading ? "生成中..." : "🔊 听TA说"}
+                    {ttsLoading ? "准备声音..." : "🔊 听TA说"}
                   </button>
                 )}
               </div>
@@ -229,12 +231,12 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
 
           {loading && (
             <div className="flex justify-start">
-              <div className="rounded-2xl bg-white/5 px-5 py-3">
-                <p className="text-xs text-white/30">{memory.name}</p>
+              <div className="rounded-2xl bg-[#3D3226]/[0.06] px-5 py-3">
+                <p className="text-xs text-[#7A6E62]">{memory.name}</p>
                 <div className="mt-2 flex gap-1">
-                  <span className="h-2 w-2 animate-bounce rounded-full bg-white/30" style={{animationDelay: "0ms"}} />
-                  <span className="h-2 w-2 animate-bounce rounded-full bg-white/30" style={{animationDelay: "150ms"}} />
-                  <span className="h-2 w-2 animate-bounce rounded-full bg-white/30" style={{animationDelay: "300ms"}} />
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-[#C4A882]/40" style={{animationDelay: "0ms"}} />
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-[#C4A882]/40" style={{animationDelay: "150ms"}} />
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-[#C4A882]/40" style={{animationDelay: "300ms"}} />
                 </div>
               </div>
             </div>
@@ -244,17 +246,17 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
       </div>
 
       {/* Input */}
-      <div className="fixed bottom-0 left-0 right-0 border-t border-white/5 bg-neutral-950/90 backdrop-blur">
+      <div className="fixed bottom-0 left-0 right-0 border-t border-white/5 bg-[#F7F2EA]/90 backdrop-blur">
         <div className="mx-auto flex max-w-2xl gap-3 px-6 py-4">
           <input
-            className="flex-1 rounded-xl bg-white/5 px-5 py-3 text-white placeholder-white/20 outline-none focus:bg-white/10"
+            className="flex-1 rounded-xl bg-[#3D3226]/[0.06] px-5 py-3 text-[#3D3226] placeholder-[#A89888]/50 outline-none focus:bg-[#3D3226]/[0.08]"
             placeholder={"想和" + memory.name + "说什么..."}
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAsk()}
           />
           <button onClick={handleAsk} disabled={loading}
-            className="shrink-0 rounded-xl bg-white px-6 py-3 text-sm font-medium text-black disabled:opacity-30">
+            className="shrink-0 rounded-xl px-6 py-3 text-sm font-medium text-[#3D3226] disabled:opacity-30" style={{background:"rgba(196,168,130,0.20)"}}>
             发送
           </button>
         </div>

@@ -1,4 +1,4 @@
-﻿export default function ReportPage() {
+export default function ReportPage() {
   return (
     <main className="min-h-screen bg-neutral-50 px-6 py-12">
       <div className="mx-auto max-w-3xl rounded-2xl bg-white p-8 shadow-sm">

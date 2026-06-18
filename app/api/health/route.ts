@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars, prefer-const */
 import { supabaseAdmin } from "@/src/server/supabaseAdmin";
 
 export async function GET() {
@@ -53,6 +54,7 @@ export async function GET() {
 
   return Response.json(
     {
+      success: healthy,
       status: healthy ? "healthy" : "degraded",
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),

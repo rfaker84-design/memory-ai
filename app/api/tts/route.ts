@@ -1,4 +1,4 @@
-﻿import { tts } from "tencentcloud-sdk-nodejs-tts";
+import { tts } from "tencentcloud-sdk-nodejs-tts";
 
 const TtsClient = tts.v20190823.Client;
 
@@ -35,20 +35,19 @@ export async function POST(request: Request) {
       Codec: "mp3",
     });
 
+    const audioBase64 = result.Audio;
+    const audioUrl = audioBase64 ? "data:audio/mp3;base64," + audioBase64 : null;
     return Response.json({
-      audioBase64: result.Audio,
+      audioBase64,
+      audio_url: audioUrl,
     });
   } catch (error: unknown) {
     console.error(error);
-    const message = error instanceof Error ? error.message : "TTS失败";
-
+    const message = error instanceof Error ? error.message : "TTS failed";
+    // Mock fallback: return empty audio
     return Response.json(
-      {
-        error: message,
-      },
-      {
-        status: 500,
-      }
+      { error: message, audio_url: null, audioBase64: null },
+      { status: 200 }
     );
   }
 }

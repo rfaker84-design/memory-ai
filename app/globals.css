@@ -1,36 +1,92 @@
 @import "tailwindcss";
 
+/* ════════════════════════════════════════════════════════
+   忆见 MemoryAI — Warm Healing Design System
+   暖色疗愈 · Apple极简 · 情绪记忆感
+   ════════════════════════════════════════════════════════ */
+
+:root {
+  color-scheme: light;
+
+  --bg-warm:       #F6F1E8;
+  --bg-warmer:     #F2EBE0;
+  --bg-card:       #FFFFFF;
+  --bg-card-hover: #FAF7F2;
+
+  --color-primary:      #D6A86E;
+  --color-primary-soft: #E8D5B8;
+  --color-secondary:    #E8C9A8;
+  --color-accent:       #C4945A;
+
+  --text-primary:   #2C2A28;
+  --text-secondary: #8A847E;
+  --text-muted:     #B5AFA8;
+
+  --border-subtle:  rgba(0,0,0,0.06);
+  --border-light:   rgba(0,0,0,0.04);
+
+  --glow-soft:   0 0 20px rgba(214,168,110,0.08);
+  --glow-medium: 0 0 40px rgba(214,168,110,0.12);
+  --glow-ambient: radial-gradient(ellipse at 50% 35%, rgba(214,168,110,0.08) 0%, transparent 60%);
+
+  --color-success: #7BA87E;
+  --color-warning: #D4A85C;
+  --color-danger:  #C0706A;
+
+  --radius-sm:     10px;
+  --radius-md:     14px;
+  --radius-lg:     18px;
+  --radius-xl:     22px;
+  --radius-full:   9999px;
+
+  --shadow-card:     0 2px 12px rgba(0,0,0,0.04), 0 0 0 0.5px rgba(0,0,0,0.03);
+  --shadow-elevated: 0 4px 20px rgba(0,0,0,0.06), 0 0 0 0.5px rgba(0,0,0,0.04);
+  --shadow-button:   0 1px 4px rgba(0,0,0,0.06);
+
+  --nav-height: 64px;
+
+  --font-sans: "SF Pro Display","PingFang SC","Hiragino Sans GB","Microsoft YaHei",ui-sans-serif,system-ui,sans-serif;
+}
+
 @theme inline {
-  --color-cream: #faf7f2;
-  --color-cream-dark: #f3ede4;
-  --color-warm-white: #fffcf8;
-  --color-charcoal: #2c2825;
-  --color-charcoal-light: #5c5650;
-  --color-amber-warm: #c4956a;
-  --color-amber-deep: #a67c52;
-  --color-amber-soft: #e8d5c4;
-  --color-rose-muted: #d4a59a;
-  --font-sans: var(--font-noto-sans-sc), ui-sans-serif, system-ui, sans-serif;
-  --font-serif: var(--font-noto-serif-sc), ui-serif, Georgia, serif;
+  --color-bg: var(--bg-warm);
+  --color-surface: var(--bg-card);
+  --color-primary: var(--color-primary);
+  --color-primary-soft: var(--color-primary-soft);
+  --color-text: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
 }
 
-* {
-  box-sizing: border-box;
-}
-
-html {
-  scroll-behavior: smooth;
-}
+*, *::before, *::after { box-sizing:border-box; }
+html { -webkit-text-size-adjust:100%; -webkit-tap-highlight-color:transparent; }
 
 body {
-  background-color: var(--color-cream);
-  color: var(--color-charcoal);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  margin:0; padding:0;
+  background:var(--bg-warm);
+  color:var(--text-secondary);
+  font-family:var(--font-sans);
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
 }
 
-::selection {
-  background-color: var(--color-amber-soft);
-  color: var(--color-charcoal);
-}
+::-webkit-scrollbar { width:3px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:rgba(0,0,0,0.08); border-radius:3px; }
+
+.safe-top    { padding-top:env(safe-area-inset-top,0px); }
+.safe-bottom { padding-bottom:env(safe-area-inset-bottom,0px); }
+.safe-left   { padding-left:env(safe-area-inset-left,0px); }
+.safe-right  { padding-right:env(safe-area-inset-right,0px); }
+
+button, a[role="button"], .clickable { min-height:44px; min-width:44px; }
+
+/* ── Animations ───────────────────────────────────────── */
+@keyframes spin-ring { to { transform: rotate(360deg); } }
+@keyframes breathe { 0%,100% { opacity:0.5; transform:scale(1); } 50% { opacity:0.9; transform:scale(1.04); } }
+@keyframes fade-up { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+
+.stagger > *:nth-child(1) { animation-delay:0.05s; }
+.stagger > *:nth-child(2) { animation-delay:0.1s; }
+.stagger > *:nth-child(3) { animation-delay:0.15s; }
+.stagger > *:nth-child(4) { animation-delay:0.2s; }
+.stagger > *:nth-child(5) { animation-delay:0.25s; }

@@ -1,0 +1,5 @@
+﻿C:\Users\Administrator\MemoryAi\app\api\scene-config\route.ts
+C:\Users\Administrator\MemoryAi\app\api\ontology-state\route.ts
+C:\Users\Administrator\MemoryAi\src\components\splash-v6\LivingMemoryScreen.tsx
+C:\Users\Administrator\MemoryAi\app\api\multi-chat\route.ts
+C:\Users\Administrator\MemoryAi\app\api\emotion\history\route.ts
