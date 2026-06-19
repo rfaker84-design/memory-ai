@@ -1,9 +1,9 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 
-/* ════════════════════════════════════════════════════════
-   忆见 MemoryAI — Warm Healing Design System
-   暖色疗愈 · Apple极简 · 情绪记忆感
-   ════════════════════════════════════════════════════════ */
+/* 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
+   蹇嗚 MemoryAI 鈥?Warm Healing Design System
+   鏆栬壊鐤楁剤 路 Apple鏋佺畝 路 鎯呯华璁板繂鎰?
+   鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲 */
 
 :root {
   color-scheme: light;
@@ -80,7 +80,7 @@ body {
 
 button, a[role="button"], .clickable { min-height:44px; min-width:44px; }
 
-/* ── Animations ───────────────────────────────────────── */
+/* 鈹€鈹€ Animations 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 @keyframes spin-ring { to { transform: rotate(360deg); } }
 @keyframes breathe { 0%,100% { opacity:0.5; transform:scale(1); } 50% { opacity:0.9; transform:scale(1.04); } }
 @keyframes fade-up { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
@@ -90,3 +90,4 @@ button, a[role="button"], .clickable { min-height:44px; min-width:44px; }
 .stagger > *:nth-child(3) { animation-delay:0.15s; }
 .stagger > *:nth-child(4) { animation-delay:0.2s; }
 .stagger > *:nth-child(5) { animation-delay:0.25s; }
+

@@ -18,13 +18,14 @@ import {
   getTabState, setTabMode, subscribeTab, type TabMode,
 } from "../../src/core/tab/tab-store";
 import BottomTab from "../ui/BottomTab";
-import SoulSilhouette from "./SoulSilhouette";
+import HomeV3 from "./HomeV3";
 
 import {
   loadPersonality, savePersonality, transitionToTab,
   evolvePersonality, pickTabSpeech, TAB_PERSONAS,
   type EntityPersonality,
 } from "../../src/core/personality/entity-personality-core";
+import MemorySoulBody from "../memory/MemorySoulBody";
 
 /* ============================================================
    蹇嗚 MemoryAI 鈥?Single Dream Space / Four Tab States
@@ -213,7 +214,7 @@ function DreamScene({ entities, onEntityClick, tabMode, personalities }: {
             {/* Entities removed */}
 
       <CameraDrift tabMode={tabMode} />
-      {tabMode === 'home' && <group position={[0, -5, 0]} scale={[40, 40, 40]}><SoulSilhouette /></group>}
+      {/* Soul silhouette moved to DOM layer */}
       <EffectComposer>
         <Bloom luminanceThreshold={0.2} luminanceSmoothing={0.9} intensity={1.2} radius={0.5} mipmapBlur />
       </EffectComposer>
@@ -318,7 +319,7 @@ function HomeOverlay({ onLoginSuccess }: { onLoginSuccess: () => void }) {
         color: "#8a7060", fontSize: 13, fontWeight: 300,
         marginBottom: 40, textAlign: "center",
       }}>
-        每一次回来，都是重逢。?      </div>
+        每一次回来，都是重逢      </div>
 
       {/* Login card */}
       <div style={{
@@ -409,6 +410,63 @@ function HomeOverlay({ onLoginSuccess }: { onLoginSuccess: () => void }) {
    CHAT OVERLAY 鈥?bound to entity dialogue
    鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲 */
 
+
+
+/* TTS Play Button */
+function TtsPlayButton({ text }: { text: string }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  const handlePlay = async () => {
+    if (loading) return;
+    setLoading(true);
+    setError(false);
+    try {
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (data.audioUrl) {
+        const audio = new Audio(data.audioUrl);
+        audio.play().catch(() => setError(true));
+      } else {
+        setError(true);
+      }
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: "4px 0 0 4px" }}>
+      {error ? (
+        <span style={{ fontSize: 10, color: "rgba(255,100,100,0.5)", fontWeight: 300 }}>
+          Sound generation failed
+        </span>
+      ) : (
+        <button
+          onClick={handlePlay}
+          disabled={loading}
+          style={{
+            background: "none",
+            border: "none",
+            color: loading ? "rgba(255,210,166,0.2)" : "rgba(255,210,166,0.45)",
+            fontSize: 11, fontWeight: 300,
+            cursor: loading ? "default" : "pointer",
+            padding: 0,
+            letterSpacing: "0.04em",
+          }}
+        >
+          {loading ? "..." : "\u25B6 Play voice"}
+        </button>
+      )}
+    </div>
+  );
+}
 function ChatOverlay({ entity, onBack, personality }: {
   entity: { id: string; name: string };
   onBack: () => void;
@@ -460,7 +518,10 @@ function ChatOverlay({ entity, onBack, personality }: {
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "20px", display: "flex", flexDirection: "column", gap: 16 }}>
         {messages.map((m, i) => (
-          <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "80%", padding: "10px 18px", borderRadius: 18, background: m.role === "user" ? "rgba(255,210,166,0.08)" : "rgba(255,210,166,0.04)", color: "#FFF3E8", fontSize: 14, lineHeight: 1.7, fontWeight: 300 }}>{m.content}</div>
+          <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "80%" }}>
+            <div style={{ padding: "10px 18px", borderRadius: 18, background: m.role === "user" ? "rgba(255,210,166,0.08)" : "rgba(255,210,166,0.04)", color: "#FFF3E8", fontSize: 14, lineHeight: 1.7, fontWeight: 300 }}>{m.content}</div>
+            {m.role === "assistant" && <TtsPlayButton text={m.content} />}
+          </div>
         ))}
       </div>
       <div style={{ padding: "14px 18px", borderTop: "0.5px solid rgba(255,210,166,0.08)", display: "flex", gap: 8 }}>
@@ -541,30 +602,7 @@ function ProfileOverlay() {
    HOME LOGGED IN 鈥?post-splash entity selection
    鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲 */
 
-function HomeLoggedIn() {
-  return (
-    <div style={{
-      position: "absolute", inset: 0, zIndex: 10,
-      display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "flex-end",
-      padding: "0 32px 140px",
-      pointerEvents: "none",
-    }}>
-      <div style={{
-        color: "#FFD2A6", fontSize: 20, fontWeight: 300,
-        letterSpacing: "0.08em", marginBottom: 6,
-        textAlign: "center",
-      }}>
-        你的记忆世界
-      </div>
-      <div style={{
-        color: "#8a7060", fontSize: 12, fontWeight: 300,
-        marginBottom: 32, textAlign: "center",
-      }}>
-        每一次回来，都是重逢。?      </div>
-    </div>
-  );
-}
+
 
 export default function WorldShell() {
   const [loggedIn, setLoggedIn] = useState(false);
@@ -676,12 +714,20 @@ export default function WorldShell() {
         />
       </Canvas>
 
-      {/* Tab Overlays 鈥?no page routing, pure state */}
       {currentMode === "home" && !loggedIn && (
-        <HomeOverlay onLoginSuccess={() => setLoggedIn(true)} />
+        <>
+          {/* ═══ 记忆灵魂体 — 登录界面 empty 状态背景 ═══ */}
+          <div style={{
+            position: "absolute", inset: 0, zIndex: 5,
+            pointerEvents: "none",
+          }}>
+            <MemorySoulBody state="empty" />
+          </div>
+          <HomeOverlay onLoginSuccess={() => setLoggedIn(true)} />
+        </>
       )}
       {loggedIn && currentMode === "home" && (
-        <HomeLoggedIn />
+        <HomeV3 />
       )}
 
             {currentMode === "chat" && chatEntity && (
@@ -705,7 +751,7 @@ export default function WorldShell() {
           fontSize: 9, fontWeight: 300, color: "rgba(255,210,166,0.25)",
           letterSpacing: "0.04em",
         }}>
-          ICP备案号待填写
+          苏ICP备2026040056号
         </span>
       </div>
 
@@ -713,6 +759,17 @@ export default function WorldShell() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
 
 
 
