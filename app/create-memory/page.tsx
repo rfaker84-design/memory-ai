@@ -1,7 +1,51 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../src/lib/supabase";
+import { SoulAwakeningStage, stageText } from "./SoulAwakeningStage";
+import type { SoulStage } from "./SoulBody";
+import styles from "./create-memory.module.css";
+
+function progressForMaterials(materials: {
+  photo: boolean;
+  video: boolean;
+  voice: boolean;
+  story: boolean;
+}): SoulStage {
+  const { photo, video, voice, story } = materials;
+
+  if (photo && video && voice && story) return 100;
+  if (story) return 80;
+  if (voice) return 50;
+  if (video) return 30;
+  if (photo) return 10;
+  return 0;
+}
+
+function UploadCard({
+  title,
+  helper,
+  active,
+  children,
+}: {
+  title: string;
+  helper: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`${styles.uploadCard} ${active ? styles.uploadCardActive : ""}`}>
+      <div className={styles.uploadCardHeader}>
+        <div>
+          <p>{title}</p>
+          <span>{helper}</span>
+        </div>
+        <em>{active ? "已交给光" : "等待"}</em>
+      </div>
+      {children}
+    </div>
+  );
+}
 
 export default function CreateMemoryPage() {
   const [phone, setPhone] = useState("");
@@ -10,6 +54,7 @@ export default function CreateMemoryPage() {
   const [lifeStory, setLifeStory] = useState("");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [voiceFile, setVoiceFile] = useState<File | null>(null);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
   const [authorized, setAuthorized] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -23,6 +68,17 @@ export default function CreateMemoryPage() {
 
     setPhone(savedPhone);
   }, []);
+
+  const progress = useMemo<SoulStage>(
+    () =>
+      progressForMaterials({
+        photo: Boolean(photoFile),
+        video: Boolean(videoFile),
+        voice: Boolean(voiceFile),
+        story: lifeStory.trim().length > 0,
+      }),
+    [lifeStory, photoFile, videoFile, voiceFile]
+  );
 
   const uploadFile = async (url: string, file: File) => {
     const formData = new FormData();
@@ -64,16 +120,14 @@ export default function CreateMemoryPage() {
 
   const handleCreate = async () => {
     try {
-      if (!name.trim()) return alert("请输入姓名");
-      if (!relationship.trim()) return alert("请输入关系");
-      if (!lifeStory.trim()) return alert("请输入人生故事");
-      if (!authorized) return alert("请确认授权");
+      if (!name.trim()) return alert("请留下TA的称呼");
+      if (!relationship.trim()) return alert("请写下你和TA的关系");
+      if (!lifeStory.trim()) return alert("请写下一段关于TA的故事");
+      if (!authorized) return alert("请确认你拥有这些资料的授权");
 
       setLoading(true);
 
-      const photoUrl = photoFile
-        ? await uploadFile("/api/upload", photoFile)
-        : null;
+      const photoUrl = photoFile ? await uploadFile("/api/upload", photoFile) : null;
 
       const voiceUrl = voiceFile
         ? await uploadFile("/api/upload-voice", voiceFile)
@@ -102,7 +156,7 @@ export default function CreateMemoryPage() {
         return;
       }
 
-      alert("创建成功，数字人格资料已保存");
+      alert("唤醒资料已保存");
       window.location.href = "/memories";
     } catch (error) {
       console.error(error);
@@ -113,68 +167,113 @@ export default function CreateMemoryPage() {
   };
 
   return (
-    <main className="min-h-screen bg-neutral-50 px-6 py-12">
-      <div className="mx-auto max-w-2xl rounded-2xl bg-white p-8 shadow-sm">
-        <h1 className="mb-6 text-3xl font-bold">创建数字人格</h1>
+    <main className={styles.pageShell}>
+      <div className={styles.pageInner}>
+        <header className={styles.heroText}>
+          <p>创建数字生命</p>
+          <h1>把思念慢慢交给光</h1>
+        </header>
 
-        <input
-          className="mb-4 w-full rounded-lg border p-3"
-          placeholder="姓名"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
+        <SoulAwakeningStage progress={progress} />
 
-        <input
-          className="mb-4 w-full rounded-lg border p-3"
-          placeholder="关系，例如：父亲、母亲、爷爷"
-          value={relationship}
-          onChange={(e) => setRelationship(e.target.value)}
-        />
+        <section className={styles.progressPanel} aria-label="唤醒进度">
+          <div className={styles.progressMeta}>
+            <span>{progress}%</span>
+            <p>{stageText[progress]}</p>
+          </div>
+          <div className={styles.progressTrack}>
+            <div
+              className={styles.progressFill}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </section>
 
-        <textarea
-          className="mb-4 w-full rounded-lg border p-3"
-          rows={8}
-          placeholder="请尽量详细描述TA的性格、经历、说话方式、口头禅、习惯、价值观、与你之间的回忆。"
-          value={lifeStory}
-          onChange={(e) => setLifeStory(e.target.value)}
-        />
+        <section className={styles.identityCard}>
+          <label>
+            <span>TA的称呼</span>
+            <input
+              placeholder="例如：妈妈、外公、阿姐"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
+          <label>
+            <span>你们的关系</span>
+            <input
+              placeholder="例如：母亲、父亲、朋友"
+              value={relationship}
+              onChange={(e) => setRelationship(e.target.value)}
+            />
+          </label>
+        </section>
 
-        <div className="mb-4 rounded-xl border p-4">
-          <p className="mb-2 font-medium">上传照片</p>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) => setPhotoFile(e.target.files?.[0] || null)}
-          />
-        </div>
+        <section className={styles.uploadGrid}>
+          <UploadCard
+            title="上传照片"
+            helper="一张温柔的旧照就够了"
+            active={Boolean(photoFile)}
+          >
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => setPhotoFile(e.target.files?.[0] || null)}
+            />
+          </UploadCard>
 
-        <div className="mb-4 rounded-xl border p-4">
-          <p className="mb-2 font-medium">上传声音样本</p>
-          <p className="mb-3 text-sm text-neutral-500">
-            建议上传10秒以上清晰人声，后续用于声音克隆训练。
-          </p>
-          <input
-            type="file"
-            accept="audio/*"
-            onChange={(e) => setVoiceFile(e.target.files?.[0] || null)}
-          />
-        </div>
+          <UploadCard
+            title="上传声音"
+            helper="让一句熟悉的话回来"
+            active={Boolean(voiceFile)}
+          >
+            <input
+              type="file"
+              accept="audio/*"
+              onChange={(e) => setVoiceFile(e.target.files?.[0] || null)}
+            />
+          </UploadCard>
 
-        <label className="mb-6 flex gap-2 text-sm">
+          <UploadCard
+            title="写下故事"
+            helper="记下TA如何爱过这个世界"
+            active={lifeStory.trim().length > 0}
+          >
+            <textarea
+              rows={6}
+              placeholder="写下TA的性格、习惯、说话方式、口头禅，以及你最想留住的一段回忆。"
+              value={lifeStory}
+              onChange={(e) => setLifeStory(e.target.value)}
+            />
+          </UploadCard>
+
+          <UploadCard
+            title="上传视频"
+            helper="让身影在光里更清晰一点"
+            active={Boolean(videoFile)}
+          >
+            <input
+              type="file"
+              accept="video/*"
+              onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
+            />
+          </UploadCard>
+        </section>
+
+        <label className={styles.authorizeRow}>
           <input
             type="checkbox"
             checked={authorized}
             onChange={(e) => setAuthorized(e.target.checked)}
           />
-          我确认拥有相关照片、声音、故事和资料的合法授权
+          <span>我确认拥有相关照片、声音、故事和资料的合法授权</span>
         </label>
 
         <button
           onClick={handleCreate}
           disabled={loading}
-          className="w-full rounded-lg bg-black py-3 text-white disabled:opacity-50"
+          className={styles.createButton}
         >
-          {loading ? "正在创建数字人格..." : "创建数字人格"}
+          {loading ? "正在保存这束光..." : progress >= 100 ? "完成唤醒" : "继续创建"}
         </button>
       </div>
     </main>
