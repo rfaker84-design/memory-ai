@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useState } from "react";
@@ -6,14 +6,14 @@ import { useState } from "react";
 const navLinks = [
   { href: "/", label: "首页" },
   { href: "/about", label: "关于我们" },
-  { href: "#experience", label: "开始体验" },
+  { href: "/create-memory", label: "开始体验" },
 ];
 
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <header className="fixed top-0 right-0 left-0 z-50">
+    <header className="fixed top-0 right-0 left-0 z-40">
       <nav
         aria-label="主导航"
         className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5 lg:px-8"

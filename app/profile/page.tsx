@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import BottomNav from "@/components/BottomNav";
 import { supabase } from "../../src/lib/supabase";
 
 export default function ProfilePage() {
@@ -34,9 +35,7 @@ export default function ProfilePage() {
 
     if (!firstConfirm) return;
 
-    const secondConfirm = prompt(
-      "请输入你的手机号以确认删除全部数据"
-    );
+    const secondConfirm = prompt("请输入你的手机号以确认删除全部数据");
 
     if (secondConfirm !== phone) {
       alert("手机号不一致，已取消删除");
@@ -53,26 +52,12 @@ export default function ProfilePage() {
     const memoryIds = (memories || []).map((item) => item.id);
 
     if (memoryIds.length > 0) {
-      await supabase
-        .from("chat_messages")
-        .delete()
-        .in("memory_id", memoryIds);
-
-      await supabase
-        .from("timeline_events")
-        .delete()
-        .in("memory_id", memoryIds);
-
-      await supabase
-        .from("memories")
-        .delete()
-        .eq("user_phone", phone);
+      await supabase.from("chat_messages").delete().in("memory_id", memoryIds);
+      await supabase.from("timeline_events").delete().in("memory_id", memoryIds);
+      await supabase.from("memories").delete().eq("user_phone", phone);
     }
 
-    await supabase
-      .from("users_profile")
-      .delete()
-      .eq("phone", phone);
+    await supabase.from("users_profile").delete().eq("phone", phone);
 
     setDeleting(false);
 
@@ -82,51 +67,61 @@ export default function ProfilePage() {
     window.location.href = "/login";
   };
 
-  return (
-    <main className="min-h-screen bg-neutral-50 px-6 py-12">
-      <div className="mx-auto max-w-2xl rounded-2xl bg-white p-8 shadow-sm">
-        <h1 className="text-3xl font-bold">用户中心</h1>
+  const links = [
+    { label: "我的记忆体", href: "/memories" },
+    { label: "创建记忆体", href: "/create-memory" },
+    { label: "隐私声明", href: "/privacy" },
+    { label: "用户协议", href: "/terms" },
+  ];
 
-        <div className="mt-6 rounded-xl bg-neutral-100 p-4">
-          <p className="text-sm text-neutral-500">当前手机号</p>
-          <p className="mt-1 text-xl font-semibold">{phone}</p>
+  return (
+    <main className="relative min-h-screen overflow-hidden bg-[#050506] px-5 pb-28 pt-10 text-white">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_12%,rgba(255,225,190,0.13),transparent_32%),linear-gradient(180deg,#070707,#020203)]" />
+
+      <section className="relative z-10 mx-auto max-w-[430px]">
+        <p className="text-xs tracking-[0.4em] text-white/38">PROFILE</p>
+        <h1 className="mt-4 text-3xl font-light tracking-[0.18em]">我的</h1>
+
+        <div className="mt-8 rounded-[34px] border border-white/10 bg-white/[0.055] p-6 backdrop-blur-2xl">
+          <div className="h-16 w-16 rounded-full border border-white/15 bg-white/10" />
+          <h2 className="mt-5 text-xl font-light">忆见用户</h2>
+          <p className="mt-2 text-sm text-white/42">
+            {phone || "授权、隐私、安全与账号管理"}
+          </p>
         </div>
 
-        <div className="mt-8 flex flex-col gap-3">
-          <Link
-            href="/memories"
-            className="rounded-lg bg-black px-6 py-3 text-center text-white"
-          >
-            我的记忆体
-          </Link>
-
-          <Link
-            href="/create-memory"
-            className="rounded-lg bg-blue-600 px-6 py-3 text-center text-white"
-          >
-            创建记忆体
-          </Link>
+        <div className="mt-5 space-y-3">
+          {links.map((item) => (
+            <Link
+              key={item.label}
+              href={item.href}
+              className="flex h-14 items-center justify-between rounded-2xl border border-white/10 bg-white/[0.045] px-5 text-sm text-white/70 backdrop-blur-xl"
+            >
+              {item.label}
+              <span className="text-white/28">›</span>
+            </Link>
+          ))}
 
           <button
             onClick={logout}
-            className="rounded-lg bg-neutral-700 px-6 py-3 text-white"
+            className="flex h-14 w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.045] px-5 text-sm text-white/70 backdrop-blur-xl"
           >
             退出登录
+            <span className="text-white/28">›</span>
           </button>
 
           <button
             onClick={deleteAllData}
             disabled={deleting}
-            className="rounded-lg bg-red-600 px-6 py-3 text-white disabled:opacity-50"
+            className="flex h-14 w-full items-center justify-between rounded-2xl border border-red-400/20 bg-red-500/10 px-5 text-sm text-red-100/80 backdrop-blur-xl disabled:opacity-50"
           >
-            {deleting ? "删除中..." : "删除我的全部数据"}
+            {deleting ? "删除中..." : "删除与导出数据"}
+            <span className="text-red-100/30">›</span>
           </button>
         </div>
+      </section>
 
-        <p className="mt-8 text-sm leading-6 text-neutral-500">
-          删除数据后，你创建的记忆体、时间线和聊天记录将被清除，且无法恢复。
-        </p>
-      </div>
+      <BottomNav />
     </main>
   );
 }
