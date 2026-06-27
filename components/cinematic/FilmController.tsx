@@ -1,58 +1,31 @@
 ﻿"use client";
 
-import {useMemo, useState} from "react";
-import {
-  AWAKENING,
-  type CinematicState,
-  RESPONSE,
-  REUNION,
-  WAITING,
-} from "@/lib/cinematic/state";
+import BackgroundLayer from "@/components/cinematic/BackgroundLayer";
+import {type CinematicState, RESPONSE, WAITING} from "@/lib/cinematic/state";
 
-const FILMS: Record<CinematicState, string> = {
-  [WAITING]: "/films/waiting.mp4",
-  [RESPONSE]: "/films/response.mp4",
-  [AWAKENING]: "/films/awakening.mp4",
-  [REUNION]: "/films/reunion.mp4",
+type FilmControllerProps = {
+  state: CinematicState;
 };
 
-const NEXT_STATE: Partial<Record<CinematicState, CinematicState>> = {
-  [WAITING]: RESPONSE,
-  [RESPONSE]: AWAKENING,
-  [AWAKENING]: REUNION,
-};
+const RESPONSE_FILM_AVAILABLE = false;
 
-export default function FilmController() {
-  const [state, setState] = useState<CinematicState>(WAITING);
-  const src = useMemo(() => FILMS[state], [state]);
-  const loop = state === WAITING || state === AWAKENING;
+export default function FilmController({state}: FilmControllerProps) {
+  if (state === WAITING) {
+    return <BackgroundLayer />;
+  }
 
-  const handleEnded = () => {
-    const nextState = NEXT_STATE[state];
+  if (state === RESPONSE) {
+    return null;
+  }
 
-    if (nextState) {
-      setState(nextState);
-    }
-  };
+  return null;
+}
 
-  return (
-    <video
-      key={src}
-      src={src}
-      autoPlay
-      muted
-      playsInline
-      preload="auto"
-      loop={loop}
-      onEnded={handleEnded}
-      style={{
-        position: "absolute",
-        inset: 0,
-        width: "100%",
-        height: "100%",
-        objectFit: "cover",
-        backgroundColor: "#000000",
-      }}
-    />
-  );
+export function canEnterResponse() {
+  if (!RESPONSE_FILM_AVAILABLE) {
+    console.warn("response.mp4 missing");
+    return false;
+  }
+
+  return true;
 }
