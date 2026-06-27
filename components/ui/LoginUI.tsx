@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import Link from "next/link";
 import {useEffect, useState} from "react";
 
 type LoginUIProps = {
@@ -11,6 +12,8 @@ export default function LoginUI({onStart, onExitComplete}: LoginUIProps) {
   const [entered, setEntered] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [pressed, setPressed] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [agreed, setAgreed] = useState(false);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setEntered(true));
@@ -19,6 +22,17 @@ export default function LoginUI({onStart, onExitComplete}: LoginUIProps) {
   }, []);
 
   const handleStart = () => {
+    if (!phone.trim()) {
+      alert("请输入手机号");
+      return;
+    }
+
+    if (!agreed) {
+      alert("请先阅读并同意相关协议");
+      return;
+    }
+
+    window.localStorage.setItem("yijian_phone", phone.trim());
     setPressed(true);
 
     window.setTimeout(async () => {
@@ -68,6 +82,18 @@ export default function LoginUI({onStart, onExitComplete}: LoginUIProps) {
           padding: 24,
         }}
       >
+        <p
+          style={{
+            margin: "0 0 12px",
+            color: "rgba(248,238,212,0.48)",
+            fontSize: 12,
+            letterSpacing: "0.42em",
+            textAlign: "center",
+          }}
+        >
+          YIJIAN MEMORY
+        </p>
+
         <h1
           style={{
             margin: 0,
@@ -92,6 +118,8 @@ export default function LoginUI({onStart, onExitComplete}: LoginUIProps) {
         </p>
 
         <input
+          value={phone}
+          onChange={(event) => setPhone(event.target.value)}
           inputMode="tel"
           placeholder="请输入手机号"
           aria-label="请输入手机号"
@@ -132,23 +160,44 @@ export default function LoginUI({onStart, onExitComplete}: LoginUIProps) {
               : "opacity 800ms cubic-bezier(0.22,0.61,0.36,1) 220ms, transform 800ms cubic-bezier(0.22,0.61,0.36,1) 220ms",
           }}
         >
-          开始寻找
+          登录
         </button>
 
-        <p
+        <label
           style={{
             margin: "16px 0 0",
             color: "rgba(248,238,212,0.58)",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 8,
             fontSize: 12,
             lineHeight: 1.8,
-            textAlign: "center",
+            textAlign: "left",
             opacity: entered ? 1 : 0,
             transform: entered ? "translateY(0)" : "translateY(16px)",
             transition: "opacity 800ms cubic-bezier(0.22,0.61,0.36,1) 320ms, transform 800ms cubic-bezier(0.22,0.61,0.36,1) 320ms",
           }}
         >
-          我已阅读并同意《用户协议》和《隐私政策》
-        </p>
+          <input
+            type="checkbox"
+            checked={agreed}
+            onChange={(event) => setAgreed(event.target.checked)}
+            style={{
+              marginTop: 5,
+              accentColor: "#F8EED4",
+            }}
+          />
+          <span>
+            我已阅读并同意
+            <Link href="/terms" style={{color: "rgba(248,238,212,0.78)", textDecoration: "underline"}}>
+              《用户协议》
+            </Link>
+            和
+            <Link href="/privacy" style={{color: "rgba(248,238,212,0.78)", textDecoration: "underline"}}>
+              《隐私政策》
+            </Link>
+          </span>
+        </label>
       </div>
     </section>
   );

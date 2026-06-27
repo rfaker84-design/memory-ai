@@ -4,9 +4,13 @@ import {useCallback, useEffect, useRef} from "react";
 
 type BackgroundLayerProps = {
   src?: string;
+  poster?: string;
 };
 
-export default function BackgroundLayer({src = "/films/waiting.mp4"}: BackgroundLayerProps) {
+export default function BackgroundLayer({
+  src = "/films/waiting.mp4",
+  poster = "/experience/waiting-preview.jpg",
+}: BackgroundLayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const playIfPaused = useCallback(() => {
@@ -43,6 +47,7 @@ export default function BackgroundLayer({src = "/films/waiting.mp4"}: Background
     <video
       ref={videoRef}
       src={src}
+      poster={poster}
       autoPlay
       muted
       playsInline
@@ -56,7 +61,8 @@ export default function BackgroundLayer({src = "/films/waiting.mp4"}: Background
         width: "100vw",
         height: "100vh",
         objectFit: "cover",
-        background: "#000000",
+        background:
+          "radial-gradient(circle at 50% 42%, rgba(248,238,212,0.16), transparent 34%), linear-gradient(180deg, #08090d 0%, #06070a 56%, #090807 100%)",
       }}
     />
   );
