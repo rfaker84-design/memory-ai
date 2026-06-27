@@ -57,16 +57,26 @@ export default function CreateMemoryPage() {
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [authorized, setAuthorized] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [authMode, setAuthMode] = useState("");
+  const [entered, setEntered] = useState(false);
 
   useEffect(() => {
     const savedPhone = localStorage.getItem("yijian_phone");
+    const savedAuthMode = localStorage.getItem("yijian_auth_mode");
 
-    if (!savedPhone) {
+    setAuthMode(savedAuthMode || (savedPhone ? "phone" : ""));
+
+    if (!savedPhone && savedAuthMode !== "guest") {
       window.location.href = "/login";
       return;
     }
 
-    setPhone(savedPhone);
+    if (savedPhone) {
+      setPhone(savedPhone);
+    }
+
+    const frame = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   const progress = useMemo<SoulStage>(
@@ -118,8 +128,18 @@ export default function CreateMemoryPage() {
     }
   };
 
+  const requireFullLogin = () => {
+    if (authMode === "guest" || !phone) {
+      alert("请先登录后使用完整功能");
+      return false;
+    }
+
+    return true;
+  };
+
   const handleCreate = async () => {
     try {
+      if (!requireFullLogin()) return;
       if (!name.trim()) return alert("请留下TA的称呼");
       if (!relationship.trim()) return alert("请写下你和TA的关系");
       if (!lifeStory.trim()) return alert("请写下一段关于TA的故事");
@@ -167,7 +187,7 @@ export default function CreateMemoryPage() {
   };
 
   return (
-    <main className={styles.pageShell}>
+    <main className={`${styles.pageShell} ${entered ? styles.pageShellEntered : ""}`}>
       <div className={styles.pageInner}>
         <header className={styles.heroText}>
           <p>创建数字生命</p>
@@ -279,3 +299,6 @@ export default function CreateMemoryPage() {
     </main>
   );
 }
+
+
+

@@ -21,7 +21,20 @@ export default function LoginUI({onStart, onExitComplete}: LoginUIProps) {
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  const handleStart = () => {
+  const leaveToCreate = async () => {
+    const canLeave = (await onStart?.()) ?? true;
+
+    if (!canLeave) {
+      return;
+    }
+
+    setLeaving(true);
+    window.setTimeout(() => {
+      onExitComplete?.();
+    }, 1050);
+  };
+
+  const handlePhoneLogin = () => {
     if (!phone.trim()) {
       alert("请输入手机号");
       return;
@@ -33,149 +46,219 @@ export default function LoginUI({onStart, onExitComplete}: LoginUIProps) {
     }
 
     window.localStorage.setItem("yijian_phone", phone.trim());
+    window.localStorage.setItem("yijian_auth_mode", "phone");
     setPressed(true);
 
-    window.setTimeout(async () => {
+    window.setTimeout(() => {
       setPressed(false);
-      const canLeave = (await onStart?.()) ?? true;
-
-      if (!canLeave) {
-        return;
-      }
-
-      setLeaving(true);
-      window.setTimeout(() => {
-        onExitComplete?.();
-      }, 500);
+      void leaveToCreate();
     }, 120);
   };
 
+  const handleWechatLogin = () => {
+    alert("微信登录即将开放");
+  };
+
+  const handleGuest = () => {
+    window.localStorage.setItem("yijian_auth_mode", "guest");
+    window.localStorage.removeItem("yijian_phone");
+    void leaveToCreate();
+  };
+
+  const baseControlTransition =
+    "opacity 900ms cubic-bezier(0.22,1,0.36,1), transform 900ms cubic-bezier(0.22,1,0.36,1)";
+
   return (
     <section
+      aria-label="忆见登录"
       style={{
         position: "fixed",
-        left: 24,
-        right: 24,
-        bottom: "calc(env(safe-area-inset-bottom) + 64px)",
+        inset: 0,
         zIndex: 10,
-        maxWidth: 390,
-        margin: "0 auto",
-        opacity: entered && !leaving ? 1 : 0,
-        transform: leaving
-          ? "translateY(-12px) scale(0.98)"
-          : entered
-            ? "translateY(0) scale(1)"
-            : "translateY(30px) scale(0.97)",
-        filter: entered && !leaving ? "blur(0)" : "blur(20px)",
-        transition: leaving
-          ? "opacity 500ms cubic-bezier(0.22,0.61,0.36,1), transform 500ms cubic-bezier(0.22,0.61,0.36,1), filter 500ms cubic-bezier(0.22,0.61,0.36,1)"
-          : "opacity 800ms cubic-bezier(0.22,0.61,0.36,1), transform 800ms cubic-bezier(0.22,0.61,0.36,1), filter 800ms cubic-bezier(0.22,0.61,0.36,1)",
+        pointerEvents: leaving ? "none" : "auto",
+        opacity: leaving ? 0 : 1,
+        transform: leaving ? "translateY(-12px)" : "translateY(0)",
+        transition:
+          "opacity 1050ms cubic-bezier(0.22,1,0.36,1), transform 1050ms cubic-bezier(0.22,1,0.36,1)",
       }}
     >
       <div
         style={{
-          background: "rgba(5,5,7,0.38)",
-          border: "1px solid rgba(248,238,212,0.22)",
-          borderRadius: 32,
-          backdropFilter: "blur(20px)",
-          WebkitBackdropFilter: "blur(20px)",
-          padding: 24,
+          position: "absolute",
+          top: "11vh",
+          left: 24,
+          right: 24,
+          textAlign: "center",
+          opacity: entered ? 1 : 0,
+          transform: entered ? "translateY(0)" : "translateY(18px)",
+          transition: baseControlTransition,
         }}
       >
-        <p
-          style={{
-            margin: "0 0 12px",
-            color: "rgba(248,238,212,0.48)",
-            fontSize: 12,
-            letterSpacing: "0.42em",
-            textAlign: "center",
-          }}
-        >
-          YIJIAN MEMORY
-        </p>
-
         <h1
           style={{
             margin: 0,
             color: "#F8EED4",
-            fontSize: 32,
+            fontSize: 42,
             fontWeight: 500,
-            letterSpacing: "0.08em",
-            textAlign: "center",
+            letterSpacing: "0.14em",
+            textShadow: "0 0 26px rgba(248,238,212,0.22)",
           }}
         >
           忆见
         </h1>
         <p
           style={{
-            margin: "10px 0 22px",
+            margin: "14px 0 0",
+            color: "rgba(248,238,212,0.48)",
+            fontSize: 12,
+            letterSpacing: "0.42em",
+          }}
+        >
+          YIJIAN MEMORY
+        </p>
+        <p
+          style={{
+            margin: "12px 0 0",
             color: "rgba(248,238,212,0.72)",
             fontSize: 15,
-            textAlign: "center",
+            letterSpacing: "0.04em",
           }}
         >
           再次遇见思念的人
         </p>
+      </div>
 
-        <input
-          value={phone}
-          onChange={(event) => setPhone(event.target.value)}
-          inputMode="tel"
-          placeholder="请输入手机号"
-          aria-label="请输入手机号"
+      <div
+        style={{
+          position: "absolute",
+          left: "7%",
+          right: "7%",
+          bottom: "calc(env(safe-area-inset-bottom) + 38px)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          opacity: entered ? 1 : 0,
+          transform: entered ? "translateY(0)" : "translateY(18px)",
+          transition: `${baseControlTransition} 120ms`,
+        }}
+      >
+        <div
           style={{
             width: "100%",
             height: 52,
             borderRadius: 999,
             background: "rgba(0,0,0,0.28)",
-            border: "1px solid rgba(248,238,212,0.18)",
-            color: "#F8EED4",
-            outline: "none",
-            padding: "0 18px",
-            fontSize: 16,
-            opacity: entered ? 1 : 0,
-            transform: entered ? "translateY(0)" : "translateY(16px)",
-            transition: "opacity 800ms cubic-bezier(0.22,0.61,0.36,1) 120ms, transform 800ms cubic-bezier(0.22,0.61,0.36,1) 120ms",
+            border: "1px solid rgba(248,238,212,0.22)",
+            display: "flex",
+            alignItems: "center",
+            overflow: "hidden",
           }}
-        />
+        >
+          <span
+            style={{
+              width: 58,
+              textAlign: "center",
+              color: "rgba(248,238,212,0.72)",
+              fontSize: 15,
+            }}
+          >
+            +86
+          </span>
+          <span
+            aria-hidden="true"
+            style={{
+              width: 1,
+              height: 20,
+              background: "rgba(248,238,212,0.22)",
+            }}
+          />
+          <input
+            value={phone}
+            onChange={(event) => setPhone(event.target.value.replace(/\D/g, "").slice(0, 11))}
+            inputMode="tel"
+            placeholder="请输入手机号"
+            aria-label="请输入手机号"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              height: "100%",
+              border: 0,
+              background: "transparent",
+              color: "#F8EED4",
+              outline: "none",
+              padding: "0 18px",
+              fontSize: 16,
+            }}
+          />
+        </div>
 
         <button
           type="button"
-          onClick={handleStart}
+          onClick={handlePhoneLogin}
           style={{
             width: "100%",
             height: 52,
             marginTop: 14,
             border: 0,
             borderRadius: 999,
-            background: "#F8EED4",
-            color: "#1A1A1A",
+            background: "linear-gradient(135deg, #FFF1C9 0%, #E7BE78 52%, #B98748 100%)",
+            color: "#120E09",
             fontSize: 16,
-            fontWeight: 500,
+            fontWeight: 600,
             cursor: "pointer",
-            opacity: entered ? 1 : 0,
-            transform: `${entered ? "translateY(0)" : "translateY(16px)"} ${pressed ? "scale(0.97)" : "scale(1)"}`,
-            transition: pressed
-              ? "transform 120ms ease"
-              : "opacity 800ms cubic-bezier(0.22,0.61,0.36,1) 220ms, transform 800ms cubic-bezier(0.22,0.61,0.36,1) 220ms",
+            transform: pressed ? "scale(0.98)" : "scale(1)",
+            boxShadow: "0 14px 42px rgba(204,151,78,0.18)",
+            transition: "transform 120ms ease",
           }}
         >
           登录
         </button>
 
+        <button
+          type="button"
+          onClick={handleWechatLogin}
+          style={{
+            width: "100%",
+            height: 48,
+            marginTop: 12,
+            borderRadius: 999,
+            border: "1px solid rgba(248,238,212,0.18)",
+            background: "rgba(0,0,0,0.22)",
+            color: "rgba(248,238,212,0.76)",
+            fontSize: 15,
+            cursor: "pointer",
+          }}
+        >
+          微信登录
+        </button>
+
+        <button
+          type="button"
+          onClick={handleGuest}
+          style={{
+            marginTop: 13,
+            border: 0,
+            background: "transparent",
+            color: "rgba(248,238,212,0.42)",
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          跳过登录
+        </button>
+
         <label
           style={{
-            margin: "16px 0 0",
+            width: "100%",
+            margin: "18px 0 0",
             color: "rgba(248,238,212,0.58)",
             display: "flex",
             alignItems: "flex-start",
+            justifyContent: "center",
             gap: 8,
             fontSize: 12,
             lineHeight: 1.8,
             textAlign: "left",
-            opacity: entered ? 1 : 0,
-            transform: entered ? "translateY(0)" : "translateY(16px)",
-            transition: "opacity 800ms cubic-bezier(0.22,0.61,0.36,1) 320ms, transform 800ms cubic-bezier(0.22,0.61,0.36,1) 320ms",
           }}
         >
           <input
