@@ -1,0 +1,63 @@
+﻿# Pages and Routes
+
+Generated from `app/` by scanning Next.js route files.
+
+| Route | File | Kind |
+|---|---|---|
+| `/bond` | `app/(bond)/bond/page.tsx` | `page` |
+| `/continuity` | `app/(continuity)/continuity/page.tsx` | `page` |
+| `/dialogue` | `app/(dialogue)/dialogue/page.tsx` | `page` |
+| `/memory` | `app/(memory)/memory/page.tsx` | `page` |
+| `/about` | `app/about/page.tsx` | `page` |
+| `/admin/analytics` | `app/admin/analytics/page.tsx` | `page` |
+| `/admin/dashboard` | `app/admin/dashboard/page.tsx` | `page` |
+| `/admin` | `app/admin/page.tsx` | `page` |
+| `/admin/revenue` | `app/admin/revenue/page.tsx` | `page` |
+| `/admin/viral` | `app/admin/viral/page.tsx` | `page` |
+| `/app-store-preview` | `app/app-store-preview/page.tsx` | `page` |
+| `/authorization` | `app/authorization/page.tsx` | `page` |
+| `/avatar/[id]` | `app/avatar/[id]/page.tsx` | `page` |
+| `/avatar-center` | `app/avatar-center/page.tsx` | `page` |
+| `/consciousness/[id]` | `app/consciousness/[id]/page.tsx` | `page` |
+| `/create-memory` | `app/create-memory/page.tsx` | `page` |
+| `/` | `app/globals.css` | `globals` |
+| `/heirloom/[id]` | `app/heirloom/[id]/page.tsx` | `page` |
+| `/infinite/[id]` | `app/infinite/[id]/page.tsx` | `page` |
+| `/landing` | `app/landing/page.tsx` | `page` |
+| `/` | `app/layout.tsx` | `layout` |
+| `/lib` | `app/lib/ai-gateway.ts` | `ai-gateway` |
+| `/lib` | `app/lib/avatar-providers.ts` | `avatar-providers` |
+| `/lib` | `app/lib/commerce-balance.ts` | `commerce-balance` |
+| `/lib` | `app/lib/emotion-flow.ts` | `emotion-flow` |
+| `/lib` | `app/lib/motion.ts` | `motion` |
+| `/lib` | `app/lib/openai.ts` | `openai` |
+| `/lib` | `app/lib/persona-stability.ts` | `persona-stability` |
+| `/lib` | `app/lib/space-motion.ts` | `space-motion` |
+| `/lib` | `app/lib/tts-providers.ts` | `tts-providers` |
+| `/lib` | `app/lib/user-journey.ts` | `user-journey` |
+| `/living-memory/[id]` | `app/living-memory/[id]/page.tsx` | `page` |
+| `/login` | `app/login/page.tsx` | `page` |
+| `/memories/[id]` | `app/memories/[id]/page.tsx` | `page` |
+| `/memories/[id]` | `app/memories/[id]/Untitled` | `Untitled` |
+| `/memory/[id]` | `app/memory/[id]/page.tsx` | `page` |
+| `/memory-chat/[id]` | `app/memory-chat/[id]/page.tsx` | `page` |
+| `/memory-network` | `app/memory-network/page.tsx` | `page` |
+| `/memory-room/[id]` | `app/memory-room/[id]/page.tsx` | `page` |
+| `/memory-room` | `app/memory-room/page.tsx` | `page` |
+| `/memory-world` | `app/memory-world/page.tsx` | `page` |
+| `/mind/[id]` | `app/mind/[id]/page.tsx` | `page` |
+| `/onboarding` | `app/onboarding/page.tsx` | `page` |
+| `/ontology/[id]` | `app/ontology/[id]/page.tsx` | `page` |
+| `/` | `app/page.tsx` | `page` |
+| `/privacy` | `app/privacy/page.tsx` | `page` |
+| `/report` | `app/report/page.tsx` | `page` |
+| `/settings/companion` | `app/settings/companion/page.tsx` | `page` |
+| `/share/[id]` | `app/share/[id]/page.tsx` | `page` |
+| `/share/[id]` | `app/share/[id]/ShareClient.tsx` | `ShareClient` |
+| `/signup` | `app/signup/page.tsx` | `page` |
+| `/splash` | `app/splash/page.tsx` | `page` |
+| `/splash-3d` | `app/splash-3d/page.tsx` | `page` |
+| `/terms` | `app/terms/page.tsx` | `page` |
+| `/timeline/[id]` | `app/timeline/[id]/page.tsx` | `page` |
+| `/universe` | `app/universe/page.tsx` | `page` |
+| `/voice-chat/[id]` | `app/voice-chat/[id]/page.tsx` | `page` |
