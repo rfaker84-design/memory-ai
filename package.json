@@ -9,6 +9,9 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
+    "@react-three/postprocessing": "^3.0.4",
     "@supabase/supabase-js": "^2.107.0",
     "cos-nodejs-sdk-v5": "^2.15.4",
     "framer-motion": "^12.42.2",
@@ -18,7 +21,9 @@
     "openai": "^6.42.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "tencentcloud-sdk-nodejs-tts": "^4.1.237"
+    "tencentcloud-sdk-nodejs-tts": "^4.1.237",
+    "three": "^0.185.1",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

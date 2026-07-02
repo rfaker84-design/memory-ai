@@ -1,5 +1,4 @@
-@import '../src/modules/life-creation/life-creation-stage.css';
-@import "tailwindcss";
+﻿@import "tailwindcss";
 
 @theme inline {
   --color-cream: #faf7f2;
@@ -35,3 +34,4 @@ body {
   background-color: var(--color-amber-soft);
   color: var(--color-charcoal);
 }
+

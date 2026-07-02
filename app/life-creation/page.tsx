@@ -1,5 +1,5 @@
-﻿import { LifeCreationStage } from "@/src/modules/life-creation/LifeCreationStage";
+﻿import { PresenceStage } from "@/src/engine/presence/core/PresenceStage";
 
 export default function LifeCreationPage() {
-  return <LifeCreationStage />;
+  return <PresenceStage />;
 }
