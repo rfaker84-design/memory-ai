@@ -1,3 +1,4 @@
+@import '../src/modules/life-creation/life-creation-stage.css';
 @import "tailwindcss";
 
 @theme inline {
