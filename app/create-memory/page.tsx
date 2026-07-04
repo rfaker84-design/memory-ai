@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "../../src/lib/supabase";
 import { cameraFloat, cameraFloatInitial, uiReveal, uiRevealInitial, spaceTiming } from "../lib/space-motion";
 import { useToast } from "../../components/toast";
 
@@ -85,37 +84,34 @@ const router = useRouter();
       const speechStyle = profileData.speech_style || "";
       const personalityTags = profileData.tags || [];
 
-      const { error } = await supabase.from("memories").insert([{
-        user_phone: phone,
-        name: name.trim(),
-        relationship: relationship.trim(),
-        photo_url: photoUrl || null,
-        life_story: memorableStory,
-        catch_phrases: catchPhrases,
-        personality_profile: personalityProfile,
-        speech_style: speechStyle,
-        personality_tags: personalityTags,
-      }]);
-
-      if (error) throw new Error(error.message);
-
-      // Save fragments
       const fragments = [
-        { source_type: "catch_phrase", content: catchPhrases },
-        { source_type: "habit", content: habits },
-        { source_type: "anger_style", content: angerStyle },
-        { source_type: "comfort_style", content: comfortStyle },
-        { source_type: "story", content: memorableStory },
+        { sourceType: "catch_phrase", content: catchPhrases },
+        { sourceType: "habit", content: habits },
+        { sourceType: "anger_style", content: angerStyle },
+        { sourceType: "comfort_style", content: comfortStyle },
+        { sourceType: "story", content: memorableStory },
       ].filter(f => f.content.trim());
 
-      if (fragments.length > 0) {
-        const memoryRes = await supabase.from("memories").select("id").eq("user_phone", phone).order("created_at", { ascending: false }).limit(1).single();
-        const memoryId = memoryRes.data?.id;
-        if (memoryId) {
-          await supabase.from("memory_fragments").insert(
-            fragments.map(f => ({ memory_id: memoryId, ...f }))
-          );
-        }
+      const createMemoryRes = await fetch("/api/memories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: phone,
+          name: name.trim(),
+          relationship: relationship.trim(),
+          photo_url: photoUrl || null,
+          life_story: memorableStory,
+          catch_phrases: catchPhrases,
+          personality_profile: personalityProfile,
+          speech_style: speechStyle,
+          personality_tags: personalityTags,
+          fragments,
+        }),
+      });
+
+      if (!createMemoryRes.ok) {
+        const createMemoryData = await createMemoryRes.json();
+        throw new Error(createMemoryData.error || "创建失败");
       }
 
       router.push("/");

@@ -41,7 +41,24 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { userId, name, relationship } = body;
+    const userId = body.userId ?? body.user_phone;
+    const {
+      name,
+      relationship,
+      lifeStory,
+      life_story,
+      personalityProfile,
+      personality_profile,
+      speechStyle,
+      speech_style,
+      catchPhrases,
+      catch_phrases,
+      photoUrl,
+      photo_url,
+      personalityTags,
+      personality_tags,
+      fragments,
+    } = body;
 
     if (!userId || !name) {
       return NextResponse.json(
@@ -55,6 +72,13 @@ export async function POST(req: NextRequest) {
       userId,
       name,
       relationship: relationship ?? "",
+      lifeStory: lifeStory ?? life_story ?? null,
+      personalityProfile: personalityProfile ?? personality_profile ?? null,
+      speechStyle: speechStyle ?? speech_style ?? null,
+      catchPhrases: catchPhrases ?? catch_phrases ?? null,
+      photoUrl: photoUrl ?? photo_url ?? null,
+      personalityTags: personalityTags ?? personality_tags ?? null,
+      fragments,
     });
 
     try {

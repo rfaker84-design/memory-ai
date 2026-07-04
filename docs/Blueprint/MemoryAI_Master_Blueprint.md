@@ -1,4 +1,4 @@
-﻿# MemoryAI Master Blueprint
+# MemoryAI Master Blueprint
 
 ## 1. Project Vision
 (TODO)
@@ -450,5 +450,17 @@ No final commercial provider selection made.
 Volc/Ark integration pending.
 
 Volc BigTTS integration pending.
+
+Architecture Freeze unchanged.
+
+2026-07
+
+Create Memory Architecture Controlled Rewire completed.
+
+Create Memory UI now creates memories through app/api/memories route.
+
+Memory creation route uses frozen MemoryService / MemoryRepository / MemorySupabaseDataSource architecture.
+
+Create Memory page no longer imports Supabase client or writes directly to Supabase.
 
 Architecture Freeze unchanged.

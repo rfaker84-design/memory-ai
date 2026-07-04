@@ -12,6 +12,8 @@ type MemoryRow = {
   personality_profile: string | null;
   speech_style: string | null;
   catch_phrases: string | null;
+  photo_url: string | null;
+  personality_tags: string[] | string | null;
   birth_year: number | null;
   death_year: number | null;
   values_belief: string | null;
@@ -21,6 +23,7 @@ type MemoryRow = {
 const MEMORY_SELECT =
   "id,user_phone,name,relationship,created_at," +
   "life_story,personality_profile,speech_style,catch_phrases," +
+  "photo_url,personality_tags," +
   "birth_year,death_year,values_belief,personality_type";
 
 const toMemory = (row: MemoryRow): Memory => ({
@@ -34,6 +37,8 @@ const toMemory = (row: MemoryRow): Memory => ({
   personalityProfile: row.personality_profile ?? undefined,
   speechStyle: row.speech_style ?? undefined,
   catchPhrases: row.catch_phrases ?? undefined,
+  photoUrl: row.photo_url ?? undefined,
+  personalityTags: row.personality_tags ?? undefined,
   birthYear: row.birth_year ?? undefined,
   deathYear: row.death_year ?? undefined,
   valuesBelief: row.values_belief ?? undefined,
@@ -44,6 +49,26 @@ const toCreateRow = (memory: CreateMemoryInput) => ({
   user_phone: memory.userId,
   name: memory.name,
   relationship: memory.relationship,
+  ...(memory.lifeStory !== undefined ? { life_story: memory.lifeStory } : {}),
+  ...(memory.personalityProfile !== undefined
+    ? { personality_profile: memory.personalityProfile }
+    : {}),
+  ...(memory.speechStyle !== undefined ? { speech_style: memory.speechStyle } : {}),
+  ...(memory.catchPhrases !== undefined
+    ? { catch_phrases: memory.catchPhrases }
+    : {}),
+  ...(memory.photoUrl !== undefined ? { photo_url: memory.photoUrl } : {}),
+  ...(memory.personalityTags !== undefined
+    ? { personality_tags: memory.personalityTags }
+    : {}),
+  ...(memory.birthYear !== undefined ? { birth_year: memory.birthYear } : {}),
+  ...(memory.deathYear !== undefined ? { death_year: memory.deathYear } : {}),
+  ...(memory.valuesBelief !== undefined
+    ? { values_belief: memory.valuesBelief }
+    : {}),
+  ...(memory.personalityType !== undefined
+    ? { personality_type: memory.personalityType }
+    : {}),
 });
 
 const toUpdateRow = (memory: UpdateMemoryInput) => ({
@@ -51,6 +76,26 @@ const toUpdateRow = (memory: UpdateMemoryInput) => ({
   ...(memory.name !== undefined ? { name: memory.name } : {}),
   ...(memory.relationship !== undefined
     ? { relationship: memory.relationship }
+    : {}),
+  ...(memory.lifeStory !== undefined ? { life_story: memory.lifeStory } : {}),
+  ...(memory.personalityProfile !== undefined
+    ? { personality_profile: memory.personalityProfile }
+    : {}),
+  ...(memory.speechStyle !== undefined ? { speech_style: memory.speechStyle } : {}),
+  ...(memory.catchPhrases !== undefined
+    ? { catch_phrases: memory.catchPhrases }
+    : {}),
+  ...(memory.photoUrl !== undefined ? { photo_url: memory.photoUrl } : {}),
+  ...(memory.personalityTags !== undefined
+    ? { personality_tags: memory.personalityTags }
+    : {}),
+  ...(memory.birthYear !== undefined ? { birth_year: memory.birthYear } : {}),
+  ...(memory.deathYear !== undefined ? { death_year: memory.deathYear } : {}),
+  ...(memory.valuesBelief !== undefined
+    ? { values_belief: memory.valuesBelief }
+    : {}),
+  ...(memory.personalityType !== undefined
+    ? { personality_type: memory.personalityType }
     : {}),
 });
 
@@ -66,7 +111,28 @@ export class MemorySupabaseDataSource implements MemoryDataSource {
       throw error;
     }
 
-    return toMemory(data as unknown as MemoryRow);
+    const createdMemory = toMemory(data as unknown as MemoryRow);
+    const fragments = memory.fragments?.filter((fragment) =>
+      fragment.content.trim()
+    );
+
+    if (fragments && fragments.length > 0) {
+      const { error: fragmentsError } = await supabase
+        .from("memory_fragments")
+        .insert(
+          fragments.map((fragment) => ({
+            memory_id: createdMemory.id,
+            source_type: fragment.sourceType,
+            content: fragment.content,
+          }))
+        );
+
+      if (fragmentsError) {
+        throw fragmentsError;
+      }
+    }
+
+    return createdMemory;
   }
 
   async findById(id: string): Promise<Memory | null> {

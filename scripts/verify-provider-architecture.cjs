@@ -1,9 +1,24 @@
-﻿const fs = require("fs");
+const fs = require("fs");
 const path = require("path");
 
 const repoRoot = path.resolve(__dirname, "..");
 
 const checks = [
+  {
+    file: "app/create-memory/page.tsx",
+    forbidden: [
+      "src/lib/supabase",
+      "supabase.from",
+      '.from("memories")',
+      '.from(\"memories\")',
+    ],
+    required: ["/api/memories", "fetch"],
+  },
+  {
+    file: "app/api/memories/route.ts",
+    forbidden: [],
+    required: ["MemoryService", "MemoryRepository", "MemorySupabaseDataSource", "createMemory"],
+  },
   {
     file: "app/api/memory-chat/route.ts",
     forbidden: [
