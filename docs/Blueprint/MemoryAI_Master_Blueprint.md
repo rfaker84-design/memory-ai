@@ -464,3 +464,15 @@ Memory creation route uses frozen MemoryService / MemoryRepository / MemorySupab
 Create Memory page no longer imports Supabase client or writes directly to Supabase.
 
 Architecture Freeze unchanged.
+
+2026-07
+
+Sprint13B Motion Runtime Foundation completed.
+
+Unified Motion Runtime foundation created under `src/motion/`.
+
+Runtime supports requestAnimationFrame clock, scroll progress, scroll velocity, reduced motion, press feedback, reveal baseline, and dependency-free spring primitives.
+
+No page integration performed.
+
+No UI, API, database, deployment, package, GSAP, Lenis, or Three.js changes made.
