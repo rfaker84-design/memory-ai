@@ -418,3 +418,21 @@ V1 平台架构总验收文档创建完成。
 
 V1 平台架构冻结声明创建完成。
 
+2026-07
+
+## MemoryAI Project Governance Baseline
+
+状态：ACTIVE
+
+文档：
+
+- `docs/Governance/MEMORYAI_PROJECT_CONTEXT.md`
+- `docs/Governance/MEMORYAI_DESIGN_SYSTEM.md`
+- `docs/Governance/MEMORYAI_MOTION_SYSTEM.md`
+- `docs/Governance/MEMORYAI_ENGINEERING_RULES.md`
+
+AI Coding Agent Entry：
+
+- `AGENTS.md`
+
+Architecture Freeze：UNCHANGED
