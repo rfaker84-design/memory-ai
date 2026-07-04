@@ -50,7 +50,7 @@ export class MemoryContextBuilder {
       );
     }
 
-    // TODO: load fragments and timeline from their services
+    const routeContext = input.routeContext;
 
     let recentMessages: { role: string; content: string }[] = [];
 
@@ -62,8 +62,12 @@ export class MemoryContextBuilder {
         role: m.role,
         content: m.content,
       }));
+
+      if (recentMessages.length === 0 && routeContext?.recentMessages) {
+        recentMessages = routeContext.recentMessages;
+      }
     } catch {
-      // Keep recentMessages as [] — safe degradation
+      recentMessages = routeContext?.recentMessages ?? [];
     }
 
     // Emotion analysis — safe degradation on failure
@@ -115,16 +119,19 @@ export class MemoryContextBuilder {
       userId: memory.userId,
       sessionId: input.sessionId,
       userMessage: input.userMessage,
-      memoryName: memory.name,
-      relationship: memory.relationship,
-      lifeStory: memory.lifeStory,
-      speechStyle: memory.speechStyle,
+      memoryName: routeContext?.memoryName || memory.name,
+      relationship: routeContext?.relationship || memory.relationship,
+      lifeStory: routeContext?.lifeStory ?? memory.lifeStory,
+      speechStyle: routeContext?.speechStyle ?? memory.speechStyle,
+      personalityProfile:
+        routeContext?.personalityProfile ?? memory.personalityProfile,
+      catchPhrases: routeContext?.catchPhrases ?? memory.catchPhrases,
       birthYear: memory.birthYear,
       deathYear: memory.deathYear,
       valuesBelief: memory.valuesBelief,
       personalityType: memory.personalityType,
-      fragments: [],
-      timeline: [],
+      fragments: routeContext?.fragments ?? [],
+      timeline: routeContext?.timeline ?? [],
       history: [],
       recentMessages,
       emotion,

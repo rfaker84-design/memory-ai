@@ -5,6 +5,7 @@ import { MockLLMProvider } from "../llm/mock-llm-provider";
 import { OpenAILLMProvider } from "../llm/openai-llm-provider";
 import { TTSAIProviderAdapter } from "../tts/tts-ai-provider-adapter";
 import { MockTTSProvider } from "../tts/mock-tts-provider";
+import { TencentTTSProvider } from "../tts/tencent-tts-provider";
 import { AvatarAIProviderAdapter } from "../avatar/avatar-ai-provider-adapter";
 import { MockAvatarProvider } from "../avatar/mock-avatar-provider";
 import { EmbeddingAIProviderAdapter } from "../embedding/embedding-ai-provider-adapter";
@@ -28,6 +29,9 @@ export function getAIProviderRegistry(): AIProviderRegistry {
     );
     registryInstance.register(
       new TTSAIProviderAdapter("mock", new MockTTSProvider())
+    );
+    registryInstance.register(
+      new TTSAIProviderAdapter("tencent", new TencentTTSProvider())
     );
     registryInstance.register(
       new AvatarAIProviderAdapter("mock", new MockAvatarProvider())

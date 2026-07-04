@@ -11,6 +11,14 @@ export function buildMemoryPrompt(input: PromptPipelineInput): PromptLayer {
     lines.push("TA的说话风格：" + input.speechStyle);
   }
 
+  if (input.personalityProfile && input.personalityProfile.trim()) {
+    lines.push("TA的人格档案：" + input.personalityProfile);
+  }
+
+  if (input.catchPhrases && input.catchPhrases.trim()) {
+    lines.push("TA常说的话：" + input.catchPhrases);
+  }
+
   if (input.birthYear != null) {
     const birth = "出生年份：" + input.birthYear;
     if (input.deathYear != null) {

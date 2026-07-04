@@ -1,52 +1,67 @@
-import { tts } from "tencentcloud-sdk-nodejs-tts";
+﻿import { NextResponse } from "next/server";
 
-const TtsClient = tts.v20190823.Client;
-
-const client = new TtsClient({
-  credential: {
-    secretId: process.env.TENCENT_SECRET_ID!,
-    secretKey: process.env.TENCENT_SECRET_KEY!,
-  },
-  region: process.env.TENCENT_TTS_REGION || "ap-guangzhou",
-  profile: {
-    httpProfile: {
-      endpoint: "tts.tencentcloudapi.com",
-    },
-  },
-});
+import { getAIProviderRegistry } from "../../../services/ai/global-ai-registry";
+import { AIProviderType } from "../../../services/ai/provider-types";
+import type { TTSAIProviderAdapter } from "../../../services/tts/tts-ai-provider-adapter";
 
 type TtsRequest = {
   text?: string;
+  voice?: string;
+  speed?: number;
+  format?: string;
 };
+
+function resolveTTSProvider() {
+  const providerName = process.env.TTS_PROVIDER || "mock";
+  const adapter = getAIProviderRegistry().get<TTSAIProviderAdapter>(
+    AIProviderType.TTS,
+    providerName
+  );
+
+  if (!adapter) {
+    throw new Error("TTS provider not found in AI Registry: " + providerName);
+  }
+
+  return adapter.ttsProvider;
+}
 
 export async function POST(request: Request) {
   try {
-    const { text } = (await request.json()) as TtsRequest;
+    const { text, voice, speed, format } = (await request.json()) as TtsRequest;
 
     if (!text?.trim()) {
-      return Response.json({ error: "请输入要转换的文字" }, { status: 400 });
+      return NextResponse.json(
+        { error: "请输入要转换的文字" },
+        { status: 400 }
+      );
     }
 
-    const result = await client.TextToVoice({
-      Text: text,
-      SessionId: Date.now().toString(),
-      ModelType: 1,
-      VoiceType: 101001,
-      Codec: "mp3",
+    const result = await resolveTTSProvider().generateSpeech({
+      text,
+      voice,
+      speed,
+      format,
     });
 
-    const audioBase64 = result.Audio;
-    const audioUrl = audioBase64 ? "data:audio/mp3;base64," + audioBase64 : null;
-    return Response.json({
-      audioBase64,
-      audio_url: audioUrl,
+    return NextResponse.json({
+      audioBase64: result.audioBase64 ?? null,
+      audio_url: result.audioUrl || null,
+      audioUrl: result.audioUrl || null,
+      provider: result.provider,
+      duration: result.duration,
+      format: result.format,
     });
   } catch (error: unknown) {
     console.error(error);
     const message = error instanceof Error ? error.message : "TTS failed";
-    // Mock fallback: return empty audio
-    return Response.json(
-      { error: message, audio_url: null, audioBase64: null },
+
+    return NextResponse.json(
+      {
+        error: message,
+        audio_url: null,
+        audioUrl: null,
+        audioBase64: null,
+      },
       { status: 200 }
     );
   }

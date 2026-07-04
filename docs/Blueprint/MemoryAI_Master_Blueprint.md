@@ -436,3 +436,19 @@ AI Coding Agent Entry：
 - `AGENTS.md`
 
 Architecture Freeze：UNCHANGED
+
+2026-07
+
+Provider Architecture Controlled Rewire completed.
+
+Memory Chat route now uses frozen MemoryEngineService / Provider architecture.
+
+TTS route now uses frozen TTS Provider architecture.
+
+No final commercial provider selection made.
+
+Volc/Ark integration pending.
+
+Volc BigTTS integration pending.
+
+Architecture Freeze unchanged.

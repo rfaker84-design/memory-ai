@@ -8,6 +8,7 @@
 export interface TTSGenerateResult {
   audioUrl: string;
   provider: string;
+  audioBase64?: string;
   duration?: number;
   format?: string;
 }
