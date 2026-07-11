@@ -30,7 +30,14 @@ export interface MemoryNetwork {
   generatedAt: number;
 }
 
-function computeRelations(memories: any[], focusId: string): MemoryRelation[] {
+interface LegacyMemory {
+  id: string;
+  name: string;
+  relationship?: string | null;
+  life_story?: string | null;
+}
+
+function computeRelations(memories: LegacyMemory[], focusId: string): MemoryRelation[] {
   const relations: MemoryRelation[] = [];
   const focus = memories.find(m => m.id === focusId);
   if (!focus) return relations;
@@ -66,7 +73,7 @@ function computeRelations(memories: any[], focusId: string): MemoryRelation[] {
   return relations;
 }
 
-function computeClusters(memories: any[]): MemoryCluster[] {
+function computeClusters(memories: LegacyMemory[]): MemoryCluster[] {
   const clusters: MemoryCluster[] = [];
   const familyMems = memories.filter(m => m.relationship?.includes("父亲") || m.relationship?.includes("母亲") || m.relationship?.includes("兄弟") || m.relationship?.includes("姐妹") || m.relationship?.includes("爷爷") || m.relationship?.includes("奶奶"));
   if (familyMems.length >= 2) {
@@ -135,7 +142,7 @@ export async function GET(req: NextRequest) {
         const parsed = JSON.parse(match[0]);
         if (Array.isArray(parsed.cluster_suggestions)) {
           for (const cs of parsed.cluster_suggestions) {
-            const memberIds = cs.members.map((n: string) => allMemories.find((m: any) => m.name === n)?.id).filter(Boolean);
+            const memberIds = cs.members.map((n: string) => allMemories.find((m: LegacyMemory) => m.name === n)?.id).filter(Boolean);
             if (memberIds.length >= 2) {
               network.clusters.push({ clusterId: `ai_${Date.now()}`, name: cs.name, memberIds, dominantEmotion: cs.emotion || "peaceful" });
             }

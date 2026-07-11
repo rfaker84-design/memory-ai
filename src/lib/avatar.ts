@@ -2,6 +2,7 @@
 // Prompt: "真实亚洲女性/男性人脸，高写实风格，情绪：{emotion}，柔光，电影级摄影"
 
 import type { Emotion } from "./volc";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export interface AvatarResult {
   avatarUrl: string | null;
@@ -75,7 +76,7 @@ export async function generateAvatar(emotion: Emotion): Promise<AvatarResult> {
 
 // ─── 生成并持久化到Supabase ─────────────────────────────────
 export async function generateAndStoreAvatar(
-  supabase: any,
+  supabase: SupabaseClient,
   memoryId: string,
   emotion: Emotion,
 ): Promise<string | null> {

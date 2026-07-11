@@ -14,7 +14,7 @@ export default function ContinuityPage() {
       <p style={{fontSize:11,color:T.colors.textFaint,letterSpacing:"0.06em",marginBottom:26}}>记忆不会消失，只是换了方式存在</p>
       <div style={{borderRadius:T.radius.lg,border:`0.5px solid ${T.colors.border}`,background:T.colors.card,boxShadow:T.shadow.card,padding:16,marginBottom:20}}>
         <p style={{fontSize:12,color:T.colors.textFaint,letterSpacing:"0.06em",margin:"0 0 14px"}}>情绪延续</p>
-        <p style={{fontSize:15,color:T.colors.text,lineHeight:1.7,margin:0,fontStyle:"italic"}}>"他仍然在你的记忆中延续——每一次对话，都在让这份连接变得更深。"</p>
+        <p style={{fontSize:15,color:T.colors.text,lineHeight:1.7,margin:0,fontStyle:"italic"}}>&quot;他仍然在你的记忆中延续——每一次对话，都在让这份连接变得更深。&quot;</p>
       </div>
       <button onClick={()=>router.push("/dialogue")} style={{width:"100%",minHeight:50,borderRadius:T.radius.lg,border:"none",background:T.colors.primary,color:"#FFF",fontSize:15,fontWeight:600,letterSpacing:"0.04em",cursor:"pointer",boxShadow:T.shadow.button,marginBottom:24}}>再次进入对话</button>
       <p style={{fontSize:11,color:T.colors.textFaint,letterSpacing:"0.08em",marginBottom:8,paddingLeft:4}}>系统状态</p>

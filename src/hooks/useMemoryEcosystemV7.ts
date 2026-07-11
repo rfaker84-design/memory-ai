@@ -77,7 +77,7 @@ export default function useMemoryEcosystemV7(
       const pressureOutput = computeEnvironmentalPressure(pressureInput);
 
       // Core evolution tick
-      let { nodes, events: tickEvents, newPressure } = evolveTick(
+      let { nodes, events: tickEvents } = evolveTick(
         nodesRef.current, pressureOutput.environmentalPressure,
         pressureOutput.evolutionSpeed, tick, ecosystem.focusId,
       );

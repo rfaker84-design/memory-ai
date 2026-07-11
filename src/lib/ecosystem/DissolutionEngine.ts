@@ -82,13 +82,13 @@ export function dissolveTick(
   userPresent: boolean,
 ): DissolutionState {
   const dt = dtMs / 1000;
-  let events: string[] = [];
+  const events: string[] = [];
   let phaseChanged = false;
 
   // 1. Global decay
   const decayThisTick = state.decayRate * dt * 60; // normalized to 60fps
   const userDecayFactor = userPresent ? 0.3 : 1; // user presence slows decay
-  let newCoherence = Math.max(0, state.systemCoherence - decayThisTick * userDecayFactor);
+  const newCoherence = Math.max(0, state.systemCoherence - decayThisTick * userDecayFactor);
 
   const prevPhase = state.phase;
   const newPhase = computePhase(newCoherence);
