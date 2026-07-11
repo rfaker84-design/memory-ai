@@ -41,3 +41,12 @@
 - Rewritten target refs: no Tencent Secret ID pattern match.
 - Original Sprint14/Sprint15/archive commits: not reachable from rewritten target refs.
 - `git fsck`, diff, typecheck, build, architecture, health, and push verification results are recorded in the closure output for this task.
+
+## Push result
+
+- `sprint15a-tencentdb`: pushed normally.
+- `canonical-mainline`: pushed normally.
+- `archive/server-visual-drift-20260711`: pushed normally.
+- `sprint14-ui-final`: pushed normally.
+- `sprint15a-final`: pushed normally.
+- GitHub Push Protection accepted all five target refs after remediation. No allow-list or bypass action was used.
