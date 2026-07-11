@@ -32,7 +32,7 @@ export interface UniverseConfig {
 }
 
 // Fallback: no-AI 默认宇宙
-function defaultUniverse(memories: any[], phone: string): UniverseConfig {
+function defaultUniverse(memories: Array<{ id: string; name: string }>, phone: string): UniverseConfig {
   const nodes: UniverseNode[] = memories.map((m, i) => {
     const angle = (i * 0.618033988749895) % 1 * Math.PI * 2;
     const r = 25 + (i % 3) * 12;
@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
   }
 
   // 3. AI 生成宇宙
-  let config: UniverseConfig = defaultUniverse(memories, phone);
+  const config: UniverseConfig = defaultUniverse(memories, phone);
 
   try {
     const summary = memories

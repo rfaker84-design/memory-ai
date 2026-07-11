@@ -7,14 +7,14 @@ type Props = { openProgress: number; glowIntensity: number; visible: boolean };
 
 export default function SpaceGate({ openProgress, glowIntensity, visible }: Props) {
   const groupRef = useRef<THREE.Group>(null);
-  if (!visible) return null;
-
   const frameMat = useMemo(() =>
     new THREE.MeshStandardMaterial({ color: U.moonGlow, roughness: 0.3, metalness: 0.9, emissive: U.moonGlow, emissiveIntensity: 0.5 }), []);
   const doorMat = useMemo(() =>
     new THREE.MeshStandardMaterial({ color: U.moonGlow, roughness: 0.2, metalness: 0.7, emissive: U.moonGlow, emissiveIntensity: 2.0 }), []);
   const gapMat = useMemo(() =>
     new THREE.MeshBasicMaterial({ color: U.moonInner, transparent: true, opacity: 0.9 }), []);
+
+  if (!visible) return null;
 
   const gw = 2.2; const gh = 3.2; const gd = 0.1; const fw = 0.07;
 
