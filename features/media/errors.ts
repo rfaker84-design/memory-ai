@@ -1,3 +1,1 @@
-﻿export class MediaNotFoundError extends Error {}
-
-export class MediaValidationError extends Error {}
+export class MediaNotFoundError extends Error {}

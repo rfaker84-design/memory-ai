@@ -3,4 +3,5 @@ export * from "./media-service";
 export * from "./media-repository";
 export * from "./datasource";
 export * from "./errors";
-export * from "./media-supabase-datasource";
+export * from "./file-validation";
+export * from "./media-postgres-datasource";
