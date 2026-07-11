@@ -488,3 +488,14 @@ Components use `src/design` tokens and `src/motion` hooks where interactive.
 No page integration performed.
 
 No UI rewrite, API, database, deployment, package, or existing page changes made.
+
+
+2026-07
+
+Sprint14 Home Entry Lock and Cinematic Product Shell completed.
+
+The canonical product homepage is locked to `/`; legacy splash/world entry routes now redirect to the single homepage or the formal memory-world entry.
+
+The homepage uses Sprint13 design, motion, and memory-ui foundations; it supports loading, empty, ready, error, and unauthenticated states without introducing new API, database, SQL, package, or provider changes.
+
+Production acceptance evidence is tracked in `docs/Deployment/sprint14-home-entry-online-acceptance.md`.

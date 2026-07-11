@@ -25,7 +25,7 @@ function readEmotionGlow(): string {
 
 const TABS = [
   {
-    key: "home", label: "记忆", path: "/",
+    key: "home", label: "首页", path: "/",
     icon: (active: boolean) => (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
         stroke={active ? "rgba(220,200,240,0.9)" : "rgba(160,150,170,0.4)"}
@@ -36,7 +36,7 @@ const TABS = [
     ),
   },
   {
-    key: "chat", label: "对话", path: "/chat",
+    key: "chat", label: "聊天", path: "/dialogue",
     icon: (active: boolean) => (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
         stroke={active ? "rgba(220,200,240,0.9)" : "rgba(160,150,170,0.4)"}
@@ -46,7 +46,7 @@ const TABS = [
     ),
   },
   {
-    key: "room", label: "空间", path: "/memory-room",
+    key: "room", label: "记忆", path: "/memory-world",
     icon: (active: boolean) => (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
         stroke={active ? "rgba(220,200,240,0.9)" : "rgba(160,150,170,0.4)"}
@@ -56,7 +56,7 @@ const TABS = [
     ),
   },
   {
-    key: "profile", label: "我的", path: "/profile",
+    key: "profile", label: "我的", path: "/continuity",
     icon: (active: boolean) => (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
         stroke={active ? "rgba(220,200,240,0.9)" : "rgba(160,150,170,0.4)"}

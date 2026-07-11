@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -137,7 +137,7 @@ function DialogueInner() {
             <p style={{ fontSize: 15, color: T.colors.textMuted, marginBottom: 12 }}>
               还没有记忆体
             </p>
-            <button onClick={() => router.push("/bond")} style={{
+            <button onClick={() => router.push("/create-memory")} style={{
               minHeight: 46, padding: "0 24px", borderRadius: T.radius.lg,
               border: "none", background: T.colors.primary, color: "#FFF",
               fontSize: 14, fontWeight: 600, cursor: "pointer",
