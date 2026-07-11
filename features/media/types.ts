@@ -1,44 +1,13 @@
-﻿export enum MediaType {
-  IMAGE = "IMAGE",
-  AUDIO = "AUDIO",
-  VIDEO = "VIDEO",
-  AVATAR = "AVATAR",
-  DOCUMENT = "DOCUMENT",
-}
-
+export enum MediaType { IMAGE = "image", AUDIO = "audio", VIDEO = "video", AVATAR = "avatar", DOCUMENT = "document" }
+export type MediaStatus = "pending" | "uploaded" | "failed" | "deleted" | "cleanup_failed";
 export interface MediaAsset {
-  id: string;
-  userId: string;
-  memoryId: string;
-  mediaType: MediaType;
-  url: string;
-  thumbnailUrl: string | null;
-  mimeType: string;
-  size: number;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
+  id: string; userId: string; memoryId: string; mediaType: MediaType;
+  storageKey: string | null; mimeType: string; sizeBytes: number; sha256: string;
+  status: MediaStatus; failureCode: string | null; deletedAt: string | null;
+  createdAt: string; updatedAt: string;
 }
-
-export type CreateMediaInput = Omit<
-  MediaAsset,
-  "id" | "createdAt" | "updatedAt"
->;
-
-export type UpdateMediaInput = Partial<
-  Pick<MediaAsset, "status" | "thumbnailUrl" | "url">
->;
-
-export interface CreateUploadIntentInput {
-  memoryId: string;
-  mediaType: MediaType;
-  fileName: string;
-  mimeType: string;
-  size: number;
+export interface ReserveMediaInput {
+  externalUserId: string; memoryId: string; mediaType: MediaType; storageKey: string;
+  mimeType: string; sizeBytes: number; sha256: string;
 }
-
-export interface UploadIntentResult {
-  key: string;
-  provider: string;
-  status: "pending";
-}
+export interface ReserveMediaResult { asset: MediaAsset; duplicate: boolean }

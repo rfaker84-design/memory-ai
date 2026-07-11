@@ -1,10 +1,8 @@
-﻿import type { CreateMediaInput, MediaAsset, UpdateMediaInput } from "./types";
-
+import type { MediaAsset, ReserveMediaInput, ReserveMediaResult } from "./types";
 export interface MediaDataSource {
-  create(input: CreateMediaInput): Promise<MediaAsset>;
-  findById(id: string): Promise<MediaAsset | null>;
-  update(id: string, input: UpdateMediaInput): Promise<MediaAsset>;
-  delete(id: string): Promise<void>;
-  listByMemory(memoryId: string): Promise<MediaAsset[]>;
-  listByUser(userId: string): Promise<MediaAsset[]>;
+  reserve(input: ReserveMediaInput): Promise<ReserveMediaResult>;
+  markUploaded(id: string, externalUserId: string): Promise<MediaAsset>;
+  markFailed(id: string, externalUserId: string, failureCode: string): Promise<void>;
+  findOwned(id: string, externalUserId: string): Promise<MediaAsset | null>;
+  softDelete(id: string, externalUserId: string): Promise<MediaAsset | null>;
 }
