@@ -5,6 +5,11 @@
   "scripts": {
     "dev": "next dev -H 0.0.0.0 -p 3000",
     "build": "next build",
+    "db:test": "tsx scripts/postgresql/test-memory-postgres.ts",
+    "verify:postgres-architecture": "node scripts/verify-postgresql-architecture.cjs",
+    "migration:export": "tsx scripts/migration/export-supabase-data.ts",
+    "migration:import": "tsx scripts/migration/import-postgresql-data.ts",
+    "migration:verify": "tsx scripts/migration/verify-migration.ts",
     "start": "next start -H 0.0.0.0 -p 3000",
     "lint": "next lint",
     "lan": "node scripts/lan-info.js && next start -H 0.0.0.0 -p 3000"
@@ -30,13 +35,17 @@
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "^15.3.3",
     "lightningcss": "^1.32.0",
-    "lightningcss-win32-x64-msvc": "^1.32.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.0",
     "typescript": "^5"
+  },
+  "optionalDependencies": {
+    "lightningcss-win32-x64-msvc": "^1.32.0"
   }
 }

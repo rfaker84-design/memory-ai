@@ -3,11 +3,11 @@
 import {
   ChatRepository,
   ChatService,
-  ChatSupabaseDataSource,
+  ChatPostgresDataSource,
 } from "../../../../../features/chat";
 
 const createChatService = () => {
-  const dataSource = new ChatSupabaseDataSource();
+  const dataSource = new ChatPostgresDataSource();
   const repository = new ChatRepository(dataSource);
 
   return new ChatService(repository);

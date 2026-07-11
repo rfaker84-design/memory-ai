@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   ChatRepository,
   ChatService,
-  ChatSupabaseDataSource,
+  ChatPostgresDataSource,
 } from "../../../../../features/chat";
 import {
   MemoryEngineService,
@@ -14,12 +14,12 @@ import {
   LongTermMemoryService,
   LongTermMemorySupabaseDataSource,
 } from "../../../../../features/long-term-memory";
-import { AuditService, AuditRepository, AuditSupabaseDataSource } from "../../../../../features/audit";
+import { AuditService, AuditRepository, AuditPostgresDataSource } from "../../../../../features/audit";
 import { RiskService, RiskRepository, RiskSupabaseDataSource } from "../../../../../features/risk";
 import { PermissionService, PermissionRepository, PermissionSupabaseDataSource } from "../../../../../features/permission";
 
 const createChatService = () => {
-  const dataSource = new ChatSupabaseDataSource();
+  const dataSource = new ChatPostgresDataSource();
   const repository = new ChatRepository(dataSource);
 
   return new ChatService(repository);
@@ -33,7 +33,7 @@ const createLTService = () => {
 };
 
 const createAuditService = () =>
-  new AuditService(new AuditRepository(new AuditSupabaseDataSource()));
+  new AuditService(new AuditRepository(new AuditPostgresDataSource()));
 
 const createPermissionService = () =>
   new PermissionService(new PermissionRepository(new PermissionSupabaseDataSource()));

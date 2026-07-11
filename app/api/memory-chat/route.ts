@@ -3,7 +3,7 @@
 import {
   ChatRepository,
   ChatService,
-  ChatSupabaseDataSource,
+  ChatPostgresDataSource,
 } from "../../../features/chat";
 import { MemoryEngineService } from "../../../features/memory-engine";
 import { calculateAddictionScore, getCompanionMode } from "../../../src/lib/addiction-score";
@@ -40,7 +40,7 @@ type MemoryChatRequest = {
 };
 
 const createChatService = () => {
-  const dataSource = new ChatSupabaseDataSource();
+  const dataSource = new ChatPostgresDataSource();
   const repository = new ChatRepository(dataSource);
 
   return new ChatService(repository);

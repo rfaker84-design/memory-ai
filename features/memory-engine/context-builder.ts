@@ -3,12 +3,12 @@ import {
   MemoryNotFoundError,
   MemoryRepository,
   MemoryService,
-  MemorySupabaseDataSource,
+  MemoryPostgresDataSource,
 } from "../memory";
 import {
   ChatRepository,
   ChatService,
-  ChatSupabaseDataSource,
+  ChatPostgresDataSource,
 } from "../chat";
 import { EmotionEngineService } from "../emotion-engine";
 import {
@@ -18,13 +18,13 @@ import {
 } from "../long-term-memory";
 
 const createMemoryService = (): MemoryService => {
-  const dataSource = new MemorySupabaseDataSource();
+  const dataSource = new MemoryPostgresDataSource();
   const repository = new MemoryRepository(dataSource);
   return new MemoryService(repository);
 };
 
 const createChatService = (): ChatService => {
-  const dataSource = new ChatSupabaseDataSource();
+  const dataSource = new ChatPostgresDataSource();
   const repository = new ChatRepository(dataSource);
   return new ChatService(repository);
 };

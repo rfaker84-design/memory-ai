@@ -16,8 +16,8 @@ const checks = [
   },
   {
     file: "app/api/memories/route.ts",
-    forbidden: [],
-    required: ["MemoryService", "MemoryRepository", "MemorySupabaseDataSource", "createMemory"],
+    forbidden: ["MemorySupabaseDataSource", "supabase"],
+    required: ["MemoryService", "MemoryRepository", "MemoryPostgresDataSource", "createMemory"],
   },
   {
     file: "app/api/memory-chat/route.ts",
@@ -31,8 +31,9 @@ const checks = [
       "deepseek-chat",
       "new OpenAI",
       "chat.completions.create",
+      "ChatSupabaseDataSource",
     ],
-    required: ["MemoryEngineService", "generateReply"],
+    required: ["MemoryEngineService", "ChatPostgresDataSource", "generateReply"],
   },
   {
     file: "app/api/tts/route.ts",

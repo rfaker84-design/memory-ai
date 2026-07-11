@@ -1,22 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { MemoryPostgresDataSource } from "../../../features/memory/memory-postgres-datasource";
+import { MemoryRepository } from "../../../features/memory/memory-repository";
+import { MemoryService } from "../../../features/memory/memory-service";
+import { AuditPostgresDataSource } from "../../../features/audit/audit-postgres-datasource";
+import { AuditRepository } from "../../../features/audit/audit-repository";
+import { AuditService } from "../../../features/audit/audit-service";
 import {
-  MemoryRepository,
-  MemoryService,
-  MemorySupabaseDataSource,
-} from "../../../features/memory";
-import { AuditService, AuditRepository, AuditSupabaseDataSource } from "../../../features/audit";
+  DatabaseDependencyError,
+  safeDatabaseErrorLog,
+} from "../../../src/server/database";
+import { MemoryValidationError } from "../../../features/memory/errors";
 
 
 const createMemoryService = () => {
-  const dataSource = new MemorySupabaseDataSource();
+  const dataSource = new MemoryPostgresDataSource();
   const repository = new MemoryRepository(dataSource);
 
   return new MemoryService(repository);
 };
 
 const createAuditService = () =>
-  new AuditService(new AuditRepository(new AuditSupabaseDataSource()));
+  new AuditService(new AuditRepository(new AuditPostgresDataSource()));
+
+function databaseErrorResponse(error: unknown) {
+  if (error instanceof MemoryValidationError) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+
+  if (error instanceof DatabaseDependencyError) {
+    console.error("[api:memories] database request failed", safeDatabaseErrorLog(error));
+    return NextResponse.json(
+      { error: "Database dependency unavailable" },
+      { status: 503 }
+    );
+  }
+
+  console.error("[api:memories] unexpected request failure");
+  return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+}
 
 export async function GET(req: NextRequest) {
   const userId = req.nextUrl.searchParams.get("userId");
@@ -31,10 +53,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(memories);
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal server error" },
-      { status: 500 }
-    );
+    return databaseErrorResponse(error);
   }
 }
 
@@ -87,18 +106,18 @@ export async function POST(req: NextRequest) {
         memoryId: memory.id,
         action: "memory.created",
         level: "info",
-        message: "创建记忆成功",
+        message: "Memory created",
         metadata: { name, relationship },
       });
-    } catch (e) {
-      console.warn("audit memory.created failed:", e);
+    } catch (error) {
+      console.warn(
+        "[api:memories] audit memory.created failed",
+        safeDatabaseErrorLog(error)
+      );
     }
 
     return NextResponse.json(memory);
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal server error" },
-      { status: 500 }
-    );
+    return databaseErrorResponse(error);
   }
 }

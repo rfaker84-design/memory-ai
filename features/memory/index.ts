@@ -4,3 +4,4 @@ export * from "./memory-repository";
 export * from "./datasource";
 export * from "./errors";
 export * from "./memory-supabase-datasource";
+export * from "./memory-postgres-datasource";

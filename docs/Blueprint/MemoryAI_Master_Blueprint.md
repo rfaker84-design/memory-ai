@@ -499,3 +499,13 @@ The canonical product homepage is locked to `/`; legacy splash/world entry route
 The homepage uses Sprint13 design, motion, and memory-ui foundations; it supports loading, empty, ready, error, and unauthenticated states without introducing new API, database, SQL, package, or provider changes.
 
 Production acceptance evidence is tracked in `docs/Deployment/sprint14-home-entry-online-acceptance.md`.
+
+2026-07
+
+Sprint15A China PostgreSQL Foundation completed.
+
+The formal production memory and conversation data paths now use `MemoryPostgresDataSource` and `ChatPostgresDataSource` behind their frozen Service / Repository boundaries with a server-side PostgreSQL pool. Database health now verifies PostgreSQL with `SELECT 1`; Supabase is retained only as a legacy adapter outside these selected formal paths and for historical export.
+
+Self-hosted PostgreSQL is bound to loopback on the existing Tencent CVM. Idempotent core schema migrations, least-privilege runtime access, daily/weekly backups, restore drills, and resource monitoring are established.
+
+No Sprint14 visual, Motion, provider, or product-shell code was changed.

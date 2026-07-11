@@ -1,35 +1,41 @@
-﻿import { supabase } from "@/src/lib/supabase";
+import {
+  classifyDatabaseError,
+  queryPostgres,
+  safeDatabaseErrorLog,
+} from "@/src/server/database";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+const HEALTH_QUERY_TIMEOUT_MS = 5_000;
+
+function response(body: object, status: number) {
+  return Response.json(body, {
+    status,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
 
 export async function GET() {
+  const startedAt = Date.now();
+
   try {
-    const { error } = await supabase
-      .from("memories")
-      .select("id")
-      .limit(1);
-
-    if (error) {
-      return Response.json(
-        {
-          status: "error",
-          message: error.message,
-        },
-        { status: 500 }
-      );
-    }
-
-    return Response.json(
-      {
-        status: "ok",
-      },
-      { status: 200 }
-    );
+    await queryPostgres("SELECT 1", [], HEALTH_QUERY_TIMEOUT_MS);
+    return response({ status: "ok" }, 200);
   } catch (error) {
-    return Response.json(
+    const classified = classifyDatabaseError(error);
+    console.error("[health:database] PostgreSQL check failed", {
+      ...safeDatabaseErrorLog(classified),
+      durationMs: Date.now() - startedAt,
+    });
+
+    return response(
       {
         status: "error",
-        message: error instanceof Error ? error.message : "Unknown database health check error",
+        category: classified.category,
+        message: "Database dependency unavailable",
       },
-      { status: 500 }
+      503
     );
   }
 }
