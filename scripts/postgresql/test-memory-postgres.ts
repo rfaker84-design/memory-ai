@@ -24,6 +24,7 @@ async function main() {
   try {
     const input = {
       userId: testUser,
+      idempotencyKey: randomUUID(),
       name: "Sprint15A verification",
       relationship: "test",
       lifeStory: "transactional CRUD verification",

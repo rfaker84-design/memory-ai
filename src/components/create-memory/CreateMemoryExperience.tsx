@@ -6,7 +6,7 @@ import { MemoryButton, MemoryInput } from "../memory-ui";
 import { useReducedMotion } from "../../motion";
 import { useCreateMemoryDraft } from "./useCreateMemoryDraft";
 import type { CreateStage } from "./types";
-import { completion, validateStage } from "./createMemoryLogic";
+import { completion, createMemoryRequestHeaders, validateStage } from "./createMemoryLogic";
 import styles from "./CreateMemoryExperience.module.css";
 
 const stages = [
@@ -20,11 +20,10 @@ type CreatedMemory = { id: string; name: string };
 export function CreateMemoryExperience() {
   const router = useRouter();
   const reducedMotion = useReducedMotion();
-  const { draft, status, setStatus, update, clear } = useCreateMemoryDraft();
+  const { draft, status, setStatus, update, clear, idempotencyKey } = useCreateMemoryDraft();
   const [stage, setStage] = useState<CreateStage>(0);
   const [photo, setPhoto] = useState<File | null>(null);
   const [voice, setVoice] = useState<File | null>(null);
-  const [photoUrl, setPhotoUrl] = useState("");
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [error, setError] = useState("");
   const [created, setCreated] = useState<CreatedMemory | null>(null);
@@ -53,46 +52,76 @@ export function CreateMemoryExperience() {
     kind === "photo" ? setPhoto(file) : setVoice(file); setUploadState(file ? "selected" : "idle"); setError("");
   };
 
-  const uploadPhoto = async () => {
-    if (!photo) return "";
-    setStatus("uploading"); setUploadState("uploading");
-    const body = new FormData(); body.append("file", photo);
-    const response = await fetch("/api/media/upload", { method: "POST", body });
-    if (response.status === 404 || response.status === 501 || response.status === 503) {
-      setUploadState("unavailable"); throw new Error("素材上传服务尚未就绪。你可以移除素材后继续创建资料。");
+  const uploadSelectedMedia = async (memoryId: string) => {
+    const files = [photo, voice].filter((file): file is File => Boolean(file));
+    if (!files.length) return [];
+
+    setStatus("uploading");
+    setUploadState("uploading");
+    const token = localStorage.getItem("yijian_session_token") ?? localStorage.getItem("memoryai_session_token");
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+    const assets: Array<{ id: string; mediaType: string; status: string }> = [];
+
+    for (const file of files) {
+      const body = new FormData();
+      body.append("file", file);
+      body.append("memoryId", memoryId);
+      const response = await fetch("/api/media/upload", { method: "POST", headers, body });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.asset?.id) {
+        setUploadState(response.status === 503 ? "unavailable" : "error");
+        throw new Error(data.error || "MEDIA_UPLOAD_FAILED");
+      }
+      assets.push(data.asset);
     }
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.url) { setUploadState("error"); throw new Error(data.error || "素材上传失败，请重试或移除素材。"); }
-    setPhotoUrl(data.url); setUploadState("ready"); return data.url as string;
+
+    setUploadState("ready");
+    return assets;
   };
 
   const create = async () => {
     if (submitting.current || created || !validate()) return;
     submitting.current = true; setError("");
     try {
-      const uploadedPhoto = photoUrl || await uploadPhoto();
-      if (voice) {
-        setStatus("uploading");
-        const body = new FormData(); body.append("file", voice);
-        const response = await fetch("/api/media/upload", { method: "POST", body });
-        if (!response.ok) { setUploadState(response.status === 404 || response.status === 501 || response.status === 503 ? "unavailable" : "error"); throw new Error("声音上传服务尚未就绪。请移除声音后继续。"); }
-      }
       setStatus("submitting");
       const fragments = [
         ["personality", draft.personality], ["catch_phrase", draft.catchPhrases], ["shared_experience", draft.sharedExperiences],
         ["life_moment", draft.lifeMoments], ["interest", draft.interests], ["purpose", draft.purpose], ["preferred_address", draft.preferredAddress],
       ].filter(([, content]) => content.trim()).map(([sourceType, content]) => ({ sourceType, content }));
-      const response = await fetch("/api/memories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+      const response = await fetch("/api/memories", { method: "POST", headers: createMemoryRequestHeaders(idempotencyKey), body: JSON.stringify({
         userId: localStorage.getItem("yijian_phone"), name: draft.name.trim(), relationship: draft.relationship.trim(),
         lifeStory: [draft.sharedExperiences, draft.lifeMoments].filter(Boolean).join("\n\n") || null,
         personalityProfile: draft.personality.trim() || null, catchPhrases: draft.catchPhrases.trim() || null,
-        personalityTags: draft.interests.split(/[，,、\n]/).map(v => v.trim()).filter(Boolean), photoUrl: uploadedPhoto || null, fragments,
+        personalityTags: draft.interests.split(/[，,、\n]/).map(v => v.trim()).filter(Boolean), photoUrl: null, fragments,
       }) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "创建失败，请重试。");
-      setCreated({ id: data.id, name: data.name || draft.name }); setStatus("success"); clear();
+      const createdMemory = { id: data.id as string, name: data.name || draft.name };
+      setCreated(createdMemory);
+      try {
+        await uploadSelectedMedia(createdMemory.id);
+        setStatus("success");
+        clear();
+      } catch (mediaError) {
+        setStatus("success");
+        setError(mediaError instanceof Error ? mediaError.message : "MEDIA_UPLOAD_FAILED");
+      }
     } catch (cause) {
       setStatus("recoverable-error"); setError(cause instanceof Error ? cause.message : "创建失败，请重试。");
+    } finally { submitting.current = false; }
+  };
+
+  const retryMediaUpload = async () => {
+    if (!created || submitting.current) return;
+    submitting.current = true;
+    setError("");
+    try {
+      await uploadSelectedMedia(created.id);
+      setStatus("success");
+      clear();
+    } catch (cause) {
+      setStatus("success");
+      setError(cause instanceof Error ? cause.message : "MEDIA_UPLOAD_FAILED");
     } finally { submitting.current = false; }
   };
 
@@ -117,7 +146,7 @@ export function CreateMemoryExperience() {
           {error && <div className={styles.error} role="alert">{error}</div>}
           <div className={styles.status}>{status === "saving-draft" ? "正在保存草稿…" : status === "uploading" ? "正在上传素材…" : status === "submitting" ? "正在写入 PostgreSQL…" : uploadState === "unavailable" ? "素材服务尚未就绪" : "草稿已自动保存（不含素材）"}</div>
           <div className={styles.actions}>{stage > 0 && <MemoryButton variant="ghost" onClick={() => setStage((stage - 1) as CreateStage)}>上一步</MemoryButton>}{stage === 1 && <button className={styles.skip} onClick={() => setStage(2)}>稍后补充</button>}{stage < 3 ? <MemoryButton onClick={next}>继续</MemoryButton> : <MemoryButton loading={status === "submitting" || status === "uploading"} onClick={create}>创建 TA</MemoryButton>}</div>
-        </> : <div className={styles.success}><div className={styles.eyebrow}>创建完成</div><h1 className={styles.title}>{created.name} 正在变得清晰</h1><p className={styles.desc}>资料已写入你的记忆空间。</p><MemoryButton onClick={() => router.push(`/memory/${created.id}`)}>进入 TA 的详情</MemoryButton><MemoryButton variant="secondary" onClick={() => router.push(`/memory-chat/${created.id}`)}>开始对话</MemoryButton></div>}
+        </> : <div className={styles.success}><div className={styles.eyebrow}>创建完成</div><h1 className={styles.title}>{created.name} 正在变得清晰</h1><p className={styles.desc}>资料已写入你的记忆空间。</p>{error && <p className={styles.error} role="alert">{error}</p>}{error && (photo || voice) && <MemoryButton variant="secondary" onClick={retryMediaUpload}>重试素材上传</MemoryButton>}<MemoryButton onClick={() => router.push(`/memory/${created.id}`)}>进入 TA 的详情</MemoryButton><MemoryButton variant="secondary" onClick={() => router.push(`/memory-chat/${created.id}`)}>开始对话</MemoryButton></div>}
       </section>
     </div>
   </main>;

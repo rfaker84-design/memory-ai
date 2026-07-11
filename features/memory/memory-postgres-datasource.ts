@@ -31,6 +31,7 @@ type MemoryRow = {
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
 
 const MEMORY_COLUMNS = `
   m.id,
@@ -124,6 +125,9 @@ function validateCreateInput(memory: CreateMemoryInput): CreateMemoryInput {
   validateYear(memory.birthYear, "birthYear");
   validateYear(memory.deathYear, "deathYear");
   normalizedFragments(memory);
+  if (memory.idempotencyKey && !IDEMPOTENCY_KEY_PATTERN.test(memory.idempotencyKey)) {
+    throw new MemoryValidationError("Idempotency-Key is invalid");
+  }
 
   return {
     ...memory,
@@ -157,6 +161,10 @@ function idempotencyKey(memory: CreateMemoryInput): string {
   };
 
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+}
+
+function creationIdempotencyKey(memory: CreateMemoryInput): string {
+  return memory.idempotencyKey ?? idempotencyKey(memory);
 }
 
 async function ensureUser(client: PoolClient, externalId: string): Promise<string> {
@@ -203,11 +211,29 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
   async create(input: CreateMemoryInput): Promise<Memory> {
     const memory = validateCreateInput(input);
     const fragments = normalizedFragments(memory);
-    const key = idempotencyKey(memory);
+    const payloadKey = idempotencyKey(memory);
+    const requestKey = creationIdempotencyKey(memory);
 
     const row = await withPostgresTransaction(async (client) => {
       const userId = await ensureUser(client, memory.userId);
-      const result = await client.query<MemoryRow>(
+      const findExisting = () => client.query<MemoryRow>(
+        `
+          SELECT ${MEMORY_COLUMNS}
+          FROM memories m
+          JOIN users u ON u.id = m.user_id
+          WHERE m.user_id = $1
+            AND (m.creation_idempotency_key = $2 OR m.idempotency_key = $3)
+          ORDER BY (m.creation_idempotency_key = $2) DESC
+          LIMIT 1
+        `,
+        [userId, requestKey, payloadKey]
+      );
+
+      const existing = await findExisting();
+      if (existing.rows[0]) return { row: existing.rows[0], created: false };
+
+      try {
+        const result = await client.query<MemoryRow>(
         `
           WITH written AS (
             INSERT INTO memories (
@@ -224,14 +250,13 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
               death_year,
               values_belief,
               personality_type,
-              idempotency_key
+              idempotency_key,
+              creation_idempotency_key
             )
             VALUES (
               $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb,
-              $10, $11, $12, $13, $14
+              $10, $11, $12, $13, $14, $15
             )
-            ON CONFLICT (user_id, idempotency_key)
-            DO UPDATE SET updated_at = memories.updated_at
             RETURNING *
           )
           SELECT
@@ -270,15 +295,22 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
           memory.deathYear ?? null,
           memory.valuesBelief ?? null,
           memory.personalityType ?? null,
-          key,
+          payloadKey,
+          requestKey,
         ]
-      );
+        );
 
-      await replaceFragments(client, result.rows[0].id, fragments);
-      return result.rows[0];
+        await replaceFragments(client, result.rows[0].id, fragments);
+        return { row: result.rows[0], created: true };
+      } catch (error) {
+        if ((error as { code?: string }).code !== "23505") throw error;
+        const conflicted = await findExisting();
+        if (!conflicted.rows[0]) throw error;
+        return { row: conflicted.rows[0], created: false };
+      }
     });
 
-    return toMemory(row);
+    return toMemory(row.row);
   }
 
   async findById(id: string): Promise<Memory | null> {

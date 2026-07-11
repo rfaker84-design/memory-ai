@@ -12,7 +12,12 @@ const checks = [
       '.from("memories")',
       '.from(\"memories\")',
     ],
-    required: ["/api/memories", "fetch"],
+    required: ["CreateMemoryExperience"],
+  },
+  {
+    file: "src/components/create-memory/CreateMemoryExperience.tsx",
+    forbidden: ["src/lib/supabase", "supabase.from", '.from("memories")'],
+    required: ["/api/memories", "/api/media/upload", "fetch", "createMemoryRequestHeaders"],
   },
   {
     file: "app/api/memories/route.ts",

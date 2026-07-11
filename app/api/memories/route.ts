@@ -60,6 +60,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    const idempotencyKey = req.headers.get("idempotency-key") ?? undefined;
     const userId = body.userId ?? body.user_phone;
     const {
       name,
@@ -98,6 +99,7 @@ export async function POST(req: NextRequest) {
       photoUrl: photoUrl ?? photo_url ?? null,
       personalityTags: personalityTags ?? personality_tags ?? null,
       fragments,
+      idempotencyKey,
     });
 
     try {

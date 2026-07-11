@@ -4,7 +4,7 @@ Status: Sprint15A production baseline
 
 Database: self-hosted PostgreSQL on the application CVM
 
-Authoritative migrations: `database/migrations/001_memoryai_core.sql` through `003_memoryai_constraints.sql`
+Authoritative migrations: `database/migrations/001_memoryai_core.sql` through `005_memory_creation_idempotency.sql`
 
 ## Runtime boundary
 
@@ -36,10 +36,11 @@ Every core table uses a UUID primary key and `created_at`; mutable tables also u
 
 - Foreign keys enforce user, memory, conversation, and provider-job ownership.
 - Check constraints cover valid years, message roles, non-negative counters/sizes, provider progress, and non-empty required text.
-- Memory creation is idempotent through `(user_id, idempotency_key)`.
+- Memory creation is idempotent through a persisted request key at `(user_id, creation_idempotency_key)`; the API accepts `Idempotency-Key` and returns the original creation result for a repeated key.
 - Fragment duplicates are constrained by `(memory_id, source_type, content_hash)`.
 - User/list/time access paths have explicit indexes in `002_memoryai_indexes.sql`.
 - All application SQL is parameterized; memory writes and fragment replacement use transactions.
+- Media metadata stores SHA-256 hashes and private storage keys. Media download access uses short-lived signed URLs only.
 
 ## Production connection policy
 

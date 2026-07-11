@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { completion, draftForStorage, validateStage } from "./createMemoryLogic";
+import { completion, createMemoryRequestHeaders, draftForStorage, validateStage } from "./createMemoryLogic";
 import { emptyDraft } from "./types";
 
 test("four-stage validation keeps memory optional", () => {
@@ -24,4 +24,6 @@ test("stored draft excludes transient authorization and all file fields", () => 
 test("completion is deterministic and never invents blank facts", () => {
   assert.equal(completion(emptyDraft), 0);
   assert.equal(completion({ ...emptyDraft, name: "阿念" }), 11);
+  assert.equal(createMemoryRequestHeaders("memory-1234567890")["Idempotency-Key"], "memory-1234567890");
+  assert.throws(() => createMemoryRequestHeaders("short"));
 });

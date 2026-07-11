@@ -3,6 +3,24 @@ import { MediaPostgresDataSource, MediaRepository, MediaService, MediaServiceErr
 import { verifySession } from "../../../src/lib/auth";
 import { createMediaStorage } from "../../../src/server/storage";
 
+export function safeMediaAsset(asset: {
+  id: string;
+  mediaType: string;
+  mimeType: string;
+  sizeBytes: number;
+  status: string;
+  createdAt: string;
+}) {
+  return {
+    id: asset.id,
+    mediaType: asset.mediaType,
+    mimeType: asset.mimeType,
+    sizeBytes: asset.sizeBytes,
+    status: asset.status,
+    createdAt: asset.createdAt,
+  };
+}
+
 export function authenticate(req: NextRequest): string | null {
   const header = req.headers.get("authorization") ?? "";
   const session = verifySession(header.startsWith("Bearer ") ? header.slice(7) : "");

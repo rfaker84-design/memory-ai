@@ -24,6 +24,7 @@ export interface Memory {
 
 export type CreateMemoryInput = Omit<Memory, "id" | "createdAt" | "updatedAt"> & {
   fragments?: MemoryFragmentInput[];
+  idempotencyKey?: string;
 };
 
 export type UpdateMemoryInput = Partial<CreateMemoryInput>;

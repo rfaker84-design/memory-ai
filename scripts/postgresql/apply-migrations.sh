@@ -7,7 +7,9 @@ database="${MEMORYAI_PG_DATABASE:-memoryai}"
 for migration in \
   "$project_root/database/migrations/001_memoryai_core.sql" \
   "$project_root/database/migrations/002_memoryai_indexes.sql" \
-  "$project_root/database/migrations/003_memoryai_constraints.sql"
+  "$project_root/database/migrations/003_memoryai_constraints.sql" \
+  "$project_root/database/migrations/004_media_storage_foundation.sql" \
+  "$project_root/database/migrations/005_memory_creation_idempotency.sql"
 do
   test -f "$migration"
   sudo -n -u postgres psql -v ON_ERROR_STOP=1 --dbname="$database" --file="$migration" >/dev/null

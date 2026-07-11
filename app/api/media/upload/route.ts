@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authenticate, mediaError, mediaService } from "../_lib";
+import { authenticate, mediaError, mediaService, safeMediaAsset } from "../_lib";
 
 export const runtime = "nodejs";
 
@@ -20,6 +20,6 @@ export async function POST(req: NextRequest) {
     }
     const result = await mediaService().upload({ externalUserId: userId, memoryId,
       file: { name: file.name, type: file.type, body: Buffer.from(await file.arrayBuffer()) } });
-    return NextResponse.json({ asset: result.asset, duplicate: result.duplicate }, { status: result.duplicate ? 200 : 201 });
+    return NextResponse.json({ asset: safeMediaAsset(result.asset), duplicate: result.duplicate }, { status: result.duplicate ? 200 : 201 });
   } catch (error) { return mediaError(error); }
 }
