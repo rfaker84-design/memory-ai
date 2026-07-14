@@ -1,5 +1,5 @@
-import OpenAI from "openai";
-import { createClient } from "@supabase/supabase-js";
+import OpenAI from "@/src/server/legacy-openai";
+import { createClient } from "@/src/server/legacy-supabase";
 import { NextRequest, NextResponse } from "next/server";
 import type { FusionResult } from "../../../src/lib/graph-types";
 

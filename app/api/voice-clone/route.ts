@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/src/server/legacy-supabase";
 import { voiceCache, cacheKey } from "../../../src/lib/cache";
 import { checkConcurrency } from "../../../src/lib/concurrency-control";
 import { logger } from "../../../src/lib/logger";

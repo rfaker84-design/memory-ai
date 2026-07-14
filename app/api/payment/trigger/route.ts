@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/src/server/legacy-supabase";
 import {
   calculateEmotionLoad,
   generateSoftPrompt,

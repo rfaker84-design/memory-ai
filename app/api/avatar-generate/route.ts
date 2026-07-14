@@ -1,7 +1,7 @@
 // API: Trigger AI avatar generation for a memory
 // Uses the existing avatar generation providers (MiniMax, 智影, Adapter)
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/src/server/legacy-supabase";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,

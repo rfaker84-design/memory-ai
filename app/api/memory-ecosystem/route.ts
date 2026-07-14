@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars, prefer-const */
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/src/server/legacy-supabase";
 import { NextRequest, NextResponse } from "next/server";
 
 const supabaseAdmin = createClient(

@@ -1,5 +1,5 @@
-import OpenAI from "openai";
-import { createClient } from "@supabase/supabase-js";
+import OpenAI from "@/src/server/legacy-openai";
+import { createClient } from "@/src/server/legacy-supabase";
 
 const client = new OpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY,

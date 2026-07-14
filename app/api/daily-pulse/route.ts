@@ -1,5 +1,5 @@
-import OpenAI from "openai";
-import { createClient } from "@supabase/supabase-js";
+import OpenAI from "@/src/server/legacy-openai";
+import { createClient } from "@/src/server/legacy-supabase";
 import { calculateAddictionScore } from "../../../src/lib/addiction-score";
 import { logger } from "../../../src/lib/logger";
 

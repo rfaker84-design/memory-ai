@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import OpenAI from "@/src/server/legacy-openai";
 import { NextRequest, NextResponse } from "next/server";
 
 const client = new OpenAI({

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import COS from "cos-nodejs-sdk-v5";
+import COS from "@/src/server/lazy-cos";
 
 const cos = new COS({
   SecretId: process.env.TENCENT_SECRET_ID!,

@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/src/server/legacy-supabase";
 import { PLANS, getUserPlan, analyzeConversionReadiness, type PlanType } from "../../../../src/lib/subscription";
 import { getUserDependencyProfile } from "../../../../src/lib/emotion-dependency";
 

@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/src/server/legacy-supabase";
 import { Metadata } from "next";
 import Link from "next/link";
 import ShareClient from "./ShareClient";

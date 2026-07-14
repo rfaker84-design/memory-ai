@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/src/server/legacy-supabase";
 import { calculateAddictionScore } from "../../../../src/lib/addiction-score";
 import { logger } from "../../../../src/lib/logger";
 

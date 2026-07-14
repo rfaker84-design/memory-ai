@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars, prefer-const */
-import OpenAI from "openai";
+import OpenAI from "@/src/server/legacy-openai";
 import { NextRequest, NextResponse } from "next/server";
 
 const ai = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY, baseURL: "https://api.deepseek.com", timeout: 25000 });
