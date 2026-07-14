@@ -31,7 +31,11 @@ assert(contextBuilder.includes("ChatPostgresDataSource"), "Memory engine context
 assert(migrationRunner.includes("004_media_storage_foundation.sql"), "Migration runner omits media storage migration");
 assert(migrationRunner.includes("005_memory_creation_idempotency.sql"), "Migration runner omits memory idempotency migration");
 assert(idempotencyMigration.includes("BEGIN;") && idempotencyMigration.includes("COMMIT;"), "Idempotency migration is not transactional");
-assert(idempotencyMigration.includes("CREATE UNIQUE INDEX IF NOT EXISTS"), "Idempotency migration is not repeatable");
+assert(
+  idempotencyMigration.includes("to_regclass('public.ux_memories_creation_idempotency')") &&
+    idempotencyMigration.includes("unexpected owner or definition"),
+  "Idempotency migration does not validate an existing index before treating it as repeatable",
+);
 
 for (const clientFile of ["app/page.tsx", "app/create-memory/page.tsx"]) {
   const source = read(clientFile);
