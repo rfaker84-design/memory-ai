@@ -2,21 +2,22 @@
 
 ## PostgreSQL backup
 
-Run `scripts/backup/postgresql-to-cos.sh` daily as root. It creates a custom-format dump, validates it with `pg_restore --list`, uploads it to the private backup bucket, downloads a verification copy, and compares SHA-256 before retention runs.
+`scripts/backup/postgresql-to-cos.sh` is the only formal PostgreSQL-to-COS backup entrypoint. Run it daily as root. It creates a custom-format dump, validates it with `pg_restore --list`, uploads it to the private backup bucket, downloads a verification copy, and compares SHA-256 before local retention runs. `scripts/postgresql/cos-upload.sh` only delegates to this entrypoint.
 
-Install `coscmd` and configure its credential file for the dedicated backup bucket under the root account with mode `600`. The script also requires the server-only credential variables to be present as a fail-closed configuration check; it never prints their values.
+Install `coscmd` and place the dedicated backup credential configuration at `/etc/memoryai/coscmd-backup.conf`. It must be a regular, non-symlink file owned by `root:root`, mode `400` or `600`, and unreadable by ordinary users. The script always passes that exact path together with `/var/log/memoryai/coscmd-backup.log`, `COS_BACKUP_BUCKET`, and `COS_BACKUP_REGION` to every coscmd operation. It sets `HOME=/nonexistent` and removes generic Tencent credential variables before invoking child processes; `~/.cos.conf` and application credentials are never fallback sources.
 
-Retention is the latest 7 daily and 4 Sunday weekly backups, both locally and in COS. If upload, download verification, or hash comparison fails, the local dump is preserved and an `ALERT` entry is written to `backup-cos.log` and syslog. Missing credentials exit with code 2 and are not a successful upload.
+Local retention is the latest 7 daily and 4 Sunday weekly backups. Remote retention is exclusively enforced by preconfigured COS lifecycle rules: objects under `memoryai-postgresql/daily/` expire after 8 days and objects under `memoryai-postgresql/weekly/` expire after 35 days. The script never lists or deletes remote objects.
 
-Suggested cron:
+Any failed backup stage stops the run and records only the stage name and exit code in the protected event log and syslog. An optional external alert hook may be installed at `/usr/local/sbin/memoryai-backup-alert`; when present it must be a regular `root:root` executable with mode `500` or `700`. Arbitrary command strings are never evaluated. The local dump is preserved after upload or verification failure.
 
-```bash
-15 2 * * * /home/ubuntu/memory-ai/scripts/backup/postgresql-to-cos.sh
-```
+Install `scripts/backup/memoryai-postgresql-cos-backup.cron` under `/etc/cron.d/` only after replacing its bucket placeholder. The template fixes `PATH` and `HOME=/nonexistent`, invokes only the canonical entrypoint, and deliberately omits a second `flock` because the script owns `/run/lock/memoryai-postgresql-cos-backup.lock`.
+
+Before scheduling, verify in the COS console that the dedicated bucket has both lifecycle rules and that the backup identity is scoped only to the required prefixes. Installing the template or changing COS lifecycle policy is an explicit operator action, not part of repository validation.
 
 ## Alerts to monitor
 
 - `$MEMORYAI_PG_BACKUP_ROOT/logs/backup-cos.log` lines containing `ALERT`
+- `/var/log/memoryai/coscmd-backup.log` for coscmd operational diagnostics (mode `600`)
 - syslog tag `memoryai-backup`
 - media cleanup stderr lines containing `[media-cleanup] ALERT`
 

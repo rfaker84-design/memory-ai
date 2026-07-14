@@ -33,8 +33,12 @@ Run `scripts/postgresql/apply-migrations.sh` from the project root on the server
 - Root-only directory: `/home/ubuntu/memoryai-backups/postgresql`
 - Each dump must be non-empty and pass `pg_restore --list`.
 - Restore drill: `/usr/local/sbin/memoryai-postgresql-restore-drill`
+- Formal COS entrypoint: `/home/ubuntu/memory-ai/scripts/backup/postgresql-to-cos.sh`
+- COS credential configuration: `/etc/memoryai/coscmd-backup.conf` (`root:root`, mode `400` or `600`)
+- COSCMD log: `/var/log/memoryai/coscmd-backup.log` (mode `600`)
+- COS lifecycle: daily prefix expires after 8 days; weekly prefix expires after 35 days
 
-The COS upload helper intentionally exits without success when destination settings or tooling are absent. Configure and test COS separately before scheduling off-site uploads.
+The formal COS entrypoint owns its non-blocking flock and fails closed when its dedicated configuration, destination, tooling, upload, download, or hash verification is invalid. It never reads `~/.cos.conf`, generic Tencent credential variables, or a default SDK credential chain, and it never performs remote list/delete retention. Configure and verify COS lifecycle rules separately before scheduling off-site uploads. The legacy `scripts/postgresql/cos-upload.sh` only delegates to the formal entrypoint.
 
 ## Monitoring
 
