@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MemoryButton, MemoryInput } from "../memory-ui";
 import { useReducedMotion } from "../../motion";
@@ -29,8 +29,6 @@ export function CreateMemoryExperience() {
   const [created, setCreated] = useState<CreatedMemory | null>(null);
   const submitting = useRef(false);
 
-  const filled = useMemo(() => [draft.name, draft.relationship, draft.preferredAddress, draft.purpose,
-    draft.personality, draft.catchPhrases, draft.sharedExperiences, draft.lifeMoments, draft.interests].filter(v => v.trim()).length, [draft]);
   const completeness = completion(draft);
   const clarity = 0.36 + stage * .13 + completeness * .002;
   const blur = Math.max(2, 16 - stage * 3 - completeness * .045);
@@ -49,7 +47,9 @@ export function CreateMemoryExperience() {
     const file = event.target.files?.[0] ?? null;
     const valid = kind === "photo" ? file?.type.startsWith("image/") : file?.type.startsWith("audio/");
     if (file && (!valid || file.size > 20 * 1024 * 1024)) { setError("请选择 20MB 以内的照片或声音文件。"); return; }
-    kind === "photo" ? setPhoto(file) : setVoice(file); setUploadState(file ? "selected" : "idle"); setError("");
+    if (kind === "photo") setPhoto(file);
+    else setVoice(file);
+    setUploadState(file ? "selected" : "idle"); setError("");
   };
 
   const uploadSelectedMedia = async (memoryId: string) => {
@@ -58,15 +58,17 @@ export function CreateMemoryExperience() {
 
     setStatus("uploading");
     setUploadState("uploading");
-    const token = localStorage.getItem("yijian_session_token") ?? localStorage.getItem("memoryai_session_token");
-    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
     const assets: Array<{ id: string; mediaType: string; status: string }> = [];
 
     for (const file of files) {
       const body = new FormData();
       body.append("file", file);
       body.append("memoryId", memoryId);
-      const response = await fetch("/api/media/upload", { method: "POST", headers, body });
+      const response = await fetch("/api/media/upload", {
+        method: "POST",
+        credentials: "same-origin",
+        body,
+      });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data.asset?.id) {
         setUploadState(response.status === 503 ? "unavailable" : "error");
@@ -88,8 +90,8 @@ export function CreateMemoryExperience() {
         ["personality", draft.personality], ["catch_phrase", draft.catchPhrases], ["shared_experience", draft.sharedExperiences],
         ["life_moment", draft.lifeMoments], ["interest", draft.interests], ["purpose", draft.purpose], ["preferred_address", draft.preferredAddress],
       ].filter(([, content]) => content.trim()).map(([sourceType, content]) => ({ sourceType, content }));
-      const response = await fetch("/api/memories", { method: "POST", headers: createMemoryRequestHeaders(idempotencyKey), body: JSON.stringify({
-        userId: localStorage.getItem("yijian_phone"), name: draft.name.trim(), relationship: draft.relationship.trim(),
+      const response = await fetch("/api/memories", { method: "POST", credentials: "same-origin", headers: createMemoryRequestHeaders(idempotencyKey), body: JSON.stringify({
+        name: draft.name.trim(), relationship: draft.relationship.trim(),
         lifeStory: [draft.sharedExperiences, draft.lifeMoments].filter(Boolean).join("\n\n") || null,
         personalityProfile: draft.personality.trim() || null, catchPhrases: draft.catchPhrases.trim() || null,
         personalityTags: draft.interests.split(/[，,、\n]/).map(v => v.trim()).filter(Boolean), photoUrl: null, fragments,

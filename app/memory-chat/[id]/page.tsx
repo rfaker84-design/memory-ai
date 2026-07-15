@@ -2,86 +2,76 @@
 
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { supabase } from "../../../src/lib/supabase";
-
-type Memory = {
-  id: string;
-  name: string;
-  relationship: string;
-  life_story: string | null;
-  personality_profile: string | null;
-  speech_style: string | null;
-  catch_phrases: string | null;
-  photo_url: string | null;
-  voice_sample_url: string | null;
-};
-
-type TimelineEvent = {
-  id: string;
-  event_year: number | null;
-  title: string;
-  description: string | null;
-};
-
-type ChatMessage = {
-  id: string;
-  memory_id: string;
-  role: "user" | "assistant";
-  content: string;
-  created_at: string;
-};
+import type { Message as ChatMessage } from "../../../features/chat/types";
+import type { Memory } from "../../../features/memory/types";
+import {
+  loadOwnedMemory,
+  OwnedMemoryRequestError,
+} from "../../../src/components/memory/ownedMemoryClient";
 
 type MemoryFragment = {
   content: string;
-  source_type: string;
+  sourceType: string;
 };
 
 export default function MemoryChatPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
 
   const sendingRef = useRef(false);
-  const roundRef = useRef(0);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const [memory, setMemory] = useState<Memory | null>(null);
-  const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const messagesRef = useRef<ChatMessage[]>([]);
   const [fragments, setFragments] = useState<MemoryFragment[]>([]);
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
+  const [pageStatus, setPageStatus] = useState<"loading" | "ready" | "not-found" | "error">("loading");
+  const [chatError, setChatError] = useState("");
   const [ttsLoading, setTtsLoading] = useState(false);
-  const [audioUrl, setAudioUrl] = useState("");
+  const [, setAudioUrl] = useState("");
   const [showFragments, setShowFragments] = useState(true);
 
-  const loadMessages = useCallback(async () => {
-    const { data } = await supabase
-      .from("chat_messages")
-      .select("*")
-      .eq("memory_id", id)
-      .order("created_at", { ascending: true });
-    const msgs = (data || []) as ChatMessage[]; messagesRef.current = msgs; setMessages(msgs);
+  const loadMessages = useCallback(async (signal?: AbortSignal) => {
+    const response = await fetch(`/api/memories/${encodeURIComponent(id)}/chat-session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({}),
+      cache: "no-store",
+      signal,
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || "CHAT_SESSION_FAILED");
+    setMessages(Array.isArray(body.messages) ? body.messages : []);
   }, [id]);
 
   useEffect(() => {
-    const savedPhone = localStorage.getItem("yijian_phone");
-    if (!savedPhone) { window.location.href = "/login"; return; }
-
-    const loadData = async () => {
-      const { data: mem } = await supabase.from("memories").select("*").eq("id", id).single();
-      if (!mem) { window.location.href = "/memories"; return; }
-      setMemory(mem);
-
-      const { data: evts } = await supabase.from("timeline_events").select("*").eq("memory_id", id).order("event_year", { ascending: true });
-      setEvents(evts || []);
-
-      const { data: frags } = await supabase.from("memory_fragments").select("content, source_type").eq("memory_id", id).order("created_at", { ascending: false }).limit(6);
-      setFragments((frags || []) as MemoryFragment[]);
-
-      await loadMessages();
-    };
-    loadData();
+    const controller = new AbortController();
+    setPageStatus("loading");
+    void loadOwnedMemory(id, controller.signal)
+      .then(async (ownedMemory) => {
+        setMemory(ownedMemory);
+        setFragments(
+          (ownedMemory.lifeStory ?? "")
+            .split(/[。！？.!?]/)
+            .map((content) => content.trim())
+            .filter(Boolean)
+            .slice(0, 6)
+            .map((content) => ({ content, sourceType: "story" }))
+        );
+        await loadMessages(controller.signal);
+        setPageStatus("ready");
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        setPageStatus(
+          error instanceof OwnedMemoryRequestError && error.status === 404
+            ? "not-found"
+            : "error"
+        );
+      });
+    return () => controller.abort();
   }, [id, loadMessages]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, loading]);
@@ -90,31 +80,34 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
     if (sendingRef.current || !memory || !question.trim()) return;
     sendingRef.current = true;
     setLoading(true);
+    setChatError("");
     setShowFragments(false);
 
     const currentQuestion = question.trim();
     setQuestion("");
 
-    const res = await fetch("/api/memory-chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        memory_id: memory.id,
-        name: memory.name,
-        relationship: memory.relationship,
-        life_story: memory.life_story,
-        personality_profile: memory.personality_profile,
-        speech_style: memory.speech_style,
-        catch_phrases: memory.catch_phrases,
-        timeline: events,
-        question: currentQuestion,
-      }),
-    });
-
-    await res.json();
-    await loadMessages();
-    setLoading(false);
-    sendingRef.current = false;
+    try {
+      const res = await fetch("/api/memory-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          memoryId: memory.id,
+          fragments: fragments.map((fragment) => fragment.content),
+          history: messages.map(({ role, content }) => ({ role, content })),
+          question: currentQuestion,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "CHAT_SEND_FAILED");
+      await loadMessages();
+    } catch {
+      setChatError("消息发送失败，请重试。");
+      setQuestion(currentQuestion);
+    } finally {
+      setLoading(false);
+      sendingRef.current = false;
+    }
   };
 
   const generateVoice = async (text: string) => {
@@ -146,7 +139,14 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
     emotion: "情感片段",
   };
 
-  if (!memory) return <main className="flex min-h-screen items-center justify-center"><p className="text-[#A89888] font-light">正在准备...</p></main>;
+  if (!memory || pageStatus !== "ready") {
+    const label = pageStatus === "not-found"
+      ? "找不到这个记忆"
+      : pageStatus === "error"
+        ? "对话暂时无法加载，请稍后重试"
+        : "正在准备...";
+    return <main className="flex min-h-screen items-center justify-center"><p className="text-[#A89888] font-light">{label}</p></main>;
+  }
 
   return (
     <main className="min-h-screen">
@@ -171,8 +171,8 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
         {showFragments && messages.length === 0 && (
           <div className="py-12 text-center">
             <div className="mx-auto mb-6 h-28 w-28 overflow-hidden rounded-full ring-2 ring-white/10">
-              {memory.photo_url ? (
-                <img src={memory.photo_url} alt={memory.name} className="h-full w-full object-cover" />
+              {memory.photoUrl ? (
+                <img src={memory.photoUrl} alt={memory.name} className="h-full w-full object-cover" />
               ) : (
                 <div className="flex h-full items-center justify-center bg-[#3D3226]/[0.06] text-4xl text-[#A89888]">{memory.name.charAt(0)}</div>
               )}
@@ -187,24 +187,24 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
                 <p className="text-xs uppercase tracking-wider text-[#A89888]">TA的记忆碎片</p>
                 {fragments.slice(0, 4).map((f, i) => (
                   <div key={i} className="rounded-xl bg-[#3D3226]/[0.06] px-4 py-3">
-                    <p className="text-xs text-[#7A6E62]">{fragmentLabels[f.source_type] || f.source_type}</p>
+                    <p className="text-xs text-[#7A6E62]">{fragmentLabels[f.sourceType] || f.sourceType}</p>
                     <p className="mt-1 text-sm leading-relaxed text-[#5C4A3A]">{f.content}</p>
                   </div>
                 ))}
               </div>
             )}
 
-            {memory.speech_style && (
+            {memory.speechStyle && (
               <div className="mt-6 rounded-xl bg-[#3D3226]/[0.06] px-4 py-3 text-left">
                 <p className="text-xs text-[#7A6E62]">说话风格</p>
-                <p className="mt-1 text-sm leading-relaxed text-[#7A6E62]">{memory.speech_style}</p>
+                <p className="mt-1 text-sm leading-relaxed text-[#7A6E62]">{memory.speechStyle}</p>
               </div>
             )}
 
-            {memory.catch_phrases && (
+            {memory.catchPhrases && (
               <div className="mt-3 rounded-xl bg-[#3D3226]/[0.06] px-4 py-3 text-left">
                 <p className="text-xs text-[#7A6E62]">TA常说的话</p>
-                <p className="mt-1 text-sm leading-relaxed text-[#7A6E62]">{memory.catch_phrases}</p>
+                <p className="mt-1 text-sm leading-relaxed text-[#7A6E62]">{memory.catchPhrases}</p>
               </div>
             )}
           </div>
@@ -241,6 +241,7 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
               </div>
             </div>
           )}
+          {chatError && <p role="alert" className="text-center text-sm text-red-300">{chatError}</p>}
           <div ref={bottomRef} />
         </div>
       </div>

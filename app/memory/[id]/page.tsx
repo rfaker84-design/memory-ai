@@ -4,17 +4,13 @@ import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import PresenceAvatar from "../../../src/components/PresenceAvatar";
+import {
+  loadOwnedMemory,
+  OwnedMemoryRequestError,
+} from "../../../src/components/memory/ownedMemoryClient";
 import type { Emotion } from "../../../src/lib/volc";
-import { store } from "../../../src/lib/store";
 import { getEmotionState, updateEmotion, EMOTION_UI } from "../../../src/lib/emotionEngine";
-
-type Memory = {
-  id: string;
-  name: string;
-  relationship: string | null;
-  life_story: string | null;
-  avatar_image_url?: string | null;
-};
+import type { Memory } from "../../../features/memory/types";
 
 export default function MemoryRoomPage({
   params,
@@ -24,49 +20,50 @@ export default function MemoryRoomPage({
   const { id } = use(params);
   const router = useRouter();
   const [memory, setMemory] = useState<Memory | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadStatus, setLoadStatus] = useState<"loading" | "ready" | "not-found" | "error">("loading");
   const [fragments, setFragments] = useState<string[]>([]);
   const [emotion, setEmotion] = useState<Emotion>("calm");
   const [activeFragment, setActiveFragment] = useState(0);
   const [exiting, setExiting] = useState(false);
 
-  // Load memory & sync emotion from global store
+  // Load the newly created Memory through the formal PostgreSQL item API.
   useEffect(() => {
-    const phone = localStorage.getItem("yijian_phone");
-    if (!phone) {
-      router.push("/");
-      return;
-    }
-    fetch("/api/memories-mvp?phone=" + encodeURIComponent(phone))
-      .then((r) => r.json())
-      .then((data: Memory[]) => {
-        const found = data.find((m) => m.id === id);
-        if (found) {
-          setMemory(found);
-          if (found.life_story) {
-            const sentences = found.life_story
-              .split(/[。！？.!?]/)
-              .map((s) => s.trim())
-              .filter((s) => s.length > 4 && s.length < 55)
-              .slice(0, 6);
-            setFragments(sentences);
-          }
+    const controller = new AbortController();
+    setLoadStatus("loading");
+    void loadOwnedMemory(id, controller.signal)
+      .then((found) => {
+        setMemory(found);
+        setLoadStatus("ready");
+        if (found.lifeStory) {
+          const sentences = found.lifeStory
+            .split(/[。！？.!?]/)
+            .map((sentence) => sentence.trim())
+            .filter((sentence) => sentence.length > 4 && sentence.length < 55)
+            .slice(0, 6);
+          setFragments(sentences);
+        }
 
-          // Use global emotion state first; fall back to text-based detection
-          const globalEmo = getEmotionState();
-          if (globalEmo.source !== "init" && globalEmo.intensity > 0.2) {
-            setEmotion(globalEmo.type);
-          } else if (found.life_story) {
-            const story = found.life_story;
-            if (/开心|温暖|幸福|爱/.test(story)) { setEmotion("warm"); updateEmotion("warm", 0.5, "system"); }
-            else if (/难过|悲伤|痛|哭/.test(story)) { setEmotion("sad"); updateEmotion("sad", 0.5, "system"); }
-            else if (/怀念|记得|曾经|那时/.test(story)) { setEmotion("nostalgic"); updateEmotion("nostalgic", 0.5, "system"); }
-            else { setEmotion("calm"); }
-          }
+        const globalEmo = getEmotionState();
+        if (globalEmo.source !== "init" && globalEmo.intensity > 0.2) {
+          setEmotion(globalEmo.type);
+        } else if (found.lifeStory) {
+          const story = found.lifeStory;
+          if (/开心|温暖|幸福|爱/.test(story)) { setEmotion("warm"); updateEmotion("warm", 0.5, "system"); }
+          else if (/难过|悲伤|痛|哭/.test(story)) { setEmotion("sad"); updateEmotion("sad", 0.5, "system"); }
+          else if (/怀念|记得|曾经|那时/.test(story)) { setEmotion("nostalgic"); updateEmotion("nostalgic", 0.5, "system"); }
+          else { setEmotion("calm"); }
         }
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        setMemory(null);
+        setLoadStatus(
+          error instanceof OwnedMemoryRequestError && error.status === 404
+            ? "not-found"
+            : "error"
+        );
+      });
+    return () => controller.abort();
   }, [id, router]);
 
   // Poll global emotion for real-time sync
@@ -92,7 +89,7 @@ export default function MemoryRoomPage({
   // Enter chat with emotional collapse
   function handleEnterChat() {
     setExiting(true);
-    setTimeout(() => router.push("/chat?id=" + id), 1500);
+    setTimeout(() => router.push(`/memory-chat/${id}`), 1500);
   }
 
   // ─── Intensity-driven visuals ──────────────────────────────
@@ -102,7 +99,7 @@ export default function MemoryRoomPage({
   const glowOpacity = 0.06 + intensityFactor * 0.12;
   const fragmentOpacity = 0.18 + intensityFactor * 0.2;
 
-  if (loading) {
+  if (loadStatus === "loading") {
     return (
       <main
         className="fixed inset-0 flex items-center justify-center"
@@ -121,9 +118,11 @@ export default function MemoryRoomPage({
   if (!memory) {
     return (
       <main className="fixed inset-0 flex flex-col items-center justify-center gap-6" style={{ background: "#0b0b0f" }}>
-        <p style={{ color: "rgba(160,150,130,0.12)", fontSize: 13, margin: 0 }}>找不到这段记忆</p>
+        <p style={{ color: "rgba(160,150,130,0.42)", fontSize: 13, margin: 0 }}>
+          {loadStatus === "not-found" ? "找不到这段记忆" : "记忆暂时无法读取，请稍后重试"}
+        </p>
         <button
-          onClick={() => router.push("/memories")}
+          onClick={() => router.push("/memory-world")}
           className="text-[12px] tracking-[0.06em]"
           style={{ color: "rgba(180,170,150,0.25)", background: "none", border: "none", cursor: "pointer" }}
         >返回记忆列表</button>
@@ -187,7 +186,7 @@ export default function MemoryRoomPage({
           transition={{ duration: 1.8, ease: "easeOut" }}
         >
           <PresenceAvatar
-            avatarUrl={memory.avatar_image_url || null}
+            avatarUrl={memory.photoUrl || null}
             name={memory.name}
             emotion={emotion}
             speaking={false}

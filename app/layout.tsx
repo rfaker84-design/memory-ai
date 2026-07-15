@@ -1,21 +1,6 @@
 import type { Metadata } from "next";
-import { Noto_Sans_SC, Noto_Serif_SC } from "next/font/google";
 import MobileAppShell from "../src/components/MobileAppShell";
 import "./globals.css";
-
-const notoSansSC = Noto_Sans_SC({
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
-  variable: "--font-noto-sans-sc",
-  display: "swap",
-});
-
-const notoSerifSC = Noto_Serif_SC({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-noto-serif-sc",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "忆见",
@@ -35,7 +20,7 @@ export const viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="zh-CN" style={{ colorScheme: "light" }}>
-      <body className={`${notoSansSC.variable} ${notoSerifSC.variable} antialiased`}
+      <body className="antialiased"
         style={{ background: "var(--bg-warm, #F6F1E8)", margin: 0, padding: 0 }}>
         <MobileAppShell>{children}</MobileAppShell>
       </body>
