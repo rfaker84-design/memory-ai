@@ -62,16 +62,34 @@ function assertNoStore(response: Response): void {
   assert.equal(response.headers.get("vary"), "Cookie, Origin");
 }
 
-test("middleware enforces the formal API allowlist before route execution", () => {
+test("middleware enforces the formal API allowlist before route execution", async () => {
   for (const pathname of EXACT_FORMAL_PATHS) assert.equal(isFormalApiPath(pathname), true, pathname);
   assert.equal(isFormalApiPath("/api/memories/00000000-0000-4000-8000-000000000001"), true);
   assert.equal(isFormalApiPath("/api/media/00000000-0000-4000-8000-000000000001"), true);
-  assert.equal(isFormalApiPath("/api/memories-mvp"), false);
-  assert.equal(isFormalApiPath("/api/health/private"), false);
+  for (const pathname of [
+    "/api/memories-mvp",
+    "/api/memories/",
+    "/api/memories//",
+    "/api/memories/id/extra",
+    "/api/memories/id/chat-session/extra",
+    "/api/memories/id/chat-session-suffix",
+    "/api/media/",
+    "/api/media//",
+    "/api/media/id/extra",
+    "/api/media-upload",
+    "/api/health/private",
+  ]) {
+    assert.equal(isFormalApiPath(pathname), false, pathname);
+    const rejected = middleware(new NextRequest(`https://memoryai.test${pathname}`));
+    assert.equal(rejected.status, 410, pathname);
+    assert.deepEqual(await rejected.json(), { error: "LEGACY_ROUTE_UNAVAILABLE" }, pathname);
+    assertNoStore(rejected);
+  }
 
   for (const method of ["GET", "POST"] as const) {
     const response = middleware(new NextRequest("https://memoryai.test/api/unknown", { method }));
     assert.equal(response.status, 410);
+    assert.deepEqual(await response.json(), { error: "LEGACY_ROUTE_UNAVAILABLE" });
     assertNoStore(response);
   }
 
@@ -84,12 +102,10 @@ test("middleware enforces the formal API allowlist before route execution", () =
 
 test("every tracked non-formal Route Handler is a route-level 410", async () => {
   const routes = trackedRoutes();
-  assert.ok(routes.length > 50, "the audit must enumerate the complete tracked API surface");
+  assert.equal(routes.length, 86, "the audit must enumerate the complete tracked API surface");
 
   for (const { file, pathname } of routes) {
-    const formal = EXACT_FORMAL_PATHS.has(pathname)
-      || pathname.startsWith("/api/memories/")
-      || pathname.startsWith("/api/media/");
+    const formal = isFormalApiPath(pathname);
     const source = readFileSync(file, "utf8");
     if (formal) {
       assert.doesNotMatch(source, /legacy(?:Route|Mutation)Unavailable/, pathname);
