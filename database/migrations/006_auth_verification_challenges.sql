@@ -39,9 +39,8 @@ DECLARE
   actual_generated TEXT;
   default_oid OID;
   default_expression TEXT;
-  default_function_name TEXT;
-  default_function_oid OID;
-  expected_default_function_oid OID := 'pg_catalog.gen_random_uuid()'::regprocedure;
+  builtin_default_function_oid OID;
+  builtin_default_return_type_oid OID;
   primary_key_count INTEGER;
   primary_key_columns SMALLINT[];
 BEGIN
@@ -63,32 +62,48 @@ BEGIN
     AND a.attnum > 0
     AND NOT a.attisdropped;
 
-  IF NOT FOUND
-     OR actual_type_oid IS DISTINCT FROM 'pg_catalog.uuid'::regtype
-     OR actual_typmod IS DISTINCT FROM -1
-     OR actual_not_null IS DISTINCT FROM true
-     OR actual_identity IS DISTINCT FROM ''
-     OR actual_generated IS DISTINCT FROM ''
-     OR default_oid IS NULL THEN
-    RAISE EXCEPTION '006 column public.auth_verification_challenges.challenge_id has an unexpected definition';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION '006 challenge_id check failed: column is missing';
+  END IF;
+  IF actual_type_oid IS DISTINCT FROM 'pg_catalog.uuid'::regtype THEN
+    RAISE EXCEPTION '006 challenge_id check failed: atttypid must be uuid, got %', actual_type_oid;
+  END IF;
+  IF actual_typmod IS DISTINCT FROM -1 THEN
+    RAISE EXCEPTION '006 challenge_id check failed: atttypmod must be -1, got %', actual_typmod;
+  END IF;
+  IF actual_not_null IS DISTINCT FROM true THEN
+    RAISE EXCEPTION '006 challenge_id check failed: attnotnull must be true, got %', actual_not_null;
+  END IF;
+  IF actual_identity IS DISTINCT FROM '' THEN
+    RAISE EXCEPTION '006 challenge_id check failed: attidentity must be empty, got %', actual_identity;
+  END IF;
+  IF actual_generated IS DISTINCT FROM '' THEN
+    RAISE EXCEPTION '006 challenge_id check failed: attgenerated must be empty, got %', actual_generated;
+  END IF;
+  IF default_oid IS NULL THEN
+    RAISE EXCEPTION '006 challenge_id check failed: default is missing';
   END IF;
 
-  -- pg_get_expr may omit or retain a schema qualification according to function
-  -- visibility. Restrict the expression shape, then prove its referenced pg_proc
-  -- identity below instead of comparing the complete deparsed string.
-  default_function_name := (pg_catalog.regexp_match(
-    default_expression,
-    '^\s*((?:pg_catalog\.)?gen_random_uuid)\(\)(?:::uuid)?\s*$'
-  ))[1];
-
-  IF default_function_name IS NULL THEN
-    RAISE EXCEPTION '006 column public.auth_verification_challenges.challenge_id has an unexpected default';
+  -- PostgreSQL may omit pg_catalog or retain a direct no-op ::uuid cast when
+  -- deparsing. Accept only those direct forms. In particular, do not inspect
+  -- pg_node_tree internals and do not require catalog dependency rows for
+  -- pinned built-ins.
+  IF default_expression !~ '^\s*(?:(?:pg_catalog\.)?gen_random_uuid\(\)(?:\s*::\s*(?:pg_catalog\.)?uuid)?|\(\s*(?:pg_catalog\.)?gen_random_uuid\(\)\s*\)\s*::\s*(?:pg_catalog\.)?uuid)\s*$' THEN
+    RAISE EXCEPTION '006 challenge_id check failed: default must directly call pg_catalog.gen_random_uuid(), got %', default_expression;
   END IF;
 
-  default_function_oid := pg_catalog.to_regprocedure(default_function_name || '()');
+  builtin_default_function_oid := pg_catalog.to_regprocedure('pg_catalog.gen_random_uuid()');
+  IF builtin_default_function_oid IS NULL THEN
+    RAISE EXCEPTION '006 challenge_id check failed: pg_catalog.gen_random_uuid() is unavailable';
+  END IF;
 
-  IF default_function_oid IS DISTINCT FROM expected_default_function_oid THEN
-    RAISE EXCEPTION '006 column public.auth_verification_challenges.challenge_id has an unexpected default function';
+  SELECT p.prorettype
+  INTO builtin_default_return_type_oid
+  FROM pg_catalog.pg_proc p
+  WHERE p.oid = builtin_default_function_oid;
+
+  IF builtin_default_return_type_oid IS DISTINCT FROM 'pg_catalog.uuid'::regtype THEN
+    RAISE EXCEPTION '006 challenge_id check failed: pg_catalog.gen_random_uuid() must return uuid, got %', builtin_default_return_type_oid;
   END IF;
 
   SELECT count(*)
@@ -105,9 +120,11 @@ BEGIN
       AND c.contype = 'p';
   END IF;
 
-  IF primary_key_count <> 1
-     OR primary_key_columns IS DISTINCT FROM ARRAY[challenge_attnum]::SMALLINT[] THEN
-    RAISE EXCEPTION '006 table public.auth_verification_challenges has an unexpected primary key definition';
+  IF primary_key_count <> 1 THEN
+    RAISE EXCEPTION '006 challenge_id check failed: primary key count must be 1, got %', primary_key_count;
+  END IF;
+  IF primary_key_columns IS DISTINCT FROM ARRAY[challenge_attnum]::SMALLINT[] THEN
+    RAISE EXCEPTION '006 challenge_id check failed: primary key conkey must contain challenge_id only, got %', primary_key_columns;
   END IF;
 END;
 $$;
