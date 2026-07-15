@@ -13,7 +13,12 @@ import {
   DatabaseDependencyError,
   safeDatabaseErrorLog,
 } from "../../../../src/server/database";
-import { temporaryExternalUserId } from "../_temporary-user-boundary";
+import { requireAllowedOrigin } from "../../../../src/server/auth";
+import { AuthConfigurationError } from "../../../../src/server/auth";
+import {
+  resolveSessionOwner,
+  type SessionResolver,
+} from "../_session-user-boundary";
 
 type Context = { params: Promise<{ id: string }> };
 type MemoryItemService = Pick<
@@ -70,28 +75,14 @@ function errorResponse(error: unknown) {
       { status: 503 }
     );
   }
+  if (error instanceof AuthConfigurationError) {
+    return NextResponse.json(
+      { error: error.code === "ORIGIN_NOT_ALLOWED" ? "ORIGIN_NOT_ALLOWED" : "AUTH_UNAVAILABLE" },
+      { status: error.code === "ORIGIN_NOT_ALLOWED" ? 403 : 503 }
+    );
+  }
   console.error("[api:memory-item] unexpected request failure");
   return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-}
-
-type ExternalUserBoundary =
-  | { userId: string }
-  | { response: NextResponse };
-
-function externalUser(req: NextRequest): ExternalUserBoundary {
-  const userId = temporaryExternalUserId(req);
-  if (!userId) {
-    return {
-      response: NextResponse.json(
-        {
-          error: "AUTH_MIGRATION_REQUIRED",
-          message: "Temporary userId compatibility input is required",
-        },
-        { status: 400 }
-      ),
-    } as const;
-  }
-  return { userId } as const;
 }
 
 function isStringOrNull(value: unknown): value is string | null {
@@ -181,15 +172,22 @@ function validateUpdateBody(value: unknown): UpdateOwnedMemoryInput {
 }
 
 export function createMemoryItemHandlers(
-  serviceFactory: ServiceFactory = createMemoryService
+  serviceFactory: ServiceFactory = createMemoryService,
+  sessionResolver?: SessionResolver
 ) {
   return {
     async GET(req: NextRequest, context: Context) {
-      const owner = externalUser(req);
+      const owner = await resolveSessionOwner(
+        req,
+        req.nextUrl.searchParams.has("userId")
+          ? req.nextUrl.searchParams.get("userId")
+          : undefined,
+        sessionResolver
+      );
       if ("response" in owner) return owner.response;
       try {
         const { id } = await context.params;
-        const memory = await serviceFactory().getMemoryForUser(id, owner.userId);
+        const memory = await serviceFactory().getMemoryForUser(id, owner.externalUserId);
         if (!memory) throw new MemoryNotFoundError("Memory not found");
         return NextResponse.json(memory);
       } catch (error) {
@@ -198,9 +196,16 @@ export function createMemoryItemHandlers(
     },
 
     async PATCH(req: NextRequest, context: Context) {
-      const owner = externalUser(req);
+      const owner = await resolveSessionOwner(
+        req,
+        req.nextUrl.searchParams.has("userId")
+          ? req.nextUrl.searchParams.get("userId")
+          : undefined,
+        sessionResolver
+      );
       if ("response" in owner) return owner.response;
       try {
+        requireAllowedOrigin(req);
         let rawBody: unknown;
         try {
           rawBody = await req.json();
@@ -211,7 +216,7 @@ export function createMemoryItemHandlers(
         const { id } = await context.params;
         const memory = await serviceFactory().updateMemoryForUser(
           id,
-          owner.userId,
+          owner.externalUserId,
           body
         );
         return NextResponse.json(memory);
@@ -221,11 +226,18 @@ export function createMemoryItemHandlers(
     },
 
     async DELETE(req: NextRequest, context: Context) {
-      const owner = externalUser(req);
+      const owner = await resolveSessionOwner(
+        req,
+        req.nextUrl.searchParams.has("userId")
+          ? req.nextUrl.searchParams.get("userId")
+          : undefined,
+        sessionResolver
+      );
       if ("response" in owner) return owner.response;
       try {
+        requireAllowedOrigin(req);
         const { id } = await context.params;
-        await serviceFactory().deleteMemoryForUser(id, owner.userId);
+        await serviceFactory().deleteMemoryForUser(id, owner.externalUserId);
         return new NextResponse(null, { status: 204 });
       } catch (error) {
         return errorResponse(error);

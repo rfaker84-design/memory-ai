@@ -11,6 +11,11 @@ import {
   safeDatabaseErrorLog,
 } from "../../../src/server/database";
 import { MemoryValidationError } from "../../../features/memory/errors";
+import {
+  AuthConfigurationError,
+  requireAllowedOrigin,
+} from "../../../src/server/auth";
+import { resolveSessionOwner } from "./_session-user-boundary";
 
 
 const createMemoryService = () => {
@@ -36,20 +41,28 @@ function databaseErrorResponse(error: unknown) {
     );
   }
 
+  if (error instanceof AuthConfigurationError) {
+    return NextResponse.json(
+      { error: error.code === "ORIGIN_NOT_ALLOWED" ? "ORIGIN_NOT_ALLOWED" : "AUTH_UNAVAILABLE" },
+      { status: error.code === "ORIGIN_NOT_ALLOWED" ? 403 : 503 }
+    );
+  }
+
   console.error("[api:memories] unexpected request failure");
   return NextResponse.json({ error: "Internal server error" }, { status: 500 });
 }
 
 export async function GET(req: NextRequest) {
-  const userId = req.nextUrl.searchParams.get("userId");
-
-  if (!userId) {
-    return NextResponse.json({ error: "Missing userId" }, { status: 400 });
-  }
-
   try {
+    const owner = await resolveSessionOwner(
+      req,
+      req.nextUrl.searchParams.has("userId")
+        ? req.nextUrl.searchParams.get("userId")
+        : undefined
+    );
+    if ("response" in owner) return owner.response;
     const memoryService = createMemoryService();
-    const memories = await memoryService.listUserMemories(userId);
+    const memories = await memoryService.listUserMemories(owner.externalUserId);
 
     return NextResponse.json(memories);
   } catch (error) {
@@ -59,9 +72,13 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    requireAllowedOrigin(req);
     const body = await req.json();
+    const compatibilityUserId = body.userId ?? body.user_phone;
+    const owner = await resolveSessionOwner(req, compatibilityUserId);
+    if ("response" in owner) return owner.response;
     const idempotencyKey = req.headers.get("idempotency-key") ?? undefined;
-    const userId = body.userId ?? body.user_phone;
+    const userId = owner.externalUserId;
     const {
       name,
       relationship,
@@ -80,9 +97,9 @@ export async function POST(req: NextRequest) {
       fragments,
     } = body;
 
-    if (!userId || !name) {
+    if (!name) {
       return NextResponse.json(
-        { error: "Missing userId or name" },
+        { error: "Missing name" },
         { status: 400 }
       );
     }

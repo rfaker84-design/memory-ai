@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { MediaPostgresDataSource, MediaRepository, MediaService, MediaServiceError, MediaValidationError } from "../../../features/media";
-import { verifySession } from "../../../src/lib/auth";
+import { requireAllowedOrigin, verifyRequestSession } from "../../../src/server/auth";
 import { createMediaStorage } from "../../../src/server/storage";
 
 export function safeMediaAsset(asset: {
@@ -21,10 +21,18 @@ export function safeMediaAsset(asset: {
   };
 }
 
-export function authenticate(req: NextRequest): string | null {
-  const header = req.headers.get("authorization") ?? "";
-  const session = verifySession(header.startsWith("Bearer ") ? header.slice(7) : "");
-  return session?.userId ?? null;
+export async function authenticate(req: NextRequest): Promise<string | null> {
+  const session = await verifyRequestSession(req);
+  return session?.externalUserId ?? null;
+}
+
+export function requireMediaMutationOrigin(req: NextRequest): NextResponse | null {
+  try {
+    requireAllowedOrigin(req);
+    return null;
+  } catch {
+    return NextResponse.json({ error: "ORIGIN_NOT_ALLOWED" }, { status: 403 });
+  }
 }
 
 export function mediaService(): MediaService {

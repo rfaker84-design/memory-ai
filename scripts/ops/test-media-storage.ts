@@ -21,8 +21,14 @@ class FakeDataSource implements MediaDataSource {
   async reserve(input: ReserveMediaInput) { this.asset ??= baseAsset(input); return { asset: this.asset, duplicate: this.duplicate }; }
   async markUploaded() { if (this.failCommit) throw new Error("rollback"); this.asset = { ...this.asset!, status: "uploaded" }; return this.asset; }
   async markFailed(_id: string, _user: string, code: string) { this.asset = { ...this.asset!, status: "failed", failureCode: code }; }
-  async findOwned() { return this.asset ?? null; }
-  async softDelete() { return this.asset ? { ...this.asset, status: "deleted" as const } : null; }
+  async findOwned(_id: string, externalUserId: string) {
+    return this.asset?.userId === externalUserId ? this.asset : null;
+  }
+  async softDelete(_id: string, externalUserId: string) {
+    return this.asset?.userId === externalUserId
+      ? { ...this.asset, status: "deleted" as const }
+      : null;
+  }
 }
 class FakeStorage implements MediaStorage {
   fail = false; deleted: string[] = []; putInput?: StoreMediaInput; ttl?: number;
@@ -41,4 +47,5 @@ test("duplicate file skips storage upload", async () => { const x=service(); x.d
 test("COS unavailable marks upload failed", async () => { const x=service(); x.storage.fail=true; await assert.rejects(()=>x.value.upload({externalUserId:"u",memoryId:"m",file:{name:"x.jpg",type:"image/jpeg",body:jpeg}}),MediaServiceError); assert.equal(x.db.asset?.status,"failed"); });
 test("database rollback compensates by deleting COS object", async () => { const x=service(); x.db.failCommit=true; await assert.rejects(()=>x.value.upload({externalUserId:"u",memoryId:"m",file:{name:"x.jpg",type:"image/jpeg",body:jpeg}})); assert.equal(x.storage.deleted.length,1); });
 test("signed URL TTL is capped", async () => { const x=service(); x.db.asset={...baseAsset({externalUserId:"u",memoryId:"m",mediaType:MediaType.IMAGE,storageKey:"key",mimeType:"image/jpeg",sizeBytes:1,sha256:"a".repeat(64)}),status:"uploaded"}; const result=await x.value.createDownloadUrl("id","u",9999); assert.equal(x.storage.ttl,900); assert.ok(Date.parse(result.expiresAt)>Date.now()); });
+test("cross-user media reads and deletes are rejected", async () => { const x=service(); x.db.asset={...baseAsset({externalUserId:"owner",memoryId:"m",mediaType:MediaType.IMAGE,storageKey:"key",mimeType:"image/jpeg",sizeBytes:1,sha256:"a".repeat(64)}),status:"uploaded"}; await assert.rejects(()=>x.value.createDownloadUrl("id","attacker",300),/MEDIA_NOT_FOUND/); await assert.rejects(()=>x.value.delete("id","attacker"),/MEDIA_NOT_FOUND/); });
 test("upload route rejects unauthenticated access", async () => { const response=await uploadRoute(new NextRequest("http://localhost/api/media/upload",{method:"POST"})); assert.equal(response.status,401); });

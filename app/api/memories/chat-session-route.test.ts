@@ -10,6 +10,12 @@ import { createChatSessionHandler } from "./[id]/chat-session/_handler";
 
 const memoryId = "11111111-1111-4111-8111-111111111111";
 const userId = "synthetic-owner";
+process.env.AUTH_ALLOWED_ORIGIN = "http://localhost";
+const sessionResolver = (externalUserId = userId) => async () => ({
+  userId: `internal-${externalUserId}`,
+  externalUserId,
+  expiresAt: "2026-07-16T00:00:00.000Z",
+});
 const memory: Memory = {
   id: memoryId,
   userId,
@@ -43,7 +49,7 @@ const messages: Message[] = [{
 function request(body: unknown) {
   return new NextRequest(`http://localhost/api/memories/${memoryId}/chat-session`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", origin: "http://localhost" },
     body: JSON.stringify(body),
   });
 }
@@ -69,9 +75,10 @@ test("chat session returns PostgreSQL conversation messages after owned Memory v
         assert.equal(conversationId, session.id);
         return messages;
       },
-    })
+    }),
+    sessionResolver()
   );
-  const response = await handler(request({ userId }), context);
+  const response = await handler(request({}), context);
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { session, messages });
   assert.deepEqual(ownershipCalls, [[memoryId, userId]]);
@@ -88,25 +95,39 @@ test("chat session hides ownership mismatch and does not open a conversation", a
         return session;
       },
       async listMessages() { return messages; },
-    })
+    }),
+    sessionResolver("another-user")
   );
-  const response = await handler(request({ userId: "another-user" }), context);
+  const response = await handler(request({}), context);
   assert.equal(response.status, 404);
   assert.deepEqual(await response.json(), { error: "MEMORY_NOT_FOUND" });
   assert.equal(chatCalled, false);
 });
 
-test("chat session marks the temporary identity boundary", async () => {
+test("chat session requires a session and rejects a forged userId", async () => {
   const handler = createChatSessionHandler(
     () => ({ async getMemoryForUser() { return memory; } }),
     () => ({
       async getOrCreateConversationByMemory() { return session; },
       async listMessages() { return messages; },
-    })
+    }),
+    async () => null
   );
   const response = await handler(request({}), context);
-  assert.equal(response.status, 400);
-  assert.equal((await response.json()).error, "AUTH_MIGRATION_REQUIRED");
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).error, "UNAUTHENTICATED");
+
+  const forgedHandler = createChatSessionHandler(
+    () => ({ async getMemoryForUser() { return memory; } }),
+    () => ({
+      async getOrCreateConversationByMemory() { return session; },
+      async listMessages() { return messages; },
+    }),
+    sessionResolver()
+  );
+  const forged = await forgedHandler(request({ userId: "another-user" }), context);
+  assert.equal(forged.status, 403);
+  assert.equal((await forged.json()).error, "SESSION_USER_MISMATCH");
 });
 
 test("chat session route preserves frozen PostgreSQL layers", () => {

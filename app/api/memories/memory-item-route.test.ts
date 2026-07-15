@@ -14,6 +14,13 @@ import { createMemoryItemHandlers } from "./[id]/_handlers";
 
 const memoryId = "11111111-1111-4111-8111-111111111111";
 const ownerId = "synthetic-owner";
+process.env.AUTH_ALLOWED_ORIGIN = "http://localhost";
+
+const sessionResolver = (externalUserId = ownerId) => async () => ({
+  userId: `internal-${externalUserId}`,
+  externalUserId,
+  expiresAt: "2026-07-16T00:00:00.000Z",
+});
 
 function memory(overrides: Partial<Memory> = {}): Memory {
   return {
@@ -74,52 +81,61 @@ function fakeService(options: { mediaConflict?: boolean } = {}) {
 function request(
   method: "GET" | "PATCH" | "DELETE",
   body?: string,
-  userId = ownerId
+  userId?: string
 ) {
   const url = new URL(`http://localhost/api/memories/${memoryId}`);
   if (userId) url.searchParams.set("userId", userId);
   return new NextRequest(url, {
     method,
     body,
-    headers: body === undefined ? undefined : { "content-type": "application/json" },
+    headers: {
+      origin: "http://localhost",
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+    },
   });
 }
 
 const context = (id = memoryId) => ({ params: Promise.resolve({ id }) });
 
 test("GET returns the formal Memory DTO for the owning external user", async () => {
-  const handlers = createMemoryItemHandlers(() => fakeService());
+  const handlers = createMemoryItemHandlers(() => fakeService(), sessionResolver());
   const response = await handlers.GET(request("GET"), context());
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), memory());
 });
 
 test("GET rejects an invalid memory id", async () => {
-  const handlers = createMemoryItemHandlers(() => fakeService());
+  const handlers = createMemoryItemHandlers(() => fakeService(), sessionResolver());
   const response = await handlers.GET(request("GET"), context("invalid"));
   assert.equal(response.status, 400);
   assert.equal((await response.json()).error, "INVALID_REQUEST");
 });
 
 test("GET hides missing and mismatched ownership behind the same 404", async () => {
-  const handlers = createMemoryItemHandlers(() => fakeService());
+  const handlers = createMemoryItemHandlers(() => fakeService(), sessionResolver());
   const missing = await handlers.GET(request("GET"), context("22222222-2222-4222-8222-222222222222"));
-  const mismatched = await handlers.GET(request("GET", undefined, "another-user"), context());
+  const mismatchedHandlers = createMemoryItemHandlers(() => fakeService(), sessionResolver("another-user"));
+  const mismatched = await mismatchedHandlers.GET(request("GET"), context());
   assert.equal(missing.status, 404);
   assert.equal(mismatched.status, 404);
   assert.deepEqual(await missing.json(), { error: "MEMORY_NOT_FOUND" });
   assert.deepEqual(await mismatched.json(), { error: "MEMORY_NOT_FOUND" });
 });
 
-test("missing compatibility user is explicitly marked AUTH_MIGRATION_REQUIRED", async () => {
-  const handlers = createMemoryItemHandlers(() => fakeService());
-  const response = await handlers.GET(request("GET", undefined, ""), context());
-  assert.equal(response.status, 400);
-  assert.equal((await response.json()).error, "AUTH_MIGRATION_REQUIRED");
+test("missing session is 401 and a forged compatibility user is rejected", async () => {
+  const unauthenticated = createMemoryItemHandlers(() => fakeService(), async () => null);
+  const missing = await unauthenticated.GET(request("GET"), context());
+  assert.equal(missing.status, 401);
+  assert.equal((await missing.json()).error, "UNAUTHENTICATED");
+
+  const authenticated = createMemoryItemHandlers(() => fakeService(), sessionResolver());
+  const forged = await authenticated.GET(request("GET", undefined, "another-user"), context());
+  assert.equal(forged.status, 403);
+  assert.equal((await forged.json()).error, "SESSION_USER_MISMATCH");
 });
 
 test("PATCH updates supported fields for the owner", async () => {
-  const handlers = createMemoryItemHandlers(() => fakeService());
+  const handlers = createMemoryItemHandlers(() => fakeService(), sessionResolver());
   const response = await handlers.PATCH(
     request("PATCH", JSON.stringify({ name: "Updated", birthYear: 1980 })),
     context()
@@ -132,7 +148,7 @@ test("PATCH updates supported fields for the owner", async () => {
 });
 
 test("PATCH rejects empty, unknown, forbidden, malformed, and invalid fields", async () => {
-  const handlers = createMemoryItemHandlers(() => fakeService());
+  const handlers = createMemoryItemHandlers(() => fakeService(), sessionResolver());
   const cases = [
     JSON.stringify({}),
     JSON.stringify({ unknown: true }),
@@ -149,7 +165,7 @@ test("PATCH rejects empty, unknown, forbidden, malformed, and invalid fields", a
 });
 
 test("PATCH retains datasource normalization and validation", async () => {
-  const handlers = createMemoryItemHandlers(() => fakeService());
+  const handlers = createMemoryItemHandlers(() => fakeService(), sessionResolver());
   const response = await handlers.PATCH(
     request("PATCH", JSON.stringify({ name: "   " })),
     context()
@@ -159,9 +175,9 @@ test("PATCH retains datasource normalization and validation", async () => {
 });
 
 test("PATCH hides ownership mismatch behind 404", async () => {
-  const handlers = createMemoryItemHandlers(() => fakeService());
+  const handlers = createMemoryItemHandlers(() => fakeService(), sessionResolver("another-user"));
   const response = await handlers.PATCH(
-    request("PATCH", JSON.stringify({ name: "Updated" }), "another-user"),
+    request("PATCH", JSON.stringify({ name: "Updated" })),
     context()
   );
   assert.equal(response.status, 404);
@@ -170,7 +186,7 @@ test("PATCH hides ownership mismatch behind 404", async () => {
 
 test("DELETE succeeds once, then returns the deterministic 404 contract", async () => {
   const service = fakeService();
-  const handlers = createMemoryItemHandlers(() => service);
+  const handlers = createMemoryItemHandlers(() => service, sessionResolver());
   const deleted = await handlers.DELETE(request("DELETE"), context());
   const repeated = await handlers.DELETE(request("DELETE"), context());
   assert.equal(deleted.status, 204);
@@ -179,16 +195,16 @@ test("DELETE succeeds once, then returns the deterministic 404 contract", async 
 });
 
 test("DELETE hides ownership mismatch behind 404", async () => {
-  const handlers = createMemoryItemHandlers(() => fakeService());
+  const handlers = createMemoryItemHandlers(() => fakeService(), sessionResolver("another-user"));
   const response = await handlers.DELETE(
-    request("DELETE", undefined, "another-user"),
+    request("DELETE"),
     context()
   );
   assert.equal(response.status, 404);
 });
 
 test("DELETE returns 409 while media objects are not cleaned", async () => {
-  const handlers = createMemoryItemHandlers(() => fakeService({ mediaConflict: true }));
+  const handlers = createMemoryItemHandlers(() => fakeService({ mediaConflict: true }), sessionResolver());
   const response = await handlers.DELETE(request("DELETE"), context());
   assert.equal(response.status, 409);
   assert.equal((await response.json()).error, "MEMORY_MEDIA_NOT_CLEAN");

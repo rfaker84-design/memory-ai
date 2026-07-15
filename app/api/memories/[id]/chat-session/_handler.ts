@@ -14,7 +14,12 @@ import {
   DatabaseDependencyError,
   safeDatabaseErrorLog,
 } from "../../../../../src/server/database";
-import { temporaryExternalUserIdFromBody } from "../../_temporary-user-boundary";
+import { requireAllowedOrigin } from "../../../../../src/server/auth";
+import { AuthConfigurationError } from "../../../../../src/server/auth";
+import {
+  resolveSessionOwner,
+  type SessionResolver,
+} from "../../_session-user-boundary";
 
 type Context = { params: Promise<{ id: string }> };
 type MemoryOwnershipService = Pick<MemoryService, "getMemoryForUser">;
@@ -31,26 +36,23 @@ const createMemoryService = (): MemoryOwnershipService =>
 
 export function createChatSessionHandler(
   memoryServiceFactory: () => MemoryOwnershipService = createMemoryService,
-  chatServiceFactory: () => ChatSessionService = createChatService
+  chatServiceFactory: () => ChatSessionService = createChatService,
+  sessionResolver?: SessionResolver
 ) {
   return async function POST(req: NextRequest, { params }: Context) {
     try {
+      requireAllowedOrigin(req);
       let body: unknown;
       try {
         body = await req.json();
       } catch {
         return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 });
       }
-      const userId = temporaryExternalUserIdFromBody(body);
-      if (!userId) {
-        return NextResponse.json(
-          {
-            error: "AUTH_MIGRATION_REQUIRED",
-            message: "Temporary userId compatibility input is required",
-          },
-          { status: 400 }
-        );
-      }
+      const compatibilityUserId = body && typeof body === "object" && !Array.isArray(body)
+        && "userId" in body ? (body as Record<string, unknown>).userId : undefined;
+      const owner = await resolveSessionOwner(req, compatibilityUserId, sessionResolver);
+      if ("response" in owner) return owner.response;
+      const userId = owner.externalUserId;
 
       const { id: memoryId } = await params;
       const memory = await memoryServiceFactory().getMemoryForUser(
@@ -83,6 +85,12 @@ export function createChatSessionHandler(
         return NextResponse.json(
           { error: "Database dependency unavailable" },
           { status: 503 }
+        );
+      }
+      if (error instanceof AuthConfigurationError) {
+        return NextResponse.json(
+          { error: error.code === "ORIGIN_NOT_ALLOWED" ? "ORIGIN_NOT_ALLOWED" : "AUTH_UNAVAILABLE" },
+          { status: error.code === "ORIGIN_NOT_ALLOWED" ? 403 : 503 }
         );
       }
       console.error("[api:memory-chat-session] unexpected request failure");
