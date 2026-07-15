@@ -1,5 +1,3 @@
-import { NextResponse } from "next/server";
+import { legacyRouteUnavailable } from "@/app/api/_legacy-unavailable";
 
-export async function GET() {
-  return NextResponse.json({ status: "disabled" });
-}
+export const GET = legacyRouteUnavailable;

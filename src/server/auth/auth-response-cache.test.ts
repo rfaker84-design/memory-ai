@@ -71,22 +71,20 @@ test("all auth success and error responses are private no-store", async () => {
     }))),
     await session(new NextRequest("https://memoryai.test/api/auth/session")),
     await logout(request("/api/auth/logout")),
-    await legacyLogin(),
-    await legacyRegister(),
-    await oldSendCode(),
-    await oldVerifyCode(),
+    await legacyLogin(request("/api/auth/login", "{}")),
+    await legacyRegister(request("/api/auth/register", "{}")),
+    await oldSendCode(request("/api/send-code", "{}")),
+    await oldVerifyCode(request("/api/verify-code", "{}")),
     middleware(request("/api/auth/send-code", "{}", false)),
   ];
 
   for (const response of responses) assertNoStore(response);
 });
 
-test("middleware authentication failures are private no-store on formal and migration paths", () => {
+test("middleware authentication failures are private no-store on formal paths", () => {
   const paths = [
     "/api/auth/send-code",
     "/api/auth/verify-code",
-    "/api/send-code",
-    "/api/verify-code",
   ];
 
   for (const pathname of paths) {
@@ -113,5 +111,15 @@ test("middleware authentication failures are private no-store on formal and migr
     }
   } finally {
     process.env.AUTH_ALLOWED_ORIGIN = configuredOrigin;
+  }
+});
+
+test("middleware closes legacy verification aliases before Origin handling", () => {
+  for (const pathname of ["/api/send-code", "/api/verify-code"]) {
+    for (const origin of [false, true]) {
+      const response = middleware(request(pathname, "{}", origin));
+      assert.equal(response.status, 410);
+      assertNoStore(response);
+    }
   }
 });

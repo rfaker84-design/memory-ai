@@ -1,8 +1,3 @@
-import { authJson } from "@/src/server/auth";
+import { legacyMutationUnavailable } from "@/app/api/_legacy-unavailable";
 
-export async function POST() {
-  return authJson({
-    error: "PHONE_VERIFICATION_REQUIRED",
-    endpoint: "/api/auth/send-code",
-  }, { status: 410 });
-}
+export const POST = legacyMutationUnavailable;
