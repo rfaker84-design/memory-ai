@@ -1,6 +1,7 @@
 import { isIP } from "node:net";
 
 import { AuthConfigurationError } from "./crypto";
+import { checkAllowedOrigin } from "../security/origin";
 
 export function requireTrustedRequestIp(request: Request): string {
   if (process.env.AUTH_TRUST_NGINX_PROXY !== "true") {
@@ -15,20 +16,6 @@ export function requireTrustedRequestIp(request: Request): string {
 }
 
 export function requireAllowedOrigin(request: Request): void {
-  const allowed = process.env.AUTH_ALLOWED_ORIGIN?.trim();
-  if (!allowed) {
-    throw new AuthConfigurationError("AUTH_ALLOWED_ORIGIN_NOT_CONFIGURED");
-  }
-
-  let normalizedAllowed: string;
-  try {
-    normalizedAllowed = new URL(allowed).origin;
-  } catch {
-    throw new AuthConfigurationError("AUTH_ALLOWED_ORIGIN_INVALID");
-  }
-
-  const origin = request.headers.get("origin");
-  if (!origin || origin !== normalizedAllowed) {
-    throw new AuthConfigurationError("ORIGIN_NOT_ALLOWED");
-  }
+  const result = checkAllowedOrigin(request);
+  if (!result.allowed) throw new AuthConfigurationError(result.code);
 }
