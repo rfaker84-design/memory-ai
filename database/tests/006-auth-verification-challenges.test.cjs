@@ -54,9 +54,8 @@ test("006 validates challenge_id structurally without brittle default text equal
   // wrong-function, and wrong-schema defaults therefore fail closed.
   assert.match(migration006, /default_oid IS NULL/);
   assert.match(migration006, /\(\?:pg_catalog\\\.\)\?gen_random_uuid/);
-  assert.match(migration006, /pg_catalog\.to_regprocedure\(default_function_name \|\| '\(\)'\)/);
-  assert.match(migration006, /expected_default_function_oid OID := 'pg_catalog\.gen_random_uuid\(\)'::regprocedure/);
-  assert.match(migration006, /default_function_oid IS DISTINCT FROM expected_default_function_oid/);
+  assert.match(migration006, /pg_catalog\.to_regprocedure\('pg_catalog\.gen_random_uuid\(\)'\)/);
+  assert.match(migration006, /builtin_default_return_type_oid IS DISTINCT FROM 'pg_catalog\.uuid'::regtype/);
   assert.doesNotMatch(migration006, /actual_default IS DISTINCT FROM 'gen_random_uuid\(\)'/);
 
   // Exactly one primary key must exist and its complete conkey must contain
@@ -65,6 +64,28 @@ test("006 validates challenge_id structurally without brittle default text equal
   assert.match(migration006, /c\.contype = 'p'/);
   assert.match(migration006, /primary_key_count <> 1/);
   assert.match(migration006, /primary_key_columns IS DISTINCT FROM ARRAY\[challenge_attnum\]::SMALLINT\[\]/);
+});
+
+test("006 accepts a pinned built-in without requiring a pg_proc dependency", () => {
+  const postgres1423PinnedFunctionProbe = Object.freeze({
+    default_expression: "gen_random_uuid()",
+    pg_proc_dependency_count: 0,
+  });
+  assert.equal(postgres1423PinnedFunctionProbe.pg_proc_dependency_count, 0);
+  assert.equal(postgres1423PinnedFunctionProbe.default_expression, "gen_random_uuid()");
+  assert.doesNotMatch(migration006, /pg_catalog\.pg_depend|\bpg_depend\b/);
+  assert.doesNotMatch(migration006, /refclassid|dependency\.refobjid|default_function_name \|\|/);
+  assert.match(migration006, /pg_get_expr\(d\.adbin, d\.adrelid\)/);
+  assert.match(migration006, /to_regprocedure\('pg_catalog\.gen_random_uuid\(\)'\)/);
+});
+
+test("006 reports the exact challenge_id predicate that failed", () => {
+  for (const field of [
+    "column is missing", "atttypid", "atttypmod", "attnotnull", "attidentity",
+    "attgenerated", "default is missing", "default must directly call",
+    "primary key count", "primary key conkey",
+  ]) assert.ok(migration006.includes(field), `missing detailed failure for ${field}`);
+  assert.doesNotMatch(migration006, /challenge_id has an unexpected definition/);
 });
 
 test("006 preflight and postflight expose operational evidence", () => {
@@ -151,12 +172,17 @@ test("006 PostgreSQL positive, repeated, and negative matrix", {
     await t.test("rejects a same-name table with the wrong definition", async () => {
       await resetBase(client);
       await client.query("CREATE TABLE public.auth_verification_challenges (challenge_id UUID)");
-      await assert.rejects(client.query(migration006), /unexpected definition|unexpected columns/i);
+      await assert.rejects(client.query(migration006), /challenge_id check failed|unexpected columns/i);
       await client.query("ROLLBACK");
     });
 
     await t.test("accepts PostgreSQL 14 normalized UUID defaults", async () => {
-      for (const defaultExpression of ["gen_random_uuid()", "pg_catalog.gen_random_uuid()"]) {
+      for (const defaultExpression of [
+        "gen_random_uuid()",
+        "pg_catalog.gen_random_uuid()",
+        "gen_random_uuid()::uuid",
+        "(pg_catalog.gen_random_uuid())::uuid",
+      ]) {
         await resetBase(client);
         await client.query(challengeTable(
           `UUID NOT NULL DEFAULT ${defaultExpression} PRIMARY KEY`,
@@ -200,7 +226,7 @@ test("006 PostgreSQL positive, repeated, and negative matrix", {
         ));
         await assert.rejects(
           client.query(migration006),
-          /challenge_id.*unexpected|unexpected primary key definition/i,
+          /challenge_id check failed/i,
         );
         await client.query("ROLLBACK");
       });
@@ -217,7 +243,16 @@ test("006 PostgreSQL positive, repeated, and negative matrix", {
       await client.query(challengeTable(
         "UUID NOT NULL DEFAULT auth_shadow.gen_random_uuid() PRIMARY KEY",
       ));
-      await assert.rejects(client.query(migration006), /challenge_id.*unexpected default/i);
+      await assert.rejects(client.query(migration006), /challenge_id check failed: default/i);
+      await client.query("ROLLBACK");
+    });
+
+    await t.test("rejects the public wrapper even when it has the same name", async () => {
+      await resetBase(client);
+      await client.query(challengeTable(
+        "UUID NOT NULL DEFAULT public.gen_random_uuid() PRIMARY KEY",
+      ));
+      await assert.rejects(client.query(migration006), /default must directly call/i);
       await client.query("ROLLBACK");
     });
 
