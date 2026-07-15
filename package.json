@@ -13,6 +13,7 @@
     "test:create-flow": "tsx --test src/components/create-memory/createMemoryLogic.test.ts",
     "test:media": "tsx --test scripts/ops/test-media-storage.ts",
     "test:collective-analysis": "tsx --test app/api/collective-analysis/route.test.ts",
+    "test:auth-migration": "node --test database/tests/006-auth-verification-challenges.test.cjs",
     "test": "npm run test:create-flow && npm run test:media && npm run test:collective-analysis",
     "start": "next start -H 0.0.0.0 -p 3000",
     "lint": "next lint",
