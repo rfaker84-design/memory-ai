@@ -43,6 +43,8 @@ const checks = [
   {
     file: "app/api/tts/route.ts",
     forbidden: [
+      "getAIProviderRegistry",
+      "TTSAIProviderAdapter",
       "TENCENT_SECRET_ID",
       "TENCENT_SECRET_KEY",
       "tencentcloud-sdk-nodejs-tts",
@@ -51,7 +53,7 @@ const checks = [
       "VOLCENGINE_TTS_ACCESS_TOKEN",
       "openspeech.bytedance.com",
     ],
-    required: ["getAIProviderRegistry", "TTSAIProviderAdapter"],
+    required: ["legacyMutationUnavailable"],
   },
   {
     file: "services/tts/tencent-tts-provider.ts",
