@@ -7,7 +7,6 @@ import PresenceAvatar from "../../../src/components/PresenceAvatar";
 import {
   loadOwnedMemory,
   OwnedMemoryRequestError,
-  temporaryMemoryOwnerId,
 } from "../../../src/components/memory/ownedMemoryClient";
 import type { Emotion } from "../../../src/lib/volc";
 import { getEmotionState, updateEmotion, EMOTION_UI } from "../../../src/lib/emotionEngine";
@@ -29,15 +28,9 @@ export default function MemoryRoomPage({
 
   // Load the newly created Memory through the formal PostgreSQL item API.
   useEffect(() => {
-    const userId = temporaryMemoryOwnerId();
-    if (!userId) {
-      setLoadStatus("error");
-      router.replace("/");
-      return;
-    }
     const controller = new AbortController();
     setLoadStatus("loading");
-    void loadOwnedMemory(id, userId, controller.signal)
+    void loadOwnedMemory(id, controller.signal)
       .then((found) => {
         setMemory(found);
         setLoadStatus("ready");

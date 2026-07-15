@@ -7,7 +7,6 @@ import type { Memory } from "../../../features/memory/types";
 import {
   loadOwnedMemory,
   OwnedMemoryRequestError,
-  temporaryMemoryOwnerId,
 } from "../../../src/components/memory/ownedMemoryClient";
 
 type MemoryFragment = {
@@ -23,7 +22,6 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const [memory, setMemory] = useState<Memory | null>(null);
-  const [ownerId, setOwnerId] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [fragments, setFragments] = useState<MemoryFragment[]>([]);
   const [question, setQuestion] = useState("");
@@ -34,11 +32,12 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
   const [, setAudioUrl] = useState("");
   const [showFragments, setShowFragments] = useState(true);
 
-  const loadMessages = useCallback(async (userId: string, signal?: AbortSignal) => {
+  const loadMessages = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch(`/api/memories/${encodeURIComponent(id)}/chat-session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId }),
+      credentials: "same-origin",
+      body: JSON.stringify({}),
       cache: "no-store",
       signal,
     });
@@ -48,15 +47,9 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
   }, [id]);
 
   useEffect(() => {
-    const userId = temporaryMemoryOwnerId();
-    if (!userId) {
-      setPageStatus("error");
-      return;
-    }
     const controller = new AbortController();
-    setOwnerId(userId);
     setPageStatus("loading");
-    void loadOwnedMemory(id, userId, controller.signal)
+    void loadOwnedMemory(id, controller.signal)
       .then(async (ownedMemory) => {
         setMemory(ownedMemory);
         setFragments(
@@ -67,7 +60,7 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
             .slice(0, 6)
             .map((content) => ({ content, sourceType: "story" }))
         );
-        await loadMessages(userId, controller.signal);
+        await loadMessages(controller.signal);
         setPageStatus("ready");
       })
       .catch((error) => {
@@ -84,7 +77,7 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, loading]);
 
   const handleAsk = async () => {
-    if (sendingRef.current || !memory || !ownerId || !question.trim()) return;
+    if (sendingRef.current || !memory || !question.trim()) return;
     sendingRef.current = true;
     setLoading(true);
     setChatError("");
@@ -97,15 +90,9 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
       const res = await fetch("/api/memory-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({
           memoryId: memory.id,
-          userId: ownerId,
-          name: memory.name,
-          relationship: memory.relationship,
-          lifeStory: memory.lifeStory,
-          personalityProfile: memory.personalityProfile,
-          speechStyle: memory.speechStyle,
-          catchPhrases: memory.catchPhrases,
           fragments: fragments.map((fragment) => fragment.content),
           history: messages.map(({ role, content }) => ({ role, content })),
           question: currentQuestion,
@@ -113,7 +100,7 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || "CHAT_SEND_FAILED");
-      await loadMessages(ownerId);
+      await loadMessages();
     } catch {
       setChatError("消息发送失败，请重试。");
       setQuestion(currentQuestion);

@@ -3,8 +3,8 @@ import test from "node:test";
 
 import { NextRequest } from "next/server";
 
-import { createSendCodeHandler } from "@/app/api/auth/send-code/route";
-import { createVerifyCodeHandler } from "@/app/api/auth/verify-code/route";
+import { createSendCodeHandler } from "@/app/api/auth/send-code/_handler";
+import { createVerifyCodeHandler } from "@/app/api/auth/verify-code/_handler";
 
 import type {
   AuthRepositoryPort,

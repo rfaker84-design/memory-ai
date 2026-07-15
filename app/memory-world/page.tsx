@@ -23,16 +23,17 @@ function MemoryWorldContent() {
   const [memories, setMemories] = useState<MemoryWorldItem[]>([]);
 
   const load = useCallback(async () => {
-    const phone = localStorage.getItem("yijian_phone") || localStorage.getItem("yj_phone") || "";
-    if (!phone) {
-      setState("unauthenticated");
-      return;
-    }
-
     setState("loading");
     try {
-      const response = await fetch(`/api/memories?userId=${encodeURIComponent(phone)}`, { cache: "no-store" });
+      const response = await fetch("/api/memories", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
       const data = await response.json();
+      if (response.status === 401) {
+        setState("unauthenticated");
+        return;
+      }
       if (!response.ok) throw new Error(data?.error || "load failed");
       const list = Array.isArray(data) ? data : [];
       setMemories(list);

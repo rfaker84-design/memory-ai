@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { MemoryButton, MemoryInput } from "../memory-ui";
 import { useReducedMotion } from "../../motion";
 import { useCreateMemoryDraft } from "./useCreateMemoryDraft";
-import { temporaryMemoryOwnerId } from "../memory/ownedMemoryClient";
 import type { CreateStage } from "./types";
 import { completion, createMemoryRequestHeaders, validateStage } from "./createMemoryLogic";
 import styles from "./CreateMemoryExperience.module.css";
@@ -59,15 +58,17 @@ export function CreateMemoryExperience() {
 
     setStatus("uploading");
     setUploadState("uploading");
-    const token = localStorage.getItem("yijian_session_token") ?? localStorage.getItem("memoryai_session_token");
-    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
     const assets: Array<{ id: string; mediaType: string; status: string }> = [];
 
     for (const file of files) {
       const body = new FormData();
       body.append("file", file);
       body.append("memoryId", memoryId);
-      const response = await fetch("/api/media/upload", { method: "POST", headers, body });
+      const response = await fetch("/api/media/upload", {
+        method: "POST",
+        credentials: "same-origin",
+        body,
+      });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data.asset?.id) {
         setUploadState(response.status === 503 ? "unavailable" : "error");
@@ -89,8 +90,8 @@ export function CreateMemoryExperience() {
         ["personality", draft.personality], ["catch_phrase", draft.catchPhrases], ["shared_experience", draft.sharedExperiences],
         ["life_moment", draft.lifeMoments], ["interest", draft.interests], ["purpose", draft.purpose], ["preferred_address", draft.preferredAddress],
       ].filter(([, content]) => content.trim()).map(([sourceType, content]) => ({ sourceType, content }));
-      const response = await fetch("/api/memories", { method: "POST", headers: createMemoryRequestHeaders(idempotencyKey), body: JSON.stringify({
-        userId: temporaryMemoryOwnerId(), name: draft.name.trim(), relationship: draft.relationship.trim(),
+      const response = await fetch("/api/memories", { method: "POST", credentials: "same-origin", headers: createMemoryRequestHeaders(idempotencyKey), body: JSON.stringify({
+        name: draft.name.trim(), relationship: draft.relationship.trim(),
         lifeStory: [draft.sharedExperiences, draft.lifeMoments].filter(Boolean).join("\n\n") || null,
         personalityProfile: draft.personality.trim() || null, catchPhrases: draft.catchPhrases.trim() || null,
         personalityTags: draft.interests.split(/[，,、\n]/).map(v => v.trim()).filter(Boolean), photoUrl: null, fragments,

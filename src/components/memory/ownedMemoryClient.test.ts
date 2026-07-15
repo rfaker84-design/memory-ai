@@ -22,12 +22,12 @@ test("detail and refresh load the formal owned Memory endpoint", async () => {
     urls.push(String(input));
     return Response.json(memory);
   };
-  const first = await loadOwnedMemory(memory.id, memory.userId, undefined, request as typeof fetch);
-  const refreshed = await loadOwnedMemory(memory.id, memory.userId, undefined, request as typeof fetch);
+  const first = await loadOwnedMemory(memory.id, undefined, request as typeof fetch);
+  const refreshed = await loadOwnedMemory(memory.id, undefined, request as typeof fetch);
   assert.deepEqual(first, memory);
   assert.deepEqual(refreshed, memory);
   assert.equal(urls.length, 2);
-  assert.ok(urls.every((url) => url.startsWith(`/api/memories/${memory.id}?userId=`)));
+  assert.ok(urls.every((url) => url === `/api/memories/${memory.id}`));
 });
 
 test("formal Memory 404 remains a controlled page state", async () => {
@@ -36,7 +36,7 @@ test("formal Memory 404 remains a controlled page state", async () => {
     { status: 404 }
   );
   await assert.rejects(
-    loadOwnedMemory(memory.id, memory.userId, undefined, request as typeof fetch),
+    loadOwnedMemory(memory.id, undefined, request as typeof fetch),
     (error) =>
       error instanceof OwnedMemoryRequestError &&
       error.status === 404 &&
@@ -64,4 +64,24 @@ test("detail, chat, and create success paths contain no legacy data requests", (
   assert.match(chat, /\/chat-session/);
   assert.match(create, /`\/memory\/\$\{created\.id\}`/);
   assert.match(create, /`\/memory-chat\/\$\{created\.id\}`/);
+  for (const source of [detail, chat, create]) {
+    assert.doesNotMatch(source, /temporaryMemoryOwnerId|yijian_session_token|memoryai_session_token|Authorization:\s*`Bearer/);
+  }
+});
+
+test("formal auth and Memory list clients use the cookie session boundary", () => {
+  const sources = [
+    readFileSync(new URL("../../../app/page.tsx", import.meta.url), "utf8"),
+    readFileSync(new URL("../../../app/memory-world/page.tsx", import.meta.url), "utf8"),
+    readFileSync(new URL("../../../app/(memory)/memory/page.tsx", import.meta.url), "utf8"),
+    readFileSync(new URL("../../../components/world/WorldShell.tsx", import.meta.url), "utf8"),
+  ];
+  for (const source of sources) {
+    assert.doesNotMatch(source, /memories-mvp|\?userId=|yijian_session_token|memoryai_session_token/);
+  }
+  const auth = sources[3];
+  assert.match(auth, /\/api\/auth\/send-code/);
+  assert.match(auth, /\/api\/auth\/verify-code/);
+  assert.match(auth, /challengeId/);
+  assert.doesNotMatch(auth, /data\.code|setSentCode|\/api\/send-code|\/api\/verify-code/);
 });

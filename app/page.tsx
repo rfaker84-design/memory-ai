@@ -36,7 +36,6 @@ type HomeMemory = {
 type HomeStatus = "boot" | "loading" | "unauthenticated" | "empty" | "ready" | "error";
 
 type HomeSnapshot = {
-  phone: string;
   memories: HomeMemory[];
   status: HomeStatus;
   error?: string;
@@ -71,7 +70,7 @@ function HomePageContent() {
   const reducedMotion = useReducedMotion();
   const scroll = useMotionScroll();
   const heroDepth = useMotionSpring(reducedMotion ? 0 : scroll.progressY * -16);
-  const [snapshot, setSnapshot] = useState<HomeSnapshot>({ phone: "", memories: [], status: "boot" });
+  const [snapshot, setSnapshot] = useState<HomeSnapshot>({ memories: [], status: "boot" });
   const [navigating, setNavigating] = useState<string | null>(null);
 
   const activeMemory = snapshot.memories[0] ?? null;
@@ -81,20 +80,19 @@ function HomePageContent() {
   const loadHome = useCallback(async () => {
     if (typeof window === "undefined") return;
 
-    const phone = localStorage.getItem("yijian_phone") || localStorage.getItem("yj_phone") || "";
-
-    if (!phone) {
-      setSnapshot({ phone: "", memories: [], status: "unauthenticated" });
-      return;
-    }
-
-    setSnapshot((current) => ({ ...current, phone, status: "loading", error: undefined }));
+    setSnapshot((current) => ({ ...current, status: "loading", error: undefined }));
 
     try {
-      const response = await fetch(`/api/memories?userId=${encodeURIComponent(phone)}`, {
+      const response = await fetch("/api/memories", {
         cache: "no-store",
+        credentials: "same-origin",
       });
       const data = await response.json();
+
+      if (response.status === 401) {
+        setSnapshot({ memories: [], status: "unauthenticated" });
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(data?.error || "记忆读取失败");
@@ -102,13 +100,11 @@ function HomePageContent() {
 
       const memories = Array.isArray(data) ? (data as HomeMemory[]) : [];
       setSnapshot({
-        phone,
         memories,
         status: memories.length > 0 ? "ready" : "empty",
       });
     } catch (error) {
       setSnapshot({
-        phone,
         memories: [],
         status: "error",
         error: error instanceof Error ? error.message : "首页加载失败",

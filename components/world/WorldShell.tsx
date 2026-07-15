@@ -245,20 +245,21 @@ function HomeOverlay({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   const [step, setStep] = useState<"phone" | "code">("phone");
   const [sending, setSending] = useState(false);
   const [countdown, setCountdown] = useState(0);
-  const [sentCode, setSentCode] = useState('');
+  const [challengeId, setChallengeId] = useState("");
 
   const sendCode = async () => {
     if (!phone || sending) return;
     setSending(true);
     try {
-      const res = await fetch("/api/send-code", {
+      const res = await fetch("/api/auth/send-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({ phone }),
       });
       const data = await res.json();
-      if (data.success) {
-        setSentCode(data.code || '');
+      if (res.status === 202 && data.accepted && data.challengeId) {
+        setChallengeId(data.challengeId);
         setSending(false);
         setStep('code');
         setCountdown(60);
@@ -279,18 +280,20 @@ function HomeOverlay({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   }, [countdown]);
 
   const verifyCode = async () => {
-    if (code.length < 4) return;
+    if (code.length !== 6 || !challengeId) return;
     try {
-      const res = await fetch("/api/verify-code", {
+      const res = await fetch("/api/auth/verify-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, code }),
+        credentials: "same-origin",
+        body: JSON.stringify({ phone, code, challengeId }),
       });
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.authenticated) {
         setStep("phone");
         setPhone("");
         setCode("");
+        setChallengeId("");
         onLoginSuccess();
       } else {
         alert(data.error || "发送失败");
@@ -364,7 +367,7 @@ function HomeOverlay({ onLoginSuccess }: { onLoginSuccess: () => void }) {
             <div style={{ color: "#8a7060", fontSize: 12, textAlign: "center" }}>
               验证码已发送至 {phone}
             </div>
-            <div style={{ color: '#FFD2A6', fontSize: 28, fontWeight: 500, letterSpacing: '0.3em', textAlign: 'center', marginBottom: 16 }}>{sentCode}
+            <div style={{ color: '#FFD2A6', fontSize: 14, fontWeight: 400, letterSpacing: '0.08em', textAlign: 'center', marginBottom: 16 }}>验证码已发送
             </div>
             <div style={{ color: '#8a7060', fontSize: 12, textAlign: 'center' }}>
             </div>
@@ -612,6 +615,20 @@ export default function WorldShell() {
   const [chatEntity, setChatEntity] = useState<AppMemoryEntity | null>(null);
   const [personalities, setPersonalities] = useState<Record<string, EntityPersonality>>({});
   const prevTabRef = useRef<TabMode>("home");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/auth/session", {
+      cache: "no-store",
+      credentials: "same-origin",
+      signal: controller.signal,
+    }).then((response) => {
+      if (!controller.signal.aborted) setLoggedIn(response.ok);
+    }).catch(() => {
+      if (!controller.signal.aborted) setLoggedIn(false);
+    });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const unsubApp = subscribe(setAppState);
