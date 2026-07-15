@@ -15,6 +15,9 @@ const mutationPaths = [
   "/api/memory-chat",
   "/api/media/upload",
   "/api/media/media-id",
+];
+
+const legacyMutationPaths = [
   "/api/chat-sessions",
   "/api/chat-sessions/session-id/messages",
   "/api/chat-mvp",
@@ -35,6 +38,19 @@ test("every production API mutation is guarded by the shared Origin boundary", a
         headers: { origin: "https://memoryai.test" },
       }));
       assert.equal(allowed.headers.get("x-middleware-next"), "1");
+    });
+  }
+});
+
+test("legacy mutations are closed before Origin or route execution", async (t) => {
+  for (const pathname of legacyMutationPaths) {
+    await t.test(pathname, async () => {
+      const response = middleware(new NextRequest(`https://memoryai.test${pathname}`, {
+        method: "POST",
+      }));
+      assert.equal(response.status, 410);
+      assert.equal((await response.json()).error, "LEGACY_ROUTE_UNAVAILABLE");
+      assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0");
     });
   }
 });
