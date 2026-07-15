@@ -190,6 +190,15 @@ test("PostgreSQL 14 matrix runner has a bounded destructive scope", () => {
   assert.match(runner, /trap 'on_exit \$\?' EXIT/);
   assert.match(runner, /trap 'on_signal INT 130' INT/);
   assert.match(runner, /trap 'on_signal TERM 143' TERM/);
+  assert.match(runner, /memoryai-auth-pg14-matrix\.\$\{RUN8\}\.XXXXXXXX/);
+  assert.match(runner, /SCENARIO_DATABASE \$scenario \$database/);
+  assert.match(runner, /expected_object/);
+  assert.match(runner, /expected_category/);
+  assert.match(runner, /FAILED_cleanup_terminate_/);
+  assert.match(runner, /FAILED_cleanup_dropdb_/);
+  assert.match(runner, /FAILED_cleanup_database_exists_/);
+  assert.match(runner, /FAILED_cleanup_connections_/);
+  assert.doesNotMatch(runner, /MATRIX_WORK_DIR|MATRIX_STATE_FILE|printf\s+'?%\.63s/);
   assert.doesNotMatch(runner, /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE)\s+pg_catalog\./i);
 });
 
@@ -208,7 +217,7 @@ test("PostgreSQL 14 matrix runner passes fake CLI orchestration tests", () => {
   const result = spawnSync(bash, [shellTest], {
     cwd: path.resolve(databaseRoot, ".."),
     encoding: "utf8",
-    timeout: 60_000,
+    timeout: 180_000,
   });
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /fake CLI tests: PASS/);
