@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
@@ -176,6 +177,41 @@ test("006 preflight and postflight expose operational evidence", () => {
     "exact_row_count", "column_name", "indisvalid", "convalidated",
     "invalid_phone_hashes", "invalid_attempt_counts", "auth_challenge_schema_complete",
   ]) assert.ok(postflight.includes(token), `postflight missing ${token}`);
+});
+
+test("PostgreSQL 14 matrix runner has a bounded destructive scope", () => {
+  const runner = read("tests/run-006-auth-pg14-matrix.sh");
+  assert.match(runner, /^#!\/usr\/bin\/env bash\nset -Eeuo pipefail/m);
+  assert.match(runner, /DB_PREFIX="memoryai_auth_negative_"/);
+  assert.match(runner, /memoryai\|postgres\|template0\|template1/);
+  assert.match(runner, /database is outside current RUN_ID/);
+  assert.match(runner, /DATABASE_URL is forbidden/);
+  assert.match(runner, /PGHOST must be loopback/);
+  assert.match(runner, /trap 'on_exit \$\?' EXIT/);
+  assert.match(runner, /trap 'on_signal INT 130' INT/);
+  assert.match(runner, /trap 'on_signal TERM 143' TERM/);
+  assert.doesNotMatch(runner, /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE)\s+pg_catalog\./i);
+});
+
+test("PostgreSQL 14 matrix runner passes fake CLI orchestration tests", () => {
+  const candidates = [
+    process.env.BASH,
+    process.platform === "win32" ? "C:\\Program Files\\Git\\bin\\bash.exe" : undefined,
+    process.platform === "win32" ? "C:\\Program Files\\Git\\usr\\bin\\bash.exe" : undefined,
+    "bash",
+  ].filter(Boolean);
+  const bash = candidates.find((candidate) =>
+    spawnSync(candidate, ["--version"], { encoding: "utf8" }).status === 0);
+  assert.ok(bash, "bash is required for the PostgreSQL 14 matrix contract tests");
+
+  const shellTest = path.join(databaseRoot, "tests", "run-006-auth-pg14-matrix.test.sh");
+  const result = spawnSync(bash, [shellTest], {
+    cwd: path.resolve(databaseRoot, ".."),
+    encoding: "utf8",
+    timeout: 60_000,
+  });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /fake CLI tests: PASS/);
 });
 
 const testDatabaseUrl = process.env.MEMORYAI_TEST_DATABASE_URL;
