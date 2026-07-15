@@ -62,6 +62,15 @@ fi
 # ────────────────────────────────────────
 # 4. 重启 PM2
 # ────────────────────────────────────────
+NGINX_CONFIG=$(sudo nginx -T 2>&1) || {
+  echo -e "${RED}[FAIL] 无法检查 Nginx 配置${NC}"
+  exit 1
+}
+if ! echo "$NGINX_CONFIG" | grep -Eq 'proxy_set_header[[:space:]]+X-Real-IP[[:space:]]+\$remote_addr;'; then
+  echo -e "${RED}[FAIL] Nginx 必须用 \$remote_addr 覆盖 X-Real-IP${NC}"
+  exit 1
+fi
+
 echo -e "${YELLOW}[...] pm2 restart $PM2_NAME --update-env ...${NC}"
 pm2 restart "$PM2_NAME" --update-env
 sleep 3

@@ -50,6 +50,15 @@ fi
 
 mkdir -p logs
 
+NGINX_CONFIG=$(sudo nginx -T 2>&1) || {
+  echo "  -> Nginx configuration inspection FAILED"
+  exit 1
+}
+if ! echo "$NGINX_CONFIG" | grep -Eq 'proxy_set_header[[:space:]]+X-Real-IP[[:space:]]+\$remote_addr;'; then
+  echo "  -> Nginx must replace X-Real-IP with \$remote_addr"
+  exit 1
+fi
+
 if pm2 list | grep -q memoryai; then
   echo "  -> Reloading existing process..."
   pm2 reload ecosystem.config.js --update-env
@@ -63,6 +72,11 @@ pm2 save
 # 6. Verify
 echo "[6/6] Verifying deployment..."
 sleep 3
+LISTENERS=$(ss -H -ltn 'sport = :3000')
+if [ -z "$LISTENERS" ] || echo "$LISTENERS" | awk '{print $4}' | grep -Ev '^(127\.0\.0\.1|\[::1\]):3000$' >/dev/null; then
+  echo "  -> Port 3000 is not loopback-only"
+  exit 1
+fi
 if curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
   echo "  -> Health check PASSED"
 else

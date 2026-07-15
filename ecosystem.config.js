@@ -15,6 +15,8 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         PORT: 3000,
+        HOSTNAME: "127.0.0.1",
+        AUTH_PROXY_LOOPBACK_ONLY: "true",
       },
       // 日志
       error_file: "./logs/app-error.log",

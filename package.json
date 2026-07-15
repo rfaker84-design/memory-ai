@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -H 0.0.0.0 -p 3000",
+    "dev": "next dev -H 127.0.0.1 -p 3000",
     "build": "next build",
     "db:test": "tsx scripts/postgresql/test-memory-postgres.ts",
     "verify:postgres-architecture": "node scripts/verify-postgresql-architecture.cjs",
@@ -19,10 +19,10 @@
     "test:sms-provider": "tsx --test src/server/auth/sms/tencent-sms-verification-provider.test.ts",
     "test:auth": "tsx --test src/server/auth/auth.test.ts src/server/auth/auth-response-cache.test.ts src/server/auth/sms/tencent-sms-verification-provider.test.ts",
     "test:security-routes": "tsx --test src/server/security/origin.test.ts app/api/legacy-route-security.test.ts src/components/auth/client-identity-storage.test.ts",
-    "test": "npm run test:create-flow && npm run test:memory-item && npm run test:memory-pages && npm run test:media && npm run test:collective-analysis && npm run test:auth && npm run test:security-routes",
+    "test:startup-contract": "node --test scripts/security/production-startup-contract.test.cjs",
+    "test": "npm run test:create-flow && npm run test:memory-item && npm run test:memory-pages && npm run test:media && npm run test:collective-analysis && npm run test:auth && npm run test:security-routes && npm run test:startup-contract",
     "start": "next start -H 127.0.0.1 -p 3000",
-    "lint": "next lint",
-    "lan": "node scripts/lan-info.js && next start -H 0.0.0.0 -p 3000"
+    "lint": "next lint"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

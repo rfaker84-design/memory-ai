@@ -16,6 +16,7 @@ import { generateVerificationCode } from "./crypto";
 
 process.env.AUTH_ALLOWED_ORIGIN = "https://memoryai.test";
 process.env.AUTH_TRUST_NGINX_PROXY = "true";
+process.env.AUTH_PROXY_LOOPBACK_ONLY = "true";
 process.env.SESSION_SECRET = "test-only-session-value-with-at-least-32-bytes";
 
 function assertNoStore(response: Response): void {
