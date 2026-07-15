@@ -45,7 +45,9 @@
 
   --nav-height: 64px;
 
-  --font-sans: "SF Pro Display","PingFang SC","Hiragino Sans GB","Microsoft YaHei",ui-sans-serif,system-ui,sans-serif;
+  --font-noto-sans-sc: "SF Pro Display","PingFang SC","Hiragino Sans GB","Microsoft YaHei",ui-sans-serif,system-ui,sans-serif;
+  --font-noto-serif-sc: "Songti SC","STSong","SimSun",ui-serif,serif;
+  --font-sans: var(--font-noto-sans-sc);
 }
 
 @theme inline {
