@@ -7,8 +7,6 @@
  *   → avatar_generated → first_message_sent → return_visit
  */
 
-import { createClient } from "@supabase/supabase-js";
-
 /* =========================================================================
    Types
    ========================================================================= */
@@ -56,8 +54,6 @@ export function trackJourney(step: JourneyStep, metadata?: Record<string, unknow
   const event: JourneyEvent = { step, timestamp: now, duration, metadata };
   sessionHistory.push(event);
 
-  // Persist to Supabase (fire and forget)
-  persistEvent(event);
 }
 
 export function getJourneyFunnel(): Record<string, { count: number; pct: number }> {
@@ -87,32 +83,6 @@ export function getSessionDuration(): number {
 export function getDropOffStep(): JourneyStep | null {
   if (sessionHistory.length === 0) return null;
   return sessionHistory[sessionHistory.length - 1].step;
-}
-
-/* =========================================================================
-   Persistence
-   ========================================================================= */
-
-async function persistEvent(event: JourneyEvent): Promise<void> {
-  try {
-    const phone = typeof localStorage !== "undefined" ? localStorage.getItem("yijian_phone") : null;
-    if (!phone) return;
-
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
-    );
-
-    await supabase.from("user_journey_log").insert({
-      user_phone: phone,
-      step: event.step,
-      timestamp: new Date(event.timestamp).toISOString(),
-      duration_ms: event.duration || 0,
-      metadata: event.metadata || {},
-    });
-  } catch {
-    // Non-critical: journey tracking is fire-and-forget
-  }
 }
 
 /* =========================================================================

@@ -16,21 +16,12 @@ export default function MemoryRoomPage() {
     if (mid) {
       router.replace("/memory/" + mid);
     } else {
-      const phone = store.getPhone();
-      if (phone) {
-        fetch("/api/memories-mvp?phone=" + encodeURIComponent(phone))
-          .then(r => r.json())
-          .then((memories: { id: string }[]) => {
-            if (memories.length > 0) {
-              router.replace("/memory/" + memories[0].id);
-            } else {
-              router.replace("/");
-            }
-          })
-          .catch(() => router.replace("/"));
-      } else {
-        router.replace("/");
-      }
+      fetch("/api/memories", { cache: "no-store", credentials: "same-origin" })
+        .then(async (response) => response.ok ? response.json() : [])
+        .then((memories: { id: string }[]) => {
+          router.replace(memories.length > 0 ? "/memory/" + memories[0].id : "/");
+        })
+        .catch(() => router.replace("/"));
     }
   }, [router]);
 
