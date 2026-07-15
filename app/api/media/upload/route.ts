@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authenticate, mediaError, mediaService, safeMediaAsset } from "../_lib";
+import { authenticate, mediaError, mediaService, requireMediaMutationOrigin, safeMediaAsset } from "../_lib";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  const userId = authenticate(req);
+  const userId = await authenticate(req);
   if (!userId) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  const originError = requireMediaMutationOrigin(req);
+  if (originError) return originError;
   try {
     const contentLength = Number(req.headers.get("content-length") ?? "0");
     const requestLimit = (Number(process.env.MEDIA_MAX_AUDIO_BYTES) || 100 * 1024 * 1024) + 1024 * 1024;
