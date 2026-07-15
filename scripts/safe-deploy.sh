@@ -68,6 +68,14 @@ sleep 3
 pm2 status | grep "$PM2_NAME"
 echo -e "${GREEN}[OK] PM2 已重启${NC}"
 
+LISTENERS=$(ss -H -ltn 'sport = :3000')
+if [ -z "$LISTENERS" ] || echo "$LISTENERS" | awk '{print $4}' | grep -Ev '^(127\.0\.0\.1|\[::1\]):3000$' >/dev/null; then
+  echo -e "${RED}[FAIL] :3000 未仅绑定到回环地址${NC}"
+  echo "$LISTENERS"
+  exit 1
+fi
+echo -e "${GREEN}[OK] :3000 仅绑定回环地址${NC}"
+
 # ────────────────────────────────────────
 # 5. 验证
 # ────────────────────────────────────────
