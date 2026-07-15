@@ -7,14 +7,15 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly DATABASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 readonly MIGRATION_DIR="$DATABASE_DIR/migrations"
 readonly MIGRATION_006="$MIGRATION_DIR/006_auth_verification_challenges.sql"
-readonly PSQL="${PSQL:-psql}"
-readonly CREATEDB="${CREATEDB:-createdb}"
-readonly DROPDB="${DROPDB:-dropdb}"
-readonly ADMIN_DB="${MEMORYAI_AUTH_TEST_ADMIN_DB:-postgres}"
-readonly RUN_ID="${MATRIX_RUN_ID:-$(date -u +%Y%m%d%H%M%S)_$$_${RANDOM}}"
-readonly RUN8="$(printf '%s' "$RUN_ID" | sha256sum | cut -c1-8)"
-readonly RUN_DB_PREFIX="${DB_PREFIX}${RUN8}_"
-readonly MAX_DATABASE_NAME_LENGTH=52
+readonly PSQL="psql"
+readonly CREATEDB="createdb"
+readonly DROPDB="dropdb"
+readonly ADMIN_DB="postgres"
+RUN_ID="${MATRIX_RUN_ID:-$(date -u +%Y%m%d%H%M%S)_$$_${RANDOM}}"
+readonly CALLER_RUN_NONCE_PRESENT="${RUN_NONCE+x}"
+RUN_NONCE=""
+RUN_DB_PREFIX=""
+readonly MAX_DATABASE_NAME_LENGTH=58
 
 MODE="run"
 CURRENT_STAGE="startup"
@@ -25,9 +26,9 @@ CLEANUP_RECORDED=0
 FAILED_RECORDED=0
 WORK_DIR=""
 STATE_FILE=""
+STATE_DEVICE_INODE=""
 declare -a CREATED_DATABASES=()
 declare -A SCENARIO_DATABASES=()
-HASH8_RESULT=""
 DERIVED_DATABASE=""
 
 readonly -a CHALLENGE_SCENARIOS=(
@@ -84,6 +85,9 @@ declare -A INDEX_COLUMNS=(
 
 record_state() {
   [[ "$RUNTIME_READY" -eq 1 && -n "$STATE_FILE" ]] || return 0
+  [[ -f "$STATE_FILE" && ! -L "$STATE_FILE" ]] || return 76
+  [[ "$(stat -c '%d:%i' "$STATE_FILE")" == "$STATE_DEVICE_INODE" ]] || return 76
+  [[ "$(stat -c '%u' "$STATE_FILE")" == "0" && "$(stat -c '%a' "$STATE_FILE")" == "600" ]] || return 76
   printf '%(%Y-%m-%dT%H:%M:%SZ)T\t%s\n' -1 "$1" >>"$STATE_FILE"
 }
 
@@ -108,7 +112,7 @@ is_protected_database() {
 validate_test_database_name() {
   local database="$1"
   [[ "$database" =~ ^[a-z0-9_]+$ ]] || fail input 64 "unsafe database name: $database"
-  [[ "$database" == "$RUN_DB_PREFIX"* ]] || fail input 64 "database is outside current RUN_ID: $database"
+  [[ "$database" == "$RUN_DB_PREFIX"* ]] || fail input 64 "database is outside current run nonce: $database"
   [[ "${#database}" -le 63 ]] || fail input 64 "database name is longer than 63 bytes: $database"
   ! is_protected_database "$database" || fail input 64 "protected database target rejected: $database"
 }
@@ -122,6 +126,14 @@ database_psql() {
   shift
   validate_test_database_name "$database"
   "$PSQL" -X --no-psqlrc -v ON_ERROR_STOP=1 -d "$database" "$@"
+}
+
+drop_database_command() {
+  "$DROPDB" --if-exists --force "$1"
+}
+
+create_database_command() {
+  "$CREATEDB" --template=template0 "$1"
 }
 
 remove_created_database() {
@@ -158,7 +170,7 @@ cleanup_database() {
   fi
 
   set +e
-  "$DROPDB" --if-exists --force "$database" >/dev/null
+  drop_database_command "$database" >/dev/null
   drop_rc=$?
   set -e
   if [[ "$drop_rc" -ne 0 ]]; then
@@ -185,11 +197,31 @@ cleanup_database() {
   return "$cleanup_rc"
 }
 
+cleanup_or_fail() {
+  if cleanup_database "$1"; then
+    return 0
+  else
+    return 75
+  fi
+}
+
 assert_no_residual_databases() {
   local count
   count="$(admin_psql -At -v "matrix_prefix=${RUN_DB_PREFIX}%" -c \
     "SELECT count(*) FROM pg_catalog.pg_database WHERE datname LIKE :'matrix_prefix';")"
   [[ "$count" == "0" ]] || return 1
+}
+
+assert_all_database_names_absent() {
+  local names count rc
+  names="$(printf '%s\n' "${SCENARIO_DATABASES[@]}" | sort | paste -sd, -)"
+  set +e
+  count="$(admin_psql -At -v "matrix_names=$names" -c \
+    "SELECT count(*) FROM pg_catalog.pg_database WHERE datname = ANY(pg_catalog.string_to_array(:'matrix_names', ','));" 2>/dev/null)"
+  rc=$?
+  set -e
+  [[ "$rc" -eq 0 ]] || fail preexisting 74 "cannot verify matrix database absence"
+  [[ "$count" == "0" ]] || fail preexisting 74 "one or more matrix database names already exist"
 }
 
 cleanup_all() {
@@ -216,46 +248,58 @@ validate_secure_directory() {
   [[ -d "$directory" && ! -L "$directory" ]] || return 1
   [[ "$(stat -c '%u' "$directory")" == "$required_owner" ]] || return 1
   mode="$(stat -c '%a' "$directory")"
-  [[ "$mode" == "700" ]] || test_windows_acl_exception "$mode" "755"
+  [[ "$mode" == "700" ]]
 }
 
-test_windows_acl_exception() {
-  local actual="$1" windows_mode="$2"
-  [[ "${MATRIX_TEST_MODE:-0}" == "1" && "${MATRIX_TEST_ALLOW_WINDOWS_ACL:-0}" == "1" ]] || return 1
-  [[ "$(uname -s)" == MINGW* && "$actual" == "$windows_mode" ]]
+runtime_parent_path() { printf '/var/tmp\n'; }
+state_parent_path() { printf '/var/log/memoryai\n'; }
+create_state_file() { mktemp "$1"; }
+
+validate_state_directory() {
+  local directory="$1" owner="$2" mode
+  [[ -d "$directory" && ! -L "$directory" ]] || return 1
+  [[ "$(stat -c '%u' "$directory")" == "$owner" ]] || return 1
+  mode="$(stat -c '%a' "$directory")"
+  (( (8#$mode & 0022) == 0 ))
+}
+
+validate_new_state_file() {
+  local file="$1" owner="$2"
+  [[ -f "$file" && ! -L "$file" ]] || return 1
+  [[ "$(stat -c '%u' "$file")" == "$owner" && "$(stat -c '%a' "$file")" == "600" ]]
+}
+
+initialize_state_file() {
+  local state_parent="$1" required_owner="$2" preexisting_state_inodes state_inode
+  validate_state_directory "$state_parent" "$required_owner" || fail runtime 76 "unsafe state directory"
+  preexisting_state_inodes="$(find "$state_parent" -maxdepth 1 -type f -printf '%d:%i\n')"
+  STATE_FILE="$(create_state_file "$state_parent/memoryai-auth-pg14-matrix.${RUN_NONCE}.state.XXXXXXXX")" || fail runtime 76 "cannot create state file"
+  [[ -n "$STATE_FILE" ]] || fail runtime 76 "state file creator returned an empty path"
+  state_inode="$(stat -c '%d:%i' "$STATE_FILE" 2>/dev/null || true)"
+  if [[ -n "$state_inode" ]] && grep -Fxq -- "$state_inode" <<<"$preexisting_state_inodes"; then
+    fail runtime 76 "state file creator returned a pre-existing target"
+  fi
+  chmod 600 "$STATE_FILE" || fail runtime 76 "cannot protect state file"
+  validate_new_state_file "$STATE_FILE" "$required_owner" || fail runtime 76 "state file ownership, type, or mode is unsafe"
+  STATE_DEVICE_INODE="$(stat -c '%d:%i' "$STATE_FILE")"
 }
 
 initialize_runtime() {
-  local runtime_parent state_parent required_owner runtime_mode state_mode
-  if [[ "${MATRIX_TEST_MODE:-0}" == "1" ]]; then
-    [[ -n "${MATRIX_TEST_ROOT:-}" ]] || fail runtime 76 "MATRIX_TEST_ROOT is required in test mode"
-    runtime_parent="$MATRIX_TEST_ROOT"
-    state_parent="$MATRIX_TEST_ROOT"
-    required_owner="$(id -u)"
-    validate_secure_directory "$runtime_parent" "$required_owner" || fail runtime 76 "unsafe MATRIX_TEST_ROOT"
-  else
-    [[ "$(id -u)" == "0" ]] || fail runtime 76 "matrix runtime must execute as root"
-    runtime_parent="/var/tmp"
-    state_parent="/var/log/memoryai"
-    required_owner="0"
-    [[ -d "$runtime_parent" && ! -L "$runtime_parent" && "$(stat -c '%u' "$runtime_parent")" == "0" ]] || fail runtime 76 "unsafe /var/tmp"
-    [[ -d "$state_parent" && ! -L "$state_parent" && "$(stat -c '%u' "$state_parent")" == "0" ]] || fail runtime 76 "unsafe /var/log/memoryai"
-    runtime_mode="$(stat -c '%a' "$runtime_parent")"
-    [[ "$runtime_mode" == "1777" ]] || fail runtime 76 "/var/tmp must be root-owned mode 1777"
-    state_mode="$(stat -c '%a' "$state_parent")"
-    (( (8#$state_mode & 0022) == 0 )) || fail runtime 76 "/var/log/memoryai must not be group/world writable"
-  fi
+  local runtime_parent state_parent required_owner runtime_mode
+  [[ "$(id -u)" == "0" ]] || fail runtime 76 "matrix runtime must execute as root"
+  runtime_parent="$(runtime_parent_path)"
+  state_parent="$(state_parent_path)"
+  required_owner="0"
+  [[ -d "$runtime_parent" && ! -L "$runtime_parent" && "$(stat -c '%u' "$runtime_parent")" == "0" ]] || fail runtime 76 "unsafe /var/tmp"
+  runtime_mode="$(stat -c '%a' "$runtime_parent")"
+  [[ "$runtime_mode" == "1777" ]] || fail runtime 76 "/var/tmp must be root-owned mode 1777"
 
-  WORK_DIR="$(mktemp -d "$runtime_parent/memoryai-auth-pg14-matrix.${RUN8}.XXXXXXXX")" || fail runtime 76 "cannot create work directory"
+  WORK_DIR="$(mktemp -d "$runtime_parent/memoryai-auth-pg14-matrix.${RUN_NONCE}.XXXXXXXX")" || fail runtime 76 "cannot create work directory"
   WORK_DIR_CREATED=1
   chmod 700 "$WORK_DIR" || fail runtime 76 "cannot protect work directory"
   validate_secure_directory "$WORK_DIR" "$required_owner" || fail runtime 76 "work directory validation failed"
 
-  STATE_FILE="$(mktemp "$state_parent/memoryai-auth-pg14-matrix.${RUN8}.state.XXXXXXXX")" || fail runtime 76 "cannot create state file"
-  chmod 600 "$STATE_FILE" || fail runtime 76 "cannot protect state file"
-  [[ -f "$STATE_FILE" && ! -L "$STATE_FILE" ]] || fail runtime 76 "state file is not a regular file"
-  [[ "$(stat -c '%u' "$STATE_FILE")" == "$required_owner" ]] || fail runtime 76 "state file owner is unsafe"
-  [[ "$(stat -c '%a' "$STATE_FILE")" == "600" ]] || test_windows_acl_exception "$(stat -c '%a' "$STATE_FILE")" "644" || fail runtime 76 "state file mode is unsafe"
+  initialize_state_file "$state_parent" "$required_owner"
   [[ "$STATE_FILE" != "$WORK_DIR"/* ]] || fail runtime 76 "state file must not be inside work directory"
   RUNTIME_READY=1
 }
@@ -264,15 +308,11 @@ remove_work_directory() {
   local expected_parent
   [[ "$WORK_DIR_CREATED" -eq 1 ]] || return 0
   [[ -n "$WORK_DIR" && -d "$WORK_DIR" && ! -L "$WORK_DIR" ]] || return 1
-  [[ "${WORK_DIR##*/}" == "memoryai-auth-pg14-matrix.${RUN8}."* ]] || return 1
-  if [[ "${MATRIX_TEST_MODE:-0}" == "1" ]]; then
-    expected_parent="$(cd "$MATRIX_TEST_ROOT" && pwd -P)"
-  else
-    expected_parent="/var/tmp"
-  fi
+  [[ "${WORK_DIR##*/}" == "memoryai-auth-pg14-matrix.${RUN_NONCE}."* ]] || return 1
+  expected_parent="$(runtime_parent_path)"
   [[ "$(cd "$(dirname "$WORK_DIR")" && pwd -P)" == "$expected_parent" ]] || return 1
   [[ "$(stat -c '%u' "$WORK_DIR")" == "$(id -u)" ]] || return 1
-  [[ "$(stat -c '%a' "$WORK_DIR")" == "700" ]] || test_windows_acl_exception "$(stat -c '%a' "$WORK_DIR")" "755" || return 1
+  [[ "$(stat -c '%a' "$WORK_DIR")" == "700" ]] || return 1
   rm -rf -- "$WORK_DIR"
   [[ ! -e "$WORK_DIR" ]]
 }
@@ -284,10 +324,12 @@ on_exit() {
     if ! cleanup_all; then
       cleanup_rc=1
       record_state "FAILED_cleanup_all_1 original_rc=$original_rc"
+      record_state "CLEANUP_FAILED_RC_75 original_rc=$original_rc"
     fi
     if ! remove_work_directory; then
       cleanup_rc=1
       record_state "FAILED_cleanup_workdir_1 original_rc=$original_rc"
+      record_state "CLEANUP_FAILED_RC_75 original_rc=$original_rc"
     fi
     if [[ "$original_rc" -ne 0 ]]; then
       final_rc="$original_rc"
@@ -315,9 +357,11 @@ on_signal() {
   exit "$rc"
 }
 
-trap 'on_exit $?' EXIT
-trap 'on_signal INT 130' INT
-trap 'on_signal TERM 143' TERM
+install_runtime_traps() {
+  trap 'on_exit $?' EXIT
+  trap 'on_signal INT 130' INT
+  trap 'on_signal TERM 143' TERM
+}
 
 scenario_rows() {
   local item variant
@@ -345,14 +389,28 @@ scenario_exists() {
   scenario_rows | awk -F '\t' -v wanted="$wanted" '$1 == wanted { found=1 } END { exit found ? 0 : 1 }'
 }
 
-selected_scenarios() {
-  if [[ -n "${MATRIX_ONLY_SCENARIO:-}" ]]; then
-    [[ "${MATRIX_TEST_MODE:-0}" == "1" ]] || fail input 64 "MATRIX_ONLY_SCENARIO is test-only"
-    scenario_exists "$MATRIX_ONLY_SCENARIO" || fail input 64 "unknown MATRIX_ONLY_SCENARIO: $MATRIX_ONLY_SCENARIO"
-    scenario_rows | awk -F '\t' -v wanted="$MATRIX_ONLY_SCENARIO" '$1 == wanted'
+generate_run_nonce() {
+  local raw
+  if [[ -r /proc/sys/kernel/random/uuid ]]; then
+    IFS= read -r raw </proc/sys/kernel/random/uuid || fail nonce 83 "cannot read kernel UUID"
+    RUN_NONCE="${raw//-/}"
+  elif [[ -r /dev/urandom ]]; then
+    RUN_NONCE="$(LC_ALL=C od -An -tx1 -N16 /dev/urandom | tr -d '[:space:]')"
   else
-    scenario_rows
+    fail nonce 83 "kernel random source is unavailable"
   fi
+  RUN_NONCE="${RUN_NONCE,,}"
+  [[ "$RUN_NONCE" =~ ^[0-9a-f]{32}$ ]] || fail nonce 83 "kernel UUID is not 128-bit lowercase hexadecimal"
+}
+
+configure_run_identity() {
+  generate_run_nonce
+  [[ "$RUN_NONCE" =~ ^[0-9a-f]{32}$ ]] || fail nonce 83 "run nonce validation failed"
+  RUN_DB_PREFIX="${DB_PREFIX}${RUN_NONCE}_"
+}
+
+selected_scenarios() {
+  scenario_rows
 }
 
 database_for_scenario() {
@@ -361,23 +419,12 @@ database_for_scenario() {
   printf '%s' "${SCENARIO_DATABASES[$scenario]}"
 }
 
-hash8_string() {
-  local input="$1" hash=2166136261 byte index
-  LC_ALL=C
-  for ((index = 0; index < ${#input}; index++)); do
-    printf -v byte '%d' "'${input:index:1}"
-    hash=$(( ((hash ^ byte) * 16777619) & 0xffffffff ))
-  done
-  printf -v HASH8_RESULT '%08x' "$hash"
-}
-
 derive_database_for_scenario() {
-  local scenario="$1" index="$2" slug hash database
+  local scenario="$1" index="$2" database
   [[ "$scenario" =~ ^[a-z0-9_]+$ ]] || return 1
-  slug="${scenario:0:8}"
-  hash8_string "$scenario"
-  hash="$HASH8_RESULT"
-  database="${RUN_DB_PREFIX}${index}_${slug}_${hash}"
+  [[ "$RUN_NONCE" =~ ^[0-9a-f]{32}$ ]] || return 1
+  [[ "$index" =~ ^(0[1-9]|[1-7][0-9])$ ]] || return 1
+  database="${DB_PREFIX}${RUN_NONCE}_${index}"
   [[ "${#database}" -le 63 ]] || return 1
   DERIVED_DATABASE="$database"
 }
@@ -399,10 +446,12 @@ validate_all_database_names() {
 }
 
 record_database_mappings() {
-  local scenario category expected database
+  local scenario category expected database index=0 index_text
   while IFS=$'\t' read -r scenario category expected; do
+    index=$((index + 1))
+    printf -v index_text '%02d' "$index"
     database="${SCENARIO_DATABASES[$scenario]}"
-    record_state "SCENARIO_DATABASE $scenario $database"
+    record_state "SCENARIO_DATABASE run_id=$RUN_ID nonce=$RUN_NONCE index=$index_text scenario=$scenario database=$database"
   done < <(scenario_rows)
 }
 
@@ -440,9 +489,13 @@ verify_postgresql_14() {
 }
 
 create_database() {
-  local database="$1"
+  local database="$1" rc
   validate_test_database_name "$database"
-  "$CREATEDB" --template=template0 "$database" >/dev/null
+  set +e
+  create_database_command "$database" >/dev/null
+  rc=$?
+  set -e
+  [[ "$rc" -eq 0 ]] || fail createdb 84 "createdb rejected $database (possible atomic name collision)"
   CREATED_DATABASES+=("$database")
 }
 
@@ -534,30 +587,40 @@ rejection_contract() {
   printf '%s\t%s\n' "$object" "$category"
 }
 
+run_006_command() {
+  local database="$1" stdout_file="$2" stderr_file="$3" timeout_seconds="$4"
+  validate_test_database_name "$database"
+  if [[ "$timeout_seconds" -gt 0 ]]; then
+    LC_ALL=C timeout --signal=TERM --kill-after=1 "$timeout_seconds" \
+      "$PSQL" -X --no-psqlrc --quiet -v ON_ERROR_STOP=1 -v VERBOSITY=terse -d "$database" \
+      >"$stdout_file" 2>"$stderr_file" <"$MIGRATION_006"
+  else
+    LC_ALL=C "$PSQL" -X --no-psqlrc --quiet -v ON_ERROR_STOP=1 -v VERBOSITY=terse -d "$database" \
+      >"$stdout_file" 2>"$stderr_file" <"$MIGRATION_006"
+  fi
+}
+
 expect_006_rejection() {
-  local database="$1" scenario="$2" timeout_seconds="${3:-0}" contract expected_object expected_category stderr_file stdout_file rc
+  local database="$1" scenario="$2" timeout_seconds="${3:-0}" contract expected_object expected_category stderr_file stdout_file rc error_record
+  local -a error_records=()
   contract="$(rejection_contract "$scenario")" || fail contract 78 "missing rejection contract for $scenario"
   IFS=$'\t' read -r expected_object expected_category <<<"$contract"
   stderr_file="$WORK_DIR/${scenario}.stderr"
   stdout_file="$WORK_DIR/${scenario}.stdout"
   set +e
-  if [[ "$timeout_seconds" -gt 0 ]]; then
-    timeout --signal=TERM --kill-after=1 "$timeout_seconds" \
-      "$PSQL" -X --no-psqlrc --echo-errors -v ON_ERROR_STOP=1 -d "$database" -f "$MIGRATION_006" \
-      >"$stdout_file" 2>"$stderr_file"
-  else
-    "$PSQL" -X --no-psqlrc --echo-errors -v ON_ERROR_STOP=1 -d "$database" -f "$MIGRATION_006" \
-      >"$stdout_file" 2>"$stderr_file"
-  fi
+  run_006_command "$database" "$stdout_file" "$stderr_file" "$timeout_seconds"
   rc=$?
   set -e
   [[ "$rc" -ne 0 ]] || fail unexpected_success 70 "$scenario unexpectedly succeeded"
   [[ "$rc" -ne 124 && "$rc" -ne 137 ]] || fail external_timeout 79 "$scenario exceeded the external timeout"
-  if grep -Eiq 'fixture|permission denied|could not connect|connection (to server )?failed|no such file|could not (open|read) file|syntax error' "$stderr_file"; then
+  if grep -Eiq 'psql:[[:space:]]*error:|fixture|permission denied|could not connect|connection (to server )?failed|no such file|could not (open|read)|syntax error' "$stderr_file"; then
     fail unrelated_error 71 "$scenario stderr contains an unrelated infrastructure error"
   fi
-  grep -Fq -- "$expected_object" "$stderr_file" || fail object_mismatch 71 "$scenario stderr did not identify $expected_object"
-  grep -Fq -- "$expected_category" "$stderr_file" || fail category_mismatch 71 "$scenario stderr did not contain category: $expected_category"
+  mapfile -t error_records < <(grep -E '^ERROR:[[:space:]]' "$stderr_file" || true)
+  [[ "${#error_records[@]}" -eq 1 ]] || fail error_record_count 71 "$scenario produced ${#error_records[@]} ERROR records"
+  error_record="${error_records[0]}"
+  [[ "$error_record" == *"$expected_object"* ]] || fail object_mismatch 71 "$scenario ERROR did not identify $expected_object"
+  [[ "$error_record" == *"$expected_category"* ]] || fail category_mismatch 71 "$scenario ERROR did not contain category: $expected_category"
 }
 
 prepare_challenge_scenario() {
@@ -654,13 +717,13 @@ run_negative_scenario() {
   catalog_snapshot "$database" "$after"
   cmp -s "$before" "$after" || fail catalog_drift 72 "$scenario changed the catalog despite rejection"
   record_state "EXPECTED_REJECTION_PASS $scenario"
-  cleanup_database "$database"
+  if cleanup_or_fail "$database"; then :; else return 75; fi
 }
 
 run_lock_timeout_scenario() {
   local scenario="lock_timeout" database before after holder application_name granted="0" connections="" poll start_ms end_ms elapsed_ms external_timeout=8
   database="$(database_for_scenario "$scenario")"
-  application_name="memoryai_auth_matrix_lock_${RUN8}"
+  application_name="memoryai_auth_matrix_lock_${RUN_NONCE}"
   record_state "SCENARIO_STARTED $scenario locking"
   create_database "$database"
   apply_fixture_001_005 "$database"
@@ -682,10 +745,6 @@ run_lock_timeout_scenario() {
   [[ "$granted" == "1" ]] || fail lock_handshake 80 "holder did not acquire ACCESS EXCLUSIVE within 5 seconds"
   record_state "LOCK_GRANTED $scenario application_name=$application_name"
 
-  if [[ "${MATRIX_TEST_MODE:-0}" == "1" && -n "${MATRIX_TEST_LOCK_EXTERNAL_TIMEOUT:-}" ]]; then
-    [[ "$MATRIX_TEST_LOCK_EXTERNAL_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || fail input 64 "invalid test lock timeout"
-    external_timeout="$MATRIX_TEST_LOCK_EXTERNAL_TIMEOUT"
-  fi
   start_ms="$(date +%s%3N)"
   expect_006_rejection "$database" "$scenario" "$external_timeout"
   end_ms="$(date +%s%3N)"
@@ -704,7 +763,7 @@ run_lock_timeout_scenario() {
   catalog_snapshot "$database" "$after"
   cmp -s "$before" "$after" || fail catalog_drift 72 "$scenario changed the catalog"
   record_state "EXPECTED_REJECTION_PASS $scenario elapsed_ms=$elapsed_ms"
-  cleanup_database "$database"
+  if cleanup_or_fail "$database"; then :; else return 75; fi
 }
 
 expect_behavior_rejection() {
@@ -796,7 +855,7 @@ run_behavior_scenario() {
   run_behavior_insert "$database" provider_empty ck_auth_challenge_provider_request_id "$phone" "$code" "'sign_in'" "$created" "$resend" "$expires" 0 5 NULL "$ip" "''"
   run_behavior_insert "$database" provider_len129 ck_auth_challenge_provider_request_id "$phone" "$code" "'sign_in'" "$created" "$resend" "$expires" 0 5 NULL "$ip" "repeat('x',129)"
   record_state "BEHAVIOR_PASS $scenario"
-  cleanup_database "$database"
+  if cleanup_or_fail "$database"; then :; else return 75; fi
 }
 
 run_final_catalog_scenario() {
@@ -837,7 +896,7 @@ run_final_catalog_scenario() {
     END
     \$\$;" >/dev/null
   record_state "FINAL_CATALOG_PASS $scenario"
-  cleanup_database "$database"
+  if cleanup_or_fail "$database"; then :; else return 75; fi
 }
 
 dry_run() {
@@ -875,7 +934,6 @@ list_scenarios() {
 }
 
 run_matrix() {
-  local scenario category expected
   validate_static_inputs
   validate_all_database_names
   validate_inputs
@@ -885,8 +943,14 @@ run_matrix() {
   record_database_mappings
   printf 'STATE_FILE=%s\n' "$STATE_FILE"
   verify_postgresql_14
-  assert_no_residual_databases || fail preexisting 74 "current RUN_ID already has residual databases"
+  assert_all_database_names_absent
+  assert_no_residual_databases || fail preexisting 74 "current nonce already has residual databases"
 
+  dispatch_all_scenarios
+}
+
+dispatch_all_scenarios() {
+  local scenario category expected
   while IFS=$'\t' read -r scenario category expected; do
     CURRENT_STAGE="$scenario"
     case "$scenario" in
@@ -899,24 +963,33 @@ run_matrix() {
   done < <(selected_scenarios)
 }
 
+reject_legacy_test_controls() {
+  local variable
+  [[ -z "$CALLER_RUN_NONCE_PRESENT" ]] || fail input 64 "caller-provided RUN_NONCE is forbidden"
+  for variable in \
+    MATRIX_TEST_MODE MATRIX_ONLY_SCENARIO MATRIX_TEST_LOCK_EXTERNAL_TIMEOUT \
+    MATRIX_TEST_ROOT MATRIX_TEST_ALLOW_WINDOWS_ACL MATRIX_WORK_DIR MATRIX_STATE_FILE \
+    MATRIX_NONCE MATRIX_TEST_NONCE MATRIX_NONCE_GENERATOR; do
+    [[ -z "${!variable+x}" ]] || fail input 64 "legacy test control is forbidden: $variable"
+  done
+}
+
 usage() {
   printf 'Usage: %s [--list|--dry-run]\n' "${0##*/}"
 }
 
-case "${1:-}" in
-  --list)
-    MODE="list"
-    list_scenarios
-    ;;
-  --dry-run)
-    MODE="dry-run"
-    dry_run
-    ;;
-  "")
-    run_matrix
-    ;;
-  *)
-    usage >&2
-    exit 64
-    ;;
-esac
+main() {
+  install_runtime_traps
+  reject_legacy_test_controls
+  configure_run_identity
+  case "${1:-}" in
+    --list) MODE="list"; list_scenarios ;;
+    --dry-run) MODE="dry-run"; dry_run ;;
+    "") run_matrix ;;
+    *) usage >&2; return 64 ;;
+  esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

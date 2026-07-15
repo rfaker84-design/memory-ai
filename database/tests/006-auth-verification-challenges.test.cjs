@@ -184,21 +184,29 @@ test("PostgreSQL 14 matrix runner has a bounded destructive scope", () => {
   assert.match(runner, /^#!\/usr\/bin\/env bash\nset -Eeuo pipefail/m);
   assert.match(runner, /DB_PREFIX="memoryai_auth_negative_"/);
   assert.match(runner, /memoryai\|postgres\|template0\|template1/);
-  assert.match(runner, /database is outside current RUN_ID/);
+  assert.match(runner, /database is outside current run nonce/);
   assert.match(runner, /DATABASE_URL is forbidden/);
   assert.match(runner, /PGHOST must be loopback/);
   assert.match(runner, /trap 'on_exit \$\?' EXIT/);
   assert.match(runner, /trap 'on_signal INT 130' INT/);
   assert.match(runner, /trap 'on_signal TERM 143' TERM/);
-  assert.match(runner, /memoryai-auth-pg14-matrix\.\$\{RUN8\}\.XXXXXXXX/);
-  assert.match(runner, /SCENARIO_DATABASE \$scenario \$database/);
+  assert.match(runner, /memoryai-auth-pg14-matrix\.\$\{RUN_NONCE\}\.XXXXXXXX/);
+  assert.match(runner, /\^\[0-9a-f\]\{32\}\$/);
+  assert.match(runner, /MAX_DATABASE_NAME_LENGTH=58/);
+  assert.match(runner, /SCENARIO_DATABASE run_id=\$RUN_ID nonce=\$RUN_NONCE index=\$index_text scenario=\$scenario database=\$database/);
   assert.match(runner, /expected_object/);
   assert.match(runner, /expected_category/);
   assert.match(runner, /FAILED_cleanup_terminate_/);
   assert.match(runner, /FAILED_cleanup_dropdb_/);
   assert.match(runner, /FAILED_cleanup_database_exists_/);
   assert.match(runner, /FAILED_cleanup_connections_/);
-  assert.doesNotMatch(runner, /MATRIX_WORK_DIR|MATRIX_STATE_FILE|printf\s+'?%\.63s/);
+  assert.match(runner, /CLEANUP_FAILED_RC_75/);
+  assert.match(runner, /\^ERROR:\[\[:space:\]\]/);
+  assert.match(runner, /--quiet/);
+  assert.doesNotMatch(runner, /--echo-errors/);
+  assert.match(runner, /if \[\[ "\$\{BASH_SOURCE\[0\]\}" == "\$0" \]\]/);
+  assert.doesNotMatch(runner, /(?:MATRIX_WORK_DIR|MATRIX_STATE_FILE)\s*=|\$\{(?:MATRIX_WORK_DIR|MATRIX_STATE_FILE)/);
+  assert.doesNotMatch(runner, /printf\s+'?%\.63s/);
   assert.doesNotMatch(runner, /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE)\s+pg_catalog\./i);
 });
 
@@ -220,7 +228,7 @@ test("PostgreSQL 14 matrix runner passes fake CLI orchestration tests", () => {
     timeout: 180_000,
   });
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-  assert.match(result.stdout, /fake CLI tests: PASS/);
+  assert.match(result.stdout, /source-injected tests: PASS/);
 });
 
 const testDatabaseUrl = process.env.MEMORYAI_TEST_DATABASE_URL;
