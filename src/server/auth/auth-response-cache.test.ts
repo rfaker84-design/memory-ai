@@ -80,3 +80,38 @@ test("all auth success and error responses are private no-store", async () => {
 
   for (const response of responses) assertNoStore(response);
 });
+
+test("middleware authentication failures are private no-store on formal and migration paths", () => {
+  const paths = [
+    "/api/auth/send-code",
+    "/api/auth/verify-code",
+    "/api/send-code",
+    "/api/verify-code",
+  ];
+
+  for (const pathname of paths) {
+    const missingOrigin = middleware(request(pathname, "{}", false));
+    assert.equal(missingOrigin.status, 403);
+    assertNoStore(missingOrigin);
+
+    const wrongOrigin = middleware(new NextRequest(`https://memoryai.test${pathname}`, {
+      method: "POST",
+      headers: { origin: "https://attacker.invalid" },
+      body: "{}",
+    }));
+    assert.equal(wrongOrigin.status, 403);
+    assertNoStore(wrongOrigin);
+  }
+
+  const configuredOrigin = process.env.AUTH_ALLOWED_ORIGIN;
+  delete process.env.AUTH_ALLOWED_ORIGIN;
+  try {
+    for (const pathname of paths) {
+      const unavailable = middleware(request(pathname, "{}"));
+      assert.equal(unavailable.status, 503);
+      assertNoStore(unavailable);
+    }
+  } finally {
+    process.env.AUTH_ALLOWED_ORIGIN = configuredOrigin;
+  }
+});
