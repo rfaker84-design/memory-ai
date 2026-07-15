@@ -15,6 +15,16 @@ const migrations = ["001", "002", "003", "004", "005"].map((number) => {
 const migration006 = read("migrations/006_auth_verification_challenges.sql");
 const preflight = read("verification/006-auth-preflight.sql");
 const postflight = read("verification/006-auth-postflight.sql");
+const postgres1423CheckExpressions = Object.freeze({
+  ck_auth_challenge_phone_hash: "(phone_hash~'^[0-9a-f]{64}$'::text)",
+  ck_auth_challenge_code_digest: "(code_digest~'^[0-9a-f]{64}$'::text)",
+  ck_auth_challenge_ip_hash: "(request_ip_hash~'^[0-9a-f]{64}$'::text)",
+  ck_auth_challenge_purpose: "(purpose='sign_in'::text)",
+  ck_auth_challenge_attempts: "((attempts>=0)AND(max_attempts>0)AND(attempts<=max_attempts))",
+  ck_auth_challenge_timing: "((resend_after>created_at)AND(expires_at>resend_after))",
+  ck_auth_challenge_consumed_at: "((consumed_atISNULL)OR(consumed_at>=created_at))",
+  ck_auth_challenge_provider_request_id: "((provider_request_idISNULL)OR((char_length(provider_request_id)>=1)AND(char_length(provider_request_id)<=128)))",
+});
 
 test("006 is atomic, bounded, schema-qualified, and does not rewrite history", () => {
   assert.match(migration006, /^BEGIN;/);
@@ -36,7 +46,78 @@ test("006 stores only fixed-length digests and enforces challenge lifecycle", ()
   assert.doesNotMatch(migration006, /\bcode\s+(?:TEXT|VARCHAR|CHARACTER)/i);
   assert.match(migration006, /attempts <= max_attempts/);
   assert.match(migration006, /expires_at > resend_after/);
-  assert.match(migration006, /unexpected owner or definition/g);
+  assert.doesNotMatch(migration006, /unexpected owner/i);
+});
+
+test("006 uses all eight PostgreSQL 14.23 normalized CHECK expressions", () => {
+  for (const expression of Object.values(postgres1423CheckExpressions)) {
+    const sqlLiteral = expression.replaceAll("'", "''");
+    assert.ok(migration006.includes(sqlLiteral), `missing normalized expression ${expression}`);
+  }
+  assert.doesNotMatch(migration006, /\(phone_hash\)::text|\(code_digest\)::text|\(request_ip_hash\)::text/);
+  assert.doesNotMatch(migration006, /purpose=ANY\(ARRAY/);
+});
+
+test("006 validates every CHECK name and catalog property structurally", () => {
+  for (const field of [
+    "constraint_name_count", "duplicate names", "is missing after creation",
+    "actual_relation_oid", "actual_constraint_type", "actual_validated",
+    "actual_no_inherit", "actual_deferrable", "actual_deferred",
+    "actual_conkey", "expected_conkey", "wrong normalized expression",
+  ]) assert.ok(migration006.includes(field), `missing CHECK guard ${field}`);
+  for (const catalogField of [
+    "c.conrelid", "c.contype", "c.convalidated", "c.connoinherit",
+    "c.condeferrable", "c.condeferred", "c.conkey",
+  ]) assert.ok(migration006.includes(catalogField), `missing catalog field ${catalogField}`);
+  for (const predicate of [
+    "actual_relation_oid IS DISTINCT FROM target_oid",
+    "actual_constraint_type IS DISTINCT FROM 'c'",
+    "actual_validated IS DISTINCT FROM true",
+    "actual_no_inherit IS DISTINCT FROM false",
+    "actual_deferrable IS DISTINCT FROM false",
+    "actual_deferred IS DISTINCT FROM false",
+    "actual_conkey IS DISTINCT FROM expected_conkey",
+    "actual_definition IS DISTINCT FROM expected_definition",
+  ]) assert.ok(migration006.includes(predicate), `missing CHECK predicate ${predicate}`);
+  for (const expectedColumns of [
+    "ARRAY['phone_hash']::TEXT[]",
+    "ARRAY['code_digest']::TEXT[]",
+    "ARRAY['request_ip_hash']::TEXT[]",
+    "ARRAY['purpose']::TEXT[]",
+    "ARRAY['attempts', 'max_attempts']::TEXT[]",
+    "ARRAY['resend_after', 'created_at', 'expires_at']::TEXT[]",
+    "ARRAY['consumed_at', 'created_at']::TEXT[]",
+    "ARRAY['provider_request_id']::TEXT[]",
+  ]) assert.ok(migration006.includes(expectedColumns), `missing conkey columns ${expectedColumns}`);
+});
+
+test("006 validates all three indexes structurally and retains definition checks", () => {
+  for (const field of [
+    "index_name_count", "duplicate names", "actual_relation_oid",
+    "actual_access_method", "actual_primary", "actual_unique", "actual_valid",
+    "actual_ready", "actual_live", "actual_has_predicate", "actual_has_expression",
+    "actual_indkey", "actual_indoption", "actual_definition",
+  ]) assert.ok(migration006.includes(field), `missing index guard ${field}`);
+  for (const catalogField of [
+    "indrelid", "indisprimary", "indisunique", "indisvalid", "indisready",
+    "indislive", "indpred", "indexprs", "indkey", "indoption",
+  ]) assert.ok(migration006.includes(catalogField), `missing index catalog field ${catalogField}`);
+  assert.match(migration006, /actual_access_method IS DISTINCT FROM 'btree'/);
+  assert.match(migration006, /actual_relation_oid IS DISTINCT FROM target_oid/);
+  assert.match(migration006, /actual_primary IS DISTINCT FROM false/);
+  assert.match(migration006, /actual_unique IS DISTINCT FROM false/);
+  assert.match(migration006, /actual_valid IS DISTINCT FROM true/);
+  assert.match(migration006, /actual_ready IS DISTINCT FROM true/);
+  assert.match(migration006, /actual_live IS DISTINCT FROM true/);
+  assert.match(migration006, /actual_has_predicate IS DISTINCT FROM false/);
+  assert.match(migration006, /actual_has_expression IS DISTINCT FROM false/);
+  assert.match(migration006, /actual_indkey IS DISTINCT FROM expected_indkey/);
+  assert.match(migration006, /actual_indoption IS DISTINCT FROM expected_indoption/);
+  assert.match(migration006, /actual_definition IS DISTINCT FROM expected_definition/);
+  assert.match(migration006, /ARRAY\[0, 3\]::SMALLINT\[\]/);
+  assert.match(migration006, /ARRAY\[0\]::SMALLINT\[\]/);
+  assert.match(migration006, /index public\.% is not valid/);
+  assert.match(migration006, /index public\.% is not ready/);
 });
 
 test("006 validates challenge_id structurally without brittle default text equality", () => {
@@ -154,6 +235,21 @@ test("006 PostgreSQL positive, repeated, and negative matrix", {
       assert.equal(Math.floor(Number(version.rows[0].server_version_num) / 10000), 14);
       await resetBase(client);
       await client.query(migration006);
+      const normalizedChecks = await client.query(`
+        SELECT c.conname,
+          pg_catalog.regexp_replace(
+            pg_catalog.pg_get_expr(c.conbin, c.conrelid),
+            '\\s+', '', 'g'
+          ) AS normalized_expression
+        FROM pg_catalog.pg_constraint c
+        WHERE c.conrelid = 'public.auth_verification_challenges'::regclass
+          AND c.conname LIKE 'ck_auth_challenge_%'
+        ORDER BY c.conname
+      `);
+      assert.deepEqual(
+        Object.fromEntries(normalizedChecks.rows.map((row) => [row.conname, row.normalized_expression])),
+        postgres1423CheckExpressions,
+      );
       const inserted = await client.query(`
         INSERT INTO public.auth_verification_challenges (
           phone_hash, code_digest, purpose, expires_at, resend_after, request_ip_hash
@@ -256,12 +352,83 @@ test("006 PostgreSQL positive, repeated, and negative matrix", {
       await client.query("ROLLBACK");
     });
 
+    await t.test("rejects a CHECK name owned by the wrong table", async () => {
+      await resetBase(client);
+      await client.query(migration006);
+      await client.query("ALTER TABLE public.auth_verification_challenges DROP CONSTRAINT ck_auth_challenge_phone_hash");
+      await client.query(`
+        CREATE TABLE public.auth_challenge_shadow (
+          phone_hash CHARACTER(64),
+          CONSTRAINT ck_auth_challenge_phone_hash CHECK (phone_hash ~ '^[0-9a-f]{64}$')
+        )
+      `);
+      await assert.rejects(client.query(migration006), /ck_auth_challenge_phone_hash has wrong relation/i);
+      await client.query("ROLLBACK");
+    });
+
+    await t.test("rejects duplicate CHECK names in public", async () => {
+      await resetBase(client);
+      await client.query(migration006);
+      await client.query(`
+        CREATE TABLE public.auth_challenge_shadow (
+          phone_hash CHARACTER(64),
+          CONSTRAINT ck_auth_challenge_phone_hash CHECK (phone_hash ~ '^[0-9a-f]{64}$')
+        )
+      `);
+      await assert.rejects(client.query(migration006), /ck_auth_challenge_phone_hash has duplicate names/i);
+      await client.query("ROLLBACK");
+    });
+
+    for (const checkCase of [
+      {
+        name: "wrong CHECK conkey",
+        definition: "CHECK (phone_hash ~ '^[0-9a-f]{64}$' AND code_digest IS NOT NULL)",
+        error: /ck_auth_challenge_phone_hash has wrong conkey/i,
+      },
+      {
+        name: "NOT VALID CHECK",
+        definition: "CHECK (phone_hash ~ '^[0-9a-f]{64}$') NOT VALID",
+        error: /ck_auth_challenge_phone_hash is not validated/i,
+      },
+      {
+        name: "NO INHERIT CHECK",
+        definition: "CHECK (phone_hash ~ '^[0-9a-f]{64}$') NO INHERIT",
+        error: /ck_auth_challenge_phone_hash unexpectedly uses NO INHERIT/i,
+      },
+      {
+        name: "wrong CHECK expression",
+        definition: "CHECK (phone_hash ~ '^[0-9]{64}$')",
+        error: /ck_auth_challenge_phone_hash has wrong normalized expression/i,
+      },
+    ]) {
+      await t.test(`rejects ${checkCase.name}`, async () => {
+        await resetBase(client);
+        await client.query(migration006);
+        await client.query("ALTER TABLE public.auth_verification_challenges DROP CONSTRAINT ck_auth_challenge_phone_hash");
+        await client.query(`
+          ALTER TABLE public.auth_verification_challenges
+          ADD CONSTRAINT ck_auth_challenge_phone_hash ${checkCase.definition}
+        `);
+        await assert.rejects(client.query(migration006), checkCase.error);
+        await client.query("ROLLBACK");
+      });
+    }
+
     await t.test("rejects wrong same-name indexes", async () => {
       await resetBase(client);
       await client.query(migration006);
       await client.query("DROP INDEX public.idx_auth_challenges_phone_created");
       await client.query("CREATE INDEX idx_auth_challenges_phone_created ON public.auth_verification_challenges (purpose)");
-      await assert.rejects(client.query(migration006), /index public.*unexpected owner or definition/i);
+      await assert.rejects(client.query(migration006), /idx_auth_challenges_phone_created has wrong key columns/i);
+      await client.query("ROLLBACK");
+    });
+
+    await t.test("rejects a unique replacement for a non-unique index", async () => {
+      await resetBase(client);
+      await client.query(migration006);
+      await client.query("DROP INDEX public.idx_auth_challenges_phone_created");
+      await client.query("CREATE UNIQUE INDEX idx_auth_challenges_phone_created ON public.auth_verification_challenges (phone_hash, created_at DESC)");
+      await assert.rejects(client.query(migration006), /idx_auth_challenges_phone_created is unexpectedly unique/i);
       await client.query("ROLLBACK");
     });
 

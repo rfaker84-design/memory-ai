@@ -190,29 +190,38 @@ DECLARE
   target_oid OID := 'public.auth_verification_challenges'::regclass;
   constraint_name TEXT;
   expected_definition TEXT;
+  expected_column_names TEXT[];
+  expected_conkey SMALLINT[];
   actual_definition TEXT;
   constraint_oid OID;
+  constraint_name_count INTEGER;
+  actual_relation_oid OID;
+  actual_constraint_type TEXT;
+  actual_validated BOOLEAN;
+  actual_no_inherit BOOLEAN;
+  actual_deferrable BOOLEAN;
+  actual_deferred BOOLEAN;
+  actual_conkey SMALLINT[];
 BEGIN
-  FOR constraint_name, expected_definition IN
+  FOR constraint_name, expected_definition, expected_column_names IN
     SELECT * FROM (VALUES
-      ('ck_auth_challenge_phone_hash', '((phone_hash)::text~''^[0-9a-f]{64}$''::text)'),
-      ('ck_auth_challenge_code_digest', '((code_digest)::text~''^[0-9a-f]{64}$''::text)'),
-      ('ck_auth_challenge_ip_hash', '((request_ip_hash)::text~''^[0-9a-f]{64}$''::text)'),
-      ('ck_auth_challenge_purpose', '(purpose=ANY(ARRAY[''sign_in''::text]))'),
-      ('ck_auth_challenge_attempts', '((attempts>=0)AND(max_attempts>0)AND(attempts<=max_attempts))'),
-      ('ck_auth_challenge_timing', '((resend_after>created_at)AND(expires_at>resend_after))'),
-      ('ck_auth_challenge_consumed_at', '((consumed_atISNULL)OR(consumed_at>=created_at))'),
-      ('ck_auth_challenge_provider_request_id', '((provider_request_idISNULL)OR((char_length(provider_request_id)>=1)AND(char_length(provider_request_id)<=128)))')
-    ) AS expected(constraint_name, expected_definition)
+      ('ck_auth_challenge_phone_hash', '(phone_hash~''^[0-9a-f]{64}$''::text)', ARRAY['phone_hash']::TEXT[]),
+      ('ck_auth_challenge_code_digest', '(code_digest~''^[0-9a-f]{64}$''::text)', ARRAY['code_digest']::TEXT[]),
+      ('ck_auth_challenge_ip_hash', '(request_ip_hash~''^[0-9a-f]{64}$''::text)', ARRAY['request_ip_hash']::TEXT[]),
+      ('ck_auth_challenge_purpose', '(purpose=''sign_in''::text)', ARRAY['purpose']::TEXT[]),
+      ('ck_auth_challenge_attempts', '((attempts>=0)AND(max_attempts>0)AND(attempts<=max_attempts))', ARRAY['attempts', 'max_attempts']::TEXT[]),
+      ('ck_auth_challenge_timing', '((resend_after>created_at)AND(expires_at>resend_after))', ARRAY['resend_after', 'created_at', 'expires_at']::TEXT[]),
+      ('ck_auth_challenge_consumed_at', '((consumed_atISNULL)OR(consumed_at>=created_at))', ARRAY['consumed_at', 'created_at']::TEXT[]),
+      ('ck_auth_challenge_provider_request_id', '((provider_request_idISNULL)OR((char_length(provider_request_id)>=1)AND(char_length(provider_request_id)<=128)))', ARRAY['provider_request_id']::TEXT[])
+    ) AS expected(constraint_name, expected_definition, expected_column_names)
   LOOP
-    SELECT c.oid,
-      pg_catalog.regexp_replace(pg_catalog.pg_get_expr(c.conbin, c.conrelid), '\s+', '', 'g')
-    INTO constraint_oid, actual_definition
+    SELECT count(*)
+    INTO constraint_name_count
     FROM pg_catalog.pg_constraint c
     WHERE c.connamespace = 'public'::regnamespace
       AND c.conname = constraint_name;
 
-    IF constraint_oid IS NULL THEN
+    IF constraint_name_count = 0 THEN
       CASE constraint_name
         WHEN 'ck_auth_challenge_phone_hash' THEN
           ALTER TABLE public.auth_verification_challenges ADD CONSTRAINT ck_auth_challenge_phone_hash
@@ -239,11 +248,70 @@ BEGIN
           ALTER TABLE public.auth_verification_challenges ADD CONSTRAINT ck_auth_challenge_provider_request_id
             CHECK (provider_request_id IS NULL OR (char_length(provider_request_id) >= 1 AND char_length(provider_request_id) <= 128));
       END CASE;
-    ELSIF NOT EXISTS (
-      SELECT 1 FROM pg_catalog.pg_constraint c
-      WHERE c.oid = constraint_oid AND c.conrelid = target_oid AND c.contype = 'c'
-    ) OR actual_definition IS DISTINCT FROM expected_definition THEN
-      RAISE EXCEPTION '006 constraint public.% has an unexpected owner or definition', constraint_name;
+    ELSIF constraint_name_count > 1 THEN
+      RAISE EXCEPTION '006 constraint public.% has duplicate names in public schema, count %', constraint_name, constraint_name_count;
+    END IF;
+
+    SELECT count(*)
+    INTO constraint_name_count
+    FROM pg_catalog.pg_constraint c
+    WHERE c.connamespace = 'public'::regnamespace
+      AND c.conname = constraint_name;
+
+    IF constraint_name_count = 0 THEN
+      RAISE EXCEPTION '006 constraint public.% is missing after creation', constraint_name;
+    ELSIF constraint_name_count > 1 THEN
+      RAISE EXCEPTION '006 constraint public.% has duplicate names in public schema, count %', constraint_name, constraint_name_count;
+    END IF;
+
+    SELECT c.oid,
+      c.conrelid,
+      c.contype::TEXT,
+      c.convalidated,
+      c.connoinherit,
+      c.condeferrable,
+      c.condeferred,
+      c.conkey,
+      pg_catalog.regexp_replace(pg_catalog.pg_get_expr(c.conbin, c.conrelid), '\s+', '', 'g')
+    INTO constraint_oid, actual_relation_oid, actual_constraint_type,
+      actual_validated, actual_no_inherit, actual_deferrable, actual_deferred,
+      actual_conkey, actual_definition
+    FROM pg_catalog.pg_constraint c
+    WHERE c.connamespace = 'public'::regnamespace
+      AND c.conname = constraint_name;
+
+    SELECT pg_catalog.array_agg(a.attnum::SMALLINT ORDER BY expected_column.ordinality)
+    INTO expected_conkey
+    FROM pg_catalog.unnest(expected_column_names) WITH ORDINALITY AS expected_column(column_name, ordinality)
+    JOIN pg_catalog.pg_attribute a
+      ON a.attrelid = target_oid
+      AND a.attname = expected_column.column_name
+      AND a.attnum > 0
+      AND NOT a.attisdropped;
+
+    IF actual_relation_oid IS DISTINCT FROM target_oid THEN
+      RAISE EXCEPTION '006 constraint public.% has wrong relation, expected %, got %', constraint_name, target_oid, actual_relation_oid;
+    END IF;
+    IF actual_constraint_type IS DISTINCT FROM 'c' THEN
+      RAISE EXCEPTION '006 constraint public.% has wrong constraint type, expected c, got %', constraint_name, actual_constraint_type;
+    END IF;
+    IF actual_validated IS DISTINCT FROM true THEN
+      RAISE EXCEPTION '006 constraint public.% is not validated', constraint_name;
+    END IF;
+    IF actual_no_inherit IS DISTINCT FROM false THEN
+      RAISE EXCEPTION '006 constraint public.% unexpectedly uses NO INHERIT', constraint_name;
+    END IF;
+    IF actual_deferrable IS DISTINCT FROM false THEN
+      RAISE EXCEPTION '006 constraint public.% is unexpectedly deferrable', constraint_name;
+    END IF;
+    IF actual_deferred IS DISTINCT FROM false THEN
+      RAISE EXCEPTION '006 constraint public.% is unexpectedly deferred', constraint_name;
+    END IF;
+    IF actual_conkey IS DISTINCT FROM expected_conkey THEN
+      RAISE EXCEPTION '006 constraint public.% has wrong conkey, expected %, got %', constraint_name, expected_conkey, actual_conkey;
+    END IF;
+    IF actual_definition IS DISTINCT FROM expected_definition THEN
+      RAISE EXCEPTION '006 constraint public.% has wrong normalized expression, expected %, got %', constraint_name, expected_definition, actual_definition;
     END IF;
   END LOOP;
 END;
@@ -251,41 +319,162 @@ $$;
 
 DO $$
 DECLARE
+  target_oid OID := 'public.auth_verification_challenges'::regclass;
+  index_name TEXT;
+  expected_definition TEXT;
+  expected_column_names TEXT[];
+  expected_indkey SMALLINT[];
+  expected_indoption SMALLINT[];
+  index_name_count INTEGER;
   index_oid OID;
-  definition TEXT;
+  actual_relkind TEXT;
+  actual_relation_oid OID;
+  actual_access_method TEXT;
+  actual_primary BOOLEAN;
+  actual_unique BOOLEAN;
+  actual_valid BOOLEAN;
+  actual_ready BOOLEAN;
+  actual_live BOOLEAN;
+  actual_has_predicate BOOLEAN;
+  actual_has_expression BOOLEAN;
+  actual_nkeyatts INTEGER;
+  actual_natts INTEGER;
+  actual_indkey SMALLINT[];
+  actual_indoption SMALLINT[];
+  actual_definition TEXT;
 BEGIN
-  index_oid := to_regclass('public.idx_auth_challenges_phone_created');
-  IF index_oid IS NULL THEN
-    CREATE INDEX idx_auth_challenges_phone_created
-      ON public.auth_verification_challenges (phone_hash, created_at DESC);
-  ELSE
-    SELECT pg_catalog.pg_get_indexdef(index_oid) INTO definition;
-    IF definition IS DISTINCT FROM 'CREATE INDEX idx_auth_challenges_phone_created ON public.auth_verification_challenges USING btree (phone_hash, created_at DESC)' THEN
-      RAISE EXCEPTION '006 index public.idx_auth_challenges_phone_created has an unexpected owner or definition';
-    END IF;
-  END IF;
+  FOR index_name, expected_definition, expected_column_names, expected_indoption IN
+    SELECT * FROM (VALUES
+      ('idx_auth_challenges_phone_created', 'CREATE INDEX idx_auth_challenges_phone_created ON public.auth_verification_challenges USING btree (phone_hash, created_at DESC)', ARRAY['phone_hash', 'created_at']::TEXT[], ARRAY[0, 3]::SMALLINT[]),
+      ('idx_auth_challenges_ip_created', 'CREATE INDEX idx_auth_challenges_ip_created ON public.auth_verification_challenges USING btree (request_ip_hash, created_at DESC)', ARRAY['request_ip_hash', 'created_at']::TEXT[], ARRAY[0, 3]::SMALLINT[]),
+      ('idx_auth_challenges_expires_at', 'CREATE INDEX idx_auth_challenges_expires_at ON public.auth_verification_challenges USING btree (expires_at)', ARRAY['expires_at']::TEXT[], ARRAY[0]::SMALLINT[])
+    ) AS expected(index_name, expected_definition, expected_column_names, expected_indoption)
+  LOOP
+    SELECT count(*)
+    INTO index_name_count
+    FROM pg_catalog.pg_class index_class
+    WHERE index_class.relnamespace = 'public'::regnamespace
+      AND index_class.relname = index_name;
 
-  index_oid := to_regclass('public.idx_auth_challenges_ip_created');
-  IF index_oid IS NULL THEN
-    CREATE INDEX idx_auth_challenges_ip_created
-      ON public.auth_verification_challenges (request_ip_hash, created_at DESC);
-  ELSE
-    SELECT pg_catalog.pg_get_indexdef(index_oid) INTO definition;
-    IF definition IS DISTINCT FROM 'CREATE INDEX idx_auth_challenges_ip_created ON public.auth_verification_challenges USING btree (request_ip_hash, created_at DESC)' THEN
-      RAISE EXCEPTION '006 index public.idx_auth_challenges_ip_created has an unexpected owner or definition';
+    IF index_name_count = 0 THEN
+      CASE index_name
+        WHEN 'idx_auth_challenges_phone_created' THEN
+          CREATE INDEX idx_auth_challenges_phone_created
+            ON public.auth_verification_challenges (phone_hash, created_at DESC);
+        WHEN 'idx_auth_challenges_ip_created' THEN
+          CREATE INDEX idx_auth_challenges_ip_created
+            ON public.auth_verification_challenges (request_ip_hash, created_at DESC);
+        WHEN 'idx_auth_challenges_expires_at' THEN
+          CREATE INDEX idx_auth_challenges_expires_at
+            ON public.auth_verification_challenges (expires_at ASC);
+      END CASE;
+    ELSIF index_name_count > 1 THEN
+      RAISE EXCEPTION '006 index public.% has duplicate names in public schema, count %', index_name, index_name_count;
     END IF;
-  END IF;
 
-  index_oid := to_regclass('public.idx_auth_challenges_expires_at');
-  IF index_oid IS NULL THEN
-    CREATE INDEX idx_auth_challenges_expires_at
-      ON public.auth_verification_challenges (expires_at ASC);
-  ELSE
-    SELECT pg_catalog.pg_get_indexdef(index_oid) INTO definition;
-    IF definition IS DISTINCT FROM 'CREATE INDEX idx_auth_challenges_expires_at ON public.auth_verification_challenges USING btree (expires_at)' THEN
-      RAISE EXCEPTION '006 index public.idx_auth_challenges_expires_at has an unexpected owner or definition';
+    SELECT count(*)
+    INTO index_name_count
+    FROM pg_catalog.pg_class index_class
+    WHERE index_class.relnamespace = 'public'::regnamespace
+      AND index_class.relname = index_name;
+
+    IF index_name_count = 0 THEN
+      RAISE EXCEPTION '006 index public.% is missing after creation', index_name;
+    ELSIF index_name_count > 1 THEN
+      RAISE EXCEPTION '006 index public.% has duplicate names in public schema, count %', index_name, index_name_count;
     END IF;
-  END IF;
+
+    SELECT index_class.oid, index_class.relkind::TEXT
+    INTO index_oid, actual_relkind
+    FROM pg_catalog.pg_class index_class
+    WHERE index_class.relnamespace = 'public'::regnamespace
+      AND index_class.relname = index_name;
+
+    IF actual_relkind IS DISTINCT FROM 'i' THEN
+      RAISE EXCEPTION '006 index public.% has wrong object type, expected index, got %', index_name, actual_relkind;
+    END IF;
+
+    SELECT index_catalog.indrelid,
+      access_method.amname,
+      index_catalog.indisprimary,
+      index_catalog.indisunique,
+      index_catalog.indisvalid,
+      index_catalog.indisready,
+      index_catalog.indislive,
+      index_catalog.indpred IS NOT NULL,
+      index_catalog.indexprs IS NOT NULL,
+      index_catalog.indnkeyatts,
+      index_catalog.indnatts,
+      ARRAY(
+        SELECT index_catalog.indkey[key_position.position]::SMALLINT
+        FROM pg_catalog.generate_series(0, index_catalog.indnkeyatts - 1) AS key_position(position)
+        ORDER BY key_position.position
+      ),
+      ARRAY(
+        SELECT index_catalog.indoption[option_position.position]::SMALLINT
+        FROM pg_catalog.generate_series(0, index_catalog.indnkeyatts - 1) AS option_position(position)
+        ORDER BY option_position.position
+      ),
+      pg_catalog.pg_get_indexdef(index_oid)
+    INTO actual_relation_oid, actual_access_method, actual_primary,
+      actual_unique, actual_valid, actual_ready, actual_live,
+      actual_has_predicate, actual_has_expression, actual_nkeyatts,
+      actual_natts, actual_indkey, actual_indoption, actual_definition
+    FROM pg_catalog.pg_index index_catalog
+    JOIN pg_catalog.pg_class index_class
+      ON index_class.oid = index_catalog.indexrelid
+    JOIN pg_catalog.pg_am access_method
+      ON access_method.oid = index_class.relam
+    WHERE index_catalog.indexrelid = index_oid;
+
+    SELECT pg_catalog.array_agg(a.attnum::SMALLINT ORDER BY expected_column.ordinality)
+    INTO expected_indkey
+    FROM pg_catalog.unnest(expected_column_names) WITH ORDINALITY AS expected_column(column_name, ordinality)
+    JOIN pg_catalog.pg_attribute a
+      ON a.attrelid = target_oid
+      AND a.attname = expected_column.column_name
+      AND a.attnum > 0
+      AND NOT a.attisdropped;
+
+    IF actual_relation_oid IS DISTINCT FROM target_oid THEN
+      RAISE EXCEPTION '006 index public.% has wrong relation, expected %, got %', index_name, target_oid, actual_relation_oid;
+    END IF;
+    IF actual_access_method IS DISTINCT FROM 'btree' THEN
+      RAISE EXCEPTION '006 index public.% has wrong access method, expected btree, got %', index_name, actual_access_method;
+    END IF;
+    IF actual_primary IS DISTINCT FROM false THEN
+      RAISE EXCEPTION '006 index public.% is unexpectedly primary', index_name;
+    END IF;
+    IF actual_unique IS DISTINCT FROM false THEN
+      RAISE EXCEPTION '006 index public.% is unexpectedly unique', index_name;
+    END IF;
+    IF actual_valid IS DISTINCT FROM true THEN
+      RAISE EXCEPTION '006 index public.% is not valid', index_name;
+    END IF;
+    IF actual_ready IS DISTINCT FROM true THEN
+      RAISE EXCEPTION '006 index public.% is not ready', index_name;
+    END IF;
+    IF actual_live IS DISTINCT FROM true THEN
+      RAISE EXCEPTION '006 index public.% is not live', index_name;
+    END IF;
+    IF actual_has_predicate IS DISTINCT FROM false THEN
+      RAISE EXCEPTION '006 index public.% unexpectedly has a predicate', index_name;
+    END IF;
+    IF actual_has_expression IS DISTINCT FROM false THEN
+      RAISE EXCEPTION '006 index public.% unexpectedly has an expression', index_name;
+    END IF;
+    IF actual_nkeyatts IS DISTINCT FROM pg_catalog.cardinality(expected_indkey)
+       OR actual_natts IS DISTINCT FROM pg_catalog.cardinality(expected_indkey)
+       OR actual_indkey IS DISTINCT FROM expected_indkey THEN
+      RAISE EXCEPTION '006 index public.% has wrong key columns, expected %, got %', index_name, expected_indkey, actual_indkey;
+    END IF;
+    IF actual_indoption IS DISTINCT FROM expected_indoption THEN
+      RAISE EXCEPTION '006 index public.% has wrong sort options, expected %, got %', index_name, expected_indoption, actual_indoption;
+    END IF;
+    IF actual_definition IS DISTINCT FROM expected_definition THEN
+      RAISE EXCEPTION '006 index public.% has wrong normalized definition, expected %, got %', index_name, expected_definition, actual_definition;
+    END IF;
+  END LOOP;
 END;
 $$;
 
