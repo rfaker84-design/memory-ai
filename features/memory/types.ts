@@ -28,3 +28,8 @@ export type CreateMemoryInput = Omit<Memory, "id" | "createdAt" | "updatedAt"> &
 };
 
 export type UpdateMemoryInput = Partial<CreateMemoryInput>;
+
+export type UpdateOwnedMemoryInput = Omit<
+  UpdateMemoryInput,
+  "userId" | "idempotencyKey"
+>;

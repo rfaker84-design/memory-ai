@@ -7,8 +7,13 @@ import {
   withPostgresTransaction,
 } from "../../src/server/database";
 import type { MemoryDataSource } from "./datasource";
-import { MemoryNotFoundError, MemoryValidationError } from "./errors";
+import {
+  MemoryMediaConflictError,
+  MemoryNotFoundError,
+  MemoryValidationError,
+} from "./errors";
 import type { CreateMemoryInput, Memory, UpdateMemoryInput } from "./types";
+import type { UpdateOwnedMemoryInput } from "./types";
 
 type MemoryRow = {
   id: string;
@@ -329,7 +334,44 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
     return result.rows[0] ? toMemory(result.rows[0]) : null;
   }
 
+  async findByIdForUser(id: string, userId: string): Promise<Memory | null> {
+    const memoryId = validateId(id);
+    const externalId = requiredText(userId, "userId", 255);
+    const result = await queryPostgres<MemoryRow>(
+      `
+        SELECT ${MEMORY_COLUMNS}
+        FROM memories m
+        JOIN users u ON u.id = m.user_id
+        WHERE m.id = $1 AND u.external_id = $2
+        LIMIT 1
+      `,
+      [memoryId, externalId]
+    );
+
+    return result.rows[0] ? toMemory(result.rows[0]) : null;
+  }
+
   async update(id: string, memory: UpdateMemoryInput): Promise<Memory> {
+    return this.updateInternal(id, memory);
+  }
+
+  async updateForUser(
+    id: string,
+    userId: string,
+    memory: UpdateOwnedMemoryInput
+  ): Promise<Memory> {
+    return this.updateInternal(
+      id,
+      memory,
+      requiredText(userId, "userId", 255)
+    );
+  }
+
+  private async updateInternal(
+    id: string,
+    memory: UpdateMemoryInput,
+    externalUserId?: string
+  ): Promise<Memory> {
     const memoryId = validateId(id);
     validateYear(memory.birthYear, "birthYear");
     validateYear(memory.deathYear, "deathYear");
@@ -337,6 +379,18 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
       memory.fragments === undefined ? undefined : normalizedFragments(memory);
 
     const row = await withPostgresTransaction(async (client) => {
+      if (externalUserId) {
+        const owned = await client.query(
+          `SELECT m.id
+           FROM memories m
+           JOIN users u ON u.id = m.user_id
+           WHERE m.id = $1 AND u.external_id = $2
+           FOR UPDATE`,
+          [memoryId, externalUserId]
+        );
+        if (!owned.rows[0]) return null;
+      }
+
       const assignments: string[] = [];
       const values: unknown[] = [];
 
@@ -387,19 +441,29 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
             SELECT ${MEMORY_COLUMNS}
             FROM memories m
             JOIN users u ON u.id = m.user_id
-            WHERE m.id = $1
+            WHERE m.id = $1${externalUserId ? " AND u.external_id = $2" : ""}
             LIMIT 1
           `,
-          [memoryId]
+          externalUserId ? [memoryId, externalUserId] : [memoryId]
         );
       } else {
         values.push(memoryId);
+        const memoryIdParameter = values.length;
+        if (externalUserId) values.push(externalUserId);
         result = await client.query<MemoryRow>(
           `
             WITH written AS (
               UPDATE memories
               SET ${assignments.join(", ")}, updated_at = NOW()
-              WHERE id = $${values.length}
+              WHERE id = $${memoryIdParameter}
+                ${
+                  externalUserId
+                    ? `AND user_id = (
+                        SELECT id FROM users
+                        WHERE external_id = $${values.length}
+                      )`
+                    : ""
+                }
               RETURNING *
             )
             SELECT
@@ -441,6 +505,52 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
     const memoryId = validateId(id);
     await withPostgresTransaction(async (client) => {
       await client.query("DELETE FROM memories WHERE id = $1", [memoryId]);
+    });
+  }
+
+  async deleteForUser(id: string, userId: string): Promise<void> {
+    const memoryId = validateId(id);
+    const externalId = requiredText(userId, "userId", 255);
+
+    await withPostgresTransaction(async (client) => {
+      const owned = await client.query(
+        `SELECT m.id
+         FROM memories m
+         JOIN users u ON u.id = m.user_id
+         WHERE m.id = $1 AND u.external_id = $2
+         FOR UPDATE`,
+        [memoryId, externalId]
+      );
+      if (!owned.rows[0]) throw new MemoryNotFoundError("Memory not found");
+
+      const uncleanMedia = await client.query(
+        `SELECT id
+         FROM media_assets
+         WHERE memory_id = $1
+           AND (cleaned_at IS NULL OR storage_key IS NOT NULL)
+         LIMIT 1
+         FOR UPDATE`,
+        [memoryId]
+      );
+      if (uncleanMedia.rows[0]) {
+        throw new MemoryMediaConflictError(
+          "Memory media must be cleaned before deletion"
+        );
+      }
+
+      // Migration 003 cascades fragments and cleaned media metadata, while
+      // audit_logs.memory_id is retained as NULL. The guard above prevents
+      // cascading a row that could still reference a COS object.
+      const deleted = await client.query(
+        `DELETE FROM memories m
+         USING users u
+         WHERE m.id = $1
+           AND m.user_id = u.id
+           AND u.external_id = $2
+         RETURNING m.id`,
+        [memoryId, externalId]
+      );
+      if (!deleted.rows[0]) throw new MemoryNotFoundError("Memory not found");
     });
   }
 
