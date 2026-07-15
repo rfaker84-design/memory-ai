@@ -5,13 +5,33 @@ import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 
 const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
-function isAuthenticationEndpoint(pathname: string): boolean {
-  return pathname.startsWith("/api/auth/")
-    || pathname === "/api/send-code"
-    || pathname === "/api/verify-code";
+const FORMAL_API_PATHS = new Set([
+  "/api/auth/send-code",
+  "/api/auth/verify-code",
+  "/api/auth/session",
+  "/api/auth/logout",
+  "/api/memories",
+  "/api/memory-chat",
+  "/api/media/upload",
+  "/api/health",
+  "/api/health/database",
+  "/api/health/ai",
+]);
+
+export function isFormalApiPath(pathname: string): boolean {
+  return FORMAL_API_PATHS.has(pathname)
+    || pathname.startsWith("/api/memories/")
+    || pathname.startsWith("/api/media/");
 }
 
 export function middleware(request: NextRequest) {
+  if (!isFormalApiPath(request.nextUrl.pathname)) {
+    return applyAuthNoStore(NextResponse.json(
+      { error: "LEGACY_ROUTE_UNAVAILABLE" },
+      { status: 410 },
+    ));
+  }
+
   if (!MUTATION_METHODS.has(request.method)) return NextResponse.next();
 
   const result = checkAllowedOrigin(request);
@@ -22,9 +42,7 @@ export function middleware(request: NextRequest) {
     { error: configurationError ? "AUTH_UNAVAILABLE" : result.code },
     { status: configurationError ? 503 : 403 },
   );
-  return isAuthenticationEndpoint(request.nextUrl.pathname)
-    ? applyAuthNoStore(response)
-    : response;
+  return applyAuthNoStore(response);
 }
 
 export const config = {

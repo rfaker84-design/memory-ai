@@ -1,3 +1,7 @@
-import { NextResponse } from "next/server";
-export async function GET() { return NextResponse.json({ status: "disabled" }); }
-export async function POST() { return NextResponse.json({ status: "disabled" }); }
+import {
+  legacyMutationUnavailable,
+  legacyRouteUnavailable,
+} from "@/app/api/_legacy-unavailable";
+
+export const GET = legacyRouteUnavailable;
+export const POST = legacyMutationUnavailable;
