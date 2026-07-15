@@ -38,14 +38,32 @@ export async function verifySessionToken(token: string): Promise<AuthSession | n
       algorithms: ["HS256"],
       issuer: AUTH_SESSION_ISSUER,
       audience: AUTH_SESSION_AUDIENCE,
+      requiredClaims: ["sub", "externalUserId", "iat", "exp", "iss", "aud"],
+      clockTolerance: AUTH_POLICY.sessionClockToleranceSeconds,
     });
-    if (!verified.payload.sub || typeof verified.payload.externalUserId !== "string" || !verified.payload.exp) {
+    const { sub, externalUserId, iat, exp } = verified.payload;
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    if (
+      typeof sub !== "string"
+      || sub.length === 0
+      || typeof externalUserId !== "string"
+      || externalUserId.length === 0
+      || typeof iat !== "number"
+      || !Number.isFinite(iat)
+      || !Number.isInteger(iat)
+      || typeof exp !== "number"
+      || !Number.isFinite(exp)
+      || !Number.isInteger(exp)
+      || iat > nowSeconds + AUTH_POLICY.sessionClockToleranceSeconds
+      || exp <= iat
+      || exp - iat > AUTH_POLICY.sessionTtlSeconds
+    ) {
       return null;
     }
     return {
-      userId: verified.payload.sub,
-      externalUserId: verified.payload.externalUserId,
-      expiresAt: new Date(verified.payload.exp * 1000).toISOString(),
+      userId: sub,
+      externalUserId,
+      expiresAt: new Date(exp * 1000).toISOString(),
     };
   } catch (error) {
     if (error instanceof AuthConfigurationError) throw error;

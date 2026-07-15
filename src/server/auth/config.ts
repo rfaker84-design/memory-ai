@@ -6,6 +6,7 @@ export type AuthPolicy = {
   phoneDailyLimit: number;
   ipHourlyLimit: number;
   sessionTtlSeconds: number;
+  sessionClockToleranceSeconds: number;
   cleanupRetentionDays: number;
   cleanupBatchSize: number;
 };
@@ -18,6 +19,7 @@ export const AUTH_POLICY: Readonly<AuthPolicy> = Object.freeze({
   phoneDailyLimit: 10,
   ipHourlyLimit: 20,
   sessionTtlSeconds: 7 * 24 * 60 * 60,
+  sessionClockToleranceSeconds: 30,
   cleanupRetentionDays: 7,
   cleanupBatchSize: 200,
 });

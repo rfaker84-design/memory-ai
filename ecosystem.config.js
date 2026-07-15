@@ -6,9 +6,9 @@
 module.exports = {
   apps: [
     {
-      name: "memoryai-app",
+      name: "memoryai",
       script: "node_modules/.bin/next",
-      args: "start",
+      args: "start -H 127.0.0.1 -p 3000",
       instances: 2,              // 2 进程（或 "max" 使用所有 CPU）
       exec_mode: "cluster",
       max_memory_restart: "512M",
