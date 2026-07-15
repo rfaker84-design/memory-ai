@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 import {
   authRouteError,
+  authJson,
   clearSessionCookie,
   requireAllowedOrigin,
 } from "@/src/server/auth";
@@ -9,7 +10,7 @@ import {
 export async function POST(request: NextRequest) {
   try {
     requireAllowedOrigin(request);
-    const response = NextResponse.json({ authenticated: false });
+    const response = authJson({ authenticated: false });
     clearSessionCookie(response);
     return response;
   } catch (error) {

@@ -17,7 +17,7 @@ import type {
 } from "./auth-repository";
 import { AuthService } from "./auth-service";
 import { AUTH_POLICY, AUTH_SESSION_COOKIE } from "./config";
-import { sessionSecret, verificationDigestsEqual } from "./crypto";
+import { generateVerificationCode, sessionSecret, verificationDigestsEqual } from "./crypto";
 import { issueSession, verifySessionToken } from "./session";
 import { FakeSmsVerificationProvider } from "./sms/fake-sms-verification-provider";
 
@@ -195,7 +195,7 @@ test("verify handler sets an HttpOnly __Host cookie without returning a token", 
   const response = await handler(new NextRequest("https://memoryai.test/api/auth/verify-code", {
     method: "POST",
     headers: { "content-type": "application/json", origin: "https://memoryai.test" },
-    body: JSON.stringify({ phone: "13800000000", code: "123456", challengeId: "00000000-0000-4000-8000-000000000002" }),
+    body: JSON.stringify({ phone: "13800000000", code: generateVerificationCode(), challengeId: "00000000-0000-4000-8000-000000000002" }),
   }));
   const json = await response.json() as Record<string, unknown>;
   const cookie = response.headers.get("set-cookie") ?? "";
