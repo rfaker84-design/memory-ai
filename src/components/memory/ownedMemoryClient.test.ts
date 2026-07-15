@@ -45,6 +45,12 @@ test("formal Memory 404 remains a controlled page state", async () => {
 });
 
 test("detail, chat, and create success paths contain no legacy data requests", () => {
+  const forbiddenClientAuth = new RegExp([
+    "temporaryMemoryOwnerId",
+    ["yijian", "session", "token"].join("_"),
+    ["memoryai", "session", "token"].join("_"),
+    "Authorization:\\s*`Bearer",
+  ].join("|"));
   const detail = readFileSync(
     new URL("../../../app/memory/[id]/page.tsx", import.meta.url),
     "utf8"
@@ -65,11 +71,17 @@ test("detail, chat, and create success paths contain no legacy data requests", (
   assert.match(create, /`\/memory\/\$\{created\.id\}`/);
   assert.match(create, /`\/memory-chat\/\$\{created\.id\}`/);
   for (const source of [detail, chat, create]) {
-    assert.doesNotMatch(source, /temporaryMemoryOwnerId|yijian_session_token|memoryai_session_token|Authorization:\s*`Bearer/);
+    assert.doesNotMatch(source, forbiddenClientAuth);
   }
 });
 
 test("formal auth and Memory list clients use the cookie session boundary", () => {
+  const forbiddenListAuth = new RegExp([
+    "memories-mvp",
+    "\\?userId=",
+    ["yijian", "session", "token"].join("_"),
+    ["memoryai", "session", "token"].join("_"),
+  ].join("|"));
   const sources = [
     readFileSync(new URL("../../../app/page.tsx", import.meta.url), "utf8"),
     readFileSync(new URL("../../../app/memory-world/page.tsx", import.meta.url), "utf8"),
@@ -77,7 +89,7 @@ test("formal auth and Memory list clients use the cookie session boundary", () =
     readFileSync(new URL("../../../components/world/WorldShell.tsx", import.meta.url), "utf8"),
   ];
   for (const source of sources) {
-    assert.doesNotMatch(source, /memories-mvp|\?userId=|yijian_session_token|memoryai_session_token/);
+    assert.doesNotMatch(source, forbiddenListAuth);
   }
   const auth = sources[3];
   assert.match(auth, /\/api\/auth\/send-code/);

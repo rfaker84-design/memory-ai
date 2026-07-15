@@ -18,10 +18,15 @@ const FORMAL_API_PATHS = new Set([
   "/api/health/ai",
 ]);
 
+const FORMAL_DYNAMIC_API_PATHS = [
+  /^\/api\/memories\/[^/]+$/,
+  /^\/api\/memories\/[^/]+\/chat-session$/,
+  /^\/api\/media\/[^/]+$/,
+];
+
 export function isFormalApiPath(pathname: string): boolean {
   return FORMAL_API_PATHS.has(pathname)
-    || pathname.startsWith("/api/memories/")
-    || pathname.startsWith("/api/media/");
+    || FORMAL_DYNAMIC_API_PATHS.some((pattern) => pattern.test(pathname));
 }
 
 export function middleware(request: NextRequest) {

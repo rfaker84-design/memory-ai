@@ -8,7 +8,19 @@ import test from "node:test";
 // only binary formats currently tracked; every other tracked file is audited.
 const trackedBinaryExtensions = new Set([".png", ".webm"]);
 const identityTerms = /phone|user(?:Id|_id)|session|token/i;
-const storageCall = /(?:localStorage|sessionStorage)\.(?:getItem|setItem)/;
+const storageOperation = /(?:localStorage|sessionStorage)\s*(?:\.|\?\.)\s*(?:getItem|setItem)\s*\(\s*([\s\S]{0,240}?)(?:\)|$)/gi;
+const legacyIdentityKeys = [
+  ["yijian", "phone"].join("_"),
+  ["yj", "phone"].join("_"),
+  ["yijian", "session", "token"].join("_"),
+  ["memoryai", "session", "token"].join("_"),
+];
+
+function identityStorageFindings(source: string): string[] {
+  return Array.from(source.matchAll(storageOperation))
+    .filter((match) => identityTerms.test(match[1]))
+    .map((match) => match[0]);
+}
 
 function trackedTextFiles(): string[] {
   const output = execFileSync("git", ["ls-files", "-z"], {
@@ -38,15 +50,32 @@ test("all git-tracked text contains no Web Storage identity authority", () => {
 
   for (const file of files) {
     const source = decodeTrackedText(file);
-    for (const [index, line] of source.split(/\r?\n/).entries()) {
-      if (!storageCall.test(line)) continue;
-      const storageNeutralLine = line.replace(/localStorage|sessionStorage/g, "storage");
-      assert.doesNotMatch(
-        storageNeutralLine,
-        identityTerms,
-        `${file}:${index + 1} has identity storage access`,
-      );
+    assert.deepEqual(identityStorageFindings(source), [], `${file} has identity storage access`);
+    for (const key of legacyIdentityKeys) {
+      assert.equal(source.includes(key), false, `${file} contains legacy identity key ${key}`);
     }
+  }
+});
+
+test("identity scanner detects multiline and adjacent-text storage authority", () => {
+  const storageName = ["local", "Storage"].join("");
+  const identityKey = ["yijian", "phone"].join("_");
+  const multiline = `${storageName}\n  .getItem(\n    "${identityKey}"\n  )`;
+  assert.equal(identityStorageFindings(multiline).length, 1);
+});
+
+test("tracked documentation does not describe browser storage or a phone as authority", () => {
+  const authorityPatterns = [
+    new RegExp(["手机号", "即身份"].join("[\\s\\S]{0,40}"), "i"),
+    new RegExp(["手机号", "作为", "身份"].join("[\\s\\S]{0,40}"), "i"),
+    new RegExp(
+      ["(?:localStorage|sessionStorage|Web Storage)", "(?:权限来源|身份来源|认证来源|授权依据)"].join("[\\s\\S]{0,160}"),
+      "i",
+    ),
+  ];
+  for (const file of trackedTextFiles().filter((file) => [".md", ".txt", ".example", ""].includes(path.extname(file).toLowerCase()))) {
+    const source = decodeTrackedText(file);
+    for (const pattern of authorityPatterns) assert.doesNotMatch(source, pattern, file);
   }
 });
 

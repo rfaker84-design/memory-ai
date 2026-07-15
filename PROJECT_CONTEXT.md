@@ -1,270 +1,68 @@
-# 忆见（MemoryAI）项目交接文档
+# MemoryAI 项目交接上下文
 
-## 项目目标
+## 产品定位
 
-中国大陆市场。
+MemoryAI 面向中国大陆市场，通过获得授权的照片、声音、人生故事和记忆片段创建数字存在体。产品目标是长期、可信的数字人格陪伴，不把空白资料补写成事实。
 
-核心产品：
+## 正式技术架构
 
-通过照片、声音、人生故事、记忆碎片生成高度拟真的逝者数字人格。
+- 前端：Next.js 15 App Router、React、TypeScript。
+- 服务端：Next.js Route Handler。
+- 数据库：正式 PostgreSQL，通过 Service、Repository 和 PostgreSQL DataSource 分层访问。
+- 私有媒体：腾讯云 COS，通过正式媒体 Service 访问。
+- 认证：腾讯云短信验证码证明号码控制权；验证成功后查找或创建 PostgreSQL user，并由服务端签发 `__Host-memoryai_session` Cookie。
+- Session Cookie：`Secure`、`HttpOnly`、`SameSite=Lax`、`Path=/`，不设置 `Domain`。
+- 客户端脚本不能读取长期 Session 凭据，也不能提交客户端身份字段来替代服务端所有权判断。
+- 状态变更请求必须通过统一 Origin 校验。
 
-最终形态：
+## 正式 API 白名单
 
-用户上传资料
-↓
-生成数字人格
-↓
-克隆声音
-↓
-生成数字人形象
-↓
-实时语音聊天
-↓
-情感陪伴
+静态路径：
 
-不是纪念馆产品。
+- `/api/auth/logout`
+- `/api/auth/send-code`
+- `/api/auth/session`
+- `/api/auth/verify-code`
+- `/api/health`
+- `/api/health/ai`
+- `/api/health/database`
+- `/api/memories`
+- `/api/media/upload`
+- `/api/memory-chat`
 
-不是墓碑产品。
+结构化动态路径：
 
-不是传统AI聊天机器人。
+- `/api/memories/{id}`
+- `/api/memories/{id}/chat-session`
+- `/api/media/{id}`
 
-目标是：
+其他 `/api/**` 路由统一返回 `410 LEGACY_ROUTE_UNAVAILABLE`，不得在返回前查询数据、调用供应商或修改状态。
 
-数字人格陪伴。
+## 正式 Memory 与 Chat 链路
 
----
+```text
+Route Handler
+→ MemoryService / ChatService
+→ Repository
+→ PostgreSQL DataSource
+→ PostgreSQL
+```
 
-## 当前技术栈
+Memory、Chat Session 和 Media 所有权均从服务端验证后的 Session 派生。跨用户访问不得泄露资源是否存在。
 
-Frontend:
+## 部署边界
 
-* Next.js 15 App Router
-* TypeScript
-* TailwindCSS
+- 唯一 PM2 应用名：`memoryai`。
+- Next.js 仅监听 `127.0.0.1:3000`。
+- Nginx 是唯一入口，并必须覆盖 `X-Real-IP`。
+- 只有确认回环监听与 Nginx 转发契约后，才能启用可信代理配置。
+- Redis 仅加入 Compose 内部网络，不向宿主机发布 6379。
+- 不恢复 Supabase 正式生产链路。
 
-Backend:
+## 安全与测试要求
 
-* Next.js API Routes
-
-Database:
-
-* Supabase PostgreSQL
-
-Storage:
-
-* 腾讯云 COS
-
-AI:
-
-* DeepSeek API
-
-Deployment:
-
-* 腾讯云 Ubuntu
-* PM2
-* Nginx
-
-Domain:
-
-* yijianmemory.cn
-
----
-
-## 已完成功能
-
-### 用户系统
-
-手机号登录
-
-localStorage:
-yijian_phone
-
----
-
-### 记忆体
-
-memories 表
-
-支持：
-
-* 姓名
-* 关系
-* 人生故事
-* 照片
-* 声音样本
-
----
-
-### COS上传
-
-照片上传：
-
-/api/upload
-
-声音上传：
-
-/api/upload-voice
-
----
-
-### AI聊天
-
-/api/memory-chat
-
-已接入 DeepSeek
-
-支持：
-
-* 人格档案
-* 时间线
-* 记忆碎片
-* 长期记忆
-
----
-
-### 长期记忆
-
-personality_memories
-
-AI会提取长期记忆
-
----
-
-### 数字人训练中心
-
-/avatar-center
-
-支持：
-
-开始声音训练
-
-开始生成数字人
-
----
-
-### 任务系统
-
-avatar_jobs
-
-字段：
-
-* id
-* memory_id
-* job_type
-* provider
-* provider_job_id
-* status
-* input_url
-* output_url
-* provider_response
-* error_message
-* completed_at
-
----
-
-### 数字人适配层
-
-/api/avatar-provider
-
-当前：
-
-adapter_v1
-
-模拟厂商接口
-
-后续需要替换为：
-
-* MiniMax Avatar
-* 腾讯智影
-* D-ID
-
----
-
-## 已知问题
-
-不要重复修改：
-
-app/chat/page.tsx
-
-历史上出现过：
-
-../../../src/lib/supabase
-
-路径错误。
-
-正确：
-
-../../src/lib/supabase
-
----
-
-不要重复修改：
-
-memory-chat
-
-双回复问题已经修复。
-
----
-
-不要再重新设计产品方向。
-
-项目方向已经确定：
-
-数字人格
-↓
-声音克隆
-↓
-数字人
-
-不要回到纪念馆路线。
-
----
-
-## 下一阶段目标
-
-优先级1
-
-真实声音克隆
-
-优先：
-
-CosyVoice
-GPT-SoVITS
-
----
-
-优先级2
-
-真实数字人
-
-优先：
-
-MiniMax Avatar
-
-备选：
-
-腾讯智影
-
----
-
-优先级3
-
-实时语音对话
-
-STT
-↓
-人格引擎
-↓
-TTS
-↓
-数字人说话
-
----
-
-项目负责人要求：
-
-尽量提供完整覆盖版代码。
-
-不要大量增量修改。
-
-不要频繁让用户定位第几行代码。
+- 不记录号码、验证码、Session 凭据、数据库连接串或云服务密钥。
+- 认证响应和 legacy 410 响应强制 `private, no-store`。
+- 构建阶段不得初始化外部客户端或建立外部 TCP 连接。
+- 006 migration 的真实 PostgreSQL 14 矩阵必须从全新数据库完整执行。
+- 发布前必须执行 API 白名单、Session 所有权、启动监听、secret scan、TypeScript、lint 和标准 build 检查。

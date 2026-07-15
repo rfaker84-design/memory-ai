@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
+const yaml = require("js-yaml");
 
 const root = path.resolve(__dirname, "../..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
@@ -16,6 +17,36 @@ const startupEntries = [
   "scripts/safe-deploy.sh",
 ];
 
+function parseCompose(source) {
+  const parsed = yaml.load(source);
+  assert.equal(typeof parsed, "object");
+  assert.equal(typeof parsed.services, "object");
+  return parsed;
+}
+
+function assertRedisIsInternalOnly(compose) {
+  const redis = compose.services?.redis;
+  assert.ok(redis, "Compose must define the Redis service");
+  assert.notEqual(redis.network_mode, "host", "Redis must not use host networking");
+
+  for (const port of redis.ports ?? []) {
+    if (typeof port === "string" || typeof port === "number") {
+      const published = String(port).split("/")[0];
+      const parts = published.split(":");
+      if (parts.length === 2) throw new Error("Redis publishes a host port without a loopback host IP");
+      if (parts.length >= 3 && parts[0] !== "127.0.0.1") {
+        throw new Error("Redis publishes a host port outside loopback");
+      }
+      continue;
+    }
+    if (port && typeof port === "object" && port.published !== undefined) {
+      if (port.host_ip !== "127.0.0.1") {
+        throw new Error("Redis long-syntax published port is not loopback-only");
+      }
+    }
+  }
+}
+
 test("every tracked production startup entry is loopback-only", () => {
   for (const file of startupEntries) {
     assert.doesNotMatch(read(file), /0\.0\.0\.0|HOSTNAME\s*=\s*0\.0\.0\.0|-H\s+0\.0\.0\.0/, file);
@@ -29,6 +60,26 @@ test("every tracked production startup entry is loopback-only", () => {
   assert.match(read("docker-compose.yml"), /127\.0\.0\.1:3000:3000/);
   assert.match(read("ecosystem.config.js"), /args: "start -H 127\.0\.0\.1 -p 3000"/);
   assert.match(read("worker/server.py"), /host="127\.0\.0\.1"/);
+});
+
+test("Compose keeps Redis on the internal network only", () => {
+  const compose = parseCompose(read("docker-compose.yml"));
+  assertRedisIsInternalOnly(compose);
+  assert.equal("ports" in compose.services.redis, false);
+  assert.deepEqual(compose.services.redis.expose.map(String), ["6379"]);
+});
+
+test("Redis contract rejects unsafe short, long, and host-network configurations", () => {
+  const unsafeFixtures = [
+    "services:\n  redis:\n    ports:\n      - \"6379:6379\"\n",
+    "services:\n  redis:\n    ports:\n      - \"0.0.0.0:6379:6379\"\n",
+    "services:\n  redis:\n    ports:\n      - target: 6379\n        published: 6379\n        protocol: tcp\n",
+    "services:\n  redis:\n    ports:\n      - target: 6379\n        published: 6379\n        host_ip: 0.0.0.0\n",
+    "services:\n  redis:\n    network_mode: host\n",
+  ];
+  for (const fixture of unsafeFixtures) {
+    assert.throws(() => assertRedisIsInternalOnly(parseCompose(fixture)));
+  }
 });
 
 test("trusted proxy requires loopback attestation and Nginx replacement gates", () => {
