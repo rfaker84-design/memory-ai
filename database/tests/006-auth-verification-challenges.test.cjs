@@ -39,6 +39,34 @@ test("006 stores only fixed-length digests and enforces challenge lifecycle", ()
   assert.match(migration006, /unexpected owner or definition/g);
 });
 
+test("006 validates challenge_id structurally without brittle default text equality", () => {
+  assert.match(migration006, /challenge_id UUID NOT NULL DEFAULT pg_catalog\.gen_random_uuid\(\) PRIMARY KEY/);
+
+  // Correct UUID type/typmod, explicit nullability, and ordinary columns only.
+  assert.match(migration006, /actual_type_oid IS DISTINCT FROM 'pg_catalog\.uuid'::regtype/);
+  assert.match(migration006, /actual_typmod IS DISTINCT FROM -1/);
+  assert.match(migration006, /actual_not_null IS DISTINCT FROM true/);
+  assert.match(migration006, /actual_identity IS DISTINCT FROM ''/);
+  assert.match(migration006, /actual_generated IS DISTINCT FROM ''/);
+
+  // A default must exist, be a direct normalized call, and resolve to the
+  // PostgreSQL 14 pg_catalog function OID. Missing, constant, composed,
+  // wrong-function, and wrong-schema defaults therefore fail closed.
+  assert.match(migration006, /default_oid IS NULL/);
+  assert.match(migration006, /\(\?:pg_catalog\\\.\)\?gen_random_uuid/);
+  assert.match(migration006, /pg_catalog\.to_regprocedure\(default_function_name \|\| '\(\)'\)/);
+  assert.match(migration006, /expected_default_function_oid OID := 'pg_catalog\.gen_random_uuid\(\)'::regprocedure/);
+  assert.match(migration006, /default_function_oid IS DISTINCT FROM expected_default_function_oid/);
+  assert.doesNotMatch(migration006, /actual_default IS DISTINCT FROM 'gen_random_uuid\(\)'/);
+
+  // Exactly one primary key must exist and its complete conkey must contain
+  // challenge_id alone; non-PK and composite/wrong PK definitions are rejected.
+  assert.match(migration006, /c\.conrelid = target_oid/);
+  assert.match(migration006, /c\.contype = 'p'/);
+  assert.match(migration006, /primary_key_count <> 1/);
+  assert.match(migration006, /primary_key_columns IS DISTINCT FROM ARRAY\[challenge_attnum\]::SMALLINT\[\]/);
+});
+
 test("006 preflight and postflight expose operational evidence", () => {
   for (const token of ["estimated_live_rows", "pg_locks", "existing_table"])
     assert.ok(preflight.includes(token), `preflight missing ${token}`);
@@ -72,6 +100,27 @@ async function resetBase(client) {
   for (const migration of migrations) await client.query(migration);
 }
 
+function challengeTable(challengeDefinition, tableConstraint = "") {
+  return `
+    CREATE TABLE public.auth_verification_challenges (
+      challenge_id ${challengeDefinition},
+      phone_hash CHARACTER(64) NOT NULL,
+      code_digest CHARACTER(64) NOT NULL,
+      purpose TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      resend_after TIMESTAMPTZ NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 5,
+      consumed_at TIMESTAMPTZ,
+      request_ip_hash CHARACTER(64) NOT NULL,
+      provider_request_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      ${tableConstraint ? `, ${tableConstraint}` : ""}
+    )
+  `;
+}
+
 test("006 PostgreSQL positive, repeated, and negative matrix", {
   skip: !testDatabaseUrl,
   timeout: 120_000,
@@ -103,6 +152,72 @@ test("006 PostgreSQL positive, repeated, and negative matrix", {
       await resetBase(client);
       await client.query("CREATE TABLE public.auth_verification_challenges (challenge_id UUID)");
       await assert.rejects(client.query(migration006), /unexpected definition|unexpected columns/i);
+      await client.query("ROLLBACK");
+    });
+
+    await t.test("accepts PostgreSQL 14 normalized UUID defaults", async () => {
+      for (const defaultExpression of ["gen_random_uuid()", "pg_catalog.gen_random_uuid()"]) {
+        await resetBase(client);
+        await client.query(challengeTable(
+          `UUID NOT NULL DEFAULT ${defaultExpression} PRIMARY KEY`,
+        ));
+        await client.query(migration006);
+      }
+    });
+
+    for (const negativeCase of [
+      {
+        name: "text challenge_id",
+        definition: "TEXT NOT NULL DEFAULT pg_catalog.gen_random_uuid()::text PRIMARY KEY",
+      },
+      {
+        name: "nullable UUID challenge_id",
+        definition: "UUID DEFAULT pg_catalog.gen_random_uuid()",
+      },
+      {
+        name: "missing challenge_id default",
+        definition: "UUID NOT NULL PRIMARY KEY",
+      },
+      {
+        name: "wrong challenge_id default",
+        definition: "UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'::uuid PRIMARY KEY",
+      },
+      {
+        name: "same-name non-primary challenge_id",
+        definition: "UUID NOT NULL DEFAULT pg_catalog.gen_random_uuid()",
+      },
+      {
+        name: "same-name composite primary key",
+        definition: "UUID NOT NULL DEFAULT pg_catalog.gen_random_uuid()",
+        constraint: "PRIMARY KEY (challenge_id, phone_hash)",
+      },
+    ]) {
+      await t.test(`rejects ${negativeCase.name}`, async () => {
+        await resetBase(client);
+        await client.query(challengeTable(
+          negativeCase.definition,
+          negativeCase.constraint,
+        ));
+        await assert.rejects(
+          client.query(migration006),
+          /challenge_id.*unexpected|unexpected primary key definition/i,
+        );
+        await client.query("ROLLBACK");
+      });
+    }
+
+    await t.test("rejects a default function from the wrong schema", async () => {
+      await resetBase(client);
+      await client.query("CREATE SCHEMA auth_shadow");
+      await client.query(`
+        CREATE FUNCTION auth_shadow.gen_random_uuid()
+        RETURNS UUID LANGUAGE SQL IMMUTABLE
+        AS $$ SELECT '00000000-0000-0000-0000-000000000000'::uuid $$
+      `);
+      await client.query(challengeTable(
+        "UUID NOT NULL DEFAULT auth_shadow.gen_random_uuid() PRIMARY KEY",
+      ));
+      await assert.rejects(client.query(migration006), /challenge_id.*unexpected default/i);
       await client.query("ROLLBACK");
     });
 
