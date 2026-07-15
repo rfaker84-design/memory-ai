@@ -31,6 +31,7 @@ chmod 700 "$test_script"
 
 cat > "$fakebin/sudo" <<'EOF'
 #!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FAKE_SUDO_CAPTURE"
 printf 'fake-postgresql-dump\n'
 EOF
 cat > "$fakebin/install" <<'EOF'
@@ -95,19 +96,26 @@ EOF
 chmod 700 "$hook"
 
 run_case() {
-  local name="$1" mode="${2:-success}" root
+  local name="$1" mode="${2:-success}" root bucket region
   root="$tmp/$name/backups"
+  bucket="memoryai-pg-backup-prod-1442603693"
+  region="ap-guangzhou"
+  [[ "$mode" == wrong-bucket ]] && bucket="wrong-backup-bucket-1442603693"
+  [[ "$mode" == placeholder-bucket ]] && bucket="replace-with-private-backup-bucket-appid"
+  [[ "$mode" == wrong-region ]] && region="ap-beijing"
   mkdir -p "$root"
   : > "$tmp/$name-coscmd.log"
+  : > "$tmp/$name-sudo.log"
   : > "$tmp/$name-logger.log"
   : > "$tmp/$name-alert.log"
   set +e
   PATH="$fakebin:$PATH" \
   MEMORYAI_PG_BACKUP_ROOT="$root" \
-  COS_BACKUP_BUCKET="backup-bucket-1234567890" \
-  COS_BACKUP_REGION="ap-guangzhou" \
+  COS_BACKUP_BUCKET="$bucket" \
+  COS_BACKUP_REGION="$region" \
   TENCENT_SECRET_ID="must-be-unset" \
   FAKE_COSCMD_CAPTURE="$tmp/$name-coscmd.log" \
+  FAKE_SUDO_CAPTURE="$tmp/$name-sudo.log" \
   FAKE_LOGGER_CAPTURE="$tmp/$name-logger.log" \
   FAKE_ALERT_CAPTURE="$tmp/$name-alert.log" \
   FAKE_UPLOAD_SOURCE="$tmp/$name-upload-source" \
@@ -132,8 +140,14 @@ assert_not_contains "$repo_root/scripts/postgresql/cos-upload.sh" 'coscmd ' "leg
 assert_contains "$repo_root/scripts/postgresql/cos-upload.sh" 'postgresql-to-cos.sh' "legacy helper does not delegate to canonical entrypoint"
 cron="$repo_root/scripts/backup/memoryai-postgresql-cos-backup.cron"
 assert_contains "$cron" 'HOME=/nonexistent' "cron HOME is not isolated"
+assert_contains "$cron" 'CRON_TZ=UTC' "cron timezone is not UTC"
 assert_contains "$cron" 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' "cron PATH is not fixed"
 assert_contains "$cron" '/scripts/backup/postgresql-to-cos.sh' "cron does not call canonical entrypoint"
+assert_contains "$cron" '30 2 * * * root' "cron schedule is not 02:30 UTC"
+assert_contains "$cron" 'COS_BACKUP_BUCKET=memoryai-pg-backup-prod-1442603693' "cron bucket is not production"
+assert_contains "$cron" 'COS_BACKUP_REGION=ap-guangzhou' "cron region is not production"
+assert_not_contains "$cron" 'replace-with-private-backup-bucket-appid' "cron retains the bucket placeholder"
+assert_not_contains "$cron" 'scripts/postgresql/cos-upload.sh' "cron calls the legacy helper"
 if grep -Ev '^[[:space:]]*(#|$)' "$cron" | grep -F 'flock ' >/dev/null; then fail "cron contains a second flock"; fi
 
 run_case success
@@ -144,7 +158,7 @@ if [[ "$CASE_RC" != 0 ]]; then
 fi
 [[ "$(wc -l < "$tmp/success-coscmd.log")" == 2 ]] || fail "expected one upload and one verification download"
 while IFS= read -r call; do
-  if [[ "$call" != *"ARGS=-c $config -l $coslog -b backup-bucket-1234567890 -r ap-guangzhou "* ]]; then
+  if [[ "$call" != *"ARGS=-c $config -l $coslog -b memoryai-pg-backup-prod-1442603693 -r ap-guangzhou "* ]]; then
     printf 'CALL: %s\n' "$call" >&2
     fail "coscmd call missing explicit global flags"
   fi
@@ -155,6 +169,13 @@ assert_not_contains "$tmp/success-coscmd.log" '.cos.conf' "default coscmd config
 assert_not_contains "$tmp/success-coscmd.log" ' delete ' "remote delete was invoked"
 assert_not_contains "$tmp/success-coscmd.log" ' list ' "remote list was invoked"
 assert_not_contains "$CASE_ROOT/logs/backup-cos.log" 'must-be-unset' "generic credential leaked to event log"
+
+for mode in wrong-bucket wrong-region placeholder-bucket; do
+  run_case "$mode" "$mode"
+  [[ "$CASE_RC" == 2 ]] || fail "$mode did not fail closed"
+  [[ ! -s "$tmp/$mode-coscmd.log" ]] || fail "coscmd ran for $mode"
+  [[ ! -s "$tmp/$mode-sudo.log" ]] || fail "pg_dump ran for $mode"
+done
 
 run_case upload_failure upload-failure
 [[ "$CASE_RC" == 9 ]] || fail "upload failure did not propagate exact exit code"

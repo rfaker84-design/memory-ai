@@ -4,15 +4,29 @@
 
 `scripts/backup/postgresql-to-cos.sh` is the only formal PostgreSQL-to-COS backup entrypoint. Run it daily as root. It creates a custom-format dump, validates it with `pg_restore --list`, uploads it to the private backup bucket, downloads a verification copy, and compares SHA-256 before local retention runs. `scripts/postgresql/cos-upload.sh` only delegates to this entrypoint.
 
-Install `coscmd` and place the dedicated backup credential configuration at `/etc/memoryai/coscmd-backup.conf`. It must be a regular, non-symlink file owned by `root:root`, mode `400` or `600`, and unreadable by ordinary users. The script always passes that exact path together with `/var/log/memoryai/coscmd-backup.log`, `COS_BACKUP_BUCKET`, and `COS_BACKUP_REGION` to every coscmd operation. It sets `HOME=/nonexistent` and removes generic Tencent credential variables before invoking child processes; `~/.cos.conf` and application credentials are never fallback sources.
+Install `coscmd` and place the dedicated backup credential configuration at `/etc/memoryai/coscmd-backup.conf`. It must be a regular, non-symlink file owned by `root:root`, mode `400` or `600`, and unreadable by ordinary users. The script always passes that exact path together with `/var/log/memoryai/coscmd-backup.log`, the fixed production bucket `memoryai-pg-backup-prod-1442603693`, and region `ap-guangzhou` to every coscmd operation. It fails before `pg_dump` when either runtime value differs. It sets `HOME=/nonexistent` and removes generic Tencent credential variables before invoking child processes; `~/.cos.conf` and application credentials are never fallback sources.
 
 Local retention is the latest 7 daily and 4 Sunday weekly backups. Remote retention is exclusively enforced by preconfigured COS lifecycle rules: objects under `memoryai-postgresql/daily/` expire after 8 days and objects under `memoryai-postgresql/weekly/` expire after 35 days. The script never lists or deletes remote objects.
 
 Any failed backup stage stops the run and records only the stage name and exit code in the protected event log and syslog. An optional external alert hook may be installed at `/usr/local/sbin/memoryai-backup-alert`; when present it must be a regular `root:root` executable with mode `500` or `700`. Arbitrary command strings are never evaluated. The local dump is preserved after upload or verification failure.
 
-Install `scripts/backup/memoryai-postgresql-cos-backup.cron` under `/etc/cron.d/` only after replacing its bucket placeholder. The template fixes `PATH` and `HOME=/nonexistent`, invokes only the canonical entrypoint, and deliberately omits a second `flock` because the script owns `/run/lock/memoryai-postgresql-cos-backup.lock`.
+The formal schedule is 02:30 UTC. The cron template fixes `CRON_TZ=UTC`, `PATH`, `HOME=/nonexistent`, the production bucket and region, invokes only the canonical entrypoint, and deliberately omits a second `flock` because the script owns `/run/lock/memoryai-postgresql-cos-backup.lock`.
 
-Before scheduling, verify in the COS console that the dedicated bucket has both lifecycle rules and that the backup identity is scoped only to the required prefixes. Installing the template or changing COS lifecycle policy is an explicit operator action, not part of repository validation.
+From the exact deployment directory `/home/ubuntu/memory-ai`, validate prerequisites without writing system state:
+
+```bash
+sudo scripts/backup/install-postgresql-cos-backup-cron.sh --dry-run
+```
+
+After a successful manual upload/download/hash/restore drill, install atomically with:
+
+```bash
+sudo scripts/backup/install-postgresql-cos-backup-cron.sh
+```
+
+The installer requires the dedicated config, protected coscmd log, mandatory alert hook, and active `cron.service`. It installs only `/etc/cron.d/memoryai-postgresql-cos-backup`, backs up an existing target with a UTC timestamp, and verifies the installed SHA-256. It never starts a backup, migration, PM2, or Nginx operation.
+
+Before scheduling, verify in the COS console that the dedicated bucket lifecycle retains daily objects for 8 days, weekly objects for 35 days, and incomplete multipart uploads for 1 day, and that the backup identity is scoped only to the required prefixes. Changing COS lifecycle policy is an explicit operator action, not part of repository validation.
 
 ## Alerts to monitor
 

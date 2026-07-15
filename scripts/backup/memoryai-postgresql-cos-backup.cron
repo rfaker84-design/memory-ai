@@ -1,8 +1,8 @@
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 HOME=/nonexistent
+CRON_TZ=UTC
 MAILTO=""
 
-# Replace the bucket placeholder before installation. The script owns its flock;
-# do not add a second flock in cron.
-15 2 * * * root COS_BACKUP_BUCKET=replace-with-private-backup-bucket-appid COS_BACKUP_REGION=ap-guangzhou /home/ubuntu/memory-ai/scripts/backup/postgresql-to-cos.sh
+# The script owns its flock; do not add a second flock in cron.
+30 2 * * * root COS_BACKUP_BUCKET=memoryai-pg-backup-prod-1442603693 COS_BACKUP_REGION=ap-guangzhou /home/ubuntu/memory-ai/scripts/backup/postgresql-to-cos.sh

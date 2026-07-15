@@ -5,6 +5,8 @@ readonly coscmd_config="/etc/memoryai/coscmd-backup.conf"
 readonly coscmd_log="/var/log/memoryai/coscmd-backup.log"
 readonly lock_file="/run/lock/memoryai-postgresql-cos-backup.lock"
 readonly alert_hook="/usr/local/sbin/memoryai-backup-alert"
+readonly expected_bucket="memoryai-pg-backup-prod-1442603693"
+readonly expected_region="ap-guangzhou"
 
 root="${MEMORYAI_PG_BACKUP_ROOT:-/home/ubuntu/memoryai-backups/postgresql}"
 database="${MEMORYAI_PG_DATABASE:-memoryai}"
@@ -71,7 +73,8 @@ if ! flock -n 9; then
 fi
 
 stage="configuration"
-[[ -n "$bucket" && -n "$region" ]] || { send_alert "stage=configuration rc=2"; exit 2; }
+[[ "$bucket" == "$expected_bucket" ]] || { send_alert "stage=bucket-validation rc=2"; exit 2; }
+[[ "$region" == "$expected_region" ]] || { send_alert "stage=region-validation rc=2"; exit 2; }
 if ! secure_root_file "$coscmd_config" "400 600"; then
   send_alert "stage=config-permissions rc=2"
   exit 2
