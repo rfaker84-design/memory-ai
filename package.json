@@ -14,6 +14,7 @@
     "test:media": "tsx --test scripts/ops/test-media-storage.ts",
     "test:collective-analysis": "tsx --test app/api/collective-analysis/route.test.ts",
     "test:auth-migration": "node --test database/tests/006-auth-verification-challenges.test.cjs",
+    "test:sms-provider": "tsx --test src/server/auth/sms/tencent-sms-verification-provider.test.ts",
     "test": "npm run test:create-flow && npm run test:media && npm run test:collective-analysis",
     "start": "next start -H 0.0.0.0 -p 3000",
     "lint": "next lint",
@@ -33,6 +34,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tencentcloud-sdk-nodejs-asr": "^4.1.247",
+    "tencentcloud-sdk-nodejs-sms": "^4.1.240",
     "tencentcloud-sdk-nodejs-tts": "^4.1.237",
     "three": "^0.184.0"
   },
