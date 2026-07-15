@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import PresenceAvatar from "./PresenceAvatar";
 import { generateShareCard } from "../lib/share";
 import type { Emotion } from "../lib/volc";
-import { store } from "../lib/store";
 import { updateEmotion } from "../lib/emotionEngine";
 
 // ������ Types ����������������������������������������������������������������������������������������������������
@@ -110,20 +109,16 @@ export default function ChatBox({
     }
 
     try {
-      const res = await fetch("/api/chat-mvp", {
+      const res = await fetch("/api/memory-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: store.getUserId(),
-          name: memoryName,
-          relationship,
-          lifeStory,
+          memoryId,
           history: messages.slice(-8).map(m => ({
             role: m.role,
             content: m.content,
           })),
-          userMessage: text,
-          memoryId,
+          message: text,
         }),
       });
 
@@ -140,11 +135,12 @@ export default function ChatBox({
 
       const data = await res.json();
 
-      if (data.text) {
+      const reply = data.reply || data.text || data.answer;
+      if (reply) {
         const msgEmotion: Emotion = data.emotion || "calm";
         setMessages(prev => [...prev, {
           role: "assistant",
-          content: data.text,
+          content: reply,
           emotion: msgEmotion,
         }]);
         setEmotion(msgEmotion); updateEmotion(msgEmotion, 0.6, "chat");

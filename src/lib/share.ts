@@ -21,17 +21,12 @@ export async function generateShareCard(
   memoryId: string,
   chatContent?: string,
 ): Promise<ShareCard | null> {
-  const phone = typeof window !== "undefined"
-    ? localStorage.getItem("yijian_phone") || undefined
-    : undefined;
-
   try {
     const res = await fetch("/api/share/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         memory_id: memoryId,
-        user_phone: phone,
         chat_content: chatContent,
       }),
     });
@@ -59,9 +54,6 @@ export async function trackReferral(
         action: "track_referral",
         share_id: shareId,
         from_user: fromUser,
-        user_phone: typeof window !== "undefined"
-          ? localStorage.getItem("yijian_phone") || undefined
-          : undefined,
       }),
     });
     return res.ok;
