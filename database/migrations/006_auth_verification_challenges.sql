@@ -13,7 +13,7 @@ END;
 $$;
 
 CREATE TABLE IF NOT EXISTS public.auth_verification_challenges (
-  challenge_id UUID PRIMARY KEY DEFAULT public.gen_random_uuid(),
+  challenge_id UUID NOT NULL DEFAULT pg_catalog.gen_random_uuid() PRIMARY KEY,
   phone_hash CHARACTER(64) NOT NULL,
   code_digest CHARACTER(64) NOT NULL,
   purpose TEXT NOT NULL,
@@ -30,6 +30,90 @@ CREATE TABLE IF NOT EXISTS public.auth_verification_challenges (
 
 DO $$
 DECLARE
+  target_oid OID := 'public.auth_verification_challenges'::regclass;
+  challenge_attnum SMALLINT;
+  actual_type_oid OID;
+  actual_typmod INTEGER;
+  actual_not_null BOOLEAN;
+  actual_identity TEXT;
+  actual_generated TEXT;
+  default_oid OID;
+  default_expression TEXT;
+  default_function_name TEXT;
+  default_function_oid OID;
+  expected_default_function_oid OID := 'pg_catalog.gen_random_uuid()'::regprocedure;
+  primary_key_count INTEGER;
+  primary_key_columns SMALLINT[];
+BEGIN
+  SELECT a.attnum,
+    a.atttypid,
+    a.atttypmod,
+    a.attnotnull,
+    a.attidentity::text,
+    a.attgenerated::text,
+    d.oid,
+    pg_catalog.pg_get_expr(d.adbin, d.adrelid)
+  INTO challenge_attnum, actual_type_oid, actual_typmod, actual_not_null,
+    actual_identity, actual_generated, default_oid, default_expression
+  FROM pg_catalog.pg_attribute a
+  LEFT JOIN pg_catalog.pg_attrdef d
+    ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+  WHERE a.attrelid = target_oid
+    AND a.attname = 'challenge_id'
+    AND a.attnum > 0
+    AND NOT a.attisdropped;
+
+  IF NOT FOUND
+     OR actual_type_oid IS DISTINCT FROM 'pg_catalog.uuid'::regtype
+     OR actual_typmod IS DISTINCT FROM -1
+     OR actual_not_null IS DISTINCT FROM true
+     OR actual_identity IS DISTINCT FROM ''
+     OR actual_generated IS DISTINCT FROM ''
+     OR default_oid IS NULL THEN
+    RAISE EXCEPTION '006 column public.auth_verification_challenges.challenge_id has an unexpected definition';
+  END IF;
+
+  -- pg_get_expr may omit or retain a schema qualification according to function
+  -- visibility. Restrict the expression shape, then prove its referenced pg_proc
+  -- identity below instead of comparing the complete deparsed string.
+  default_function_name := (pg_catalog.regexp_match(
+    default_expression,
+    '^\s*((?:pg_catalog\.)?gen_random_uuid)\(\)(?:::uuid)?\s*$'
+  ))[1];
+
+  IF default_function_name IS NULL THEN
+    RAISE EXCEPTION '006 column public.auth_verification_challenges.challenge_id has an unexpected default';
+  END IF;
+
+  default_function_oid := pg_catalog.to_regprocedure(default_function_name || '()');
+
+  IF default_function_oid IS DISTINCT FROM expected_default_function_oid THEN
+    RAISE EXCEPTION '006 column public.auth_verification_challenges.challenge_id has an unexpected default function';
+  END IF;
+
+  SELECT count(*)
+  INTO primary_key_count
+  FROM pg_catalog.pg_constraint c
+  WHERE c.conrelid = target_oid
+    AND c.contype = 'p';
+
+  IF primary_key_count = 1 THEN
+    SELECT c.conkey
+    INTO primary_key_columns
+    FROM pg_catalog.pg_constraint c
+    WHERE c.conrelid = target_oid
+      AND c.contype = 'p';
+  END IF;
+
+  IF primary_key_count <> 1
+     OR primary_key_columns IS DISTINCT FROM ARRAY[challenge_attnum]::SMALLINT[] THEN
+    RAISE EXCEPTION '006 table public.auth_verification_challenges has an unexpected primary key definition';
+  END IF;
+END;
+$$;
+
+DO $$
+DECLARE
   column_name TEXT;
   expected_type TEXT;
   expected_not_null BOOLEAN;
@@ -40,7 +124,6 @@ DECLARE
 BEGIN
   FOR column_name, expected_type, expected_not_null, expected_default IN
     SELECT * FROM (VALUES
-      ('challenge_id', 'uuid', true, 'gen_random_uuid()'),
       ('phone_hash', 'character(64)', true, NULL),
       ('code_digest', 'character(64)', true, NULL),
       ('purpose', 'text', true, NULL),
