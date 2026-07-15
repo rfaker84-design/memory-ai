@@ -5,6 +5,16 @@ pwd
 git pull
 npm install
 npm run build
+
+NGINX_CONFIG=$(sudo nginx -T 2>&1) || {
+  echo "[FAIL] unable to inspect Nginx configuration" >&2
+  exit 1
+}
+if ! echo "$NGINX_CONFIG" | grep -Eq 'proxy_set_header[[:space:]]+X-Real-IP[[:space:]]+\$remote_addr;'; then
+  echo "[FAIL] Nginx must replace X-Real-IP with \$remote_addr" >&2
+  exit 1
+fi
+
 pm2 restart memoryai --update-env
 pm2 status
 

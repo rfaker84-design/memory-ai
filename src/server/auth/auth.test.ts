@@ -25,6 +25,7 @@ process.env.AUTH_VERIFICATION_PEPPER = "test-only-pepper-value-with-at-least-32-
 process.env.SESSION_SECRET = "test-only-session-value-with-at-least-32-bytes";
 process.env.AUTH_ALLOWED_ORIGIN = "https://memoryai.test";
 process.env.AUTH_TRUST_NGINX_PROXY = "true";
+process.env.AUTH_PROXY_LOOPBACK_ONLY = "true";
 
 class InMemoryAuthRepository implements AuthRepositoryPort {
   challenge?: NewChallenge & { attempts: number; consumed: boolean };
@@ -125,6 +126,12 @@ test("trusted proxy IP handling fails closed and ignores X-Forwarded-For", async
     const response = await handler(request({ "x-real-ip": "127.0.0.1" }));
     assert.equal(response.status, 503);
     process.env.AUTH_TRUST_NGINX_PROXY = "true";
+  });
+  await t.test("loopback contract missing", async () => {
+    process.env.AUTH_PROXY_LOOPBACK_ONLY = "false";
+    const response = await handler(request({ "x-real-ip": "127.0.0.1" }));
+    assert.equal(response.status, 503);
+    process.env.AUTH_PROXY_LOOPBACK_ONLY = "true";
   });
   await t.test("multi-value X-Real-IP", async () => {
     const response = await handler(request({ "x-real-ip": "127.0.0.1, 10.0.0.1" }));
@@ -283,5 +290,6 @@ test("production start configuration binds port 3000 to loopback only", () => {
   assert.match(ecosystem, /name: "memoryai"/);
   assert.match(deployment, /ss -H -ltn 'sport = :3000'/);
   assert.match(envExample, /AUTH_TRUST_NGINX_PROXY=false/);
+  assert.match(envExample, /AUTH_PROXY_LOOPBACK_ONLY=false/);
   assert.doesNotMatch(envExample, /^AUTH_TRUST_NGINX_PROXY=true$/m);
 });
