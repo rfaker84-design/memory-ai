@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 import {
   AuthPostgresRepository,
   AuthService,
+  authJson,
   authRouteError,
   getSmsVerificationProvider,
   issueSession,
@@ -22,10 +23,10 @@ export function createVerifyCodeHandler(serviceFactory: () => ServicePort = crea
       try {
         body = await request.json();
       } catch {
-        return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 });
+        return authJson({ error: "INVALID_JSON" }, { status: 400 });
       }
       if (typeof body !== "object" || body === null) {
-        return NextResponse.json({ error: "VERIFICATION_FAILED" }, { status: 400 });
+        return authJson({ error: "VERIFICATION_FAILED" }, { status: 400 });
       }
       const record = body as Record<string, unknown>;
       const result = await serviceFactory().verifyCode({
@@ -34,13 +35,13 @@ export function createVerifyCodeHandler(serviceFactory: () => ServicePort = crea
         challengeId: typeof record.challengeId === "string" ? record.challengeId : "",
       });
       if (result.status !== "verified") {
-        return NextResponse.json({ error: "VERIFICATION_FAILED" }, { status: 400 });
+        return authJson({ error: "VERIFICATION_FAILED" }, { status: 400 });
       }
       const token = await issueSession({
         userId: result.user.id,
         externalUserId: result.user.externalUserId,
       });
-      const response = NextResponse.json({
+      const response = authJson({
         authenticated: true,
         user: { id: result.user.id, createdAt: result.user.createdAt },
       });

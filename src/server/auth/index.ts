@@ -5,5 +5,6 @@ export * from "./crypto";
 export * from "./request-security";
 export * from "./route-errors";
 export * from "./session";
+export * from "../security/auth-cache";
 export * from "./sms/sms-verification-provider";
 export { getSmsVerificationProvider } from "./sms/tencent-sms-verification-provider";

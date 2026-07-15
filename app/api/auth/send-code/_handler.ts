@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 import {
   AuthPostgresRepository,
   AuthService,
+  authJson,
   authRouteError,
   getSmsVerificationProvider,
   requireAllowedOrigin,
@@ -22,19 +23,19 @@ export function createSendCodeHandler(serviceFactory: () => ServicePort = create
       try {
         body = await request.json();
       } catch {
-        return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 });
+        return authJson({ error: "INVALID_JSON" }, { status: 400 });
       }
       const phone = typeof body === "object" && body !== null && "phone" in body
         ? body.phone
         : undefined;
       const result = await serviceFactory().sendCode(phone, requestIp);
       if (result.status === "invalid_phone") {
-        return NextResponse.json({ error: "INVALID_PHONE" }, { status: 400 });
+        return authJson({ error: "INVALID_PHONE" }, { status: 400 });
       }
       if (result.status === "rate_limited") {
-        return NextResponse.json({ error: "VERIFICATION_RATE_LIMITED" }, { status: 429 });
+        return authJson({ error: "VERIFICATION_RATE_LIMITED" }, { status: 429 });
       }
-      return NextResponse.json({
+      return authJson({
         accepted: true,
         challengeId: result.challengeId,
         resendAfter: result.resendAfter,

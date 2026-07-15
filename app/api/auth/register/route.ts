@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server";
+import { authJson } from "@/src/server/auth";
 
 export async function POST() {
-  return NextResponse.json({
+  return authJson({
     error: "PHONE_VERIFICATION_REQUIRED",
     endpoint: "/api/auth/send-code",
   }, { status: 410 });

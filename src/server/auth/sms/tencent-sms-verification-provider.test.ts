@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomInt } from "node:crypto";
 import test from "node:test";
 
 import { SmsProviderError } from "./sms-verification-provider";
@@ -12,6 +13,8 @@ const config = {
   signName: "MemoryAI",
   templateId: "100000",
 };
+
+const verificationCode = () => randomInt(0, 1_000_000).toString().padStart(6, "0");
 
 test("Tencent provider initializes only on first runtime send", async () => {
   let configLoads = 0;
@@ -35,21 +38,35 @@ test("Tencent provider initializes only on first runtime send", async () => {
 
   assert.equal(configLoads, 0);
   assert.equal(clientCreates, 0);
+  const code = verificationCode();
   const result = await provider.sendVerificationCode({
     phoneE164: "+8613800000000",
-    code: "123456",
+    code,
     expiresInMinutes: 5,
   });
 
   assert.equal(configLoads, 1);
   assert.equal(clientCreates, 1);
-  assert.deepEqual(requests, [{
+  assert.equal(requests.length, 1);
+  const request = requests[0] as {
+    PhoneNumberSet: string[];
+    SmsSdkAppId: string;
+    SignName: string;
+    TemplateId: string;
+    TemplateParamSet: string[];
+  };
+  assert.deepEqual({
+    ...request,
+    TemplateParamSet: ["<verification-code>", request.TemplateParamSet[1]],
+  }, {
     PhoneNumberSet: ["+8613800000000"],
     SmsSdkAppId: config.sdkAppId,
     SignName: config.signName,
     TemplateId: config.templateId,
-    TemplateParamSet: ["123456", "5"],
-  }]);
+    TemplateParamSet: ["<verification-code>", "5"],
+  });
+  assert.match(request.TemplateParamSet[0], /^\d{6}$/);
+  assert.equal(request.TemplateParamSet[0], code);
   assert.deepEqual(result, { providerRequestId: "request-1" });
 });
 
@@ -62,7 +79,7 @@ test("Tencent provider maps SDK and send status failures to controlled codes", a
       }),
     });
     await assert.rejects(
-      provider.sendVerificationCode({ phoneE164: "+8613800000000", code: "123456", expiresInMinutes: 5 }),
+      provider.sendVerificationCode({ phoneE164: "+8613800000000", code: verificationCode(), expiresInMinutes: 5 }),
       (error: unknown) => error instanceof SmsProviderError && error.code === "SMS_RATE_LIMITED",
     );
   });
@@ -75,7 +92,7 @@ test("Tencent provider maps SDK and send status failures to controlled codes", a
       }),
     });
     await assert.rejects(
-      provider.sendVerificationCode({ phoneE164: "+8613800000000", code: "123456", expiresInMinutes: 5 }),
+      provider.sendVerificationCode({ phoneE164: "+8613800000000", code: verificationCode(), expiresInMinutes: 5 }),
       (error: unknown) => error instanceof SmsProviderError && error.code === "SMS_UNAVAILABLE" && !error.message.includes("private detail"),
     );
   });
