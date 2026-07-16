@@ -228,10 +228,6 @@ extract_unique_command_sql() {
   [[ "$command_count" -eq 1 && -n "$TEST_EXTRACTED_SQL" ]] || return 93
 }
 
-normalize_test_sql() {
-  printf '%s' "$1" | tr -d '[:space:]'
-}
-
 expected_behavior_sql() {
   local oracle_wanted_label="$1" oracle_row oracle_row_label oracle_phone oracle_code oracle_purpose oracle_created
   local oracle_resend oracle_expires oracle_attempts oracle_max_attempts oracle_consumed oracle_ip oracle_provider oracle_matches=0
@@ -240,7 +236,7 @@ expected_behavior_sql() {
       oracle_attempts oracle_max_attempts oracle_consumed oracle_ip oracle_provider <<<"$oracle_row"
     if [[ "$oracle_row_label" == "$oracle_wanted_label" ]]; then
       oracle_matches=$((oracle_matches + 1))
-      printf 'INSERT INTO public.auth_verification_challenges (phone_hash,code_digest,purpose,created_at,updated_at,resend_after,expires_at,attempts,max_attempts,consumed_at,request_ip_hash,provider_request_id) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);' \
+      printf 'INSERT INTO public.auth_verification_challenges (\n    phone_hash,code_digest,purpose,created_at,updated_at,resend_after,expires_at,\n    attempts,max_attempts,consumed_at,request_ip_hash,provider_request_id\n  ) VALUES (%s,%s,%s,%s,%s,%s,%s,\n    %s,%s,%s,%s,%s);' \
         "$oracle_phone" "$oracle_code" "$oracle_purpose" "$oracle_created" "$oracle_created" "$oracle_resend" "$oracle_expires" \
         "$oracle_attempts" "$oracle_max_attempts" "$oracle_consumed" "$oracle_ip" "$oracle_provider"
     fi
@@ -251,7 +247,9 @@ expected_behavior_sql() {
 verify_behavior_sql_oracle() {
   local oracle_verify_label="$1" oracle_actual_sql="$2" oracle_expected_sql
   oracle_expected_sql="$(expected_behavior_sql "$oracle_verify_label")" || return 94
-  [[ "$(normalize_test_sql "$oracle_actual_sql")" == "$(normalize_test_sql "$oracle_expected_sql")" ]] || return 94
+  oracle_actual_sql="${oracle_actual_sql//$'\r\n'/$'\n'}"
+  oracle_expected_sql="${oracle_expected_sql//$'\r\n'/$'\n'}"
+  [[ "$oracle_actual_sql" == "$oracle_expected_sql" ]] || return 94
 }
 
 # Exact ERROR-record matching and SQL/CONTEXT pollution rejection.
@@ -488,8 +486,7 @@ dispatch_all_scenarios
 # SQL drift probes call the same extraction and SQL-oracle functions as the
 # complete fake dispatcher.  A SQL mismatch returns 94 without fabricating a
 # constraint ERROR.
-[[ "$(normalize_test_sql "$(expected_behavior_sql attempts_negative)")" != \
-   "$(normalize_test_sql "$(expected_behavior_sql attempts_zero)")" ]] || \
+[[ "$(expected_behavior_sql attempts_negative)" != "$(expected_behavior_sql attempts_zero)" ]] || \
   fail_test "independent attempts SQL fixtures collapsed to the same boundary"
 attempts_zero_drift_sql="$(expected_behavior_sql attempts_zero)"
 hash_len64_drift_sql="$(expected_behavior_sql phone_hash_len64)"
@@ -501,76 +498,77 @@ wrong_column_sql="${wrong_column_sql/phone_hash,code_digest/wrong_phone_hash,cod
 wrong_unrelated_value_sql="$(expected_behavior_sql attempts_negative)"
 wrong_unrelated_value_sql="$(printf '%s' "$wrong_unrelated_value_sql" | sed "0,/repeat('b',64)/s//repeat('b',63)/")"
 missing_field_sql="$(expected_behavior_sql provider_len128)"
-missing_field_sql="${missing_field_sql/,provider_request_id)/)}"
-missing_field_sql="${missing_field_sql/,repeat('x',128));/);}"
+missing_field_sql="$(printf '%s' "$missing_field_sql" | sed -e 's/,provider_request_id$//' -e "s/,repeat('x',128));$/);/")"
 [[ "$wrong_unrelated_value_sql" != "$(expected_behavior_sql attempts_negative)" ]] || fail_test "unrelated-value SQL drift fixture did not change"
 [[ "$missing_field_sql" != "$(expected_behavior_sql provider_len128)" ]] || fail_test "missing-field SQL drift fixture did not change"
-[[ -z "$CURRENT_REJECTION_ORACLE" ]] || fail_test "SQL drift started with a rejection oracle active"
-: >"$TMP_ROOT/sql-probe.stderr"
-CURRENT_BEHAVIOR_ORACLE=attempts_negative
-set +e
-database_psql "${SCENARIO_DATABASES[constraint_behavior]}" -c "$attempts_zero_drift_sql" >/dev/null 2>"$TMP_ROOT/sql-probe.stderr"
-sql_drift_attempts_rc=$?
-set -e
-CURRENT_BEHAVIOR_ORACLE=""
-assert_rc "$sql_drift_attempts_rc" 94 "attempts_negative uses attempts=0"
-[[ ! -s "$TMP_ROOT/sql-probe.stderr" ]] || fail_test "attempts SQL drift generated a fake constraint ERROR"
+provider_space_sql="$(expected_behavior_sql provider_len1)"
+provider_space_sql="$(printf '%s' "$provider_space_sql" | sed "s/'x');$/'x ');/")"
+time_literal_space_sql="$(expected_behavior_sql purpose_sign_in)"
+time_literal_space_sql="$(printf '%s' "$time_literal_space_sql" | sed '0,/2026-01-01 00:00:00/s//2026-01-01  00:00:00/')"
+appended_statement_sql="$(expected_behavior_sql purpose_sign_in)"$'\nSELECT 1;'
+syntax_space_sql="$(expected_behavior_sql purpose_sign_in)"
+syntax_space_sql="${syntax_space_sql/) VALUES /)  VALUES }"
+[[ "$provider_space_sql" != "$(expected_behavior_sql provider_len1)" ]] || fail_test "provider-space SQL probe did not change"
+[[ "$time_literal_space_sql" != "$(expected_behavior_sql purpose_sign_in)" ]] || fail_test "time-literal SQL probe did not change"
+[[ "$syntax_space_sql" != "$(expected_behavior_sql purpose_sign_in)" ]] || fail_test "syntax-space SQL probe did not change"
 
-: >"$TMP_ROOT/sql-probe.stderr"
-CURRENT_BEHAVIOR_ORACLE=phone_hash_len63
-set +e
-database_psql "${SCENARIO_DATABASES[constraint_behavior]}" -c "$hash_len64_drift_sql" >/dev/null 2>"$TMP_ROOT/sql-probe.stderr"
-sql_drift_hash_rc=$?
-set -e
-CURRENT_BEHAVIOR_ORACLE=""
-assert_rc "$sql_drift_hash_rc" 94 "phone_hash_len63 uses length 64"
-[[ ! -s "$TMP_ROOT/sql-probe.stderr" ]] || fail_test "hash SQL drift generated a fake constraint ERROR"
+declare -a TEST_94_LABELS=(
+  attempts_negative phone_hash_len63 timing_resend_equal_created consumed_before_created provider_len128
+  phone_hash_len63 attempts_negative provider_len128 provider_len1 purpose_sign_in purpose_sign_in purpose_sign_in
+)
+declare -a TEST_94_SQLS=(
+  "$attempts_zero_drift_sql" "$hash_len64_drift_sql" "$timing_strict_drift_sql" "$consumed_equal_drift_sql" "$provider_len129_drift_sql"
+  "$wrong_column_sql" "$wrong_unrelated_value_sql" "$missing_field_sql" "$provider_space_sql" "$time_literal_space_sql"
+  "$appended_statement_sql" "$syntax_space_sql"
+)
+declare -a TEST_94_DESCRIPTIONS=(
+  'attempts -1 changed to 0' 'hash length 63 changed to 64' 'timing equality changed to increasing'
+  'consumed before changed to equal' 'provider length 128 changed to 129' 'wrong target column'
+  'unrelated boundary value changed' 'required field missing' 'provider value gains trailing space'
+  'timestamp literal internal whitespace changed' 'statement appended' 'SQL syntax whitespace changed'
+)
+[[ "${#TEST_94_LABELS[@]}" -eq 12 && "${#TEST_94_SQLS[@]}" -eq 12 && "${#TEST_94_DESCRIPTIONS[@]}" -eq 12 ]] || \
+  fail_test "94 SQL probe table must contain 12 aligned cases"
 
-: >"$TMP_ROOT/sql-probe.stderr"
-CURRENT_BEHAVIOR_ORACLE=timing_resend_equal_created
-set +e
-database_psql "${SCENARIO_DATABASES[constraint_behavior]}" -c "$timing_strict_drift_sql" >/dev/null 2>"$TMP_ROOT/sql-probe.stderr"
-sql_drift_timing_rc=$?
-set -e
-CURRENT_BEHAVIOR_ORACLE=""
-assert_rc "$sql_drift_timing_rc" 94 "timing equality uses strictly increasing timestamps"
-[[ ! -s "$TMP_ROOT/sql-probe.stderr" ]] || fail_test "timing SQL drift generated a fake constraint ERROR"
-
-: >"$TMP_ROOT/sql-probe.stderr"
-CURRENT_BEHAVIOR_ORACLE=consumed_before_created
-set +e
-database_psql "${SCENARIO_DATABASES[constraint_behavior]}" -c "$consumed_equal_drift_sql" >/dev/null 2>"$TMP_ROOT/sql-probe.stderr"
-sql_drift_consumed_rc=$?
-set -e
-CURRENT_BEHAVIOR_ORACLE=""
-assert_rc "$sql_drift_consumed_rc" 94 "consumed_before uses created_at"
-[[ ! -s "$TMP_ROOT/sql-probe.stderr" ]] || fail_test "consumed SQL drift generated a fake constraint ERROR"
-
-: >"$TMP_ROOT/sql-probe.stderr"
-CURRENT_BEHAVIOR_ORACLE=provider_len128
-set +e
-database_psql "${SCENARIO_DATABASES[constraint_behavior]}" -c "$provider_len129_drift_sql" >/dev/null 2>"$TMP_ROOT/sql-probe.stderr"
-sql_drift_provider_rc=$?
-set -e
-CURRENT_BEHAVIOR_ORACLE=""
-assert_rc "$sql_drift_provider_rc" 94 "provider length 128 uses 129"
-[[ ! -s "$TMP_ROOT/sql-probe.stderr" ]] || fail_test "provider SQL drift generated a fake constraint ERROR"
-
-for structural_drift in \
-  "phone_hash_len63|$wrong_column_sql" \
-  "attempts_negative|$wrong_unrelated_value_sql" \
-  "provider_len128|$missing_field_sql"; do
-  structural_label="${structural_drift%%|*}"
-  structural_sql="${structural_drift#*|}"
+pass_rejection_count="$(grep -c '^EXPECTED_REJECTION_PASS ' "$DISPATCH_STATE")"
+pass_behavior_count="$(grep -c '^BEHAVIOR_PASS ' "$DISPATCH_STATE")"
+for ((sql_probe_index=0; sql_probe_index<12; sql_probe_index++)); do
+  sql_probe_label="${TEST_94_LABELS[$sql_probe_index]}"
+  sql_probe_statement="${TEST_94_SQLS[$sql_probe_index]}"
+  sql_probe_description="${TEST_94_DESCRIPTIONS[$sql_probe_index]}"
+  [[ -z "$CURRENT_REJECTION_ORACLE" ]] || fail_test "$sql_probe_description started with a rejection oracle active"
   : >"$TMP_ROOT/sql-probe.stderr"
-  CURRENT_BEHAVIOR_ORACLE="$structural_label"
+  CURRENT_BEHAVIOR_ORACLE="$sql_probe_label"
   set +e
-  database_psql "${SCENARIO_DATABASES[constraint_behavior]}" -c "$structural_sql" >/dev/null 2>"$TMP_ROOT/sql-probe.stderr"
-  structural_drift_rc=$?
+  database_psql "${SCENARIO_DATABASES[constraint_behavior]}" -c "$sql_probe_statement" >/dev/null 2>"$TMP_ROOT/sql-probe.stderr"
+  sql_probe_rc=$?
   set -e
   CURRENT_BEHAVIOR_ORACLE=""
-  assert_rc "$structural_drift_rc" 94 "$structural_label structural SQL drift"
-  [[ ! -s "$TMP_ROOT/sql-probe.stderr" ]] || fail_test "$structural_label structural drift generated a fake constraint ERROR"
+  assert_rc "$sql_probe_rc" 94 "$sql_probe_description"
+  [[ ! -s "$TMP_ROOT/sql-probe.stderr" ]] || fail_test "$sql_probe_description generated a fake constraint ERROR"
+
+  if [[ "${TEST_BEHAVIOR_RESULTS[$sql_probe_label]}" == PASS ]]; then
+    set +e
+    (
+      set -e
+      CURRENT_BEHAVIOR_ORACLE="$sql_probe_label"
+      database_psql "${SCENARIO_DATABASES[constraint_behavior]}" -c "$sql_probe_statement" >/dev/null
+    ) >/dev/null 2>&1
+    sql_probe_parser_rc=$?
+    set -e
+    assert_rc "$sql_probe_parser_rc" 94 "$sql_probe_description formal PASS wrapper rejection"
+  else
+    set +e
+    ( expect_behavior_rejection "${SCENARIO_DATABASES[constraint_behavior]}" "$sql_probe_label" "$sql_probe_statement" ) >/dev/null 2>&1
+    sql_probe_parser_rc=$?
+    set -e
+    assert_rc "$sql_probe_parser_rc" 73 "$sql_probe_description formal parser rejection"
+    [[ ! -s "$WORK_DIR/behavior_${sql_probe_label}.stderr" ]] || fail_test "$sql_probe_description parser received a fake constraint ERROR"
+  fi
+  [[ "$(grep -c '^EXPECTED_REJECTION_PASS ' "$DISPATCH_STATE")" == "$pass_rejection_count" ]] || \
+    fail_test "$sql_probe_description recorded EXPECTED_REJECTION_PASS"
+  [[ "$(grep -c '^BEHAVIOR_PASS ' "$DISPATCH_STATE")" == "$pass_behavior_count" ]] || \
+    fail_test "$sql_probe_description recorded BEHAVIOR_PASS"
 done
 
 # The outer command wrapper requires exactly one -c SQL argument.
