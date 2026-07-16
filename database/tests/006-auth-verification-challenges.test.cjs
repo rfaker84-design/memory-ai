@@ -207,6 +207,52 @@ test("006 preflight and postflight expose operational evidence", () => {
   ]) assert.ok(postflight.includes(token), `postflight missing ${token}`);
 });
 
+const psqlVariableTokenPattern = /:'[^'\r\n]+'|:"[^"\r\n]+"|:\{\?[^}\r\n]+\}/g;
+
+function collectQuotedScriptHeredocs(shell) {
+  const lines = shell.split("\n");
+  const starts = [];
+  const ranges = [];
+  let offset = 0;
+  for (const line of lines) {
+    starts.push(offset);
+    offset += line.length + 1;
+  }
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const openers = [...lines[lineIndex].matchAll(/<<'([A-Za-z_][A-Za-z0-9_]*)'/g)];
+    assert.ok(openers.length <= 1, `multiple heredocs on line ${lineIndex + 1} are not statically auditable`);
+    if (openers.length === 0) continue;
+    const delimiter = openers[0][1];
+    let closing = lineIndex + 1;
+    while (closing < lines.length && lines[closing] !== delimiter) closing += 1;
+    assert.ok(closing < lines.length, `unterminated heredoc ${delimiter}`);
+    let commandStart = lineIndex;
+    while (commandStart > 0 && lines[commandStart - 1].trimEnd().endsWith("\\")) commandStart -= 1;
+    ranges.push({
+      start: starts[lineIndex] + lines[lineIndex].length + 1,
+      end: starts[closing],
+      opener: lines.slice(commandStart, lineIndex + 1).join("\n"),
+    });
+    lineIndex = closing;
+  }
+  return ranges;
+}
+
+function assertPsqlVariableTransportSafe(shell, expectedCounts) {
+  const heredocs = collectQuotedScriptHeredocs(shell);
+  const matches = [...shell.matchAll(new RegExp(psqlVariableTokenPattern.source, "g"))];
+  const counts = new Map();
+  for (const match of matches) {
+    const body = heredocs.find(({ start, end }) => match.index >= start && match.index < end);
+    assert.ok(body, `${match[0]} must not appear in -c/--command or outside an approved stdin heredoc`);
+    assert.match(body.opener, /\b(?:admin_psql_script|database_psql_script)\b/);
+    assert.doesNotMatch(body.opener, /(?:^|[ \t])(?:-c|--command)(?:[= \t]|$)/);
+    const name = match[0].startsWith(":{?") ? match[0].slice(3, -1) : match[0].slice(2, -1);
+    counts.set(name, (counts.get(name) || 0) + 1);
+  }
+  if (expectedCounts) assert.deepEqual(Object.fromEntries([...counts].sort()), expectedCounts);
+}
+
 function assertMatrixRunnerStructure(runner) {
   assert.match(runner, /^#!\/usr\/bin\/env bash\nset -Eeuo pipefail/m);
   assert.match(runner, /DB_PREFIX="memoryai_auth_negative_"/);
@@ -264,7 +310,9 @@ function assertMatrixRunnerStructure(runner) {
     '[[ "$socket_identity" == "unix_socket" ]]',
   ]) assert.ok(runner.includes(startupToken), `runner missing startup identity contract ${startupToken}`);
   assert.doesNotMatch(runner, /\(pg_catalog\.inet_client_addr\(\) IS NULL\)::text/);
-  assert.match(runner, /database_psql "\$database" -v "lock_app=\$application_name"/);
+  assert.match(runner, /database_psql_script "\$database" lock_holder "\$application_name"/);
+  assert.match(runner, /database_psql_script "\$database" lock_granted "\$application_name"/);
+  assert.match(runner, /database_psql_script "\$database" lock_connections "\$application_name"/);
   assert.match(runner, /set_config\('application_name', :'lock_app', false\)/);
   assert.doesNotMatch(runner, /PGAPPNAME=/);
   assert.match(runner, /\[\[ "\$\(orchestrator_uid\)" == "0" \]\]/);
@@ -298,10 +346,38 @@ function assertMatrixRunnerStructure(runner) {
   assert.doesNotMatch(runner, /(?:MATRIX_WORK_DIR|MATRIX_STATE_FILE)\s*=|\$\{(?:MATRIX_WORK_DIR|MATRIX_STATE_FILE)/);
   assert.doesNotMatch(runner, /printf\s+'?%\.63s/);
   assert.doesNotMatch(runner, /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE)\s+pg_catalog\./i);
+  assertPsqlVariableTransportSafe(runner, {
+    lock_app: 3,
+    matrix_db: 3,
+    matrix_names: 1,
+    matrix_prefix: 1,
+  });
+  const scriptBoundary = runner.match(/psql_script_command\(\) \{([\s\S]*?)^\}/m)?.[1];
+  assert.ok(scriptBoundary, "missing psql stdin script boundary");
+  assert.match(scriptBoundary, /"--set=\$\{variable_name\}=\$\{variable_value\}" --file=-/);
+  assert.doesNotMatch(scriptBoundary, /(?:^|[ \t])(?:-c|--command)(?:[= \t]|$)/m);
+  assert.doesNotMatch(scriptBoundary, /\b(?:eval|sh\s+-c)\b/);
 }
 
 test("PostgreSQL 14 matrix runner has a bounded destructive scope", () => {
   assertMatrixRunnerStructure(readShell("tests/run-006-auth-pg14-matrix.sh"));
+});
+
+test("psql variable scanner rejects every command transport spelling", () => {
+  for (const fixture of [
+    `admin_psql -c "SELECT :'matrix_db';"`,
+    `admin_psql --command 'SELECT :"matrix_db";'`,
+    `admin_psql "--command=SELECT :{?matrix_db};"`,
+  ]) {
+    assert.throws(
+      () => assertPsqlVariableTransportSafe(fixture),
+      /must not appear in -c\/--command or outside an approved stdin heredoc/,
+    );
+  }
+  assert.doesNotThrow(() => assertPsqlVariableTransportSafe(
+    `admin_psql_script terminate "$database" <<'SQL'\nSELECT :'matrix_db';\nSQL\n`,
+    { matrix_db: 1 },
+  ));
 });
 
 test("shell static contracts accept LF and pure CRLF but reject unsafe bytes", () => {

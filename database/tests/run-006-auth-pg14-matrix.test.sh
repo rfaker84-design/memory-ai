@@ -136,6 +136,87 @@ capture_postgres_boundary() {
   POSTGRES_BOUNDARY_CALLS=$((POSTGRES_BOUNDARY_CALLS + 1))
 }
 
+declare -A TEST_SCRIPT_SQLS=(
+  [terminate]="SELECT pg_catalog.pg_terminate_backend(pid) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db' AND pid <> pg_catalog.pg_backend_pid();"
+  [connection_count]="SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db';"
+  [database_exists]="SELECT count(*) FROM pg_catalog.pg_database WHERE datname = :'matrix_db';"
+  [residual_count]="SELECT count(*) FROM pg_catalog.pg_database WHERE datname LIKE :'matrix_prefix';"
+  [preexisting_count]="SELECT count(*) FROM pg_catalog.pg_database WHERE datname = ANY(pg_catalog.string_to_array(:'matrix_names', ','));"
+  [lock_holder]=$'SELECT pg_catalog.set_config(\'application_name\', :\'lock_app\', false);\nBEGIN;\nLOCK TABLE public.auth_verification_challenges IN ACCESS EXCLUSIVE MODE;\nSELECT pg_catalog.pg_sleep(30);'
+  [lock_granted]="SELECT count(*) FROM pg_catalog.pg_locks l JOIN pg_catalog.pg_stat_activity a ON a.pid=l.pid WHERE a.application_name=:'lock_app' AND l.relation='public.auth_verification_challenges'::regclass AND l.mode='AccessExclusiveLock' AND l.granted;"
+  [lock_connections]="SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE application_name=:'lock_app';"
+)
+
+script_operation_for_sql() {
+  local sql="$1" operation match_count=0 matched_operation=""
+  for operation in "${!TEST_SCRIPT_SQLS[@]}"; do
+    if [[ "$sql" == "${TEST_SCRIPT_SQLS[$operation]}" ]]; then
+      match_count=$((match_count + 1))
+      matched_operation="$operation"
+    fi
+  done
+  [[ "$match_count" -eq 1 ]] || return 95
+  printf '%s\n' "$matched_operation"
+}
+
+capture_and_validate_script_transport() {
+  local stdin_file="$1" argument next_argument token_name="" set_argument="" index sql operation database=""
+  local file_count=0 command_count=0 set_count=0 on_error_stop_count=0 token_count=0
+  local database_count=0 x_count=0 no_psqlrc_count=0 verbosity_variable_count=0
+  [[ -f "$stdin_file" && ! -L "$stdin_file" ]] || return 95
+  sql="$(<"$stdin_file")"
+  operation="$(script_operation_for_sql "$sql")" || return 95
+  for ((index=0; index<${#POSTGRES_CLI_ARGS[@]}; index++)); do
+    argument="${POSTGRES_CLI_ARGS[$index]}"
+    next_argument="${POSTGRES_CLI_ARGS[$((index + 1))]:-}"
+    case "$argument" in
+      -X) x_count=$((x_count + 1)) ;;
+      --no-psqlrc) no_psqlrc_count=$((no_psqlrc_count + 1)) ;;
+      --file=-) file_count=$((file_count + 1)) ;;
+      -c|--command|--command=*) command_count=$((command_count + 1)) ;;
+      --set=*) set_count=$((set_count + 1)); set_argument="$argument" ;;
+      -v)
+        [[ "$next_argument" == ON_ERROR_STOP=1 ]] || return 95
+        on_error_stop_count=$((on_error_stop_count + 1)) ;;
+      -d)
+        [[ -n "$next_argument" ]] || return 95
+        database_count=$((database_count + 1))
+        database="$next_argument" ;;
+      VERBOSITY=*|-vVERBOSITY=*|--set=VERBOSITY=*)
+        verbosity_variable_count=$((verbosity_variable_count + 1)) ;;
+    esac
+  done
+  [[ "$file_count" -eq 1 && "$command_count" -eq 0 && "$set_count" -eq 1 && \
+     "$on_error_stop_count" -eq 1 && "$database_count" -eq 1 && "$x_count" -eq 1 && \
+     "$no_psqlrc_count" -eq 1 && "$verbosity_variable_count" -eq 0 ]] || return 95
+  for candidate_name in matrix_db matrix_prefix matrix_names lock_app; do
+    if [[ "$sql" == *":'$candidate_name'"* ]]; then
+      token_count=$((token_count + 1))
+      token_name="$candidate_name"
+    fi
+  done
+  [[ "$token_count" -eq 1 && "$set_argument" == "--set=${token_name}="* && "$set_argument" != "--set=${token_name}=" ]] || return 95
+  case "$operation" in
+    terminate|connection_count|database_exists)
+      [[ "$database" == postgres && "$token_name" == matrix_db ]] || return 95
+      validate_test_database_name "${set_argument#--set=matrix_db=}" || return 95 ;;
+    residual_count)
+      [[ "$database" == postgres && "$set_argument" == "--set=matrix_prefix=${RUN_DB_PREFIX}%" ]] || return 95 ;;
+    preexisting_count)
+      [[ "$database" == postgres && "$token_name" == matrix_names ]] || return 95
+      validate_matrix_database_list "${set_argument#--set=matrix_names=}" || return 95 ;;
+    lock_holder|lock_granted|lock_connections)
+      validate_test_database_name "$database" || return 95
+      [[ "$set_argument" == "--set=lock_app=memoryai_auth_matrix_lock_${RUN_NONCE}" ]] || return 95 ;;
+    *) return 95 ;;
+  esac
+  if [[ -n "${SCRIPT_TRANSPORT_LOG:-}" ]]; then
+    printf '%s\t%s\t%s\n' "$operation" "$database" "$set_argument" >>"$SCRIPT_TRANSPORT_LOG"
+  fi
+  TEST_SCRIPT_OPERATION="$operation"
+  TEST_SCRIPT_SET_ARGUMENT="$set_argument"
+}
+
 # Formal mode keeps root orchestration while rejecting every non-fixed database
 # transport input before any runtime directory or database command is created.
 ORIGINAL_FIXED_EXECUTABLE_AVAILABLE="$(declare -f fixed_executable_available)"
@@ -699,17 +780,40 @@ assert_rc "$external_timeout_rc" 124 "external timeout command boundary"
 eval "$ORIGINAL_RUN_EXTERNAL_TIMEOUT"
 
 # Every formal database wrapper, including cleanup, crosses the identical
-# runuser + env -i boundary.  The fake transport records only argv and never
-# opens a socket.
+# runuser + env -i boundary.  The fake transport records argv and stdin but
+# never opens a socket.
 BOUNDARY_LOG="$TMP_ROOT/postgres-boundary.log"
+SCRIPT_TRANSPORT_LOG="$TMP_ROOT/psql-script-transport.log"
 : >"$BOUNDARY_LOG"
+: >"$SCRIPT_TRANSPORT_LOG"
+SCRIPT_TRANSPORT_FORCED_RC=0
 execute_postgres_command() {
-  local joined
+  local joined argument next_argument command_sql="" script_file="" has_script=0 index
   capture_postgres_boundary "$@"
   joined=" ${POSTGRES_CLI_ARGS[*]} "
   printf '%s\t%s\n' "$POSTGRES_EXECUTABLE" "$joined" >>"$BOUNDARY_LOG"
   if [[ "$POSTGRES_EXECUTABLE" == /usr/bin/psql ]]; then
-    if [[ "$joined" == *"SELECT count(*)"* ]]; then printf '0\n'; fi
+    for ((index=0; index<${#POSTGRES_CLI_ARGS[@]}; index++)); do
+      argument="${POSTGRES_CLI_ARGS[$index]}"
+      next_argument="${POSTGRES_CLI_ARGS[$((index + 1))]:-}"
+      [[ "$argument" == --file=- ]] && has_script=$((has_script + 1))
+      if [[ "$argument" == -c || "$argument" == --command ]]; then command_sql="$next_argument"; fi
+      [[ "$argument" == --command=* ]] && command_sql="${argument#--command=}"
+    done
+    if [[ "$command_sql" =~ :\'[A-Za-z_][A-Za-z0-9_]*\'|:\"[A-Za-z_][A-Za-z0-9_]*\"|:\{\?[A-Za-z_][A-Za-z0-9_]*\} ]]; then
+      printf 'ERROR: syntax error at or near ":"\n' >&2
+      return 3
+    fi
+    if [[ "$has_script" -gt 0 ]]; then
+      script_file="$(mktemp "$TMP_ROOT/psql-script-stdin.XXXXXXXX")"
+      cat >"$script_file"
+      capture_and_validate_script_transport "$script_file" || return $?
+      [[ "$SCRIPT_TRANSPORT_FORCED_RC" -eq 0 ]] || return "$SCRIPT_TRANSPORT_FORCED_RC"
+      case "$TEST_SCRIPT_OPERATION" in
+        connection_count|database_exists|residual_count|preexisting_count|lock_connections) printf '0\n' ;;
+        lock_granted) printf '1\n' ;;
+      esac
+    fi
     return 0
   fi
   return 0
@@ -722,12 +826,101 @@ admin_psql -At -c 'SELECT 1;' >/dev/null
 database_psql "$boundary_db" -At -c 'SELECT 1;' >/dev/null
 CREATED_DATABASES=("$boundary_db")
 cleanup_database "$boundary_db" || fail_test "formal cleanup boundary fake failed"
+assert_no_residual_databases || fail_test "formal residual boundary fake failed"
+assert_all_database_names_absent || fail_test "formal preexisting boundary fake failed"
 grep -Fq $'/usr/bin/createdb\t' "$BOUNDARY_LOG" || fail_test "createdb bypassed the postgres boundary"
 grep -Fq $'/usr/bin/dropdb\t' "$BOUNDARY_LOG" || fail_test "dropdb bypassed the postgres boundary"
 grep -Fq $'/usr/bin/psql\t' "$BOUNDARY_LOG" || fail_test "psql bypassed the postgres boundary"
-grep -Fq 'pg_terminate_backend' "$BOUNDARY_LOG" || fail_test "cleanup terminate bypassed the postgres boundary"
-grep -Fq 'pg_stat_activity' "$BOUNDARY_LOG" || fail_test "cleanup connection check bypassed the postgres boundary"
-grep -Fq 'pg_database' "$BOUNDARY_LOG" || fail_test "cleanup existence check bypassed the postgres boundary"
+for required_transport in terminate connection_count database_exists residual_count preexisting_count; do
+  [[ "$(grep -c "^${required_transport}"$'\t' "$SCRIPT_TRANSPORT_LOG")" -eq 1 ]] || \
+    fail_test "$required_transport did not use the unique script transport"
+done
+grep -Fq $'terminate\tpostgres\t--set=matrix_db='"$boundary_db" "$SCRIPT_TRANSPORT_LOG" || \
+  fail_test "cleanup terminate binding changed"
+grep -Fq $'connection_count\tpostgres\t--set=matrix_db='"$boundary_db" "$SCRIPT_TRANSPORT_LOG" || \
+  fail_test "cleanup connection binding changed"
+grep -Fq $'database_exists\tpostgres\t--set=matrix_db='"$boundary_db" "$SCRIPT_TRANSPORT_LOG" || \
+  fail_test "cleanup existence binding changed"
+grep -Fq $'residual_count\tpostgres\t--set=matrix_prefix='"${RUN_DB_PREFIX}%" "$SCRIPT_TRANSPORT_LOG" || \
+  fail_test "residual database binding changed"
+
+# Reproduce the field failure: psql command transport sends the token literally,
+# while the formal preexisting query sends the same SQL through --file=-.
+matrix_names="$(printf '%s\n' "${SCENARIO_DATABASES[@]}" | sort | paste -sd, -)"
+legacy_assert_all_database_names_absent() {
+  local count rc
+  set +e
+  count="$(admin_psql -At "--set=matrix_names=$matrix_names" -c \
+    "SELECT count(*) FROM pg_catalog.pg_database WHERE datname = ANY(pg_catalog.string_to_array(:'matrix_names', ','));" \
+    2>"$TMP_ROOT/legacy-preexisting.stderr")"
+  rc=$?
+  set -e
+  [[ "$rc" -eq 0 ]] || return 74
+  [[ "$count" == 0 ]]
+}
+set +e
+( legacy_assert_all_database_names_absent ) >/dev/null
+legacy_preexisting_rc=$?
+set -e
+assert_rc "$legacy_preexisting_rc" 74 "legacy preexisting -c transport reproduction"
+assert_contains "$TMP_ROOT/legacy-preexisting.stderr" 'syntax error at or near ":"'
+assert_all_database_names_absent || fail_test "preexisting stdin transport did not replace psql variables"
+[[ "$(grep -c '^preexisting_count'$'\t' "$SCRIPT_TRANSPORT_LOG")" -eq 2 ]] || \
+  fail_test "preexisting query did not traverse --file=- twice"
+
+# The public helpers fix binding names and arity.  The low-level fake rejects
+# missing, duplicate, wrong-name, empty-value, and extra bindings.
+transport_calls_before="$(wc -l <"$SCRIPT_TRANSPORT_LOG" | tr -d ' ')"
+for invalid_helper in missing_admin extra_admin wrong_admin missing_database extra_database wrong_database cross_scope; do
+  set +e
+  case "$invalid_helper" in
+    missing_admin) ( admin_psql_script terminate ) >/dev/null 2>&1 ;;
+    extra_admin) ( admin_psql_script terminate "$boundary_db" extra ) >/dev/null 2>&1 ;;
+    wrong_admin) ( admin_psql_script wrong "$boundary_db" ) >/dev/null 2>&1 ;;
+    missing_database) ( database_psql_script "$boundary_db" lock_holder ) >/dev/null 2>&1 ;;
+    extra_database) ( database_psql_script "$boundary_db" lock_holder "memoryai_auth_matrix_lock_${RUN_NONCE}" extra ) >/dev/null 2>&1 ;;
+    wrong_database) ( database_psql_script "$boundary_db" wrong "memoryai_auth_matrix_lock_${RUN_NONCE}" ) >/dev/null 2>&1 ;;
+    cross_scope) ( psql_script_command postgres lock_holder "memoryai_auth_matrix_lock_${RUN_NONCE}" ) >/dev/null 2>&1 ;;
+  esac
+  invalid_helper_rc=$?
+  set -e
+  assert_rc "$invalid_helper_rc" 64 "$invalid_helper helper contract"
+done
+[[ "$(wc -l <"$SCRIPT_TRANSPORT_LOG" | tr -d ' ')" == "$transport_calls_before" ]] || \
+  fail_test "rejected helper input reached postgres transport"
+
+run_malformed_script_transport() {
+  local mode="$1"
+  local -a binding_arguments=()
+  case "$mode" in
+    missing) binding_arguments=() ;;
+    duplicate) binding_arguments=("--set=matrix_db=$boundary_db" "--set=matrix_db=$boundary_db") ;;
+    wrong_name) binding_arguments=("--set=wrong_name=$boundary_db") ;;
+    empty_value) binding_arguments=(--set=matrix_db=) ;;
+    extra) binding_arguments=("--set=matrix_db=$boundary_db" "--set=matrix_prefix=${RUN_DB_PREFIX}%") ;;
+  esac
+  psql_command -X --no-psqlrc -v ON_ERROR_STOP=1 -d postgres \
+    "${binding_arguments[@]}" --file=- <<'MALFORMED_SCRIPT_SQL'
+SELECT pg_catalog.pg_terminate_backend(pid) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db' AND pid <> pg_catalog.pg_backend_pid();
+MALFORMED_SCRIPT_SQL
+}
+for malformed_mode in missing duplicate wrong_name empty_value extra; do
+  set +e
+  run_malformed_script_transport "$malformed_mode" >/dev/null 2>&1
+  malformed_rc=$?
+  set -e
+  assert_rc "$malformed_rc" 95 "$malformed_mode script binding"
+done
+
+SCRIPT_TRANSPORT_FORCED_RC=42
+set +e
+admin_psql_script terminate "$boundary_db" >/dev/null <<'RAW_RC_SQL'
+SELECT pg_catalog.pg_terminate_backend(pid) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db' AND pid <> pg_catalog.pg_backend_pid();
+RAW_RC_SQL
+script_raw_rc=$?
+set -e
+assert_rc "$script_raw_rc" 42 "stdin psql transport rc"
+SCRIPT_TRANSPORT_FORCED_RC=0
 eval "$ORIGINAL_EXECUTE_POSTGRES_COMMAND"
 
 # cleanup_or_fail returns exactly 75 for each failure class.
@@ -736,23 +929,29 @@ record_state() { printf '%s\n' "$1" >>"$CLEANUP_STATE"; }
 CLEANUP_MODE=success
 DROP_SUCCEEDED=0
 PREEXISTING_NAMES=0
-admin_psql() {
-  local joined=" $* " database
-  if [[ "$joined" == *"pg_terminate_backend"* ]]; then
-    [[ "$CLEANUP_MODE" == terminate ]] && return 91
-    return 0
-  fi
-  if [[ "$joined" == *"FROM pg_catalog.pg_stat_activity WHERE datname"* ]]; then
-    [[ "$CLEANUP_MODE" == connections ]] && printf '1\n' || printf '0\n'
-    return 0
-  fi
-  if [[ "$joined" == *"ANY(pg_catalog.string_to_array"* ]]; then printf '%s\n' "$PREEXISTING_NAMES"; return 0; fi
-  if [[ "$joined" == *"FROM pg_catalog.pg_database WHERE datname ="* ]]; then
-    if [[ "$CLEANUP_MODE" == exists || "$CLEANUP_MODE" == dropdb ]]; then printf '1\n'; else printf '0\n'; fi
-    return 0
-  fi
-  if [[ "$joined" == *"FROM pg_catalog.pg_database WHERE datname LIKE"* ]]; then printf '0\n'; return 0; fi
-  printf '0\n'
+execute_postgres_command() {
+  local script_file has_script=0 argument
+  capture_postgres_boundary "$@"
+  [[ "$POSTGRES_EXECUTABLE" == /usr/bin/psql ]] || return 97
+  for argument in "${POSTGRES_CLI_ARGS[@]}"; do [[ "$argument" == --file=- ]] && has_script=$((has_script + 1)); done
+  [[ "$has_script" -eq 1 ]] || return 95
+  script_file="$(mktemp "$TMP_ROOT/cleanup-script-stdin.XXXXXXXX")"
+  cat >"$script_file"
+  capture_and_validate_script_transport "$script_file" || return $?
+  case "$TEST_SCRIPT_OPERATION" in
+    terminate)
+      [[ "$CLEANUP_MODE" == terminate ]] && return 91
+      return 0 ;;
+    connection_count)
+      [[ "$CLEANUP_MODE" == connections ]] && printf '1\n' || printf '0\n'
+      return 0 ;;
+    preexisting_count) printf '%s\n' "$PREEXISTING_NAMES"; return 0 ;;
+    database_exists)
+      if [[ "$CLEANUP_MODE" == exists || "$CLEANUP_MODE" == dropdb ]]; then printf '1\n'; else printf '0\n'; fi
+      return 0 ;;
+    residual_count) printf '0\n'; return 0 ;;
+    *) return 95 ;;
+  esac
 }
 drop_database_command() {
   [[ "$CLEANUP_MODE" == dropdb ]] && return 92
@@ -825,18 +1024,27 @@ run_sql() { :; }
 catalog_snapshot() { printf 'catalog-snapshot\n' >"$2"; }
 cleanup_or_fail() { remove_created_database "$1"; CLEANUP_COUNT=$((CLEANUP_COUNT + 1)); return 0; }
 execute_postgres_command() {
-  local joined behavior_result
+  local behavior_result argument script_file="" has_script=0
   capture_postgres_boundary "$@"
   [[ "$POSTGRES_EXECUTABLE" == /usr/bin/psql ]] || return 97
-  joined=" ${POSTGRES_CLI_ARGS[*]} "
-  if [[ "$joined" == *" lock_app=memoryai_auth_matrix_lock_"* && "$joined" != *" -c "* ]]; then
-    trap 'rm -f -- "$HOLDER_MARKER"; exit 0' TERM INT EXIT
-    : >"$HOLDER_MARKER"
-    sleep 4
-    return 0
+  for argument in "${POSTGRES_CLI_ARGS[@]}"; do [[ "$argument" == --file=- ]] && has_script=$((has_script + 1)); done
+  if [[ "$has_script" -gt 0 ]]; then
+    script_file="$(mktemp "$TMP_ROOT/dispatch-script-stdin.XXXXXXXX")"
+    cat >"$script_file"
+    capture_and_validate_script_transport "$script_file" || return $?
+    case "$TEST_SCRIPT_OPERATION" in
+      lock_holder)
+        trap 'rm -f -- "$HOLDER_MARKER"; exit 0' TERM INT EXIT
+        : >"$HOLDER_MARKER"
+        sleep 4
+        return 0 ;;
+      lock_granted) [[ -e "$HOLDER_MARKER" ]] && printf '1\n' || printf '0\n'; return 0 ;;
+      lock_connections) printf '0\n'; return 0 ;;
+      terminate) return 0 ;;
+      connection_count|database_exists|residual_count|preexisting_count) printf '0\n'; return 0 ;;
+      *) return 95 ;;
+    esac
   fi
-  if [[ "$joined" == *"FROM pg_catalog.pg_locks"* ]]; then [[ -e "$HOLDER_MARKER" ]] && printf '1\n' || printf '0\n'; return 0; fi
-  if [[ "$joined" == *"WHERE application_name"* ]]; then printf '0\n'; return 0; fi
   if [[ -n "$CURRENT_REJECTION_ORACLE" ]]; then
     [[ -n "${TEST_REJECTION_ERRORS[$CURRENT_REJECTION_ORACLE]:-}" ]] || return 97
     printf '%s\n' "${TEST_REJECTION_ERRORS[$CURRENT_REJECTION_ORACLE]}" >&2
@@ -883,6 +1091,19 @@ dispatch_all_scenarios
 [[ "$BEHAVIOR_SQL_ORACLE_TOTAL" == "33" ]] || fail_test "not all 33 behavior -c SQL statements passed the independent oracle"
 [[ "$(grep -c '^BEHAVIOR_CASE_CALLED ' "$DISPATCH_STATE")" == "33" ]] || fail_test "not all behavior cases executed"
 [[ ! -e "$HOLDER_MARKER" ]] || fail_test "lock holder marker remained"
+for lock_transport in lock_holder lock_granted lock_connections; do
+  lock_transport_count="$(grep -c "^${lock_transport}"$'\t' "$SCRIPT_TRANSPORT_LOG")"
+  if [[ "$lock_transport" == lock_holder ]]; then
+    [[ "$lock_transport_count" -eq 1 ]] || fail_test "lock_holder did not use exactly one stdin script transport"
+  else
+    [[ "$lock_transport_count" -ge 1 && "$lock_transport_count" -le 50 ]] || \
+      fail_test "$lock_transport poll count is outside 1-50"
+  fi
+  expected_lock_transport="${lock_transport}"$'\t'"${SCENARIO_DATABASES[lock_timeout]}"$'\t'"--set=lock_app=memoryai_auth_matrix_lock_${RUN_NONCE}"
+  while IFS= read -r lock_transport_row; do
+    [[ "$lock_transport_row" == "$expected_lock_transport" ]] || fail_test "$lock_transport binding changed"
+  done < <(grep "^${lock_transport}"$'\t' "$SCRIPT_TRANSPORT_LOG")
+done
 
 # SQL drift probes call the same extraction and SQL-oracle functions as the
 # complete fake dispatcher.  A SQL mismatch returns 94 without fabricating a

@@ -300,6 +300,74 @@ database_psql() {
   psql_command -X --no-psqlrc -v ON_ERROR_STOP=1 -d "$database" "$@"
 }
 
+validate_matrix_database_list() {
+  local value="$1" database expected_value
+  local -a databases=()
+  declare -A seen=()
+  IFS=',' read -r -a databases <<<"$value"
+  [[ "${#databases[@]}" -eq 79 ]] || return 1
+  for database in "${databases[@]}"; do
+    validate_test_database_name "$database" || return 1
+    [[ -z "${seen[$database]:-}" ]] || return 1
+    seen[$database]=1
+  done
+  [[ "${#seen[@]}" -eq 79 ]] || return 1
+  expected_value="$(printf '%s\n' "${SCENARIO_DATABASES[@]}" | sort | paste -sd, -)" || return 1
+  [[ "$value" == "$expected_value" ]]
+}
+
+psql_script_command() {
+  [[ "$#" -eq 3 ]] || return 64
+  local database="$1" operation="$2" variable_value="$3" output_mode variable_name
+  local -a output_arguments=()
+  case "$operation" in
+    admin_terminate) output_mode=status; variable_name=matrix_db ;;
+    admin_connection_count|admin_database_exists) output_mode=records; variable_name=matrix_db ;;
+    admin_residual_count) output_mode=records; variable_name=matrix_prefix ;;
+    admin_preexisting_count) output_mode=records; variable_name=matrix_names ;;
+    lock_holder) output_mode=status; variable_name=lock_app ;;
+    lock_granted|lock_connections) output_mode=records; variable_name=lock_app ;;
+    *) return 64 ;;
+  esac
+  case "$output_mode" in
+    records) output_arguments=(-At) ;;
+    status) ;;
+    *) return 64 ;;
+  esac
+
+  if [[ "$database" == "$ADMIN_DB" ]]; then
+    case "$operation" in
+      admin_terminate|admin_connection_count|admin_database_exists)
+        validate_test_database_name "$variable_value" || return 64 ;;
+      admin_residual_count)
+        [[ "$variable_value" == "${RUN_DB_PREFIX}%" ]] || return 64 ;;
+      admin_preexisting_count)
+        validate_matrix_database_list "$variable_value" || return 64 ;;
+      *) return 64 ;;
+    esac
+  else
+    validate_test_database_name "$database" || return 64
+    case "$operation" in lock_holder|lock_granted|lock_connections) ;; *) return 64 ;; esac
+    [[ "$variable_value" == "memoryai_auth_matrix_lock_${RUN_NONCE}" ]] || return 64
+  fi
+
+  psql_command -X --no-psqlrc -v ON_ERROR_STOP=1 -d "$database" \
+    "${output_arguments[@]}" "--set=${variable_name}=${variable_value}" --file=-
+}
+
+admin_psql_script() {
+  [[ "$#" -eq 2 ]] || return 64
+  case "$1" in terminate|connection_count|database_exists|residual_count|preexisting_count) ;; *) return 64 ;; esac
+  psql_script_command "$ADMIN_DB" "admin_$1" "$2"
+}
+
+database_psql_script() {
+  [[ "$#" -eq 3 ]] || return 64
+  validate_test_database_name "$1" || return 64
+  case "$2" in lock_holder|lock_granted|lock_connections) ;; *) return 64 ;; esac
+  psql_script_command "$1" "$2" "$3"
+}
+
 drop_database_command() {
   postgres_command 0 "$DROPDB" --if-exists --force "$1"
 }
@@ -321,9 +389,9 @@ cleanup_database() {
   local database="$1" cleanup_rc=0 terminate_rc=0 connections_rc=0 connections="" drop_rc=0 exists_rc=0 exists=""
   validate_test_database_name "$database"
   set +e
-  admin_psql -v "matrix_db=$database" -c \
-    "SELECT pg_catalog.pg_terminate_backend(pid) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db' AND pid <> pg_catalog.pg_backend_pid();" \
-    >/dev/null
+  admin_psql_script terminate "$database" >/dev/null <<'CLEANUP_TERMINATE_SQL'
+SELECT pg_catalog.pg_terminate_backend(pid) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db' AND pid <> pg_catalog.pg_backend_pid();
+CLEANUP_TERMINATE_SQL
   terminate_rc=$?
   set -e
   if [[ "$terminate_rc" -ne 0 ]]; then
@@ -332,8 +400,10 @@ cleanup_database() {
   fi
 
   set +e
-  connections="$(admin_psql -At -v "matrix_db=$database" -c \
-    "SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db';" 2>/dev/null)"
+  connections="$(admin_psql_script connection_count "$database" 2>/dev/null <<'CLEANUP_CONNECTIONS_SQL'
+SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db';
+CLEANUP_CONNECTIONS_SQL
+)"
   connections_rc=$?
   set -e
   if [[ "$connections_rc" -ne 0 || "$connections" != "0" ]]; then
@@ -351,8 +421,10 @@ cleanup_database() {
   fi
 
   set +e
-  exists="$(admin_psql -At -v "matrix_db=$database" -c \
-    "SELECT count(*) FROM pg_catalog.pg_database WHERE datname = :'matrix_db';" 2>/dev/null)"
+  exists="$(admin_psql_script database_exists "$database" 2>/dev/null <<'CLEANUP_EXISTS_SQL'
+SELECT count(*) FROM pg_catalog.pg_database WHERE datname = :'matrix_db';
+CLEANUP_EXISTS_SQL
+)"
   exists_rc=$?
   set -e
   if [[ "$exists_rc" -ne 0 || "$exists" != "0" ]]; then
@@ -379,8 +451,10 @@ cleanup_or_fail() {
 
 assert_no_residual_databases() {
   local count
-  count="$(admin_psql -At -v "matrix_prefix=${RUN_DB_PREFIX}%" -c \
-    "SELECT count(*) FROM pg_catalog.pg_database WHERE datname LIKE :'matrix_prefix';")"
+  count="$(admin_psql_script residual_count "${RUN_DB_PREFIX}%" <<'RESIDUAL_DATABASES_SQL'
+SELECT count(*) FROM pg_catalog.pg_database WHERE datname LIKE :'matrix_prefix';
+RESIDUAL_DATABASES_SQL
+)"
   [[ "$count" == "0" ]] || return 1
 }
 
@@ -388,8 +462,10 @@ assert_all_database_names_absent() {
   local names count rc
   names="$(printf '%s\n' "${SCENARIO_DATABASES[@]}" | sort | paste -sd, -)"
   set +e
-  count="$(admin_psql -At -v "matrix_names=$names" -c \
-    "SELECT count(*) FROM pg_catalog.pg_database WHERE datname = ANY(pg_catalog.string_to_array(:'matrix_names', ','));" 2>/dev/null)"
+  count="$(admin_psql_script preexisting_count "$names" 2>/dev/null <<'PREEXISTING_DATABASES_SQL'
+SELECT count(*) FROM pg_catalog.pg_database WHERE datname = ANY(pg_catalog.string_to_array(:'matrix_names', ','));
+PREEXISTING_DATABASES_SQL
+)"
   rc=$?
   set -e
   [[ "$rc" -eq 0 ]] || fail preexisting 74 "cannot verify matrix database absence"
@@ -1064,7 +1140,7 @@ run_lock_timeout_scenario() {
   before="$WORK_DIR/${scenario}.before"
   after="$WORK_DIR/${scenario}.after"
   catalog_snapshot "$database" "$before"
-  database_psql "$database" -v "lock_app=$application_name" >/dev/null 2>&1 <<'LOCK_SQL' &
+  database_psql_script "$database" lock_holder "$application_name" >/dev/null 2>&1 <<'LOCK_SQL' &
 SELECT pg_catalog.set_config('application_name', :'lock_app', false);
 BEGIN;
 LOCK TABLE public.auth_verification_challenges IN ACCESS EXCLUSIVE MODE;
@@ -1073,8 +1149,10 @@ LOCK_SQL
   holder=$!
 
   for poll in {1..50}; do
-    granted="$(database_psql "$database" -At -v "lock_app=$application_name" -c \
-      "SELECT count(*) FROM pg_catalog.pg_locks l JOIN pg_catalog.pg_stat_activity a ON a.pid=l.pid WHERE a.application_name=:'lock_app' AND l.relation='public.auth_verification_challenges'::regclass AND l.mode='AccessExclusiveLock' AND l.granted;")"
+    granted="$(database_psql_script "$database" lock_granted "$application_name" <<'LOCK_GRANTED_SQL'
+SELECT count(*) FROM pg_catalog.pg_locks l JOIN pg_catalog.pg_stat_activity a ON a.pid=l.pid WHERE a.application_name=:'lock_app' AND l.relation='public.auth_verification_challenges'::regclass AND l.mode='AccessExclusiveLock' AND l.granted;
+LOCK_GRANTED_SQL
+)"
     [[ "$granted" == "1" ]] && break
     sleep 0.1
   done
@@ -1090,8 +1168,10 @@ LOCK_SQL
   kill "$holder" 2>/dev/null || true
   wait "$holder" 2>/dev/null || true
   for poll in {1..50}; do
-    connections="$(database_psql "$database" -At -v "lock_app=$application_name" -c \
-      "SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE application_name=:'lock_app';")"
+    connections="$(database_psql_script "$database" lock_connections "$application_name" <<'LOCK_CONNECTIONS_SQL'
+SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE application_name=:'lock_app';
+LOCK_CONNECTIONS_SQL
+)"
     [[ "$connections" == "0" ]] && break
     sleep 0.1
   done
