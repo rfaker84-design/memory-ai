@@ -213,7 +213,44 @@ function assertMatrixRunnerStructure(runner) {
   assert.match(runner, /memoryai\|postgres\|template0\|template1/);
   assert.match(runner, /database is outside current run nonce/);
   assert.match(runner, /DATABASE_URL is forbidden/);
-  assert.match(runner, /PGHOST must be loopback/);
+  assert.match(runner, /PGHOST must be exactly \/var\/run\/postgresql/);
+  for (const fixedSetting of [
+    'RUNUSER="/usr/sbin/runuser"',
+    'CLEAN_ENV="/usr/bin/env"',
+    'PSQL="/usr/bin/psql"',
+    'CREATEDB="/usr/bin/createdb"',
+    'DROPDB="/usr/bin/dropdb"',
+    'TIMEOUT="/usr/bin/timeout"',
+    'POSTGRES_OS_USER="postgres"',
+    'POSTGRES_HOME="/nonexistent"',
+    'POSTGRES_PATH="/usr/bin:/bin"',
+    'POSTGRES_HOST="/var/run/postgresql"',
+    'POSTGRES_PORT="5432"',
+    'POSTGRES_USER="postgres"',
+  ]) assert.ok(runner.includes(fixedSetting), `runner missing fixed setting ${fixedSetting}`);
+  assert.match(runner, /local -a command=\(\n\s+"\$RUNUSER" --user "\$POSTGRES_OS_USER" --\n\s+"\$CLEAN_ENV" -i\n\s+"HOME=\$POSTGRES_HOME"\n\s+"PATH=\$POSTGRES_PATH"\n\s+"PGHOST=\$POSTGRES_HOST"\n\s+"PGPORT=\$POSTGRES_PORT"\n\s+"PGUSER=\$POSTGRES_USER"\n\s+"\$executable"\n\s+\)/);
+  assert.match(runner, /for variable in DATABASE_URL PGPASSWORD PGPASSFILE PGSERVICE PGSERVICEFILE PGHOSTADDR PGDATABASE; do/);
+  assert.match(runner, /psql_command\(\) \{\n\s+postgres_command 0 "\$PSQL" "\$@"\n\}/);
+  assert.match(runner, /psql_command_with_timeout\(\) \{[\s\S]*?postgres_command "\$timeout_seconds" "\$PSQL" "\$@"\n\}/);
+  assert.match(runner, /drop_database_command\(\) \{\n\s+postgres_command 0 "\$DROPDB" --if-exists --force "\$1"\n\}/);
+  assert.match(runner, /create_database_command\(\) \{\n\s+postgres_command 0 "\$CREATEDB" --template=template0 "\$1"\n\}/);
+  assert.match(runner, /postgres_file_readable\(\) \{\n\s+postgres_command 0 "\$TEST" -r "\$1"\n\}/);
+  assert.doesNotMatch(runner, /^\s*"\$(?:PSQL|CREATEDB|DROPDB)"(?:\s|$)/m);
+  assert.match(runner, /for file in "\$RUNUSER" "\$CLEAN_ENV" "\$PSQL" "\$CREATEDB" "\$DROPDB" "\$TIMEOUT" "\$ID" "\$TEST"; do/);
+  assert.match(runner, /database_os_user_exists \|\| fail input 69 "required postgres OS user is unavailable"/);
+  for (const startupToken of [
+    "current_setting('server_version_num')", "current_database()", "session_user", "current_user",
+    "pg_catalog.inet_client_addr() IS NULL", '[[ "$version" == "140023" ]]',
+    '[[ "$database" == "$ADMIN_DB" && "$database" != "memoryai" ]]',
+    '[[ "$session_identity" == "$POSTGRES_USER" ]]', '[[ "$current_identity" == "$POSTGRES_USER" ]]',
+    '[[ "$socket_identity" == "t" ]]',
+  ]) assert.ok(runner.includes(startupToken), `runner missing startup identity contract ${startupToken}`);
+  assert.match(runner, /database_psql "\$database" -v "lock_app=\$application_name"/);
+  assert.match(runner, /set_config\('application_name', :'lock_app', false\)/);
+  assert.doesNotMatch(runner, /PGAPPNAME=/);
+  assert.match(runner, /\[\[ "\$\(orchestrator_uid\)" == "0" \]\]/);
+  assert.match(runner, /required_owner="0"/);
+  assert.match(runner, /stat -c '%u' "\$WORK_DIR"\)" == "0"/);
   assert.match(runner, /trap 'on_exit \$\?' EXIT/);
   assert.match(runner, /trap 'on_signal INT 130' INT/);
   assert.match(runner, /trap 'on_signal TERM 143' TERM/);

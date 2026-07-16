@@ -7,9 +7,20 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly DATABASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 readonly MIGRATION_DIR="$DATABASE_DIR/migrations"
 readonly MIGRATION_006="$MIGRATION_DIR/006_auth_verification_challenges.sql"
-readonly PSQL="psql"
-readonly CREATEDB="createdb"
-readonly DROPDB="dropdb"
+readonly RUNUSER="/usr/sbin/runuser"
+readonly CLEAN_ENV="/usr/bin/env"
+readonly PSQL="/usr/bin/psql"
+readonly CREATEDB="/usr/bin/createdb"
+readonly DROPDB="/usr/bin/dropdb"
+readonly TIMEOUT="/usr/bin/timeout"
+readonly ID="/usr/bin/id"
+readonly TEST="/usr/bin/test"
+readonly POSTGRES_OS_USER="postgres"
+readonly POSTGRES_HOME="/nonexistent"
+readonly POSTGRES_PATH="/usr/bin:/bin"
+readonly POSTGRES_HOST="/var/run/postgresql"
+readonly POSTGRES_PORT="5432"
+readonly POSTGRES_USER="postgres"
 readonly ADMIN_DB="postgres"
 RUN_ID="${MATRIX_RUN_ID:-$(date -u +%Y%m%d%H%M%S)_$$_${RANDOM}}"
 readonly CALLER_RUN_NONCE_PRESENT="${RUN_NONCE+x}"
@@ -238,8 +249,43 @@ validate_test_database_name() {
   ! is_protected_database "$database" || fail input 64 "protected database target rejected: $database"
 }
 
+execute_postgres_command() {
+  "$@"
+}
+
+postgres_command() {
+  local timeout_seconds="$1" executable="$2"
+  shift 2
+  case "$executable" in
+    "$PSQL"|"$CREATEDB"|"$DROPDB"|"$TEST") ;;
+    *) fail runtime 69 "unapproved postgres subprocess executable" ;;
+  esac
+  local -a command=(
+    "$RUNUSER" --user "$POSTGRES_OS_USER" --
+    "$CLEAN_ENV" -i
+    "HOME=$POSTGRES_HOME"
+    "PATH=$POSTGRES_PATH"
+    "PGHOST=$POSTGRES_HOST"
+    "PGPORT=$POSTGRES_PORT"
+    "PGUSER=$POSTGRES_USER"
+    "$executable"
+  )
+  command+=("$@")
+  if [[ "$timeout_seconds" -gt 0 ]]; then
+    run_external_timeout "$timeout_seconds" "${command[@]}"
+  else
+    execute_postgres_command "${command[@]}"
+  fi
+}
+
 psql_command() {
-  "$PSQL" "$@"
+  postgres_command 0 "$PSQL" "$@"
+}
+
+psql_command_with_timeout() {
+  local timeout_seconds="$1"
+  shift
+  postgres_command "$timeout_seconds" "$PSQL" "$@"
 }
 
 admin_psql() {
@@ -254,11 +300,11 @@ database_psql() {
 }
 
 drop_database_command() {
-  "$DROPDB" --if-exists --force "$1"
+  postgres_command 0 "$DROPDB" --if-exists --force "$1"
 }
 
 create_database_command() {
-  "$CREATEDB" --template=template0 "$1"
+  postgres_command 0 "$CREATEDB" --template=template0 "$1"
 }
 
 remove_created_database() {
@@ -411,7 +457,7 @@ initialize_state_file() {
 
 initialize_runtime() {
   local runtime_parent state_parent required_owner runtime_mode
-  [[ "$(id -u)" == "0" ]] || fail runtime 76 "matrix runtime must execute as root"
+  [[ "$(orchestrator_uid)" == "0" ]] || fail runtime 76 "matrix runtime must execute as root"
   runtime_parent="$(runtime_parent_path)"
   state_parent="$(state_parent_path)"
   required_owner="0"
@@ -436,7 +482,7 @@ remove_work_directory() {
   [[ "${WORK_DIR##*/}" == "memoryai-auth-pg14-matrix.${RUN_NONCE}."* ]] || return 1
   expected_parent="$(runtime_parent_path)"
   [[ "$(cd "$(dirname "$WORK_DIR")" && pwd -P)" == "$expected_parent" ]] || return 1
-  [[ "$(stat -c '%u' "$WORK_DIR")" == "$(id -u)" ]] || return 1
+  [[ "$(stat -c '%u' "$WORK_DIR")" == "0" ]] || return 1
   [[ "$(stat -c '%a' "$WORK_DIR")" == "700" ]] || return 1
   rm -rf -- "$WORK_DIR"
   [[ ! -e "$WORK_DIR" ]]
@@ -580,23 +626,62 @@ record_database_mappings() {
   done < <(scenario_rows)
 }
 
-validate_inputs() {
-  validate_static_inputs
+fixed_executable_available() {
+  [[ -f "$1" && -x "$1" ]]
+}
+
+orchestrator_uid() {
+  "$ID" -u
+}
+
+database_os_user_exists() {
+  "$ID" -u "$POSTGRES_OS_USER" >/dev/null 2>&1
+}
+
+postgres_file_readable() {
+  postgres_command 0 "$TEST" -r "$1"
+}
+
+validate_orchestrator_identity() {
+  fixed_executable_available "$ID" || fail runtime 69 "fixed id binary is unavailable"
+  [[ "$(orchestrator_uid)" == "0" ]] || fail runtime 76 "matrix runtime must execute as root"
+}
+
+validate_connection_inputs() {
+  local variable
   [[ "${MEMORYAI_AUTH_TEST_ALLOW:-}" == "I_UNDERSTAND_LOCAL_PG14" ]] || fail input 64 "explicit local test acknowledgement is required"
-  case "${PGHOST:-}" in
-    localhost|127.0.0.1|::1) ;;
-    *) fail input 64 "PGHOST must be loopback" ;;
-  esac
-  command -v "$PSQL" >/dev/null || fail input 69 "psql is unavailable"
-  command -v "$CREATEDB" >/dev/null || fail input 69 "createdb is unavailable"
-  command -v "$DROPDB" >/dev/null || fail input 69 "dropdb is unavailable"
-  command -v timeout >/dev/null || fail input 69 "timeout is unavailable"
+  [[ "${PGHOST:-}" == "$POSTGRES_HOST" ]] || fail input 64 "PGHOST must be exactly /var/run/postgresql"
+  [[ -z "${PGPORT+x}" || "$PGPORT" == "$POSTGRES_PORT" ]] || fail input 64 "PGPORT must be 5432 when set"
+  [[ -z "${PGUSER+x}" || "$PGUSER" == "$POSTGRES_USER" ]] || fail input 64 "PGUSER must be postgres when set"
+  for variable in DATABASE_URL PGPASSWORD PGPASSFILE PGSERVICE PGSERVICEFILE PGHOSTADDR PGDATABASE; do
+    [[ ! -v "$variable" ]] || fail input 64 "forbidden database connection input is set: $variable"
+  done
+}
+
+validate_fixed_database_runtime() {
+  local file
+  for file in "$RUNUSER" "$CLEAN_ENV" "$PSQL" "$CREATEDB" "$DROPDB" "$TIMEOUT" "$ID" "$TEST"; do
+    fixed_executable_available "$file" || fail input 69 "required fixed executable is unavailable: $file"
+  done
+  database_os_user_exists || fail input 69 "required postgres OS user is unavailable"
+}
+
+validate_inputs() {
+  local number file
+  validate_static_inputs
+  validate_connection_inputs
+  validate_fixed_database_runtime
+  for number in 001 002 003 004 005; do
+    file="$(find "$MIGRATION_DIR" -maxdepth 1 -type f -name "${number}_*.sql" -print -quit)"
+    postgres_file_readable "$file" || fail input 69 "migration $number is not readable by postgres"
+  done
+  postgres_file_readable "$MIGRATION_006" || fail input 69 "migration 006 is not readable by postgres"
 }
 
 validate_static_inputs() {
   local number count
   [[ -f "$MIGRATION_006" ]] || fail input 64 "006 migration is missing"
-  [[ -z "${DATABASE_URL:-}" ]] || fail input 64 "DATABASE_URL is forbidden for the matrix"
+  [[ -z "${DATABASE_URL+x}" ]] || fail input 64 "DATABASE_URL is forbidden for the matrix"
   [[ -n "$PSQL" && -n "$CREATEDB" && -n "$DROPDB" ]] || fail input 64 "database command plan contains an empty command"
   [[ "${#DB_PREFIX}" -eq 23 ]] || fail input 64 "database prefix length contract changed"
   [[ "$MAX_DATABASE_NAME_LENGTH" -le 63 ]] || fail input 64 "database name length proof exceeds PostgreSQL limit"
@@ -658,10 +743,20 @@ validate_oracle_contracts() {
   done
 }
 
-verify_postgresql_14() {
-  local version
-  version="$(admin_psql -At -c 'SHOW server_version_num;')"
-  [[ "$version" =~ ^14[0-9]{4}$ ]] || fail version 65 "PostgreSQL 14 is required, got $version"
+verify_postgresql_identity() {
+  local evidence delimiters version database session_identity current_identity socket_identity extra
+  evidence="$(admin_psql -At -c \
+    "SELECT current_setting('server_version_num'), current_database(), session_user, current_user, (pg_catalog.inet_client_addr() IS NULL)::text;")"
+  [[ "$evidence" != *$'\n'* && "$evidence" != *$'\r'* ]] || fail identity 65 "PostgreSQL startup identity evidence must contain exactly one record"
+  delimiters="${evidence//[!|]/}"
+  [[ "${#delimiters}" -eq 4 ]] || fail identity 65 "PostgreSQL startup identity evidence must contain exactly five fields"
+  IFS='|' read -r version database session_identity current_identity socket_identity extra <<<"$evidence"
+  [[ -z "$extra" && -n "$socket_identity" ]] || fail identity 65 "PostgreSQL startup identity evidence has an unexpected shape"
+  [[ "$version" == "140023" ]] || fail version 65 "PostgreSQL 14.23 is required"
+  [[ "$database" == "$ADMIN_DB" && "$database" != "memoryai" ]] || fail identity 65 "startup database must be postgres"
+  [[ "$session_identity" == "$POSTGRES_USER" ]] || fail identity 65 "session_user must be postgres"
+  [[ "$current_identity" == "$POSTGRES_USER" ]] || fail identity 65 "current_user must be postgres"
+  [[ "$socket_identity" == "t" ]] || fail identity 65 "startup connection must use a Unix socket"
 }
 
 create_database() {
@@ -750,18 +845,18 @@ rejection_contract() {
 run_external_timeout() {
   local timeout_seconds="$1"
   shift
-  timeout --signal=TERM --kill-after=1 "$timeout_seconds" "$@"
+  "$TIMEOUT" --signal=TERM --kill-after=1 "$timeout_seconds" "$@"
 }
 
 run_006_command() {
   local database="$1" stdout_file="$2" stderr_file="$3" timeout_seconds="$4"
   validate_test_database_name "$database"
   if [[ "$timeout_seconds" -gt 0 ]]; then
-    LC_ALL=C run_external_timeout "$timeout_seconds" \
-      "$PSQL" -X --no-psqlrc --quiet -v ON_ERROR_STOP=1 -v VERBOSITY=terse -d "$database" \
+    psql_command_with_timeout "$timeout_seconds" \
+      -X --no-psqlrc --quiet -v ON_ERROR_STOP=1 -v VERBOSITY=terse -d "$database" \
       >"$stdout_file" 2>"$stderr_file" <"$MIGRATION_006"
   else
-    LC_ALL=C psql_command -X --no-psqlrc --quiet -v ON_ERROR_STOP=1 -v VERBOSITY=terse -d "$database" \
+    psql_command -X --no-psqlrc --quiet -v ON_ERROR_STOP=1 -v VERBOSITY=terse -d "$database" \
       >"$stdout_file" 2>"$stderr_file" <"$MIGRATION_006"
   fi
 }
@@ -905,9 +1000,12 @@ run_lock_timeout_scenario() {
   before="$WORK_DIR/${scenario}.before"
   after="$WORK_DIR/${scenario}.after"
   catalog_snapshot "$database" "$before"
-  PGAPPNAME="$application_name" database_psql "$database" -c \
-    "BEGIN; LOCK TABLE public.auth_verification_challenges IN ACCESS EXCLUSIVE MODE; SELECT pg_catalog.pg_sleep(30);" \
-    >/dev/null 2>&1 &
+  database_psql "$database" -v "lock_app=$application_name" >/dev/null 2>&1 <<'LOCK_SQL' &
+SELECT pg_catalog.set_config('application_name', :'lock_app', false);
+BEGIN;
+LOCK TABLE public.auth_verification_challenges IN ACCESS EXCLUSIVE MODE;
+SELECT pg_catalog.pg_sleep(30);
+LOCK_SQL
   holder=$!
 
   for poll in {1..50}; do
@@ -1144,13 +1242,14 @@ list_scenarios() {
 run_matrix() {
   validate_static_inputs
   validate_all_database_names
+  validate_orchestrator_identity
   validate_inputs
   initialize_runtime
   RUN_ACTIVE=1
   record_state "STARTED run_id=$RUN_ID"
   record_database_mappings
   printf 'STATE_FILE=%s\n' "$STATE_FILE"
-  verify_postgresql_14
+  verify_postgresql_identity
   assert_all_database_names_absent
   assert_no_residual_databases || fail preexisting 74 "current nonce already has residual databases"
 

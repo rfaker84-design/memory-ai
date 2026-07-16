@@ -75,18 +75,225 @@ trap_before_source="$(trap -p EXIT)"
 source "$RUNNER"
 [[ "$(trap -p EXIT)" == "$trap_before_source" ]] || fail_test "sourcing the runner changed EXIT traps"
 ORIGINAL_RECORD_STATE="$(declare -f record_state)"
-ORIGINAL_PSQL_COMMAND="$(declare -f psql_command)"
+ORIGINAL_EXECUTE_POSTGRES_COMMAND="$(declare -f execute_postgres_command)"
 ORIGINAL_RUN_EXTERNAL_TIMEOUT="$(declare -f run_external_timeout)"
 RUN_ID="source-test-run"
 generate_run_nonce() { RUN_NONCE=33333333333333333333333333333333; }
 configure_run_identity
 validate_all_database_names
 validate_oracle_contracts
+(
+  NO_IO_LOG="$TMP_ROOT/list-dry-source-io.log"
+  : >"$NO_IO_LOG"
+  execute_postgres_command() { printf 'postgres-transport\n' >>"$NO_IO_LOG"; return 99; }
+  run_external_timeout() { printf 'external-timeout\n' >>"$NO_IO_LOG"; return 99; }
+  initialize_runtime() { printf 'runtime\n' >>"$NO_IO_LOG"; return 99; }
+  initialize_state_file() { printf 'state\n' >>"$NO_IO_LOG"; return 99; }
+  create_state_file() { printf 'state-file\n' >>"$NO_IO_LOG"; return 99; }
+  create_database_command() { printf 'createdb\n' >>"$NO_IO_LOG"; return 99; }
+  drop_database_command() { printf 'dropdb\n' >>"$NO_IO_LOG"; return 99; }
+  remove_work_directory() { printf 'remove-runtime\n' >>"$NO_IO_LOG"; return 99; }
+  record_state() { printf 'state-write\n' >>"$NO_IO_LOG"; return 99; }
+  unset DATABASE_URL PGPASSWORD PGPASSFILE PGSERVICE PGSERVICEFILE PGHOSTADDR PGDATABASE
+  list_scenarios >/dev/null
+  dry_run >/dev/null
+  [[ ! -s "$NO_IO_LOG" ]] || fail_test "--list/--dry-run invoked runtime, state, database, timeout, or cleanup I/O"
+)
 [[ "$(rejection_contract lock_timeout)" == $'-\tcanceling statement due to lock timeout\tcategory_only' ]] || \
   fail_test "lock timeout does not use its dedicated category-only ERROR contract"
 TEST_WORK="$TMP_ROOT/rejection-work"
 mkdir "$TEST_WORK"
 WORK_DIR="$TEST_WORK"
+
+POSTGRES_EXECUTABLE=""
+declare -a POSTGRES_CLI_ARGS=()
+POSTGRES_BOUNDARY_CALLS=0
+capture_postgres_boundary() {
+  local -a boundary_arguments=("$@")
+  [[ "${#boundary_arguments[@]}" -ge 12 ]] || fail_test "postgres boundary command is too short"
+  [[ "${boundary_arguments[0]}" == /usr/sbin/runuser ]] || fail_test "postgres boundary did not use fixed runuser"
+  [[ "${boundary_arguments[1]}" == --user && "${boundary_arguments[2]}" == postgres && "${boundary_arguments[3]}" == -- ]] || \
+    fail_test "postgres boundary did not select the postgres OS user"
+  [[ "${boundary_arguments[4]}" == /usr/bin/env && "${boundary_arguments[5]}" == -i ]] || \
+    fail_test "postgres boundary did not clear the environment"
+  [[ "${boundary_arguments[6]}" == HOME=/nonexistent ]] || fail_test "postgres child HOME changed"
+  [[ "${boundary_arguments[7]}" == PATH=/usr/bin:/bin ]] || fail_test "postgres child PATH changed"
+  [[ "${boundary_arguments[8]}" == PGHOST=/var/run/postgresql ]] || fail_test "postgres child socket changed"
+  [[ "${boundary_arguments[9]}" == PGPORT=5432 ]] || fail_test "postgres child port changed"
+  [[ "${boundary_arguments[10]}" == PGUSER=postgres ]] || fail_test "postgres child database user changed"
+  POSTGRES_EXECUTABLE="${boundary_arguments[11]}"
+  POSTGRES_CLI_ARGS=("${boundary_arguments[@]:12}")
+  case "$POSTGRES_EXECUTABLE" in
+    /usr/bin/psql|/usr/bin/createdb|/usr/bin/dropdb|/usr/bin/test) ;;
+    *) fail_test "unapproved postgres child executable: $POSTGRES_EXECUTABLE" ;;
+  esac
+  for forbidden in DATABASE_URL PGPASSWORD PGPASSFILE PGSERVICE PGSERVICEFILE PGHOSTADDR PGDATABASE; do
+    [[ " ${boundary_arguments[*]} " != *" ${forbidden}="* ]] || fail_test "postgres child leaked $forbidden"
+  done
+  POSTGRES_BOUNDARY_CALLS=$((POSTGRES_BOUNDARY_CALLS + 1))
+}
+
+# Formal mode keeps root orchestration while rejecting every non-fixed database
+# transport input before any runtime directory or database command is created.
+ORIGINAL_FIXED_EXECUTABLE_AVAILABLE="$(declare -f fixed_executable_available)"
+ORIGINAL_ORCHESTRATOR_UID="$(declare -f orchestrator_uid)"
+ORIGINAL_DATABASE_OS_USER_EXISTS="$(declare -f database_os_user_exists)"
+fixed_executable_available() { return 0; }
+orchestrator_uid() { printf '1000\n'; }
+set +e
+( validate_orchestrator_identity ) >/dev/null 2>&1
+non_root_rc=$?
+set -e
+assert_rc "$non_root_rc" 76 "non-root orchestrator"
+orchestrator_uid() { printf '0\n'; }
+validate_orchestrator_identity
+
+for rejected_host in '' localhost 127.0.0.1 ::1 /tmp /run/postgresql /var/run/postgresql/; do
+  set +e
+  (
+    MEMORYAI_AUTH_TEST_ALLOW=I_UNDERSTAND_LOCAL_PG14
+    PGHOST="$rejected_host"
+    unset PGPORT PGUSER DATABASE_URL PGPASSWORD PGPASSFILE PGSERVICE PGSERVICEFILE PGHOSTADDR PGDATABASE
+    validate_connection_inputs
+  ) >/dev/null 2>&1
+  rejected_host_rc=$?
+  set -e
+  assert_rc "$rejected_host_rc" 64 "rejected PGHOST $rejected_host"
+done
+(
+  MEMORYAI_AUTH_TEST_ALLOW=I_UNDERSTAND_LOCAL_PG14
+  PGHOST=/var/run/postgresql
+  unset PGPORT PGUSER DATABASE_URL PGPASSWORD PGPASSFILE PGSERVICE PGSERVICEFILE PGHOSTADDR PGDATABASE
+  validate_connection_inputs
+)
+for forbidden_variable in DATABASE_URL PGPASSWORD PGPASSFILE PGSERVICE PGSERVICEFILE PGHOSTADDR PGDATABASE; do
+  set +e
+  (
+    MEMORYAI_AUTH_TEST_ALLOW=I_UNDERSTAND_LOCAL_PG14
+    PGHOST=/var/run/postgresql
+    unset PGPORT PGUSER DATABASE_URL PGPASSWORD PGPASSFILE PGSERVICE PGSERVICEFILE PGHOSTADDR PGDATABASE
+    printf -v "$forbidden_variable" '%s' forbidden
+    export "$forbidden_variable"
+    validate_connection_inputs
+  ) >/dev/null 2>&1
+  forbidden_input_rc=$?
+  set -e
+  assert_rc "$forbidden_input_rc" 64 "forbidden connection input $forbidden_variable"
+done
+for empty_forbidden_variable in DATABASE_URL PGPASSWORD; do
+  set +e
+  (
+    MEMORYAI_AUTH_TEST_ALLOW=I_UNDERSTAND_LOCAL_PG14
+    PGHOST=/var/run/postgresql
+    unset PGPORT PGUSER DATABASE_URL PGPASSWORD PGPASSFILE PGSERVICE PGSERVICEFILE PGHOSTADDR PGDATABASE
+    printf -v "$empty_forbidden_variable" '%s' ''
+    export "$empty_forbidden_variable"
+    validate_connection_inputs
+  ) >/dev/null 2>&1
+  empty_forbidden_rc=$?
+  set -e
+  assert_rc "$empty_forbidden_rc" 64 "empty forbidden connection input $empty_forbidden_variable"
+done
+for fixed_input in PGPORT:5433 PGUSER:root; do
+  set +e
+  (
+    MEMORYAI_AUTH_TEST_ALLOW=I_UNDERSTAND_LOCAL_PG14
+    PGHOST=/var/run/postgresql
+    unset PGPORT PGUSER DATABASE_URL PGPASSWORD PGPASSFILE PGSERVICE PGSERVICEFILE PGHOSTADDR PGDATABASE
+    printf -v "${fixed_input%%:*}" '%s' "${fixed_input##*:}"
+    export "${fixed_input%%:*}"
+    validate_connection_inputs
+  ) >/dev/null 2>&1
+  fixed_input_rc=$?
+  set -e
+  assert_rc "$fixed_input_rc" 64 "wrong fixed connection input $fixed_input"
+done
+
+MISSING_FIXED_EXECUTABLE=""
+fixed_executable_available() { [[ "$1" != "$MISSING_FIXED_EXECUTABLE" ]]; }
+database_os_user_exists() { return 0; }
+for missing_binary in /usr/sbin/runuser /usr/bin/env /usr/bin/psql /usr/bin/createdb /usr/bin/dropdb /usr/bin/timeout /usr/bin/id /usr/bin/test; do
+  MISSING_FIXED_EXECUTABLE="$missing_binary"
+  set +e
+  ( validate_fixed_database_runtime ) >/dev/null 2>&1
+  missing_binary_rc=$?
+  set -e
+  assert_rc "$missing_binary_rc" 69 "missing fixed binary $missing_binary"
+done
+MISSING_FIXED_EXECUTABLE=""
+database_os_user_exists() { return 1; }
+set +e
+( validate_fixed_database_runtime ) >/dev/null 2>&1
+missing_postgres_user_rc=$?
+set -e
+assert_rc "$missing_postgres_user_rc" 69 "missing postgres OS user"
+eval "$ORIGINAL_FIXED_EXECUTABLE_AVAILABLE"
+eval "$ORIGINAL_ORCHESTRATOR_UID"
+eval "$ORIGINAL_DATABASE_OS_USER_EXISTS"
+
+IDENTITY_EVIDENCE='140023|postgres|postgres|postgres|t'
+IDENTITY_TRANSPORT_RC=0
+IDENTITY_BOUNDARY_LOG="$TMP_ROOT/identity-boundary.log"
+: >"$IDENTITY_BOUNDARY_LOG"
+execute_postgres_command() {
+  local identity_joined identity_sql="" identity_command_count=0 identity_index identity_token
+  capture_postgres_boundary "$@"
+  [[ "$POSTGRES_EXECUTABLE" == /usr/bin/psql ]] || return 97
+  identity_joined=" ${POSTGRES_CLI_ARGS[*]} "
+  [[ "$identity_joined" == *" -X "* && "$identity_joined" == *" --no-psqlrc "* && \
+     "$identity_joined" == *" -d postgres "* && "$identity_joined" == *" -At "* ]] || return 97
+  for ((identity_index=0; identity_index<${#POSTGRES_CLI_ARGS[@]}; identity_index++)); do
+    if [[ "${POSTGRES_CLI_ARGS[$identity_index]}" == -c ]]; then
+      identity_command_count=$((identity_command_count + 1))
+      [[ $((identity_index + 1)) -lt ${#POSTGRES_CLI_ARGS[@]} ]] || return 97
+      identity_sql="${POSTGRES_CLI_ARGS[$((identity_index + 1))]}"
+    fi
+  done
+  [[ "$identity_command_count" -eq 1 ]] || return 97
+  for identity_token in \
+    "current_setting('server_version_num')" "current_database()" session_user current_user \
+    "pg_catalog.inet_client_addr() IS NULL"; do
+    [[ "$identity_sql" == *"$identity_token"* ]] || return 97
+  done
+  [[ "$IDENTITY_TRANSPORT_RC" -eq 0 ]] || return "$IDENTITY_TRANSPORT_RC"
+  printf 'identity\n' >>"$IDENTITY_BOUNDARY_LOG"
+  printf '%s\n' "$IDENTITY_EVIDENCE"
+}
+verify_postgresql_identity
+[[ "$(wc -l <"$IDENTITY_BOUNDARY_LOG" | tr -d ' ')" == "1" ]] || \
+  fail_test "startup identity did not cross the postgres boundary exactly once"
+IDENTITY_TRANSPORT_RC=42
+set +e
+( set -e; verify_postgresql_identity ) >/dev/null 2>&1
+identity_transport_rc=$?
+set -e
+assert_rc "$identity_transport_rc" 42 "startup transport failure must preserve its original rc"
+IDENTITY_TRANSPORT_RC=0
+for bad_identity in \
+  '140022|postgres|postgres|postgres|t' \
+  '140023|memoryai|postgres|postgres|t' \
+  '140023|postgres|other|postgres|t' \
+  '140023|postgres|postgres|other|t' \
+  '140023|postgres|postgres|postgres|f' \
+  $'140023|postgres|postgres|postgres|t\n140023|postgres|postgres|postgres|t' \
+  '140023|postgres|postgres|postgres|t|extra' \
+  '140023|postgres|postgres|postgres|t|' \
+  '140023||postgres|postgres|t' \
+  ''; do
+  IDENTITY_EVIDENCE="$bad_identity"
+  set +e
+  ( verify_postgresql_identity ) >/dev/null 2>&1
+  bad_identity_rc=$?
+  set -e
+  assert_rc "$bad_identity_rc" 65 "startup identity parser $bad_identity"
+done
+IDENTITY_EVIDENCE='140023|postgres|postgres|postgres|t'
+execute_postgres_command() {
+  capture_postgres_boundary "$@"
+  [[ "$POSTGRES_EXECUTABLE" == /usr/bin/test && "${POSTGRES_CLI_ARGS[*]}" == "-r /staging/006.sql" ]]
+}
+postgres_file_readable /staging/006.sql || fail_test "staging readability did not use the postgres boundary"
+eval "$ORIGINAL_EXECUTE_POSTGRES_COMMAND"
 
 # Independent test oracles.  These do not call the runner's contract helpers;
 # a drift in either the formal contract or parser therefore fails the fake run.
@@ -254,7 +461,9 @@ verify_behavior_sql_oracle() {
 
 # Exact ERROR-record matching and SQL/CONTEXT pollution rejection.
 REJECTION_MODE=exact
-psql_command() {
+execute_postgres_command() {
+  capture_postgres_boundary "$@"
+  [[ "$POSTGRES_EXECUTABLE" == /usr/bin/psql ]] || return 97
   case "$REJECTION_MODE" in
     exact)
       printf 'ERROR: 006 challenge_id check failed: atttypid must be uuid, got 25\n' >&2 ;;
@@ -282,12 +491,14 @@ for mode in echoed_sql_other_error object_error_category_sql category_error_obje
   [[ "$rejection_rc" -ne 0 ]] || fail_test "pollution mode $mode incorrectly passed"
 done
 
-eval "$ORIGINAL_PSQL_COMMAND"
+eval "$ORIGINAL_EXECUTE_POSTGRES_COMMAND"
 
 # All 77 rejection scenarios execute the formal run_006_command wrapper and
 # exact ERROR parser.  Only the command transport is source-injected.
 ORACLE_CALLS=0
-psql_command() {
+execute_postgres_command() {
+  capture_postgres_boundary "$@"
+  [[ "$POSTGRES_EXECUTABLE" == /usr/bin/psql ]] || return 97
   [[ -n "${TEST_REJECTION_ERRORS[$CURRENT_REJECTION_ORACLE]:-}" ]] || return 97
   printf '%s\n' "${TEST_REJECTION_ERRORS[$CURRENT_REJECTION_ORACLE]}" >&2
   ORACLE_CALLS=$((ORACLE_CALLS + 1))
@@ -297,7 +508,7 @@ run_external_timeout() {
   local timeout_seconds="$1"
   shift
   [[ "$timeout_seconds" == 8 ]] || return 98
-  psql_command "${@:2}"
+  execute_postgres_command "$@"
 }
 for oracle_row in "${REJECTION_ORACLE_ROWS[@]}"; do
   IFS=$'\t' read -r oracle_scenario _oracle_object _oracle_category _oracle_mode <<<"$oracle_row"
@@ -310,26 +521,57 @@ for oracle_row in "${REJECTION_ORACLE_ROWS[@]}"; do
 done
 [[ "$ORACLE_CALLS" == 77 ]] || fail_test "formal parser did not execute all 77 rejection oracles"
 
-eval "$ORIGINAL_PSQL_COMMAND"
+eval "$ORIGINAL_EXECUTE_POSTGRES_COMMAND"
 eval "$ORIGINAL_RUN_EXTERNAL_TIMEOUT"
 
 # The command boundary itself is capped; the formal lock path keeps its fixed 8-second value.
 grep -Fq 'external_timeout=8' "$RUNNER" || fail_test "formal lock external timeout is not fixed at 8 seconds"
-timeout_bin="$TMP_ROOT/timeout-bin"
-mkdir "$timeout_bin"
-cat >"$timeout_bin/psql" <<'FAKE_TIMEOUT'
-#!/usr/bin/env bash
-sleep 5
-FAKE_TIMEOUT
-chmod +x "$timeout_bin/psql"
-ORIGINAL_PATH="$PATH"
-PATH="$timeout_bin:$PATH"
+run_external_timeout() {
+  local timeout_seconds="$1"
+  shift
+  [[ "$timeout_seconds" == 1 ]] || return 98
+  capture_postgres_boundary "$@"
+  [[ "$POSTGRES_EXECUTABLE" == /usr/bin/psql ]] || return 97
+  return 124
+}
 set +e
 run_006_command "$exact_db" "$TMP_ROOT/timeout.stdout" "$TMP_ROOT/timeout.stderr" 1
 external_timeout_rc=$?
 set -e
-PATH="$ORIGINAL_PATH"
 assert_rc "$external_timeout_rc" 124 "external timeout command boundary"
+eval "$ORIGINAL_RUN_EXTERNAL_TIMEOUT"
+
+# Every formal database wrapper, including cleanup, crosses the identical
+# runuser + env -i boundary.  The fake transport records only argv and never
+# opens a socket.
+BOUNDARY_LOG="$TMP_ROOT/postgres-boundary.log"
+: >"$BOUNDARY_LOG"
+execute_postgres_command() {
+  local joined
+  capture_postgres_boundary "$@"
+  joined=" ${POSTGRES_CLI_ARGS[*]} "
+  printf '%s\t%s\n' "$POSTGRES_EXECUTABLE" "$joined" >>"$BOUNDARY_LOG"
+  if [[ "$POSTGRES_EXECUTABLE" == /usr/bin/psql ]]; then
+    if [[ "$joined" == *"SELECT count(*)"* ]]; then printf '0\n'; fi
+    return 0
+  fi
+  return 0
+}
+record_state() { :; }
+boundary_db="${SCENARIO_DATABASES[challenge_id_nullable]}"
+create_database_command "$boundary_db"
+drop_database_command "$boundary_db"
+admin_psql -At -c 'SELECT 1;' >/dev/null
+database_psql "$boundary_db" -At -c 'SELECT 1;' >/dev/null
+CREATED_DATABASES=("$boundary_db")
+cleanup_database "$boundary_db" || fail_test "formal cleanup boundary fake failed"
+grep -Fq $'/usr/bin/createdb\t' "$BOUNDARY_LOG" || fail_test "createdb bypassed the postgres boundary"
+grep -Fq $'/usr/bin/dropdb\t' "$BOUNDARY_LOG" || fail_test "dropdb bypassed the postgres boundary"
+grep -Fq $'/usr/bin/psql\t' "$BOUNDARY_LOG" || fail_test "psql bypassed the postgres boundary"
+grep -Fq 'pg_terminate_backend' "$BOUNDARY_LOG" || fail_test "cleanup terminate bypassed the postgres boundary"
+grep -Fq 'pg_stat_activity' "$BOUNDARY_LOG" || fail_test "cleanup connection check bypassed the postgres boundary"
+grep -Fq 'pg_database' "$BOUNDARY_LOG" || fail_test "cleanup existence check bypassed the postgres boundary"
+eval "$ORIGINAL_EXECUTE_POSTGRES_COMMAND"
 
 # cleanup_or_fail returns exactly 75 for each failure class.
 CLEANUP_STATE="$TMP_ROOT/cleanup.state"
@@ -425,9 +667,12 @@ apply_006() { :; }
 run_sql() { :; }
 catalog_snapshot() { printf 'catalog-snapshot\n' >"$2"; }
 cleanup_or_fail() { remove_created_database "$1"; CLEANUP_COUNT=$((CLEANUP_COUNT + 1)); return 0; }
-psql_command() {
-  local joined=" $* "
-  if [[ "$joined" == *"pg_sleep(30)"* ]]; then
+execute_postgres_command() {
+  local joined behavior_result
+  capture_postgres_boundary "$@"
+  [[ "$POSTGRES_EXECUTABLE" == /usr/bin/psql ]] || return 97
+  joined=" ${POSTGRES_CLI_ARGS[*]} "
+  if [[ "$joined" == *" lock_app=memoryai_auth_matrix_lock_"* && "$joined" != *" -c "* ]]; then
     trap 'rm -f -- "$HOLDER_MARKER"; exit 0' TERM INT EXIT
     : >"$HOLDER_MARKER"
     sleep 4
@@ -442,8 +687,7 @@ psql_command() {
     return 1
   fi
   if [[ -n "$CURRENT_BEHAVIOR_ORACLE" ]]; then
-    local behavior_result
-    extract_unique_command_sql "$@" || return $?
+    extract_unique_command_sql "${POSTGRES_CLI_ARGS[@]}" || return $?
     verify_behavior_sql_oracle "$CURRENT_BEHAVIOR_ORACLE" "$TEST_EXTRACTED_SQL" || return 94
     BEHAVIOR_SQL_ORACLE_TOTAL=$((BEHAVIOR_SQL_ORACLE_TOTAL + 1))
     behavior_result="${TEST_FORCE_BEHAVIOR_RESULT:-${TEST_BEHAVIOR_RESULTS[$CURRENT_BEHAVIOR_ORACLE]:-}}"
@@ -466,7 +710,7 @@ run_external_timeout() {
   shift
   [[ "$timeout_seconds" == 8 ]] || return 98
   sleep 2
-  psql_command "${@:2}"
+  execute_postgres_command "$@"
 }
 
 : >"$DISPATCH_STATE"
