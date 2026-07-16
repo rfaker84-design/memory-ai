@@ -234,7 +234,7 @@ eval "$ORIGINAL_FIXED_EXECUTABLE_AVAILABLE"
 eval "$ORIGINAL_ORCHESTRATOR_UID"
 eval "$ORIGINAL_DATABASE_OS_USER_EXISTS"
 
-IDENTITY_EVIDENCE='140023|postgres|postgres|postgres|t'
+IDENTITY_EVIDENCE='140023|postgres|postgres|postgres|unix_socket'
 IDENTITY_STDERR=''
 IDENTITY_TRANSPORT_RC=0
 IDENTITY_BOUNDARY_LOG="$TMP_ROOT/identity-boundary.log"
@@ -268,7 +268,7 @@ execute_postgres_command() {
   [[ "$identity_command_count" -eq 1 ]] || return 97
   for identity_token in \
     "current_setting('server_version_num')" "current_database()" session_user current_user \
-    "pg_catalog.inet_client_addr() IS NULL"; do
+    "CASE WHEN pg_catalog.inet_client_addr() IS NULL THEN 'unix_socket' ELSE 'tcp' END"; do
     [[ "$identity_sql" == *"$identity_token"* ]] || return 97
   done
   printf 'identity\n' >>"$IDENTITY_BOUNDARY_LOG"
@@ -326,23 +326,29 @@ run_identity_probe_case() {
   rm -rf -- "$case_dir"
 }
 
-run_identity_probe_case valid '140023|postgres|postgres|postgres|t' '' 0 0
-run_identity_probe_case warning '140023|postgres|postgres|postgres|t' 'WARNING: fake startup warning' 0 "$STARTUP_VALIDATION_RC"
-run_identity_probe_case notice '140023|postgres|postgres|postgres|t' 'NOTICE: fake startup notice' 0 "$STARTUP_VALIDATION_RC"
-run_identity_probe_case newline '140023|postgres|postgres|postgres|t' $'\n' 0 "$STARTUP_VALIDATION_RC"
-run_identity_probe_case space '140023|postgres|postgres|postgres|t' ' ' 0 "$STARTUP_VALIDATION_RC"
-run_identity_probe_case transport42 'not|valid|identity|data|f' 'WARNING: must not override transport failure' 42 42
-run_identity_probe_case invalid_stdout '140022|postgres|postgres|postgres|t' '' 0 65
+run_identity_probe_case valid '140023|postgres|postgres|postgres|unix_socket' '' 0 0
+run_identity_probe_case warning '140023|postgres|postgres|postgres|unix_socket' 'WARNING: fake startup warning' 0 "$STARTUP_VALIDATION_RC"
+run_identity_probe_case notice '140023|postgres|postgres|postgres|unix_socket' 'NOTICE: fake startup notice' 0 "$STARTUP_VALIDATION_RC"
+run_identity_probe_case newline '140023|postgres|postgres|postgres|unix_socket' $'\n' 0 "$STARTUP_VALIDATION_RC"
+run_identity_probe_case space '140023|postgres|postgres|postgres|unix_socket' ' ' 0 "$STARTUP_VALIDATION_RC"
+run_identity_probe_case transport42 '140023|postgres|postgres|postgres|unix_socket' 'WARNING: must not override transport failure' 42 42
+run_identity_probe_case invalid_stdout '140022|postgres|postgres|postgres|unix_socket' '' 0 65
 
 for bad_identity in \
-  '140023|memoryai|postgres|postgres|t' \
-  '140023|postgres|other|postgres|t' \
-  '140023|postgres|postgres|other|t' \
-  '140023|postgres|postgres|postgres|f' \
-  $'140023|postgres|postgres|postgres|t\n140023|postgres|postgres|postgres|t' \
-  '140023|postgres|postgres|postgres|t|extra' \
-  '140023|postgres|postgres|postgres|t|' \
-  '140023||postgres|postgres|t' \
+  '140023|memoryai|postgres|postgres|unix_socket' \
+  '140023|postgres|other|postgres|unix_socket' \
+  '140023|postgres|postgres|other|unix_socket' \
+  '140023|postgres|postgres|postgres|tcp' \
+  '140023|postgres|postgres|postgres|t' \
+  '140023|postgres|postgres|postgres|true' \
+  '140023|postgres|postgres|postgres|false' \
+  '140023|postgres|postgres|postgres|UNIX_SOCKET' \
+  '140023|postgres|postgres|postgres|unix_socket ' \
+  $'140023|postgres|postgres|postgres|unix_socket\n140023|postgres|postgres|postgres|unix_socket' \
+  '140023|postgres|postgres|postgres|unix_socket|extra' \
+  '140023|postgres|postgres|postgres|unix_socket|' \
+  '140023|postgres|postgres|postgres|' \
+  '140023||postgres|postgres|unix_socket' \
   ''; do
   bad_identity_label="shape_$(printf '%s' "$bad_identity" | cksum | cut -d' ' -f1)"
   run_identity_probe_case "$bad_identity_label" "$bad_identity" '' 0 65
@@ -367,7 +373,7 @@ for cleanup_spec in EXIT:0 INT:130 TERM:143; do
     RUN_ACTIVE=0
     RUNTIME_READY=0
     FAILED_RECORDED=0
-    IDENTITY_EVIDENCE='140023|postgres|postgres|postgres|t'
+    IDENTITY_EVIDENCE='140023|postgres|postgres|postgres|unix_socket'
     IDENTITY_STDERR=''
     IDENTITY_TRANSPORT_RC=0
     remove_work_directory() {
@@ -401,7 +407,7 @@ chmod 700 "$POLLUTION_WORK"
 rm -f -- "$POLLUTION_DATABASE_MARKER"
 set +e
 (
-  IDENTITY_EVIDENCE='140023|postgres|postgres|postgres|t'
+  IDENTITY_EVIDENCE='140023|postgres|postgres|postgres|unix_socket'
   IDENTITY_STDERR='WARNING: startup pollution must remain private'
   IDENTITY_TRANSPORT_RC=0
   FAILED_RECORDED=0
@@ -434,7 +440,7 @@ assert_contains "$POLLUTION_STATE" "FAILED_startup_stderr_${STARTUP_VALIDATION_R
 ! grep -Fq 'startup pollution must remain private' "$TMP_ROOT/startup-pollution.log" || fail_test "pollution content leaked into the normal log"
 rm -rf -- "$POLLUTION_WORK"
 
-IDENTITY_EVIDENCE='140023|postgres|postgres|postgres|t'
+IDENTITY_EVIDENCE='140023|postgres|postgres|postgres|unix_socket'
 IDENTITY_STDERR=''
 IDENTITY_TRANSPORT_RC=0
 execute_postgres_command() {

@@ -785,7 +785,7 @@ verify_postgresql_identity() {
   [[ "$stdout_file" != "$stderr_file" ]] || fail startup_probe "$STARTUP_VALIDATION_RC" "PostgreSQL startup stdout and stderr files must be distinct"
 
   if admin_psql -At -c \
-    "SELECT current_setting('server_version_num'), current_database(), session_user, current_user, (pg_catalog.inet_client_addr() IS NULL)::text;" \
+    "SELECT current_setting('server_version_num'), current_database(), session_user, current_user, CASE WHEN pg_catalog.inet_client_addr() IS NULL THEN 'unix_socket' ELSE 'tcp' END;" \
     >"$stdout_file" 2>"$stderr_file"; then
     probe_rc=0
   else
@@ -820,7 +820,7 @@ verify_postgresql_identity() {
   [[ "$database" == "$ADMIN_DB" && "$database" != "memoryai" ]] || fail identity 65 "startup database must be postgres"
   [[ "$session_identity" == "$POSTGRES_USER" ]] || fail identity 65 "session_user must be postgres"
   [[ "$current_identity" == "$POSTGRES_USER" ]] || fail identity 65 "current_user must be postgres"
-  [[ "$socket_identity" == "t" ]] || fail identity 65 "startup connection must use a Unix socket"
+  [[ "$socket_identity" == "unix_socket" ]] || fail identity 65 "startup connection must use the exact unix_socket marker"
 }
 
 create_database() {

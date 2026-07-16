@@ -257,11 +257,13 @@ function assertMatrixRunnerStructure(runner) {
   assert.match(runner, /database_os_user_exists \|\| fail input 69 "required postgres OS user is unavailable"/);
   for (const startupToken of [
     "current_setting('server_version_num')", "current_database()", "session_user", "current_user",
-    "pg_catalog.inet_client_addr() IS NULL", '[[ "$version" == "140023" ]]',
+    "CASE WHEN pg_catalog.inet_client_addr() IS NULL THEN 'unix_socket' ELSE 'tcp' END",
+    '[[ "$version" == "140023" ]]',
     '[[ "$database" == "$ADMIN_DB" && "$database" != "memoryai" ]]',
     '[[ "$session_identity" == "$POSTGRES_USER" ]]', '[[ "$current_identity" == "$POSTGRES_USER" ]]',
-    '[[ "$socket_identity" == "t" ]]',
+    '[[ "$socket_identity" == "unix_socket" ]]',
   ]) assert.ok(runner.includes(startupToken), `runner missing startup identity contract ${startupToken}`);
+  assert.doesNotMatch(runner, /\(pg_catalog\.inet_client_addr\(\) IS NULL\)::text/);
   assert.match(runner, /database_psql "\$database" -v "lock_app=\$application_name"/);
   assert.match(runner, /set_config\('application_name', :'lock_app', false\)/);
   assert.doesNotMatch(runner, /PGAPPNAME=/);
