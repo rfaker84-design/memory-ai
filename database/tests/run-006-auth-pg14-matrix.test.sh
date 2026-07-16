@@ -173,6 +173,87 @@ declare -A TEST_BEHAVIOR_RESULTS=(
 )
 [[ "${#TEST_BEHAVIOR_RESULTS[@]}" == 33 ]] || fail_test "independent behavior oracle count is not 33"
 
+# Independent label -> SQL boundary oracle.  Every row freezes all twelve
+# inserted values, so a target drift or an unrelated boundary-changing value
+# cannot be hidden behind an otherwise correct constraint name.
+declare -a TEST_BEHAVIOR_SQL_ROWS=(
+  $'phone_hash_len63\trepeat(\'a\',63)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'phone_hash_len64\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'phone_hash_len65\trepeat(\'a\',65)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'phone_hash_nonhex\trepeat(\'g\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'phone_hash_uppercase\trepeat(\'A\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'code_digest_len63\trepeat(\'a\',64)\trepeat(\'a\',63)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'code_digest_len64\trepeat(\'a\',64)\trepeat(\'a\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'code_digest_len65\trepeat(\'a\',64)\trepeat(\'a\',65)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'code_digest_nonhex\trepeat(\'a\',64)\trepeat(\'g\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'code_digest_uppercase\trepeat(\'a\',64)\trepeat(\'A\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'request_ip_hash_len63\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'a\',63)\tNULL'
+  $'request_ip_hash_len64\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'a\',64)\tNULL'
+  $'request_ip_hash_len65\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'a\',65)\tNULL'
+  $'request_ip_hash_nonhex\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'g\',64)\tNULL'
+  $'request_ip_hash_uppercase\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'A\',64)\tNULL'
+  $'purpose_sign_in\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'purpose_other\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'other\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'attempts_negative\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t-1\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'max_attempts_zero\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t0\tNULL\trepeat(\'c\',64)\tNULL'
+  $'attempts_over_max\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t6\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'attempts_zero\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'attempts_equal_max\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t5\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'timing_resend_equal_created\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'timing_expires_equal_resend\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'timing_strictly_increasing\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'consumed_null\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'consumed_equal_created\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\trepeat(\'c\',64)\tNULL'
+  $'consumed_before_created\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tTIMESTAMPTZ \'2025-12-31 23:59:59+00\'\trepeat(\'c\',64)\tNULL'
+  $'provider_null\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\tNULL'
+  $'provider_len1\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\t\'x\''
+  $'provider_len128\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\trepeat(\'x\',128)'
+  $'provider_empty\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\t\'\''
+  $'provider_len129\trepeat(\'a\',64)\trepeat(\'b\',64)\t\'sign_in\'\tTIMESTAMPTZ \'2026-01-01 00:00:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:01:00+00\'\tTIMESTAMPTZ \'2026-01-01 00:05:00+00\'\t0\t5\tNULL\trepeat(\'c\',64)\trepeat(\'x\',129)'
+)
+[[ "${#TEST_BEHAVIOR_SQL_ROWS[@]}" == 33 ]] || fail_test "independent behavior SQL oracle count is not 33"
+
+TEST_EXTRACTED_SQL=""
+extract_unique_command_sql() {
+  local -a arguments=("$@")
+  local index command_count=0
+  TEST_EXTRACTED_SQL=""
+  for ((index=0; index<${#arguments[@]}; index++)); do
+    if [[ "${arguments[$index]}" == "-c" ]]; then
+      command_count=$((command_count + 1))
+      [[ $((index + 1)) -lt ${#arguments[@]} ]] || return 93
+      TEST_EXTRACTED_SQL="${arguments[$((index + 1))]}"
+    fi
+  done
+  [[ "$command_count" -eq 1 && -n "$TEST_EXTRACTED_SQL" ]] || return 93
+}
+
+normalize_test_sql() {
+  printf '%s' "$1" | tr -d '[:space:]'
+}
+
+expected_behavior_sql() {
+  local oracle_wanted_label="$1" oracle_row oracle_row_label oracle_phone oracle_code oracle_purpose oracle_created
+  local oracle_resend oracle_expires oracle_attempts oracle_max_attempts oracle_consumed oracle_ip oracle_provider oracle_matches=0
+  for oracle_row in "${TEST_BEHAVIOR_SQL_ROWS[@]}"; do
+    IFS=$'\t' read -r oracle_row_label oracle_phone oracle_code oracle_purpose oracle_created oracle_resend oracle_expires \
+      oracle_attempts oracle_max_attempts oracle_consumed oracle_ip oracle_provider <<<"$oracle_row"
+    if [[ "$oracle_row_label" == "$oracle_wanted_label" ]]; then
+      oracle_matches=$((oracle_matches + 1))
+      printf 'INSERT INTO public.auth_verification_challenges (phone_hash,code_digest,purpose,created_at,updated_at,resend_after,expires_at,attempts,max_attempts,consumed_at,request_ip_hash,provider_request_id) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);' \
+        "$oracle_phone" "$oracle_code" "$oracle_purpose" "$oracle_created" "$oracle_created" "$oracle_resend" "$oracle_expires" \
+        "$oracle_attempts" "$oracle_max_attempts" "$oracle_consumed" "$oracle_ip" "$oracle_provider"
+    fi
+  done
+  [[ "$oracle_matches" -eq 1 ]]
+}
+
+verify_behavior_sql_oracle() {
+  local oracle_verify_label="$1" oracle_actual_sql="$2" oracle_expected_sql
+  oracle_expected_sql="$(expected_behavior_sql "$oracle_verify_label")" || return 94
+  [[ "$(normalize_test_sql "$oracle_actual_sql")" == "$(normalize_test_sql "$oracle_expected_sql")" ]] || return 94
+}
+
 # Exact ERROR-record matching and SQL/CONTEXT pollution rejection.
 REJECTION_MODE=exact
 psql_command() {
@@ -336,6 +417,8 @@ CLEANUP_COUNT=0
 BEHAVIOR_TOTAL=0
 BEHAVIOR_VALID=0
 BEHAVIOR_INVALID=0
+BEHAVIOR_SQL_ORACLE_TOTAL=0
+TEST_FORCE_BEHAVIOR_RESULT=""
 DISPATCH_REJECTION_TOTAL=0
 record_state() { printf '%s\n' "$1" >>"$DISPATCH_STATE"; }
 create_database() { validate_test_database_name "$1"; CREATED_DATABASES+=("$1"); CREATE_COUNT=$((CREATE_COUNT + 1)); }
@@ -362,7 +445,10 @@ psql_command() {
   fi
   if [[ -n "$CURRENT_BEHAVIOR_ORACLE" ]]; then
     local behavior_result
-    behavior_result="${TEST_BEHAVIOR_RESULTS[$CURRENT_BEHAVIOR_ORACLE]:-}"
+    extract_unique_command_sql "$@" || return $?
+    verify_behavior_sql_oracle "$CURRENT_BEHAVIOR_ORACLE" "$TEST_EXTRACTED_SQL" || return 94
+    BEHAVIOR_SQL_ORACLE_TOTAL=$((BEHAVIOR_SQL_ORACLE_TOTAL + 1))
+    behavior_result="${TEST_FORCE_BEHAVIOR_RESULT:-${TEST_BEHAVIOR_RESULTS[$CURRENT_BEHAVIOR_ORACLE]:-}}"
     [[ -n "$behavior_result" ]] || return 96
     BEHAVIOR_TOTAL=$((BEHAVIOR_TOTAL + 1))
     if [[ "$behavior_result" == PASS ]]; then
@@ -395,23 +481,146 @@ dispatch_all_scenarios
 [[ "$CREATE_COUNT" == "79" && "$CLEANUP_COUNT" == "79" ]] || fail_test "dispatcher create/cleanup count mismatch"
 [[ "$BEHAVIOR_TOTAL" == "33" && "$BEHAVIOR_VALID" == "12" && "$BEHAVIOR_INVALID" == "21" ]] || \
   fail_test "behavior counts are not 33/12/21"
+[[ "$BEHAVIOR_SQL_ORACLE_TOTAL" == "33" ]] || fail_test "not all 33 behavior -c SQL statements passed the independent oracle"
 [[ "$(grep -c '^BEHAVIOR_CASE_CALLED ' "$DISPATCH_STATE")" == "33" ]] || fail_test "not all behavior cases executed"
 [[ ! -e "$HOLDER_MARKER" ]] || fail_test "lock holder marker remained"
 
-# A test-side oracle drift must be caught by the formal behavior parser.
-saved_purpose_other="${TEST_BEHAVIOR_RESULTS[purpose_other]}"
-TEST_BEHAVIOR_RESULTS[purpose_other]='ERROR: insert different_constraint violates check constraint'
+# SQL drift probes call the same extraction and SQL-oracle functions as the
+# complete fake dispatcher.  A SQL mismatch returns 94 without fabricating a
+# constraint ERROR.
+[[ "$(normalize_test_sql "$(expected_behavior_sql attempts_negative)")" != \
+   "$(normalize_test_sql "$(expected_behavior_sql attempts_zero)")" ]] || \
+  fail_test "independent attempts SQL fixtures collapsed to the same boundary"
+attempts_zero_drift_sql="$(expected_behavior_sql attempts_zero)"
+hash_len64_drift_sql="$(expected_behavior_sql phone_hash_len64)"
+timing_strict_drift_sql="$(expected_behavior_sql timing_strictly_increasing)"
+consumed_equal_drift_sql="$(expected_behavior_sql consumed_equal_created)"
+provider_len129_drift_sql="$(expected_behavior_sql provider_len129)"
+wrong_column_sql="$(expected_behavior_sql phone_hash_len63)"
+wrong_column_sql="${wrong_column_sql/phone_hash,code_digest/wrong_phone_hash,code_digest}"
+wrong_unrelated_value_sql="$(expected_behavior_sql attempts_negative)"
+wrong_unrelated_value_sql="$(printf '%s' "$wrong_unrelated_value_sql" | sed "0,/repeat('b',64)/s//repeat('b',63)/")"
+missing_field_sql="$(expected_behavior_sql provider_len128)"
+missing_field_sql="${missing_field_sql/,provider_request_id)/)}"
+missing_field_sql="${missing_field_sql/,repeat('x',128));/);}"
+[[ "$wrong_unrelated_value_sql" != "$(expected_behavior_sql attempts_negative)" ]] || fail_test "unrelated-value SQL drift fixture did not change"
+[[ "$missing_field_sql" != "$(expected_behavior_sql provider_len128)" ]] || fail_test "missing-field SQL drift fixture did not change"
+[[ -z "$CURRENT_REJECTION_ORACLE" ]] || fail_test "SQL drift started with a rejection oracle active"
+: >"$TMP_ROOT/sql-probe.stderr"
+CURRENT_BEHAVIOR_ORACLE=attempts_negative
 set +e
-(
-  run_behavior_insert "${SCENARIO_DATABASES[constraint_behavior]}" purpose_other ck_auth_challenge_purpose \
-    "repeat('a',64)" "repeat('b',64)" "'other'" \
-    "TIMESTAMPTZ '2026-01-01 00:00:00+00'" "TIMESTAMPTZ '2026-01-01 00:01:00+00'" \
-    "TIMESTAMPTZ '2026-01-01 00:05:00+00'" 0 5 NULL "repeat('c',64)" NULL
-) >/dev/null 2>&1
-behavior_oracle_drift_rc=$?
+database_psql "${SCENARIO_DATABASES[constraint_behavior]}" -c "$attempts_zero_drift_sql" >/dev/null 2>"$TMP_ROOT/sql-probe.stderr"
+sql_drift_attempts_rc=$?
 set -e
-TEST_BEHAVIOR_RESULTS[purpose_other]="$saved_purpose_other"
-[[ "$behavior_oracle_drift_rc" -ne 0 ]] || fail_test "behavior parser accepted an independent oracle mismatch"
+CURRENT_BEHAVIOR_ORACLE=""
+assert_rc "$sql_drift_attempts_rc" 94 "attempts_negative uses attempts=0"
+[[ ! -s "$TMP_ROOT/sql-probe.stderr" ]] || fail_test "attempts SQL drift generated a fake constraint ERROR"
+
+: >"$TMP_ROOT/sql-probe.stderr"
+CURRENT_BEHAVIOR_ORACLE=phone_hash_len63
+set +e
+database_psql "${SCENARIO_DATABASES[constraint_behavior]}" -c "$hash_len64_drift_sql" >/dev/null 2>"$TMP_ROOT/sql-probe.stderr"
+sql_drift_hash_rc=$?
+set -e
+CURRENT_BEHAVIOR_ORACLE=""
+assert_rc "$sql_drift_hash_rc" 94 "phone_hash_len63 uses length 64"
+[[ ! -s "$TMP_ROOT/sql-probe.stderr" ]] || fail_test "hash SQL drift generated a fake constraint ERROR"
+
+: >"$TMP_ROOT/sql-probe.stderr"
+CURRENT_BEHAVIOR_ORACLE=timing_resend_equal_created
+set +e
+database_psql "${SCENARIO_DATABASES[constraint_behavior]}" -c "$timing_strict_drift_sql" >/dev/null 2>"$TMP_ROOT/sql-probe.stderr"
+sql_drift_timing_rc=$?
+set -e
+CURRENT_BEHAVIOR_ORACLE=""
+assert_rc "$sql_drift_timing_rc" 94 "timing equality uses strictly increasing timestamps"
+[[ ! -s "$TMP_ROOT/sql-probe.stderr" ]] || fail_test "timing SQL drift generated a fake constraint ERROR"
+
+: >"$TMP_ROOT/sql-probe.stderr"
+CURRENT_BEHAVIOR_ORACLE=consumed_before_created
+set +e
+database_psql "${SCENARIO_DATABASES[constraint_behavior]}" -c "$consumed_equal_drift_sql" >/dev/null 2>"$TMP_ROOT/sql-probe.stderr"
+sql_drift_consumed_rc=$?
+set -e
+CURRENT_BEHAVIOR_ORACLE=""
+assert_rc "$sql_drift_consumed_rc" 94 "consumed_before uses created_at"
+[[ ! -s "$TMP_ROOT/sql-probe.stderr" ]] || fail_test "consumed SQL drift generated a fake constraint ERROR"
+
+: >"$TMP_ROOT/sql-probe.stderr"
+CURRENT_BEHAVIOR_ORACLE=provider_len128
+set +e
+database_psql "${SCENARIO_DATABASES[constraint_behavior]}" -c "$provider_len129_drift_sql" >/dev/null 2>"$TMP_ROOT/sql-probe.stderr"
+sql_drift_provider_rc=$?
+set -e
+CURRENT_BEHAVIOR_ORACLE=""
+assert_rc "$sql_drift_provider_rc" 94 "provider length 128 uses 129"
+[[ ! -s "$TMP_ROOT/sql-probe.stderr" ]] || fail_test "provider SQL drift generated a fake constraint ERROR"
+
+for structural_drift in \
+  "phone_hash_len63|$wrong_column_sql" \
+  "attempts_negative|$wrong_unrelated_value_sql" \
+  "provider_len128|$missing_field_sql"; do
+  structural_label="${structural_drift%%|*}"
+  structural_sql="${structural_drift#*|}"
+  : >"$TMP_ROOT/sql-probe.stderr"
+  CURRENT_BEHAVIOR_ORACLE="$structural_label"
+  set +e
+  database_psql "${SCENARIO_DATABASES[constraint_behavior]}" -c "$structural_sql" >/dev/null 2>"$TMP_ROOT/sql-probe.stderr"
+  structural_drift_rc=$?
+  set -e
+  CURRENT_BEHAVIOR_ORACLE=""
+  assert_rc "$structural_drift_rc" 94 "$structural_label structural SQL drift"
+  [[ ! -s "$TMP_ROOT/sql-probe.stderr" ]] || fail_test "$structural_label structural drift generated a fake constraint ERROR"
+done
+
+# The outer command wrapper requires exactly one -c SQL argument.
+CURRENT_BEHAVIOR_ORACLE=purpose_sign_in
+set +e
+psql_command -d "${SCENARIO_DATABASES[constraint_behavior]}" >/dev/null 2>&1
+missing_command_rc=$?
+psql_command -c "$(expected_behavior_sql purpose_sign_in)" -c "$(expected_behavior_sql purpose_sign_in)" >/dev/null 2>&1
+duplicate_command_rc=$?
+set -e
+CURRENT_BEHAVIOR_ORACLE=""
+assert_rc "$missing_command_rc" 93 "missing -c SQL"
+assert_rc "$duplicate_command_rc" 93 "duplicate -c SQL"
+
+run_test_behavior_insert() {
+  local wanted="$1" caller_expectation="$2" row label phone code purpose created resend expires attempts max_attempts consumed ip provider matches=0
+  for row in "${TEST_BEHAVIOR_SQL_ROWS[@]}"; do
+    IFS=$'\t' read -r label phone code purpose created resend expires attempts max_attempts consumed ip provider <<<"$row"
+    if [[ "$label" == "$wanted" ]]; then
+      matches=$((matches + 1))
+      run_behavior_insert "${SCENARIO_DATABASES[constraint_behavior]}" "$label" "$caller_expectation" \
+        "$phone" "$code" "$purpose" "$created" "$resend" "$expires" "$attempts" "$max_attempts" "$consumed" "$ip" "$provider"
+    fi
+  done
+  [[ "$matches" -eq 1 ]]
+}
+
+# PASS/REJECT and constraint drift must traverse the formal database wrapper,
+# independent SQL oracle, and formal behavior ERROR parser.
+TEST_FORCE_BEHAVIOR_RESULT='ERROR: insert ck_auth_challenge_purpose violates check constraint'
+set +e
+( set -e; run_test_behavior_insert purpose_sign_in PASS ) >/dev/null 2>&1
+valid_returned_constraint_rc=$?
+set -e
+[[ "$valid_returned_constraint_rc" -ne 0 ]] || fail_test "legal behavior accepted a forced constraint ERROR"
+
+TEST_FORCE_BEHAVIOR_RESULT=PASS
+set +e
+( set -e; run_test_behavior_insert purpose_other ck_auth_challenge_purpose ) >/dev/null 2>&1
+invalid_returned_success_rc=$?
+set -e
+[[ "$invalid_returned_success_rc" -ne 0 ]] || fail_test "invalid behavior accepted forced success"
+
+TEST_FORCE_BEHAVIOR_RESULT='ERROR: insert different_constraint violates check constraint'
+set +e
+( set -e; run_test_behavior_insert purpose_other ck_auth_challenge_purpose ) >/dev/null 2>&1
+wrong_constraint_rc=$?
+set -e
+[[ "$wrong_constraint_rc" -ne 0 ]] || fail_test "behavior parser accepted the wrong constraint"
+TEST_FORCE_BEHAVIOR_RESULT=""
 
 # INT/TERM preserve their codes while EXIT cleanup runs; a clean EXIT records COMPLETE.
 SIGNAL_STATE="$TMP_ROOT/signal.state"
