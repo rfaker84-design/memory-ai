@@ -30,6 +30,8 @@ STATE_DEVICE_INODE=""
 declare -a CREATED_DATABASES=()
 declare -A SCENARIO_DATABASES=()
 DERIVED_DATABASE=""
+CURRENT_REJECTION_ORACLE=""
+CURRENT_BEHAVIOR_ORACLE=""
 
 readonly -a CHALLENGE_SCENARIOS=(
   challenge_id_type
@@ -65,6 +67,125 @@ readonly -a BEHAVIOR_CASES=(
   timing_resend_equal_created timing_expires_equal_resend timing_strictly_increasing
   consumed_null consumed_equal_created consumed_before_created
   provider_null provider_len1 provider_len128 provider_empty provider_len129
+)
+
+# Each expected rejection has its own frozen server-ERROR oracle.  The lock
+# timeout is deliberately category-only: PostgreSQL's terse lock-timeout ERROR
+# does not promise to repeat the blocked relation name.
+readonly -a REJECTION_ORACLE_ROWS=(
+  $'challenge_id_type\tchallenge_id\tatttypid must be uuid\tobject_and_category'
+  $'challenge_id_nullable\tchallenge_id\tattnotnull must be true\tobject_and_category'
+  $'challenge_id_missing_default\tchallenge_id\tdefault is missing\tobject_and_category'
+  $'challenge_id_wrong_default\tchallenge_id\tdefault must directly call pg_catalog.gen_random_uuid()\tobject_and_category'
+  $'challenge_id_missing_primary_key\tchallenge_id\tprimary key count must be 1\tobject_and_category'
+  $'challenge_id_composite_primary_key\tchallenge_id\tprimary key conkey must contain challenge_id only\tobject_and_category'
+  $'ck_auth_challenge_phone_hash__wrong_relation\tck_auth_challenge_phone_hash\thas wrong relation\tobject_and_category'
+  $'ck_auth_challenge_phone_hash__duplicate_name\tck_auth_challenge_phone_hash\thas duplicate names\tobject_and_category'
+  $'ck_auth_challenge_phone_hash__wrong_conkey\tck_auth_challenge_phone_hash\thas wrong conkey\tobject_and_category'
+  $'ck_auth_challenge_phone_hash__not_valid\tck_auth_challenge_phone_hash\tis not validated\tobject_and_category'
+  $'ck_auth_challenge_phone_hash__no_inherit\tck_auth_challenge_phone_hash\tunexpectedly uses NO INHERIT\tobject_and_category'
+  $'ck_auth_challenge_phone_hash__wrong_expression\tck_auth_challenge_phone_hash\thas wrong normalized expression\tobject_and_category'
+  $'ck_auth_challenge_code_digest__wrong_relation\tck_auth_challenge_code_digest\thas wrong relation\tobject_and_category'
+  $'ck_auth_challenge_code_digest__duplicate_name\tck_auth_challenge_code_digest\thas duplicate names\tobject_and_category'
+  $'ck_auth_challenge_code_digest__wrong_conkey\tck_auth_challenge_code_digest\thas wrong conkey\tobject_and_category'
+  $'ck_auth_challenge_code_digest__not_valid\tck_auth_challenge_code_digest\tis not validated\tobject_and_category'
+  $'ck_auth_challenge_code_digest__no_inherit\tck_auth_challenge_code_digest\tunexpectedly uses NO INHERIT\tobject_and_category'
+  $'ck_auth_challenge_code_digest__wrong_expression\tck_auth_challenge_code_digest\thas wrong normalized expression\tobject_and_category'
+  $'ck_auth_challenge_ip_hash__wrong_relation\tck_auth_challenge_ip_hash\thas wrong relation\tobject_and_category'
+  $'ck_auth_challenge_ip_hash__duplicate_name\tck_auth_challenge_ip_hash\thas duplicate names\tobject_and_category'
+  $'ck_auth_challenge_ip_hash__wrong_conkey\tck_auth_challenge_ip_hash\thas wrong conkey\tobject_and_category'
+  $'ck_auth_challenge_ip_hash__not_valid\tck_auth_challenge_ip_hash\tis not validated\tobject_and_category'
+  $'ck_auth_challenge_ip_hash__no_inherit\tck_auth_challenge_ip_hash\tunexpectedly uses NO INHERIT\tobject_and_category'
+  $'ck_auth_challenge_ip_hash__wrong_expression\tck_auth_challenge_ip_hash\thas wrong normalized expression\tobject_and_category'
+  $'ck_auth_challenge_purpose__wrong_relation\tck_auth_challenge_purpose\thas wrong relation\tobject_and_category'
+  $'ck_auth_challenge_purpose__duplicate_name\tck_auth_challenge_purpose\thas duplicate names\tobject_and_category'
+  $'ck_auth_challenge_purpose__wrong_conkey\tck_auth_challenge_purpose\thas wrong conkey\tobject_and_category'
+  $'ck_auth_challenge_purpose__not_valid\tck_auth_challenge_purpose\tis not validated\tobject_and_category'
+  $'ck_auth_challenge_purpose__no_inherit\tck_auth_challenge_purpose\tunexpectedly uses NO INHERIT\tobject_and_category'
+  $'ck_auth_challenge_purpose__wrong_expression\tck_auth_challenge_purpose\thas wrong normalized expression\tobject_and_category'
+  $'ck_auth_challenge_attempts__wrong_relation\tck_auth_challenge_attempts\thas wrong relation\tobject_and_category'
+  $'ck_auth_challenge_attempts__duplicate_name\tck_auth_challenge_attempts\thas duplicate names\tobject_and_category'
+  $'ck_auth_challenge_attempts__wrong_conkey\tck_auth_challenge_attempts\thas wrong conkey\tobject_and_category'
+  $'ck_auth_challenge_attempts__not_valid\tck_auth_challenge_attempts\tis not validated\tobject_and_category'
+  $'ck_auth_challenge_attempts__no_inherit\tck_auth_challenge_attempts\tunexpectedly uses NO INHERIT\tobject_and_category'
+  $'ck_auth_challenge_attempts__wrong_expression\tck_auth_challenge_attempts\thas wrong normalized expression\tobject_and_category'
+  $'ck_auth_challenge_timing__wrong_relation\tck_auth_challenge_timing\thas wrong relation\tobject_and_category'
+  $'ck_auth_challenge_timing__duplicate_name\tck_auth_challenge_timing\thas duplicate names\tobject_and_category'
+  $'ck_auth_challenge_timing__wrong_conkey\tck_auth_challenge_timing\thas wrong conkey\tobject_and_category'
+  $'ck_auth_challenge_timing__not_valid\tck_auth_challenge_timing\tis not validated\tobject_and_category'
+  $'ck_auth_challenge_timing__no_inherit\tck_auth_challenge_timing\tunexpectedly uses NO INHERIT\tobject_and_category'
+  $'ck_auth_challenge_timing__wrong_expression\tck_auth_challenge_timing\thas wrong normalized expression\tobject_and_category'
+  $'ck_auth_challenge_consumed_at__wrong_relation\tck_auth_challenge_consumed_at\thas wrong relation\tobject_and_category'
+  $'ck_auth_challenge_consumed_at__duplicate_name\tck_auth_challenge_consumed_at\thas duplicate names\tobject_and_category'
+  $'ck_auth_challenge_consumed_at__wrong_conkey\tck_auth_challenge_consumed_at\thas wrong conkey\tobject_and_category'
+  $'ck_auth_challenge_consumed_at__not_valid\tck_auth_challenge_consumed_at\tis not validated\tobject_and_category'
+  $'ck_auth_challenge_consumed_at__no_inherit\tck_auth_challenge_consumed_at\tunexpectedly uses NO INHERIT\tobject_and_category'
+  $'ck_auth_challenge_consumed_at__wrong_expression\tck_auth_challenge_consumed_at\thas wrong normalized expression\tobject_and_category'
+  $'ck_auth_challenge_provider_request_id__wrong_relation\tck_auth_challenge_provider_request_id\thas wrong relation\tobject_and_category'
+  $'ck_auth_challenge_provider_request_id__duplicate_name\tck_auth_challenge_provider_request_id\thas duplicate names\tobject_and_category'
+  $'ck_auth_challenge_provider_request_id__wrong_conkey\tck_auth_challenge_provider_request_id\thas wrong conkey\tobject_and_category'
+  $'ck_auth_challenge_provider_request_id__not_valid\tck_auth_challenge_provider_request_id\tis not validated\tobject_and_category'
+  $'ck_auth_challenge_provider_request_id__no_inherit\tck_auth_challenge_provider_request_id\tunexpectedly uses NO INHERIT\tobject_and_category'
+  $'ck_auth_challenge_provider_request_id__wrong_expression\tck_auth_challenge_provider_request_id\thas wrong normalized expression\tobject_and_category'
+  $'idx_auth_challenges_phone_created__wrong_relation\tidx_auth_challenges_phone_created\thas wrong relation\tobject_and_category'
+  $'idx_auth_challenges_phone_created__wrong_key\tidx_auth_challenges_phone_created\thas wrong key columns\tobject_and_category'
+  $'idx_auth_challenges_phone_created__wrong_sort\tidx_auth_challenges_phone_created\thas wrong sort options\tobject_and_category'
+  $'idx_auth_challenges_phone_created__unique\tidx_auth_challenges_phone_created\tis unexpectedly unique\tobject_and_category'
+  $'idx_auth_challenges_phone_created__access_method\tidx_auth_challenges_phone_created\thas wrong access method\tobject_and_category'
+  $'idx_auth_challenges_phone_created__predicate\tidx_auth_challenges_phone_created\tunexpectedly has a predicate\tobject_and_category'
+  $'idx_auth_challenges_phone_created__expression\tidx_auth_challenges_phone_created\tunexpectedly has an expression\tobject_and_category'
+  $'idx_auth_challenges_ip_created__wrong_relation\tidx_auth_challenges_ip_created\thas wrong relation\tobject_and_category'
+  $'idx_auth_challenges_ip_created__wrong_key\tidx_auth_challenges_ip_created\thas wrong key columns\tobject_and_category'
+  $'idx_auth_challenges_ip_created__wrong_sort\tidx_auth_challenges_ip_created\thas wrong sort options\tobject_and_category'
+  $'idx_auth_challenges_ip_created__unique\tidx_auth_challenges_ip_created\tis unexpectedly unique\tobject_and_category'
+  $'idx_auth_challenges_ip_created__access_method\tidx_auth_challenges_ip_created\thas wrong access method\tobject_and_category'
+  $'idx_auth_challenges_ip_created__predicate\tidx_auth_challenges_ip_created\tunexpectedly has a predicate\tobject_and_category'
+  $'idx_auth_challenges_ip_created__expression\tidx_auth_challenges_ip_created\tunexpectedly has an expression\tobject_and_category'
+  $'idx_auth_challenges_expires_at__wrong_relation\tidx_auth_challenges_expires_at\thas wrong relation\tobject_and_category'
+  $'idx_auth_challenges_expires_at__wrong_key\tidx_auth_challenges_expires_at\thas wrong key columns\tobject_and_category'
+  $'idx_auth_challenges_expires_at__wrong_sort\tidx_auth_challenges_expires_at\thas wrong sort options\tobject_and_category'
+  $'idx_auth_challenges_expires_at__unique\tidx_auth_challenges_expires_at\tis unexpectedly unique\tobject_and_category'
+  $'idx_auth_challenges_expires_at__access_method\tidx_auth_challenges_expires_at\thas wrong access method\tobject_and_category'
+  $'idx_auth_challenges_expires_at__predicate\tidx_auth_challenges_expires_at\tunexpectedly has a predicate\tobject_and_category'
+  $'idx_auth_challenges_expires_at__expression\tidx_auth_challenges_expires_at\tunexpectedly has an expression\tobject_and_category'
+  $'lock_timeout\t-\tcanceling statement due to lock timeout\tcategory_only'
+  $'transaction_rollback\tck_auth_challenge_provider_request_id\thas wrong relation\tobject_and_category'
+)
+
+readonly -a BEHAVIOR_ORACLE_ROWS=(
+  $'phone_hash_len63\tREJECT\tck_auth_challenge_phone_hash\tviolates check constraint'
+  $'phone_hash_len64\tPASS\t-\t-'
+  $'phone_hash_len65\tREJECT\tcharacter(64)\tvalue too long for type'
+  $'phone_hash_nonhex\tREJECT\tck_auth_challenge_phone_hash\tviolates check constraint'
+  $'phone_hash_uppercase\tREJECT\tck_auth_challenge_phone_hash\tviolates check constraint'
+  $'code_digest_len63\tREJECT\tck_auth_challenge_code_digest\tviolates check constraint'
+  $'code_digest_len64\tPASS\t-\t-'
+  $'code_digest_len65\tREJECT\tcharacter(64)\tvalue too long for type'
+  $'code_digest_nonhex\tREJECT\tck_auth_challenge_code_digest\tviolates check constraint'
+  $'code_digest_uppercase\tREJECT\tck_auth_challenge_code_digest\tviolates check constraint'
+  $'request_ip_hash_len63\tREJECT\tck_auth_challenge_ip_hash\tviolates check constraint'
+  $'request_ip_hash_len64\tPASS\t-\t-'
+  $'request_ip_hash_len65\tREJECT\tcharacter(64)\tvalue too long for type'
+  $'request_ip_hash_nonhex\tREJECT\tck_auth_challenge_ip_hash\tviolates check constraint'
+  $'request_ip_hash_uppercase\tREJECT\tck_auth_challenge_ip_hash\tviolates check constraint'
+  $'purpose_sign_in\tPASS\t-\t-'
+  $'purpose_other\tREJECT\tck_auth_challenge_purpose\tviolates check constraint'
+  $'attempts_negative\tREJECT\tck_auth_challenge_attempts\tviolates check constraint'
+  $'max_attempts_zero\tREJECT\tck_auth_challenge_attempts\tviolates check constraint'
+  $'attempts_over_max\tREJECT\tck_auth_challenge_attempts\tviolates check constraint'
+  $'attempts_zero\tPASS\t-\t-'
+  $'attempts_equal_max\tPASS\t-\t-'
+  $'timing_resend_equal_created\tREJECT\tck_auth_challenge_timing\tviolates check constraint'
+  $'timing_expires_equal_resend\tREJECT\tck_auth_challenge_timing\tviolates check constraint'
+  $'timing_strictly_increasing\tPASS\t-\t-'
+  $'consumed_null\tPASS\t-\t-'
+  $'consumed_equal_created\tPASS\t-\t-'
+  $'consumed_before_created\tREJECT\tck_auth_challenge_consumed_at\tviolates check constraint'
+  $'provider_null\tPASS\t-\t-'
+  $'provider_len1\tPASS\t-\t-'
+  $'provider_len128\tPASS\t-\t-'
+  $'provider_empty\tREJECT\tck_auth_challenge_provider_request_id\tviolates check constraint'
+  $'provider_len129\tREJECT\tck_auth_challenge_provider_request_id\tviolates check constraint'
 )
 
 declare -A CHECK_EXPRESSIONS=(
@@ -117,15 +238,19 @@ validate_test_database_name() {
   ! is_protected_database "$database" || fail input 64 "protected database target rejected: $database"
 }
 
+psql_command() {
+  "$PSQL" "$@"
+}
+
 admin_psql() {
-  "$PSQL" -X --no-psqlrc -v ON_ERROR_STOP=1 -d "$ADMIN_DB" "$@"
+  psql_command -X --no-psqlrc -v ON_ERROR_STOP=1 -d "$ADMIN_DB" "$@"
 }
 
 database_psql() {
   local database="$1"
   shift
   validate_test_database_name "$database"
-  "$PSQL" -X --no-psqlrc -v ON_ERROR_STOP=1 -d "$database" "$@"
+  psql_command -X --no-psqlrc -v ON_ERROR_STOP=1 -d "$database" "$@"
 }
 
 drop_database_command() {
@@ -476,9 +601,60 @@ validate_static_inputs() {
   [[ "${#DB_PREFIX}" -eq 23 ]] || fail input 64 "database prefix length contract changed"
   [[ "$MAX_DATABASE_NAME_LENGTH" -le 63 ]] || fail input 64 "database name length proof exceeds PostgreSQL limit"
   [[ "${#BEHAVIOR_CASES[@]}" -eq 33 ]] || fail input 64 "behavior boundary contract must contain 33 cases"
+  validate_oracle_contracts
   for number in 001 002 003 004 005; do
     count="$(find "$MIGRATION_DIR" -maxdepth 1 -type f -name "${number}_*.sql" | wc -l | tr -d ' ')"
     [[ "$count" == "1" ]] || fail input 66 "expected exactly one migration for $number, got $count"
+  done
+}
+
+validate_oracle_contracts() {
+  local scenario category expected row row_scenario object error_category mode label outcome
+  local rejection_count=0 behavior_count=0
+  declare -A expected_rejections=() rejection_rows=() expected_behaviors=() behavior_rows=()
+
+  while IFS=$'\t' read -r scenario category expected; do
+    if [[ "$expected" == "EXPECTED_REJECTION" ]]; then
+      expected_rejections[$scenario]=1
+      rejection_count=$((rejection_count + 1))
+    fi
+  done < <(scenario_rows)
+  [[ "$rejection_count" -eq 77 ]] || fail input 64 "scenario model must contain 77 rejection oracles"
+  [[ "${#REJECTION_ORACLE_ROWS[@]}" -eq 77 ]] || fail input 64 "rejection oracle table must contain 77 rows"
+  for row in "${REJECTION_ORACLE_ROWS[@]}"; do
+    IFS=$'\t' read -r row_scenario object error_category mode <<<"$row"
+    [[ -n "$row_scenario" && -n "$object" && -n "$error_category" ]] || fail input 64 "rejection oracle has an empty field"
+    [[ -n "${expected_rejections[$row_scenario]:-}" ]] || fail input 64 "unexpected rejection oracle: $row_scenario"
+    [[ -z "${rejection_rows[$row_scenario]:-}" ]] || fail input 64 "duplicate rejection oracle: $row_scenario"
+    [[ "$mode" == "object_and_category" || "$mode" == "category_only" ]] || fail input 64 "invalid rejection oracle mode: $row_scenario"
+    [[ "$mode" != "category_only" || "$row_scenario" == "lock_timeout" ]] || fail input 64 "only lock_timeout may use category-only ERROR matching"
+    [[ "$mode" != "category_only" || "$object" == "-" ]] || fail input 64 "lock_timeout category-only oracle must not invent an object"
+    rejection_rows[$row_scenario]=1
+  done
+  for scenario in "${!expected_rejections[@]}"; do
+    [[ -n "${rejection_rows[$scenario]:-}" ]] || fail input 64 "missing rejection oracle: $scenario"
+  done
+
+  for label in "${BEHAVIOR_CASES[@]}"; do
+    expected_behaviors[$label]=1
+  done
+  [[ "${#BEHAVIOR_ORACLE_ROWS[@]}" -eq 33 ]] || fail input 64 "behavior oracle table must contain 33 rows"
+  for row in "${BEHAVIOR_ORACLE_ROWS[@]}"; do
+    IFS=$'\t' read -r label outcome object error_category <<<"$row"
+    [[ -n "${expected_behaviors[$label]:-}" ]] || fail input 64 "unexpected behavior oracle: $label"
+    [[ -z "${behavior_rows[$label]:-}" ]] || fail input 64 "duplicate behavior oracle: $label"
+    [[ "$outcome" == "PASS" || "$outcome" == "REJECT" ]] || fail input 64 "invalid behavior oracle outcome: $label"
+    if [[ "$outcome" == "PASS" ]]; then
+      [[ "$object" == "-" && "$error_category" == "-" ]] || fail input 64 "PASS behavior oracle must not define an ERROR: $label"
+    else
+      [[ "$object" != "-" && "$error_category" != "-" ]] || fail input 64 "REJECT behavior oracle is incomplete: $label"
+    fi
+    behavior_rows[$label]=1
+    behavior_count=$((behavior_count + 1))
+  done
+  [[ "$behavior_count" -eq 33 ]] || fail input 64 "behavior oracle count changed"
+  for label in "${!expected_behaviors[@]}"; do
+    [[ -n "${behavior_rows[$label]:-}" ]] || fail input 64 "missing behavior oracle: $label"
   done
 }
 
@@ -559,58 +735,50 @@ catalog_snapshot() {
 }
 
 rejection_contract() {
-  local scenario="$1" object category
-  case "$scenario" in
-    challenge_id_type) object="challenge_id"; category="atttypid must be uuid" ;;
-    challenge_id_nullable) object="challenge_id"; category="attnotnull must be true" ;;
-    challenge_id_missing_default) object="challenge_id"; category="default is missing" ;;
-    challenge_id_wrong_default) object="challenge_id"; category="default must directly call pg_catalog.gen_random_uuid()" ;;
-    challenge_id_missing_primary_key) object="challenge_id"; category="primary key count must be 1" ;;
-    challenge_id_composite_primary_key) object="challenge_id"; category="primary key conkey must contain challenge_id only" ;;
-    ck_*__wrong_relation) object="${scenario%%__*}"; category="has wrong relation" ;;
-    ck_*__duplicate_name) object="${scenario%%__*}"; category="has duplicate names" ;;
-    ck_*__wrong_conkey) object="${scenario%%__*}"; category="has wrong conkey" ;;
-    ck_*__not_valid) object="${scenario%%__*}"; category="is not validated" ;;
-    ck_*__no_inherit) object="${scenario%%__*}"; category="unexpectedly uses NO INHERIT" ;;
-    ck_*__wrong_expression) object="${scenario%%__*}"; category="has wrong normalized expression" ;;
-    idx_*__wrong_relation) object="${scenario%%__*}"; category="has wrong relation" ;;
-    idx_*__wrong_key) object="${scenario%%__*}"; category="has wrong key columns" ;;
-    idx_*__wrong_sort) object="${scenario%%__*}"; category="has wrong sort options" ;;
-    idx_*__unique) object="${scenario%%__*}"; category="is unexpectedly unique" ;;
-    idx_*__access_method) object="${scenario%%__*}"; category="has wrong access method" ;;
-    idx_*__predicate) object="${scenario%%__*}"; category="unexpectedly has a predicate" ;;
-    idx_*__expression) object="${scenario%%__*}"; category="unexpectedly has an expression" ;;
-    lock_timeout) object="auth_verification_challenges"; category="canceling statement due to lock timeout" ;;
-    transaction_rollback) object="ck_auth_challenge_provider_request_id"; category="has wrong relation" ;;
-    *) return 1 ;;
-  esac
-  printf '%s\t%s\n' "$object" "$category"
+  local scenario="$1" row row_scenario object category mode matches=0 result=""
+  for row in "${REJECTION_ORACLE_ROWS[@]}"; do
+    IFS=$'\t' read -r row_scenario object category mode <<<"$row"
+    if [[ "$row_scenario" == "$scenario" ]]; then
+      matches=$((matches + 1))
+      result="$object"$'\t'"$category"$'\t'"$mode"
+    fi
+  done
+  [[ "$matches" -eq 1 ]] || return 1
+  printf '%s\n' "$result"
+}
+
+run_external_timeout() {
+  local timeout_seconds="$1"
+  shift
+  timeout --signal=TERM --kill-after=1 "$timeout_seconds" "$@"
 }
 
 run_006_command() {
   local database="$1" stdout_file="$2" stderr_file="$3" timeout_seconds="$4"
   validate_test_database_name "$database"
   if [[ "$timeout_seconds" -gt 0 ]]; then
-    LC_ALL=C timeout --signal=TERM --kill-after=1 "$timeout_seconds" \
+    LC_ALL=C run_external_timeout "$timeout_seconds" \
       "$PSQL" -X --no-psqlrc --quiet -v ON_ERROR_STOP=1 -v VERBOSITY=terse -d "$database" \
       >"$stdout_file" 2>"$stderr_file" <"$MIGRATION_006"
   else
-    LC_ALL=C "$PSQL" -X --no-psqlrc --quiet -v ON_ERROR_STOP=1 -v VERBOSITY=terse -d "$database" \
+    LC_ALL=C psql_command -X --no-psqlrc --quiet -v ON_ERROR_STOP=1 -v VERBOSITY=terse -d "$database" \
       >"$stdout_file" 2>"$stderr_file" <"$MIGRATION_006"
   fi
 }
 
 expect_006_rejection() {
-  local database="$1" scenario="$2" timeout_seconds="${3:-0}" contract expected_object expected_category stderr_file stdout_file rc error_record
+  local database="$1" scenario="$2" timeout_seconds="${3:-0}" contract expected_object expected_category oracle_mode stderr_file stdout_file rc error_record
   local -a error_records=()
   contract="$(rejection_contract "$scenario")" || fail contract 78 "missing rejection contract for $scenario"
-  IFS=$'\t' read -r expected_object expected_category <<<"$contract"
+  IFS=$'\t' read -r expected_object expected_category oracle_mode <<<"$contract"
   stderr_file="$WORK_DIR/${scenario}.stderr"
   stdout_file="$WORK_DIR/${scenario}.stdout"
+  CURRENT_REJECTION_ORACLE="$scenario"
   set +e
   run_006_command "$database" "$stdout_file" "$stderr_file" "$timeout_seconds"
   rc=$?
   set -e
+  CURRENT_REJECTION_ORACLE=""
   [[ "$rc" -ne 0 ]] || fail unexpected_success 70 "$scenario unexpectedly succeeded"
   [[ "$rc" -ne 124 && "$rc" -ne 137 ]] || fail external_timeout 79 "$scenario exceeded the external timeout"
   if grep -Eiq 'psql:[[:space:]]*error:|fixture|permission denied|could not connect|connection (to server )?failed|no such file|could not (open|read)|syntax error' "$stderr_file"; then
@@ -619,7 +787,13 @@ expect_006_rejection() {
   mapfile -t error_records < <(grep -E '^ERROR:[[:space:]]' "$stderr_file" || true)
   [[ "${#error_records[@]}" -eq 1 ]] || fail error_record_count 71 "$scenario produced ${#error_records[@]} ERROR records"
   error_record="${error_records[0]}"
-  [[ "$error_record" == *"$expected_object"* ]] || fail object_mismatch 71 "$scenario ERROR did not identify $expected_object"
+  case "$oracle_mode" in
+    object_and_category)
+      [[ "$error_record" == *"$expected_object"* ]] || fail object_mismatch 71 "$scenario ERROR did not identify $expected_object" ;;
+    category_only)
+      [[ "$expected_object" == "-" ]] || fail contract 78 "$scenario category-only oracle has an object" ;;
+    *) fail contract 78 "$scenario has unsupported ERROR oracle mode $oracle_mode" ;;
+  esac
   [[ "$error_record" == *"$expected_category"* ]] || fail category_mismatch 71 "$scenario ERROR did not contain category: $expected_category"
 }
 
@@ -766,34 +940,68 @@ run_lock_timeout_scenario() {
   if cleanup_or_fail "$database"; then :; else return 75; fi
 }
 
+behavior_contract() {
+  local label="$1" row row_label outcome object category matches=0 result=""
+  for row in "${BEHAVIOR_ORACLE_ROWS[@]}"; do
+    IFS=$'\t' read -r row_label outcome object category <<<"$row"
+    if [[ "$row_label" == "$label" ]]; then
+      matches=$((matches + 1))
+      result="$outcome"$'\t'"$object"$'\t'"$category"
+    fi
+  done
+  [[ "$matches" -eq 1 ]] || return 1
+  printf '%s\n' "$result"
+}
+
 expect_behavior_rejection() {
-  local database="$1" expected_marker="$2" label="$3" sql="$4" stderr_file="$WORK_DIR/behavior_${label}.stderr" rc
+  local database="$1" label="$2" sql="$3" contract outcome expected_object expected_category
+  local stderr_file="$WORK_DIR/behavior_${label}.stderr" stdout_file="$WORK_DIR/behavior_${label}.stdout" rc error_record
+  local -a error_records=()
+  contract="$(behavior_contract "$label")" || fail behavior_contract 78 "missing behavior contract for $label"
+  IFS=$'\t' read -r outcome expected_object expected_category <<<"$contract"
+  [[ "$outcome" == "REJECT" ]] || fail behavior_contract 78 "$label is not a rejection oracle"
+  CURRENT_BEHAVIOR_ORACLE="$label"
   set +e
-  database_psql "$database" -c "$sql" >/dev/null 2>"$stderr_file"
+  database_psql "$database" --quiet -v VERBOSITY=terse -c "$sql" >"$stdout_file" 2>"$stderr_file"
   rc=$?
   set -e
+  CURRENT_BEHAVIOR_ORACLE=""
   [[ "$rc" -ne 0 ]] || fail behavior 73 "$label unexpectedly accepted invalid data"
-  grep -Fq "$expected_marker" "$stderr_file" || fail behavior 73 "$label returned the wrong rejection"
-  if grep -Eiq 'permission denied|could not connect|connection (to server )?failed|no such file|could not (open|read) file|syntax error' "$stderr_file"; then
+  if grep -Eiq 'psql:[[:space:]]*error:|fixture|permission denied|could not connect|connection (to server )?failed|no such file|could not (open|read)|syntax error' "$stderr_file"; then
     fail behavior 73 "$label returned an infrastructure error"
   fi
-  record_state "BEHAVIOR_CASE_PASS $label rejection=$expected_marker"
+  mapfile -t error_records < <(grep -E '^ERROR:[[:space:]]' "$stderr_file" || true)
+  [[ "${#error_records[@]}" -eq 1 ]] || fail behavior 73 "$label produced ${#error_records[@]} ERROR records"
+  error_record="${error_records[0]}"
+  [[ "$error_record" == *"$expected_object"* ]] || fail behavior 73 "$label ERROR did not identify $expected_object"
+  [[ "$error_record" == *"$expected_category"* ]] || fail behavior 73 "$label ERROR did not contain category: $expected_category"
+  record_state "BEHAVIOR_CASE_PASS $label rejection=$expected_object category=$expected_category"
 }
 
 run_behavior_insert() {
-  local database="$1" label="$2" expectation="$3" phone="$4" code="$5" purpose="$6"
+  local database="$1" label="$2" caller_expectation="$3" phone="$4" code="$5" purpose="$6"
   local created="$7" resend="$8" expires="$9" attempts="${10}" max_attempts="${11}"
-  local consumed="${12}" ip="${13}" provider="${14}" sql
+  local consumed="${12}" ip="${13}" provider="${14}" sql contract outcome expected_object expected_category
+  contract="$(behavior_contract "$label")" || fail behavior_contract 78 "missing behavior contract for $label"
+  IFS=$'\t' read -r outcome expected_object expected_category <<<"$contract"
+  if [[ "$caller_expectation" == "PASS" ]]; then
+    [[ "$outcome" == "PASS" ]] || fail behavior_contract 78 "$label caller/oracle outcome mismatch"
+  else
+    [[ "$outcome" == "REJECT" && "$caller_expectation" == "$expected_object" ]] || \
+      fail behavior_contract 78 "$label caller/oracle rejection mismatch"
+  fi
   sql="INSERT INTO public.auth_verification_challenges (
     phone_hash,code_digest,purpose,created_at,updated_at,resend_after,expires_at,
     attempts,max_attempts,consumed_at,request_ip_hash,provider_request_id
   ) VALUES (${phone},${code},${purpose},${created},${created},${resend},${expires},
     ${attempts},${max_attempts},${consumed},${ip},${provider});"
-  if [[ "$expectation" == "PASS" ]]; then
+  if [[ "$outcome" == "PASS" ]]; then
+    CURRENT_BEHAVIOR_ORACLE="$label"
     database_psql "$database" -c "$sql" >/dev/null
+    CURRENT_BEHAVIOR_ORACLE=""
     record_state "BEHAVIOR_CASE_PASS $label accepted"
   else
-    expect_behavior_rejection "$database" "$expectation" "$label" "$sql"
+    expect_behavior_rejection "$database" "$label" "$sql"
   fi
 }
 
@@ -900,14 +1108,14 @@ run_final_catalog_scenario() {
 }
 
 dry_run() {
-  local scenario category expected database contract expected_object expected_category
+  local scenario category expected database contract expected_object expected_category oracle_mode
   validate_static_inputs
   validate_all_database_names
   while IFS=$'\t' read -r scenario category expected; do
     database="${SCENARIO_DATABASES[$scenario]}"
     validate_test_database_name "$database"
     if contract="$(rejection_contract "$scenario" 2>/dev/null)"; then
-      IFS=$'\t' read -r expected_object expected_category <<<"$contract"
+      IFS=$'\t' read -r expected_object expected_category oracle_mode <<<"$contract"
     else
       expected_object="-"
       expected_category="$expected"
@@ -918,12 +1126,12 @@ dry_run() {
 }
 
 list_scenarios() {
-  local scenario category expected database contract expected_object expected_category
+  local scenario category expected database contract expected_object expected_category oracle_mode
   validate_all_database_names
   while IFS=$'\t' read -r scenario category expected; do
     database="${SCENARIO_DATABASES[$scenario]}"
     if contract="$(rejection_contract "$scenario" 2>/dev/null)"; then
-      IFS=$'\t' read -r expected_object expected_category <<<"$contract"
+      IFS=$'\t' read -r expected_object expected_category oracle_mode <<<"$contract"
     else
       expected_object="-"
       expected_category="$expected"
@@ -982,6 +1190,7 @@ main() {
   install_runtime_traps
   reject_legacy_test_controls
   configure_run_identity
+  validate_oracle_contracts
   case "${1:-}" in
     --list) MODE="list"; list_scenarios ;;
     --dry-run) MODE="dry-run"; dry_run ;;

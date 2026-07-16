@@ -75,33 +75,120 @@ trap_before_source="$(trap -p EXIT)"
 source "$RUNNER"
 [[ "$(trap -p EXIT)" == "$trap_before_source" ]] || fail_test "sourcing the runner changed EXIT traps"
 ORIGINAL_RECORD_STATE="$(declare -f record_state)"
-ORIGINAL_RUN_006_COMMAND="$(declare -f run_006_command)"
+ORIGINAL_PSQL_COMMAND="$(declare -f psql_command)"
+ORIGINAL_RUN_EXTERNAL_TIMEOUT="$(declare -f run_external_timeout)"
 RUN_ID="source-test-run"
 generate_run_nonce() { RUN_NONCE=33333333333333333333333333333333; }
 configure_run_identity
 validate_all_database_names
+validate_oracle_contracts
+[[ "$(rejection_contract lock_timeout)" == $'-\tcanceling statement due to lock timeout\tcategory_only' ]] || \
+  fail_test "lock timeout does not use its dedicated category-only ERROR contract"
 TEST_WORK="$TMP_ROOT/rejection-work"
 mkdir "$TEST_WORK"
 WORK_DIR="$TEST_WORK"
 
+# Independent test oracles.  These do not call the runner's contract helpers;
+# a drift in either the formal contract or parser therefore fails the fake run.
+declare -A TEST_REJECTION_ERRORS=()
+TEST_REJECTION_ERRORS[challenge_id_type]='ERROR: 006 challenge_id atttypid must be uuid'
+TEST_REJECTION_ERRORS[challenge_id_nullable]='ERROR: 006 challenge_id attnotnull must be true'
+TEST_REJECTION_ERRORS[challenge_id_missing_default]='ERROR: 006 challenge_id default is missing'
+TEST_REJECTION_ERRORS[challenge_id_wrong_default]='ERROR: 006 challenge_id default must directly call pg_catalog.gen_random_uuid()'
+TEST_REJECTION_ERRORS[challenge_id_missing_primary_key]='ERROR: 006 challenge_id primary key count must be 1'
+TEST_REJECTION_ERRORS[challenge_id_composite_primary_key]='ERROR: 006 challenge_id primary key conkey must contain challenge_id only'
+declare -A TEST_CHECK_ERROR_CATEGORIES=(
+  [wrong_relation]='has wrong relation'
+  [duplicate_name]='has duplicate names'
+  [wrong_conkey]='has wrong conkey'
+  [not_valid]='is not validated'
+  [no_inherit]='unexpectedly uses NO INHERIT'
+  [wrong_expression]='has wrong normalized expression'
+)
+declare -a TEST_CHECK_OBJECTS=(
+  ck_auth_challenge_phone_hash ck_auth_challenge_code_digest ck_auth_challenge_ip_hash
+  ck_auth_challenge_purpose ck_auth_challenge_attempts ck_auth_challenge_timing
+  ck_auth_challenge_consumed_at ck_auth_challenge_provider_request_id
+)
+for test_object in "${TEST_CHECK_OBJECTS[@]}"; do
+  for test_variant in wrong_relation duplicate_name wrong_conkey not_valid no_inherit wrong_expression; do
+    TEST_REJECTION_ERRORS["${test_object}__${test_variant}"]="ERROR: 006 ${test_object} ${TEST_CHECK_ERROR_CATEGORIES[$test_variant]}"
+  done
+done
+declare -A TEST_INDEX_ERROR_CATEGORIES=(
+  [wrong_relation]='has wrong relation'
+  [wrong_key]='has wrong key columns'
+  [wrong_sort]='has wrong sort options'
+  [unique]='is unexpectedly unique'
+  [access_method]='has wrong access method'
+  [predicate]='unexpectedly has a predicate'
+  [expression]='unexpectedly has an expression'
+)
+declare -a TEST_INDEX_OBJECTS=(
+  idx_auth_challenges_phone_created idx_auth_challenges_ip_created idx_auth_challenges_expires_at
+)
+for test_object in "${TEST_INDEX_OBJECTS[@]}"; do
+  for test_variant in wrong_relation wrong_key wrong_sort unique access_method predicate expression; do
+    TEST_REJECTION_ERRORS["${test_object}__${test_variant}"]="ERROR: 006 ${test_object} ${TEST_INDEX_ERROR_CATEGORIES[$test_variant]}"
+  done
+done
+TEST_REJECTION_ERRORS[lock_timeout]='ERROR: canceling statement due to lock timeout'
+TEST_REJECTION_ERRORS[transaction_rollback]='ERROR: 006 ck_auth_challenge_provider_request_id has wrong relation'
+[[ "${#TEST_REJECTION_ERRORS[@]}" == 77 ]] || fail_test "independent rejection oracle count is not 77"
+
+declare -A TEST_BEHAVIOR_RESULTS=(
+  [phone_hash_len63]='ERROR: insert ck_auth_challenge_phone_hash violates check constraint'
+  [phone_hash_len64]=PASS
+  [phone_hash_len65]='ERROR: insert character(64) value too long for type'
+  [phone_hash_nonhex]='ERROR: insert ck_auth_challenge_phone_hash violates check constraint'
+  [phone_hash_uppercase]='ERROR: insert ck_auth_challenge_phone_hash violates check constraint'
+  [code_digest_len63]='ERROR: insert ck_auth_challenge_code_digest violates check constraint'
+  [code_digest_len64]=PASS
+  [code_digest_len65]='ERROR: insert character(64) value too long for type'
+  [code_digest_nonhex]='ERROR: insert ck_auth_challenge_code_digest violates check constraint'
+  [code_digest_uppercase]='ERROR: insert ck_auth_challenge_code_digest violates check constraint'
+  [request_ip_hash_len63]='ERROR: insert ck_auth_challenge_ip_hash violates check constraint'
+  [request_ip_hash_len64]=PASS
+  [request_ip_hash_len65]='ERROR: insert character(64) value too long for type'
+  [request_ip_hash_nonhex]='ERROR: insert ck_auth_challenge_ip_hash violates check constraint'
+  [request_ip_hash_uppercase]='ERROR: insert ck_auth_challenge_ip_hash violates check constraint'
+  [purpose_sign_in]=PASS
+  [purpose_other]='ERROR: insert ck_auth_challenge_purpose violates check constraint'
+  [attempts_negative]='ERROR: insert ck_auth_challenge_attempts violates check constraint'
+  [max_attempts_zero]='ERROR: insert ck_auth_challenge_attempts violates check constraint'
+  [attempts_over_max]='ERROR: insert ck_auth_challenge_attempts violates check constraint'
+  [attempts_zero]=PASS
+  [attempts_equal_max]=PASS
+  [timing_resend_equal_created]='ERROR: insert ck_auth_challenge_timing violates check constraint'
+  [timing_expires_equal_resend]='ERROR: insert ck_auth_challenge_timing violates check constraint'
+  [timing_strictly_increasing]=PASS
+  [consumed_null]=PASS
+  [consumed_equal_created]=PASS
+  [consumed_before_created]='ERROR: insert ck_auth_challenge_consumed_at violates check constraint'
+  [provider_null]=PASS
+  [provider_len1]=PASS
+  [provider_len128]=PASS
+  [provider_empty]='ERROR: insert ck_auth_challenge_provider_request_id violates check constraint'
+  [provider_len129]='ERROR: insert ck_auth_challenge_provider_request_id violates check constraint'
+)
+[[ "${#TEST_BEHAVIOR_RESULTS[@]}" == 33 ]] || fail_test "independent behavior oracle count is not 33"
+
 # Exact ERROR-record matching and SQL/CONTEXT pollution rejection.
 REJECTION_MODE=exact
-run_006_command() {
-  local database="$1" stdout_file="$2" stderr_file="$3"
-  : >"$stdout_file"
+psql_command() {
   case "$REJECTION_MODE" in
     exact)
-      printf 'ERROR: 006 challenge_id check failed: atttypid must be uuid, got 25\n' >"$stderr_file" ;;
+      printf 'ERROR: 006 challenge_id check failed: atttypid must be uuid, got 25\n' >&2 ;;
     echoed_sql_other_error)
-      printf 'CREATE challenge_id atttypid must be uuid;\nERROR: 006 other_field default is missing\n' >"$stderr_file" ;;
+      printf 'CREATE challenge_id atttypid must be uuid;\nERROR: 006 other_field default is missing\n' >&2 ;;
     object_error_category_sql)
-      printf 'SQL atttypid must be uuid\nERROR: 006 challenge_id default is missing\n' >"$stderr_file" ;;
+      printf 'SQL atttypid must be uuid\nERROR: 006 challenge_id default is missing\n' >&2 ;;
     category_error_object_context)
-      printf 'ERROR: 006 other_field atttypid must be uuid\nCONTEXT: challenge_id\n' >"$stderr_file" ;;
+      printf 'ERROR: 006 other_field atttypid must be uuid\nCONTEXT: challenge_id\n' >&2 ;;
     multiple_errors)
-      printf 'ERROR: 006 challenge_id atttypid must be uuid\nERROR: 006 challenge_id atttypid must be uuid\n' >"$stderr_file" ;;
+      printf 'ERROR: 006 challenge_id atttypid must be uuid\nERROR: 006 challenge_id atttypid must be uuid\n' >&2 ;;
     psql_error)
-      printf 'psql: error: could not connect\nERROR: 006 challenge_id atttypid must be uuid\n' >"$stderr_file" ;;
+      printf 'psql: error: could not connect\nERROR: 006 challenge_id atttypid must be uuid\n' >&2 ;;
   esac
   return 1
 }
@@ -116,7 +203,36 @@ for mode in echoed_sql_other_error object_error_category_sql category_error_obje
   [[ "$rejection_rc" -ne 0 ]] || fail_test "pollution mode $mode incorrectly passed"
 done
 
-eval "$ORIGINAL_RUN_006_COMMAND"
+eval "$ORIGINAL_PSQL_COMMAND"
+
+# All 77 rejection scenarios execute the formal run_006_command wrapper and
+# exact ERROR parser.  Only the command transport is source-injected.
+ORACLE_CALLS=0
+psql_command() {
+  [[ -n "${TEST_REJECTION_ERRORS[$CURRENT_REJECTION_ORACLE]:-}" ]] || return 97
+  printf '%s\n' "${TEST_REJECTION_ERRORS[$CURRENT_REJECTION_ORACLE]}" >&2
+  ORACLE_CALLS=$((ORACLE_CALLS + 1))
+  return 1
+}
+run_external_timeout() {
+  local timeout_seconds="$1"
+  shift
+  [[ "$timeout_seconds" == 8 ]] || return 98
+  psql_command "${@:2}"
+}
+for oracle_row in "${REJECTION_ORACLE_ROWS[@]}"; do
+  IFS=$'\t' read -r oracle_scenario _oracle_object _oracle_category _oracle_mode <<<"$oracle_row"
+  oracle_db="${SCENARIO_DATABASES[$oracle_scenario]}"
+  if [[ "$oracle_scenario" == lock_timeout ]]; then
+    expect_006_rejection "$oracle_db" "$oracle_scenario" 8
+  else
+    expect_006_rejection "$oracle_db" "$oracle_scenario"
+  fi
+done
+[[ "$ORACLE_CALLS" == 77 ]] || fail_test "formal parser did not execute all 77 rejection oracles"
+
+eval "$ORIGINAL_PSQL_COMMAND"
+eval "$ORIGINAL_RUN_EXTERNAL_TIMEOUT"
 
 # The command boundary itself is capped; the formal lock path keeps its fixed 8-second value.
 grep -Fq 'external_timeout=8' "$RUNNER" || fail_test "formal lock external timeout is not fixed at 8 seconds"
@@ -220,18 +336,15 @@ CLEANUP_COUNT=0
 BEHAVIOR_TOTAL=0
 BEHAVIOR_VALID=0
 BEHAVIOR_INVALID=0
+DISPATCH_REJECTION_TOTAL=0
 record_state() { printf '%s\n' "$1" >>"$DISPATCH_STATE"; }
 create_database() { validate_test_database_name "$1"; CREATED_DATABASES+=("$1"); CREATE_COUNT=$((CREATE_COUNT + 1)); }
 apply_fixture_001_005() { :; }
 apply_006() { :; }
 run_sql() { :; }
 catalog_snapshot() { printf 'catalog-snapshot\n' >"$2"; }
-expect_006_rejection() {
-  [[ "$2" == lock_timeout ]] && sleep 2
-  return 0
-}
 cleanup_or_fail() { remove_created_database "$1"; CLEANUP_COUNT=$((CLEANUP_COUNT + 1)); return 0; }
-database_psql() {
+psql_command() {
   local joined=" $* "
   if [[ "$joined" == *"pg_sleep(30)"* ]]; then
     trap 'rm -f -- "$HOLDER_MARKER"; exit 0' TERM INT EXIT
@@ -241,19 +354,42 @@ database_psql() {
   fi
   if [[ "$joined" == *"FROM pg_catalog.pg_locks"* ]]; then [[ -e "$HOLDER_MARKER" ]] && printf '1\n' || printf '0\n'; return 0; fi
   if [[ "$joined" == *"WHERE application_name"* ]]; then printf '0\n'; return 0; fi
+  if [[ -n "$CURRENT_REJECTION_ORACLE" ]]; then
+    [[ -n "${TEST_REJECTION_ERRORS[$CURRENT_REJECTION_ORACLE]:-}" ]] || return 97
+    printf '%s\n' "${TEST_REJECTION_ERRORS[$CURRENT_REJECTION_ORACLE]}" >&2
+    DISPATCH_REJECTION_TOTAL=$((DISPATCH_REJECTION_TOTAL + 1))
+    return 1
+  fi
+  if [[ -n "$CURRENT_BEHAVIOR_ORACLE" ]]; then
+    local behavior_result
+    behavior_result="${TEST_BEHAVIOR_RESULTS[$CURRENT_BEHAVIOR_ORACLE]:-}"
+    [[ -n "$behavior_result" ]] || return 96
+    BEHAVIOR_TOTAL=$((BEHAVIOR_TOTAL + 1))
+    if [[ "$behavior_result" == PASS ]]; then
+      BEHAVIOR_VALID=$((BEHAVIOR_VALID + 1))
+      record_state "BEHAVIOR_CASE_CALLED $CURRENT_BEHAVIOR_ORACLE PASS"
+      return 0
+    fi
+    BEHAVIOR_INVALID=$((BEHAVIOR_INVALID + 1))
+    record_state "BEHAVIOR_CASE_CALLED $CURRENT_BEHAVIOR_ORACLE REJECT"
+    printf '%s\n' "$behavior_result" >&2
+    return 1
+  fi
   return 0
 }
-run_behavior_insert() {
-  local label="$2" expectation="$3"
-  BEHAVIOR_TOTAL=$((BEHAVIOR_TOTAL + 1))
-  if [[ "$expectation" == PASS ]]; then BEHAVIOR_VALID=$((BEHAVIOR_VALID + 1)); else BEHAVIOR_INVALID=$((BEHAVIOR_INVALID + 1)); fi
-  record_state "BEHAVIOR_CASE_CALLED $label $expectation"
+run_external_timeout() {
+  local timeout_seconds="$1"
+  shift
+  [[ "$timeout_seconds" == 8 ]] || return 98
+  sleep 2
+  psql_command "${@:2}"
 }
 
 : >"$DISPATCH_STATE"
 dispatch_all_scenarios
 [[ "$(grep -c '^SCENARIO_STARTED ' "$DISPATCH_STATE")" == "79" ]] || fail_test "not all 79 scenario functions started"
 [[ "$(grep -c '^EXPECTED_REJECTION_PASS ' "$DISPATCH_STATE")" == "77" ]] || fail_test "expected rejection count is not 77"
+[[ "$DISPATCH_REJECTION_TOTAL" == "77" ]] || fail_test "not all 77 rejection oracles passed through the formal parser"
 [[ "$(grep -c '^BEHAVIOR_PASS ' "$DISPATCH_STATE")" == "1" ]] || fail_test "BEHAVIOR_PASS count is not 1"
 [[ "$(grep -c '^FINAL_CATALOG_PASS ' "$DISPATCH_STATE")" == "1" ]] || fail_test "FINAL_CATALOG_PASS count is not 1"
 [[ "$CREATE_COUNT" == "79" && "$CLEANUP_COUNT" == "79" ]] || fail_test "dispatcher create/cleanup count mismatch"
@@ -261,6 +397,21 @@ dispatch_all_scenarios
   fail_test "behavior counts are not 33/12/21"
 [[ "$(grep -c '^BEHAVIOR_CASE_CALLED ' "$DISPATCH_STATE")" == "33" ]] || fail_test "not all behavior cases executed"
 [[ ! -e "$HOLDER_MARKER" ]] || fail_test "lock holder marker remained"
+
+# A test-side oracle drift must be caught by the formal behavior parser.
+saved_purpose_other="${TEST_BEHAVIOR_RESULTS[purpose_other]}"
+TEST_BEHAVIOR_RESULTS[purpose_other]='ERROR: insert different_constraint violates check constraint'
+set +e
+(
+  run_behavior_insert "${SCENARIO_DATABASES[constraint_behavior]}" purpose_other ck_auth_challenge_purpose \
+    "repeat('a',64)" "repeat('b',64)" "'other'" \
+    "TIMESTAMPTZ '2026-01-01 00:00:00+00'" "TIMESTAMPTZ '2026-01-01 00:01:00+00'" \
+    "TIMESTAMPTZ '2026-01-01 00:05:00+00'" 0 5 NULL "repeat('c',64)" NULL
+) >/dev/null 2>&1
+behavior_oracle_drift_rc=$?
+set -e
+TEST_BEHAVIOR_RESULTS[purpose_other]="$saved_purpose_other"
+[[ "$behavior_oracle_drift_rc" -ne 0 ]] || fail_test "behavior parser accepted an independent oracle mismatch"
 
 # INT/TERM preserve their codes while EXIT cleanup runs; a clean EXIT records COMPLETE.
 SIGNAL_STATE="$TMP_ROOT/signal.state"

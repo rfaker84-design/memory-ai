@@ -8,6 +8,34 @@ const databaseRoot = path.resolve(__dirname, "..");
 const read = (relativePath) =>
   fs.readFileSync(path.join(databaseRoot, relativePath), "utf8");
 
+function normalizeShellBuffer(buffer, label = "shell script") {
+  assert.ok(Buffer.isBuffer(buffer), `${label} must be read as bytes`);
+  const hasBom =
+    (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) ||
+    (buffer.length >= 2 && ((buffer[0] === 0xff && buffer[1] === 0xfe) ||
+      (buffer[0] === 0xfe && buffer[1] === 0xff)));
+  assert.equal(hasBom, false, `${label} must not contain a BOM`);
+
+  let sawLf = false;
+  let sawCrlf = false;
+  for (let index = 0; index < buffer.length; index += 1) {
+    if (buffer[index] === 0x0d) {
+      assert.equal(buffer[index + 1], 0x0a, `${label} contains a lone CR`);
+      sawCrlf = true;
+      index += 1;
+    } else if (buffer[index] === 0x0a) {
+      sawLf = true;
+    }
+  }
+  assert.equal(sawLf && sawCrlf, false, `${label} contains mixed LF and CRLF line endings`);
+  return buffer.toString("utf8").replaceAll("\r\n", "\n");
+}
+
+const readShell = (relativePath) => {
+  const absolutePath = path.join(databaseRoot, relativePath);
+  return normalizeShellBuffer(fs.readFileSync(absolutePath), relativePath);
+};
+
 const migrations = ["001", "002", "003", "004", "005"].map((number) => {
   const file = fs.readdirSync(path.join(databaseRoot, "migrations"))
     .find((name) => name.startsWith(`${number}_`));
@@ -179,8 +207,7 @@ test("006 preflight and postflight expose operational evidence", () => {
   ]) assert.ok(postflight.includes(token), `postflight missing ${token}`);
 });
 
-test("PostgreSQL 14 matrix runner has a bounded destructive scope", () => {
-  const runner = read("tests/run-006-auth-pg14-matrix.sh");
+function assertMatrixRunnerStructure(runner) {
   assert.match(runner, /^#!\/usr\/bin\/env bash\nset -Eeuo pipefail/m);
   assert.match(runner, /DB_PREFIX="memoryai_auth_negative_"/);
   assert.match(runner, /memoryai\|postgres\|template0\|template1/);
@@ -202,12 +229,45 @@ test("PostgreSQL 14 matrix runner has a bounded destructive scope", () => {
   assert.match(runner, /FAILED_cleanup_connections_/);
   assert.match(runner, /CLEANUP_FAILED_RC_75/);
   assert.match(runner, /\^ERROR:\[\[:space:\]\]/);
+  assert.match(runner, /REJECTION_ORACLE_ROWS/);
+  assert.match(runner, /BEHAVIOR_ORACLE_ROWS/);
+  assert.match(runner, /lock_timeout\\t-\\tcanceling statement due to lock timeout\\tcategory_only/);
+  assert.match(runner, /scenario model must contain 77 rejection oracles/);
+  assert.match(runner, /behavior oracle table must contain 33 rows/);
+  assert.match(runner, /psql_command -X --no-psqlrc/);
+  assert.match(runner, /database_psql "\$database" --quiet -v VERBOSITY=terse/);
   assert.match(runner, /--quiet/);
   assert.doesNotMatch(runner, /--echo-errors/);
   assert.match(runner, /if \[\[ "\$\{BASH_SOURCE\[0\]\}" == "\$0" \]\]/);
   assert.doesNotMatch(runner, /(?:MATRIX_WORK_DIR|MATRIX_STATE_FILE)\s*=|\$\{(?:MATRIX_WORK_DIR|MATRIX_STATE_FILE)/);
   assert.doesNotMatch(runner, /printf\s+'?%\.63s/);
   assert.doesNotMatch(runner, /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE)\s+pg_catalog\./i);
+}
+
+test("PostgreSQL 14 matrix runner has a bounded destructive scope", () => {
+  assertMatrixRunnerStructure(readShell("tests/run-006-auth-pg14-matrix.sh"));
+});
+
+test("shell static contracts accept LF and pure CRLF but reject unsafe bytes", () => {
+  const lf = readShell("tests/run-006-auth-pg14-matrix.sh");
+  const pureCrlf = Buffer.from(lf.replaceAll("\n", "\r\n"), "utf8");
+  const normalizedCrlf = normalizeShellBuffer(pureCrlf, "pure CRLF fixture");
+  assert.equal(normalizedCrlf, lf);
+  assertMatrixRunnerStructure(lf);
+  assertMatrixRunnerStructure(normalizedCrlf);
+
+  assert.throws(
+    () => normalizeShellBuffer(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(lf)]), "BOM fixture"),
+    /must not contain a BOM/,
+  );
+  assert.throws(
+    () => normalizeShellBuffer(Buffer.from(lf.replace("\n", "\r")), "lone CR fixture"),
+    /contains a lone CR/,
+  );
+  assert.throws(
+    () => normalizeShellBuffer(Buffer.from(lf.replace("\n", "\r\n")), "mixed fixture"),
+    /contains mixed LF and CRLF/,
+  );
 });
 
 test("PostgreSQL 14 matrix runner passes fake CLI orchestration tests", () => {
