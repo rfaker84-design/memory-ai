@@ -227,6 +227,7 @@ function assertMatrixRunnerStructure(runner) {
     'POSTGRES_HOST="/var/run/postgresql"',
     'POSTGRES_PORT="5432"',
     'POSTGRES_USER="postgres"',
+    'STARTUP_VALIDATION_RC=68',
   ]) assert.ok(runner.includes(fixedSetting), `runner missing fixed setting ${fixedSetting}`);
   assert.match(runner, /local -a command=\(\n\s+"\$RUNUSER" --user "\$POSTGRES_OS_USER" --\n\s+"\$CLEAN_ENV" -i\n\s+"HOME=\$POSTGRES_HOME"\n\s+"PATH=\$POSTGRES_PATH"\n\s+"PGHOST=\$POSTGRES_HOST"\n\s+"PGPORT=\$POSTGRES_PORT"\n\s+"PGUSER=\$POSTGRES_USER"\n\s+"\$executable"\n\s+\)/);
   assert.match(runner, /for variable in DATABASE_URL PGPASSWORD PGPASSFILE PGSERVICE PGSERVICEFILE PGHOSTADDR PGDATABASE; do/);
@@ -235,6 +236,22 @@ function assertMatrixRunnerStructure(runner) {
   assert.match(runner, /drop_database_command\(\) \{\n\s+postgres_command 0 "\$DROPDB" --if-exists --force "\$1"\n\}/);
   assert.match(runner, /create_database_command\(\) \{\n\s+postgres_command 0 "\$CREATEDB" --template=template0 "\$1"\n\}/);
   assert.match(runner, /postgres_file_readable\(\) \{\n\s+postgres_command 0 "\$TEST" -r "\$1"\n\}/);
+  assert.match(runner, /initialize_runtime\(\) \{[\s\S]*?umask 077/);
+  assert.match(runner, /create_startup_probe_file\(\) \{[\s\S]*?mktemp -- "\$WORK_DIR\/postgresql-startup-identity\.\$\{stream\}\.XXXXXXXX"/);
+  assert.match(runner, /chmod 600 "\$file" \|\| fail startup_probe/);
+  assert.match(runner, /startup_probe_file_owner "\$file"\)" == "0"/);
+  assert.match(runner, /startup_probe_file_mode "\$file"\)" == "600"/);
+  assert.match(runner, /if admin_psql -At -c [\s\S]*?>"\$stdout_file" 2>"\$stderr_file"; then\n\s+probe_rc=0\n\s+else\n\s+probe_rc=\$\?/);
+  assert.match(runner, /\[\[ "\$probe_rc" -eq 0 \]\] \|\| return "\$probe_rc"/);
+  assert.doesNotMatch(runner, /evidence="\$\(admin_psql/);
+  assert.match(runner, /stderr_bytes="\$\(stat -c '%s' "\$stderr_file"\)"/);
+  assert.match(runner, /record_state "FAILED_startup_stderr_\$\{STARTUP_VALIDATION_RC\} bytes=\$stderr_bytes" \|\| true/);
+  const startupCommand = runner.indexOf("if admin_psql -At -c");
+  const startupRcGate = runner.indexOf('[[ "$probe_rc" -eq 0 ]] || return "$probe_rc"', startupCommand);
+  const startupStderrGate = runner.indexOf('if [[ "$stderr_bytes" != "0" ]]', startupRcGate);
+  const startupStdoutRead = runner.indexOf('exec {stdout_fd}<"$stdout_file"', startupStderrGate);
+  assert.ok(startupCommand >= 0 && startupCommand < startupRcGate && startupRcGate < startupStderrGate && startupStderrGate < startupStdoutRead,
+    "startup validation must preserve rc, reject stderr, then read stdout");
   assert.doesNotMatch(runner, /^\s*"\$(?:PSQL|CREATEDB|DROPDB)"(?:\s|$)/m);
   assert.match(runner, /for file in "\$RUNUSER" "\$CLEAN_ENV" "\$PSQL" "\$CREATEDB" "\$DROPDB" "\$TIMEOUT" "\$ID" "\$TEST"; do/);
   assert.match(runner, /database_os_user_exists \|\| fail input 69 "required postgres OS user is unavailable"/);

@@ -22,6 +22,7 @@ readonly POSTGRES_HOST="/var/run/postgresql"
 readonly POSTGRES_PORT="5432"
 readonly POSTGRES_USER="postgres"
 readonly ADMIN_DB="postgres"
+readonly STARTUP_VALIDATION_RC=68
 RUN_ID="${MATRIX_RUN_ID:-$(date -u +%Y%m%d%H%M%S)_$$_${RANDOM}}"
 readonly CALLER_RUN_NONCE_PRESENT="${RUN_NONCE+x}"
 RUN_NONCE=""
@@ -440,6 +441,38 @@ validate_new_state_file() {
   [[ "$(stat -c '%u' "$file")" == "$owner" && "$(stat -c '%a' "$file")" == "600" ]]
 }
 
+create_startup_probe_file() {
+  local stream="$1"
+  case "$stream" in
+    stdout|stderr) ;;
+    *) return "$STARTUP_VALIDATION_RC" ;;
+  esac
+  mktemp -- "$WORK_DIR/postgresql-startup-identity.${stream}.XXXXXXXX"
+}
+
+startup_probe_file_owner() { stat -c '%u' "$1"; }
+startup_probe_file_mode() { stat -c '%a' "$1"; }
+
+validate_startup_probe_file() {
+  local file="$1" file_parent work_parent
+  [[ -n "$WORK_DIR" && -d "$WORK_DIR" && ! -L "$WORK_DIR" ]] || return 1
+  [[ -n "$file" && -f "$file" && ! -L "$file" ]] || return 1
+  file_parent="$(cd "$(dirname "$file")" && pwd -P)" || return 1
+  work_parent="$(cd "$WORK_DIR" && pwd -P)" || return 1
+  [[ "$file_parent" == "$work_parent" ]] || return 1
+  [[ "$(startup_probe_file_owner "$file")" == "0" ]] || return 1
+  [[ "$(startup_probe_file_mode "$file")" == "600" ]]
+}
+
+initialize_startup_probe_file() {
+  local stream="$1" file
+  file="$(create_startup_probe_file "$stream")" || fail startup_probe "$STARTUP_VALIDATION_RC" "cannot create PostgreSQL startup $stream file"
+  [[ -n "$file" ]] || fail startup_probe "$STARTUP_VALIDATION_RC" "startup probe file creator returned an empty path"
+  chmod 600 "$file" || fail startup_probe "$STARTUP_VALIDATION_RC" "cannot protect PostgreSQL startup $stream file"
+  validate_startup_probe_file "$file" || fail startup_probe "$STARTUP_VALIDATION_RC" "PostgreSQL startup $stream file is outside the secure work directory or has unsafe metadata"
+  printf '%s\n' "$file"
+}
+
 initialize_state_file() {
   local state_parent="$1" required_owner="$2" preexisting_state_inodes state_inode
   validate_state_directory "$state_parent" "$required_owner" || fail runtime 76 "unsafe state directory"
@@ -458,6 +491,7 @@ initialize_state_file() {
 initialize_runtime() {
   local runtime_parent state_parent required_owner runtime_mode
   [[ "$(orchestrator_uid)" == "0" ]] || fail runtime 76 "matrix runtime must execute as root"
+  umask 077
   runtime_parent="$(runtime_parent_path)"
   state_parent="$(state_parent_path)"
   required_owner="0"
@@ -744,10 +778,40 @@ validate_oracle_contracts() {
 }
 
 verify_postgresql_identity() {
-  local evidence delimiters version database session_identity current_identity socket_identity extra
-  evidence="$(admin_psql -At -c \
-    "SELECT current_setting('server_version_num'), current_database(), session_user, current_user, (pg_catalog.inet_client_addr() IS NULL)::text;")"
-  [[ "$evidence" != *$'\n'* && "$evidence" != *$'\r'* ]] || fail identity 65 "PostgreSQL startup identity evidence must contain exactly one record"
+  local stdout_file stderr_file probe_rc stderr_bytes stdout_fd first_read_rc second_read_rc
+  local evidence="" trailing="" delimiters version database session_identity current_identity socket_identity extra
+  stdout_file="$(initialize_startup_probe_file stdout)" || return $?
+  stderr_file="$(initialize_startup_probe_file stderr)" || return $?
+  [[ "$stdout_file" != "$stderr_file" ]] || fail startup_probe "$STARTUP_VALIDATION_RC" "PostgreSQL startup stdout and stderr files must be distinct"
+
+  if admin_psql -At -c \
+    "SELECT current_setting('server_version_num'), current_database(), session_user, current_user, (pg_catalog.inet_client_addr() IS NULL)::text;" \
+    >"$stdout_file" 2>"$stderr_file"; then
+    probe_rc=0
+  else
+    probe_rc=$?
+  fi
+  [[ "$probe_rc" -eq 0 ]] || return "$probe_rc"
+
+  validate_startup_probe_file "$stdout_file" || fail startup_probe "$STARTUP_VALIDATION_RC" "PostgreSQL startup stdout file metadata changed"
+  validate_startup_probe_file "$stderr_file" || fail startup_probe "$STARTUP_VALIDATION_RC" "PostgreSQL startup stderr file metadata changed"
+  stderr_bytes="$(stat -c '%s' "$stderr_file")" || fail startup_probe "$STARTUP_VALIDATION_RC" "cannot measure PostgreSQL startup stderr"
+  [[ "$stderr_bytes" =~ ^[0-9]+$ ]] || fail startup_probe "$STARTUP_VALIDATION_RC" "PostgreSQL startup stderr size is invalid"
+  if [[ "$stderr_bytes" != "0" ]]; then
+    CURRENT_STAGE="startup_stderr"
+    if [[ "$FAILED_RECORDED" -eq 0 ]]; then
+      record_state "FAILED_startup_stderr_${STARTUP_VALIDATION_RC} bytes=$stderr_bytes" || true
+      FAILED_RECORDED=1
+    fi
+    fail startup_stderr "$STARTUP_VALIDATION_RC" "PostgreSQL startup stderr was not empty (${stderr_bytes} bytes)"
+  fi
+
+  exec {stdout_fd}<"$stdout_file" || fail startup_probe "$STARTUP_VALIDATION_RC" "cannot read PostgreSQL startup stdout"
+  if IFS= read -r evidence <&$stdout_fd; then first_read_rc=0; else first_read_rc=$?; fi
+  if IFS= read -r trailing <&$stdout_fd; then second_read_rc=0; else second_read_rc=$?; fi
+  exec {stdout_fd}<&-
+  [[ "$first_read_rc" -eq 0 && "$second_read_rc" -ne 0 && -z "$trailing" ]] || fail identity 65 "PostgreSQL startup identity evidence must contain exactly one newline-terminated record"
+  [[ "$evidence" != *$'\r'* ]] || fail identity 65 "PostgreSQL startup identity evidence contains a carriage return"
   delimiters="${evidence//[!|]/}"
   [[ "${#delimiters}" -eq 4 ]] || fail identity 65 "PostgreSQL startup identity evidence must contain exactly five fields"
   IFS='|' read -r version database session_identity current_identity socket_identity extra <<<"$evidence"

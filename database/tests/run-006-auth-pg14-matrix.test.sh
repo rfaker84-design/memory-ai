@@ -77,6 +77,8 @@ source "$RUNNER"
 ORIGINAL_RECORD_STATE="$(declare -f record_state)"
 ORIGINAL_EXECUTE_POSTGRES_COMMAND="$(declare -f execute_postgres_command)"
 ORIGINAL_RUN_EXTERNAL_TIMEOUT="$(declare -f run_external_timeout)"
+ORIGINAL_STARTUP_PROBE_FILE_OWNER="$(declare -f startup_probe_file_owner)"
+ORIGINAL_STARTUP_PROBE_FILE_MODE="$(declare -f startup_probe_file_mode)"
 RUN_ID="source-test-run"
 generate_run_nonce() { RUN_NONCE=33333333333333333333333333333333; }
 configure_run_identity
@@ -90,6 +92,7 @@ validate_oracle_contracts
   initialize_runtime() { printf 'runtime\n' >>"$NO_IO_LOG"; return 99; }
   initialize_state_file() { printf 'state\n' >>"$NO_IO_LOG"; return 99; }
   create_state_file() { printf 'state-file\n' >>"$NO_IO_LOG"; return 99; }
+  create_startup_probe_file() { printf 'startup-probe-file\n' >>"$NO_IO_LOG"; return 99; }
   create_database_command() { printf 'createdb\n' >>"$NO_IO_LOG"; return 99; }
   drop_database_command() { printf 'dropdb\n' >>"$NO_IO_LOG"; return 99; }
   remove_work_directory() { printf 'remove-runtime\n' >>"$NO_IO_LOG"; return 99; }
@@ -232,9 +235,22 @@ eval "$ORIGINAL_ORCHESTRATOR_UID"
 eval "$ORIGINAL_DATABASE_OS_USER_EXISTS"
 
 IDENTITY_EVIDENCE='140023|postgres|postgres|postgres|t'
+IDENTITY_STDERR=''
 IDENTITY_TRANSPORT_RC=0
 IDENTITY_BOUNDARY_LOG="$TMP_ROOT/identity-boundary.log"
+IDENTITY_OWNER_LOG="$TMP_ROOT/identity-owner-checks.log"
+IDENTITY_MODE_LOG="$TMP_ROOT/identity-mode-checks.log"
 : >"$IDENTITY_BOUNDARY_LOG"
+: >"$IDENTITY_OWNER_LOG"
+: >"$IDENTITY_MODE_LOG"
+startup_probe_file_owner() {
+  printf '%s\n' "$1" >>"$IDENTITY_OWNER_LOG"
+  printf '0\n'
+}
+startup_probe_file_mode() {
+  printf '%s\n' "$1" >>"$IDENTITY_MODE_LOG"
+  printf '600\n'
+}
 execute_postgres_command() {
   local identity_joined identity_sql="" identity_command_count=0 identity_index identity_token
   capture_postgres_boundary "$@"
@@ -255,22 +271,70 @@ execute_postgres_command() {
     "pg_catalog.inet_client_addr() IS NULL"; do
     [[ "$identity_sql" == *"$identity_token"* ]] || return 97
   done
-  [[ "$IDENTITY_TRANSPORT_RC" -eq 0 ]] || return "$IDENTITY_TRANSPORT_RC"
   printf 'identity\n' >>"$IDENTITY_BOUNDARY_LOG"
   printf '%s\n' "$IDENTITY_EVIDENCE"
+  printf '%s' "$IDENTITY_STDERR" >&2
+  [[ "$IDENTITY_TRANSPORT_RC" -eq 0 ]] || return "$IDENTITY_TRANSPORT_RC"
 }
-verify_postgresql_identity
-[[ "$(wc -l <"$IDENTITY_BOUNDARY_LOG" | tr -d ' ')" == "1" ]] || \
-  fail_test "startup identity did not cross the postgres boundary exactly once"
-IDENTITY_TRANSPORT_RC=42
-set +e
-( set -e; verify_postgresql_identity ) >/dev/null 2>&1
-identity_transport_rc=$?
-set -e
-assert_rc "$identity_transport_rc" 42 "startup transport failure must preserve its original rc"
-IDENTITY_TRANSPORT_RC=0
+
+run_identity_probe_case() {
+  local label="$1" evidence="$2" stderr_payload="$3" transport_rc="$4" expected_rc="$5"
+  local case_dir="$TMP_ROOT/identity-case-$label" state_log="$TMP_ROOT/identity-case-$label.state" actual_rc file
+  local -a probe_files=()
+  mkdir "$case_dir"
+  chmod 700 "$case_dir"
+  : >"$state_log"
+  set +e
+  (
+    WORK_DIR="$case_dir"
+    FAILED_RECORDED=0
+    CURRENT_STAGE=startup
+    IDENTITY_EVIDENCE="$evidence"
+    IDENTITY_STDERR="$stderr_payload"
+    IDENTITY_TRANSPORT_RC="$transport_rc"
+    record_state() { printf '%s\n' "$1" >>"$state_log"; }
+    verify_postgresql_identity
+  ) >/dev/null 2>"$TMP_ROOT/identity-case-$label.log"
+  actual_rc=$?
+  set -e
+  assert_rc "$actual_rc" "$expected_rc" "startup identity case $label"
+
+  while IFS= read -r file; do probe_files+=("$file"); done < <(find "$case_dir" -maxdepth 1 -type f -print | sort)
+  [[ "${#probe_files[@]}" -eq 2 ]] || fail_test "$label did not create exactly two startup probe files"
+  for file in "${probe_files[@]}"; do
+    [[ "$(cd "$(dirname "$file")" && pwd -P)" == "$(cd "$case_dir" && pwd -P)" ]] || fail_test "$label probe escaped WORK_DIR"
+    [[ -f "$file" && ! -L "$file" ]] || fail_test "$label probe is not a regular non-symlink file"
+    grep -Fxq -- "$file" "$IDENTITY_OWNER_LOG" || fail_test "$label probe did not execute the root-owner check"
+    grep -Fxq -- "$file" "$IDENTITY_MODE_LOG" || fail_test "$label probe did not execute the 0600 mode check"
+    case "${file##*/}" in
+      postgresql-startup-identity.stdout.*|postgresql-startup-identity.stderr.*) ;;
+      *) fail_test "$label used an uncontrolled startup probe filename" ;;
+    esac
+  done
+  if [[ "$expected_rc" == "$STARTUP_VALIDATION_RC" ]]; then
+    assert_contains "$state_log" "FAILED_startup_stderr_${STARTUP_VALIDATION_RC} bytes=${#stderr_payload}"
+    [[ "$(wc -l <"$state_log" | tr -d ' ')" == "1" ]] || fail_test "$label recorded more than the safe pollution state"
+    [[ "$(<"$state_log")" != *WARNING* && "$(<"$state_log")" != *NOTICE* ]] || \
+      fail_test "$label leaked startup stderr content into state"
+    if [[ -n "$stderr_payload" && "$stderr_payload" != $'\n' && "$stderr_payload" != ' ' ]]; then
+      ! grep -Fq -- "$stderr_payload" "$TMP_ROOT/identity-case-$label.log" || \
+        fail_test "$label leaked startup stderr content into the normal log"
+    fi
+  elif [[ "$transport_rc" -ne 0 ]]; then
+    [[ ! -s "$state_log" ]] || fail_test "$label validated stderr after a transport failure"
+  fi
+  rm -rf -- "$case_dir"
+}
+
+run_identity_probe_case valid '140023|postgres|postgres|postgres|t' '' 0 0
+run_identity_probe_case warning '140023|postgres|postgres|postgres|t' 'WARNING: fake startup warning' 0 "$STARTUP_VALIDATION_RC"
+run_identity_probe_case notice '140023|postgres|postgres|postgres|t' 'NOTICE: fake startup notice' 0 "$STARTUP_VALIDATION_RC"
+run_identity_probe_case newline '140023|postgres|postgres|postgres|t' $'\n' 0 "$STARTUP_VALIDATION_RC"
+run_identity_probe_case space '140023|postgres|postgres|postgres|t' ' ' 0 "$STARTUP_VALIDATION_RC"
+run_identity_probe_case transport42 'not|valid|identity|data|f' 'WARNING: must not override transport failure' 42 42
+run_identity_probe_case invalid_stdout '140022|postgres|postgres|postgres|t' '' 0 65
+
 for bad_identity in \
-  '140022|postgres|postgres|postgres|t' \
   '140023|memoryai|postgres|postgres|t' \
   '140023|postgres|other|postgres|t' \
   '140023|postgres|postgres|other|t' \
@@ -280,20 +344,107 @@ for bad_identity in \
   '140023|postgres|postgres|postgres|t|' \
   '140023||postgres|postgres|t' \
   ''; do
-  IDENTITY_EVIDENCE="$bad_identity"
-  set +e
-  ( verify_postgresql_identity ) >/dev/null 2>&1
-  bad_identity_rc=$?
-  set -e
-  assert_rc "$bad_identity_rc" 65 "startup identity parser $bad_identity"
+  bad_identity_label="shape_$(printf '%s' "$bad_identity" | cksum | cut -d' ' -f1)"
+  run_identity_probe_case "$bad_identity_label" "$bad_identity" '' 0 65
 done
+
+[[ "$(wc -l <"$IDENTITY_BOUNDARY_LOG" | tr -d ' ')" -ge 16 ]] || \
+  fail_test "startup identity cases did not cross the postgres boundary"
+
+# Probe captures stay inside WORK_DIR and disappear with that directory on
+# every normal or signal-driven exit path.
+for cleanup_spec in EXIT:0 INT:130 TERM:143; do
+  cleanup_kind="${cleanup_spec%%:*}"
+  cleanup_expected_rc="${cleanup_spec##*:}"
+  cleanup_parent="$TMP_ROOT/startup-probe-cleanup-$cleanup_kind"
+  cleanup_dir="$cleanup_parent/memoryai-auth-pg14-matrix.${RUN_NONCE}.capture"
+  mkdir -p "$cleanup_dir"
+  chmod 700 "$cleanup_dir"
+  set +e
+  (
+    WORK_DIR="$cleanup_dir"
+    WORK_DIR_CREATED=1
+    RUN_ACTIVE=0
+    RUNTIME_READY=0
+    FAILED_RECORDED=0
+    IDENTITY_EVIDENCE='140023|postgres|postgres|postgres|t'
+    IDENTITY_STDERR=''
+    IDENTITY_TRANSPORT_RC=0
+    remove_work_directory() {
+      [[ "$WORK_DIR" == "$cleanup_dir" && -d "$WORK_DIR" && ! -L "$WORK_DIR" ]] || return 1
+      rm -rf -- "$WORK_DIR"
+      [[ ! -e "$WORK_DIR" ]]
+    }
+    install_runtime_traps
+    verify_postgresql_identity
+    [[ "$(find "$WORK_DIR" -maxdepth 1 -type f -name 'postgresql-startup-identity.*' | wc -l | tr -d ' ')" == "2" ]] || exit 99
+    case "$cleanup_kind" in
+      EXIT) exit 0 ;;
+      INT) on_signal INT 130 ;;
+      TERM) on_signal TERM 143 ;;
+    esac
+  ) >/dev/null 2>&1
+  cleanup_signal_rc=$?
+  set -e
+  assert_rc "$cleanup_signal_rc" "$cleanup_expected_rc" "$cleanup_kind startup probe cleanup"
+  [[ ! -e "$cleanup_dir" ]] || fail_test "$cleanup_kind left startup probe files behind"
+done
+
+# A polluted startup probe stops run_matrix before scenario dispatch or any
+# database creation, while state receives only the stage and byte count.
+POLLUTION_WORK="$TMP_ROOT/startup-pollution-run"
+POLLUTION_STATE="$TMP_ROOT/startup-pollution.state"
+POLLUTION_DATABASE_MARKER="$TMP_ROOT/startup-pollution.database"
+mkdir "$POLLUTION_WORK"
+chmod 700 "$POLLUTION_WORK"
+: >"$POLLUTION_STATE"
+rm -f -- "$POLLUTION_DATABASE_MARKER"
+set +e
+(
+  IDENTITY_EVIDENCE='140023|postgres|postgres|postgres|t'
+  IDENTITY_STDERR='WARNING: startup pollution must remain private'
+  IDENTITY_TRANSPORT_RC=0
+  FAILED_RECORDED=0
+  CURRENT_STAGE=startup
+  validate_static_inputs() { :; }
+  validate_all_database_names() { :; }
+  validate_orchestrator_identity() { :; }
+  validate_inputs() { :; }
+  initialize_runtime() { WORK_DIR="$POLLUTION_WORK"; WORK_DIR_CREATED=1; RUNTIME_READY=0; }
+  record_state() { printf '%s\n' "$1" >>"$POLLUTION_STATE"; }
+  record_database_mappings() { :; }
+  assert_all_database_names_absent() { :; }
+  assert_no_residual_databases() { :; }
+  create_database_command() { printf 'createdb\n' >>"$POLLUTION_DATABASE_MARKER"; }
+  dispatch_all_scenarios() {
+    record_state 'SCENARIO_STARTED should-not-run'
+    printf 'dispatch\n' >>"$POLLUTION_DATABASE_MARKER"
+  }
+  run_matrix
+) >/dev/null 2>"$TMP_ROOT/startup-pollution.log"
+pollution_run_rc=$?
+set -e
+assert_rc "$pollution_run_rc" "$STARTUP_VALIDATION_RC" "polluted startup run_matrix"
+assert_contains "$POLLUTION_STATE" "FAILED_startup_stderr_${STARTUP_VALIDATION_RC} bytes=46"
+! grep -Fq 'SCENARIO_STARTED' "$POLLUTION_STATE" || fail_test "stderr pollution entered a scenario"
+[[ ! -e "$POLLUTION_DATABASE_MARKER" ]] || fail_test "stderr pollution reached database creation or dispatch"
+[[ "$(find "$POLLUTION_WORK" -maxdepth 1 -type f -name 'postgresql-startup-identity.*' | wc -l | tr -d ' ')" == "2" ]] || \
+  fail_test "polluted startup did not use two capture files"
+! grep -Fq 'startup pollution must remain private' "$POLLUTION_STATE" || fail_test "pollution content leaked into persistent state"
+! grep -Fq 'startup pollution must remain private' "$TMP_ROOT/startup-pollution.log" || fail_test "pollution content leaked into the normal log"
+rm -rf -- "$POLLUTION_WORK"
+
 IDENTITY_EVIDENCE='140023|postgres|postgres|postgres|t'
+IDENTITY_STDERR=''
+IDENTITY_TRANSPORT_RC=0
 execute_postgres_command() {
   capture_postgres_boundary "$@"
   [[ "$POSTGRES_EXECUTABLE" == /usr/bin/test && "${POSTGRES_CLI_ARGS[*]}" == "-r /staging/006.sql" ]]
 }
 postgres_file_readable /staging/006.sql || fail_test "staging readability did not use the postgres boundary"
 eval "$ORIGINAL_EXECUTE_POSTGRES_COMMAND"
+eval "$ORIGINAL_STARTUP_PROBE_FILE_OWNER"
+eval "$ORIGINAL_STARTUP_PROBE_FILE_MODE"
 
 # Independent test oracles.  These do not call the runner's contract helpers;
 # a drift in either the formal contract or parser therefore fails the fake run.
