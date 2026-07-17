@@ -251,7 +251,7 @@ const approvedPsqlScriptHeredocs = Object.freeze({
   LOCK_CONNECTIONS_SQL: Object.freeze({
     opener: `if capture_scalar_query database "$database" lock_connections "$application_name" zero_or_one <<'LOCK_CONNECTIONS_SQL'`,
     token: ":'lock_app'",
-    body: "SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname=pg_catalog.current_database() AND usename=CURRENT_USER AND application_name=:'lock_app' AND backend_type='client backend';\n",
+    body: "SELECT CASE WHEN count(*)=0 THEN 0 WHEN count(*)=1 AND pg_catalog.bool_and(usename=CURRENT_USER AND CURRENT_USER='postgres'::name AND backend_type='client backend') THEN 1 ELSE 2 END FROM pg_catalog.pg_stat_activity WHERE datname=pg_catalog.current_database() AND application_name=:'lock_app';\n",
   }),
   LOCK_BACKEND_PID_SQL: Object.freeze({
     opener: `if capture_scalar_query database "$database" lock_backend_pid "$application_name" backend_pid <<'LOCK_BACKEND_PID_SQL'`,
@@ -599,11 +599,25 @@ function assertMatrixRunnerStructure(runner) {
   assert.match(exactTermination, /LOCK_HOLDER_DATABASE" == "\$database"/);
   assert.match(exactTermination, /LOCK_HOLDER_APPLICATION_NAME" == "\$application_name"/);
   assert.match(exactTermination, /LOCK_HOLDER_BACKEND_PID" == "\$backend_pid"/);
-  assert.match(exactTermination, /read_exact_query_scalar one/);
+  assert.match(exactTermination, /LOCK_HOLDER_STATE="termination_requested"/);
+  assert.match(exactTermination, /read_exact_query_scalar zero_or_one/);
+  assert.match(exactTermination, /LOCK_HOLDER_STATE="termination_succeeded"/);
 
   const wrapperReaper = runner.match(/reap_active_lock_holder_wrapper\(\) \{([\s\S]*?)^\}/m)?.[1];
   assert.ok(wrapperReaper, "missing lock-holder wrapper reaper");
-  assert.match(wrapperReaper, /if wait "\$wrapper_pid"/);
+  assert.match(wrapperReaper, /poll<=LOCK_HOLDER_WRAPPER_MAX_POLLS/);
+  assert.match(wrapperReaper, /LOCK_HOLDER_SNAPSHOT_STARTTIME" == "\$LOCK_HOLDER_WRAPPER_STARTTIME"/);
+  assert.match(wrapperReaper, /return "\$LOCK_HOLDER_WRAPPER_TIMEOUT_RC"/);
+  assert.match(wrapperReaper, /if wait_lock_holder_wrapper_child "\$wrapper_pid"/);
+  assert.match(wrapperReaper, /0\|2\)/, "wrapper reaper must accept only normal and documented psql disconnect status");
+  assert.match(wrapperReaper, /LOCK_HOLDER_DEFERRED_SIGNAL=INT/);
+  assert.match(wrapperReaper, /LOCK_HOLDER_DEFERRED_SIGNAL=TERM/);
+  const wrapperWaitIndex = wrapperReaper.indexOf('wait_lock_holder_wrapper_child "$wrapper_pid"');
+  const wrapperCommitIndex = wrapperReaper.indexOf('LOCK_HOLDER_WRAPPER_REAPED=1');
+  const wrapperRestoreIndex = wrapperReaper.indexOf('restore_lock_holder_signal_trap INT');
+  const wrapperReplayIndex = wrapperReaper.indexOf('dispatch_deferred_lock_holder_signal "$deferred_signal"');
+  assert.ok(wrapperWaitIndex >= 0 && wrapperWaitIndex < wrapperCommitIndex && wrapperCommitIndex < wrapperRestoreIndex &&
+    wrapperRestoreIndex < wrapperReplayIndex, "wrapper status must be committed before deferred signals are restored and replayed");
   assert.doesNotMatch(wrapperReaper, /\b(?:kill|pkill|killall)\b/,
     "a reusable client PID must never be signaled during wrapper reaping");
 
@@ -613,11 +627,16 @@ function assertMatrixRunnerStructure(runner) {
     "normal lock path must not use broad database termination");
   assert.doesNotMatch(lockScenario, /kill "\$holder"/,
     "normal lock path must not treat the client job PID as the backend termination handle");
-  const exactTerminateIndex = lockScenario.indexOf('terminate_exact_lock_holder_backend "$database" "$application_name" "$backend_pid"');
-  const connectionPollIndex = lockScenario.indexOf('wait_for_lock_holder_connections "$database" "$application_name"');
-  const wrapperReapIndex = lockScenario.indexOf('reap_active_lock_holder_wrapper "$database"');
-  assert.ok(exactTerminateIndex >= 0 && exactTerminateIndex < connectionPollIndex && connectionPollIndex < wrapperReapIndex,
-    "normal lock cleanup must terminate the exact backend, poll it away, then reap the client wrapper");
+  const verifiedIndex = lockScenario.indexOf('mark_lock_holder_backend_verified "$database" "$application_name" "$backend_pid"');
+  const boundedCleanupIndex = lockScenario.indexOf('complete_active_lock_holder_cleanup "$database"');
+  assert.ok(verifiedIndex >= 0 && verifiedIndex < boundedCleanupIndex,
+    "normal lock cleanup must verify the backend before entering the shared bounded cleanup state machine");
+  assert.match(runner, /not_started\|wrapper_reaped\) return 0/);
+  assert.match(runner, /active_verified\|termination_requested\)/);
+  assert.match(runner, /LOCK_HOLDER_STATE="backend_absent"/);
+  assert.match(runner, /LOCK_HOLDER_STATE="cleanup_failed"/);
+  assert.match(runner, /cleanup_failed:termination_succeeded\|cleanup_failed:backend_absent\|cleanup_failed:wrapper_reaped/,
+    "a committed exact termination must suppress broad cleanup fallback even when absence polling fails");
   assert.equal((runner.match(/admin_psql_script terminate "\$database"/g) || []).length, 1,
     "broad database termination must remain confined to the cleanup fallback");
   assert.match(runner, /\[\[ "\$\(orchestrator_uid\)" == "0" \]\]/);

@@ -5,7 +5,7 @@ readonly TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly RUNNER="$TEST_SCRIPT_DIR/run-006-auth-pg14-matrix.sh"
 readonly TMP_ROOT="$(mktemp -d)"
 cleanup_test() { rm -rf -- "$TMP_ROOT"; }
-trap cleanup_test EXIT INT TERM
+trap cleanup_test EXIT
 
 fail_test() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 assert_contains() { grep -Fq -- "$2" "$1" || fail_test "$1 does not contain $2"; }
@@ -84,6 +84,10 @@ ORIGINAL_CREATE_QUERY_CAPTURE_FILE="$(declare -f create_query_capture_file)"
 ORIGINAL_QUERY_CAPTURE_FILE_OWNER="$(declare -f query_capture_file_owner)"
 ORIGINAL_QUERY_CAPTURE_FILE_GROUP="$(declare -f query_capture_file_group)"
 ORIGINAL_QUERY_CAPTURE_FILE_MODE="$(declare -f query_capture_file_mode)"
+ORIGINAL_READ_LOCK_HOLDER_WRAPPER_SNAPSHOT="$(declare -f read_lock_holder_wrapper_snapshot)"
+ORIGINAL_CAPTURE_LOCK_HOLDER_WRAPPER_STARTTIME="$(declare -f capture_lock_holder_wrapper_starttime)"
+ORIGINAL_LOCK_HOLDER_WRAPPER_POLL_SLEEP="$(declare -f lock_holder_wrapper_poll_sleep)"
+ORIGINAL_WAIT_LOCK_HOLDER_WRAPPER_CHILD="$(declare -f wait_lock_holder_wrapper_child)"
 RUN_ID="source-test-run"
 generate_run_nonce() { RUN_NONCE=33333333333333333333333333333333; }
 configure_run_identity
@@ -188,7 +192,7 @@ declare -A TEST_SCRIPT_SQLS=(
   [preexisting_count]="SELECT count(*) FROM pg_catalog.pg_database WHERE datname = ANY(pg_catalog.string_to_array(:'matrix_names', ','));"
   [lock_holder]=$'SELECT pg_catalog.set_config(\'application_name\', :\'lock_app\', false);\nBEGIN;\nLOCK TABLE public.auth_verification_challenges IN ACCESS EXCLUSIVE MODE;\nSELECT pg_catalog.pg_sleep(30);'
   [lock_granted]="SELECT count(*) FROM pg_catalog.pg_locks l JOIN pg_catalog.pg_stat_activity a ON a.pid=l.pid WHERE a.datname=pg_catalog.current_database() AND a.usename=CURRENT_USER AND a.application_name=:'lock_app' AND a.backend_type='client backend' AND l.database=(SELECT oid FROM pg_catalog.pg_database WHERE datname=pg_catalog.current_database()) AND l.relation='public.auth_verification_challenges'::regclass AND l.mode='AccessExclusiveLock' AND l.granted;"
-  [lock_connections]="SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname=pg_catalog.current_database() AND usename=CURRENT_USER AND application_name=:'lock_app' AND backend_type='client backend';"
+  [lock_connections]="SELECT CASE WHEN count(*)=0 THEN 0 WHEN count(*)=1 AND pg_catalog.bool_and(usename=CURRENT_USER AND CURRENT_USER='postgres'::name AND backend_type='client backend') THEN 1 ELSE 2 END FROM pg_catalog.pg_stat_activity WHERE datname=pg_catalog.current_database() AND application_name=:'lock_app';"
   [lock_backend_pid]=$'WITH holders AS MATERIALIZED (\n  SELECT DISTINCT a.pid\n  FROM pg_catalog.pg_stat_activity a\n  JOIN pg_catalog.pg_locks l ON l.pid = a.pid\n  WHERE a.datname = pg_catalog.current_database()\n    AND a.usename = CURRENT_USER\n    AND CURRENT_USER = \'postgres\'::name\n    AND a.application_name = :\'lock_app\'\n    AND a.backend_type = \'client backend\'\n    AND a.pid <> pg_catalog.pg_backend_pid()\n    AND l.database = (SELECT oid FROM pg_catalog.pg_database WHERE datname = pg_catalog.current_database())\n    AND l.relation = \'public.auth_verification_challenges\'::regclass\n    AND l.mode = \'AccessExclusiveLock\'\n    AND l.granted\n)\nSELECT pg_catalog.lpad(min(pid)::text, 10, \'0\') FROM holders HAVING count(*) = 1;'
   [lock_terminate]=$'WITH holders AS MATERIALIZED (\n  SELECT DISTINCT a.pid\n  FROM pg_catalog.pg_stat_activity a\n  JOIN pg_catalog.pg_locks l ON l.pid = a.pid\n  WHERE a.datname = pg_catalog.current_database()\n    AND a.usename = CURRENT_USER\n    AND CURRENT_USER = \'postgres\'::name\n    AND a.application_name = :\'lock_app\'\n    AND a.backend_type = \'client backend\'\n    AND a.pid <> pg_catalog.pg_backend_pid()\n    AND l.database = (SELECT oid FROM pg_catalog.pg_database WHERE datname = pg_catalog.current_database())\n    AND l.relation = \'public.auth_verification_challenges\'::regclass\n    AND l.mode = \'AccessExclusiveLock\'\n    AND l.granted\n), eligible AS MATERIALIZED (\n  SELECT pid FROM holders WHERE pid = :\'lock_pid\'::integer AND (SELECT count(*) FROM holders) = 1\n), terminated AS MATERIALIZED (\n  SELECT pg_catalog.pg_terminate_backend(pid) AS ok FROM eligible\n)\nSELECT count(*) FROM terminated WHERE ok;'
 )
@@ -1002,11 +1006,18 @@ execute_postgres_command() {
           if [[ -e "$LOCK_BACKEND_TARGET_MARKER" && "$TEST_SCRIPT_DATABASE" == "$LOCK_BACKEND_TARGET_DB" && \
                 "$LOCK_BACKEND_TARGET_USER" == postgres && "${TEST_SCRIPT_SET_ARGUMENTS[0]}" == "--set=lock_app=${LOCK_BACKEND_TARGET_APP}" && \
                 "${TEST_SCRIPT_SET_ARGUMENTS[1]}" == "--set=lock_pid=${LOCK_BACKEND_TARGET_PID}" ]]; then
-            if [[ "$LOCK_BACKEND_TEST_MODE" == terminate_false ]]; then
-              printf '0\n'
+           if [[ "$LOCK_BACKEND_TEST_MODE" == terminate_false ]]; then
+             printf '0\n'
+            elif [[ "$LOCK_BACKEND_TEST_MODE" == terminate_null ]]; then
+              :
+            elif [[ "$LOCK_BACKEND_TEST_MODE" == terminate_invalid ]]; then
+              printf '2\n'
             else
               rm -f -- "$LOCK_BACKEND_TARGET_MARKER"
               printf '1\n'
+              if [[ "$LOCK_BACKEND_TEST_MODE" == signal_after_terminate ]]; then
+                kill -INT "$BASHPID"
+              fi
             fi
           else
             printf '0\n'
@@ -1024,6 +1035,14 @@ execute_postgres_command() {
                 ;;
               all_one) printf '1\n'; return 0 ;;
               backend_marker) [[ -e "$LOCK_BACKEND_TARGET_MARKER" ]] && printf '1\n' || printf '0\n'; return 0 ;;
+              backend_marker_then_transport42)
+                if [[ -e "$LOCK_BACKEND_TARGET_MARKER" ]]; then
+                  printf '1\n'
+                  return 0
+                fi
+                printf '0\n'
+                return 42
+                ;;
               transport42) printf '1\n'; return 42 ;;
               output_two) printf '2\n'; return 0 ;;
               trailing_blank) printf '1\n\n'; return 0 ;;
@@ -1107,7 +1126,7 @@ TEST_LOCK_GRANTED_SQL
       ;;
     lock_connections)
       capture_scalar_query database "$boundary_db" lock_connections "$lock_app" zero_or_one <<'TEST_LOCK_CONNECTIONS_SQL'
-SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname=pg_catalog.current_database() AND usename=CURRENT_USER AND application_name=:'lock_app' AND backend_type='client backend';
+SELECT CASE WHEN count(*)=0 THEN 0 WHEN count(*)=1 AND pg_catalog.bool_and(usename=CURRENT_USER AND CURRENT_USER='postgres'::name AND backend_type='client backend') THEN 1 ELSE 2 END FROM pg_catalog.pg_stat_activity WHERE datname=pg_catalog.current_database() AND application_name=:'lock_app';
 TEST_LOCK_CONNECTIONS_SQL
       ;;
     *) return 64 ;;
@@ -1294,8 +1313,13 @@ TEST_LOCK_BACKEND_PID_SQL
 
 activate_test_lock_holder() {
   clear_active_lock_holder
+  capture_lock_holder_wrapper_starttime() {
+    LOCK_HOLDER_SNAPSHOT_STATE=R
+    LOCK_HOLDER_SNAPSHOT_STARTTIME=42424200
+  }
   register_active_lock_holder "$1" "$2" 424242 || fail_test "could not register fake lock holder"
-  LOCK_HOLDER_BACKEND_PID="$3"
+  eval "$ORIGINAL_CAPTURE_LOCK_HOLDER_WRAPPER_STARTTIME"
+  mark_lock_holder_backend_verified "$1" "$2" "$3" || fail_test "could not mark fake lock holder backend verified"
 }
 
 assert_lock_target_still_isolated() {
@@ -1407,6 +1431,371 @@ QUERY_CAPTURE_TEST_GROUP=0
 LOCK_BACKEND_TEST_MODE=""
 LOCK_CONNECTION_TEST_MODE=""
 
+# The formal wrapper reaper never waits for a running child.  These tests call
+# the production state machine directly while replacing only /proc observation,
+# the fixed polling sleep, and Bash's wait builtin.
+WRAPPER_SNAPSHOT_MODE=""
+WRAPPER_SNAPSHOT_CALLS=0
+WRAPPER_SLEEP_CALLS=0
+WRAPPER_WAIT_CALLS=0
+WRAPPER_WAIT_RC=0
+read_lock_holder_wrapper_snapshot() {
+  WRAPPER_SNAPSHOT_CALLS=$((WRAPPER_SNAPSHOT_CALLS + 1))
+  LOCK_HOLDER_SNAPSHOT_STARTTIME="$LOCK_HOLDER_WRAPPER_STARTTIME"
+  case "$WRAPPER_SNAPSHOT_MODE" in
+    gone) LOCK_HOLDER_SNAPSHOT_STATE=gone; LOCK_HOLDER_SNAPSHOT_STARTTIME="" ;;
+    running_then_zombie)
+      if (( WRAPPER_SNAPSHOT_CALLS == 1 )); then LOCK_HOLDER_SNAPSHOT_STATE=R; else LOCK_HOLDER_SNAPSHOT_STATE=Z; fi
+      ;;
+    hung) LOCK_HOLDER_SNAPSHOT_STATE=S ;;
+    stopped) LOCK_HOLDER_SNAPSHOT_STATE=T ;;
+    drift) LOCK_HOLDER_SNAPSHOT_STATE=R; LOCK_HOLDER_SNAPSHOT_STARTTIME=$((LOCK_HOLDER_WRAPPER_STARTTIME + 1)) ;;
+    *) return 86 ;;
+  esac
+}
+lock_holder_wrapper_poll_sleep() { WRAPPER_SLEEP_CALLS=$((WRAPPER_SLEEP_CALLS + 1)); }
+wait_lock_holder_wrapper_child() { WRAPPER_WAIT_CALLS=$((WRAPPER_WAIT_CALLS + 1)); return "$WRAPPER_WAIT_RC"; }
+
+prepare_fake_wrapper_reap() {
+  local mode="$1" wait_rc="$2"
+  clear_active_lock_holder
+  LOCK_HOLDER_ACTIVE=1
+  LOCK_HOLDER_DATABASE="$boundary_db"
+  LOCK_HOLDER_APPLICATION_NAME="$LOCK_BACKEND_TARGET_APP"
+  LOCK_HOLDER_WRAPPER_PID=424242
+  LOCK_HOLDER_WRAPPER_STARTTIME=42424200
+  LOCK_HOLDER_WRAPPER_REAPED=0
+  LOCK_HOLDER_WRAPPER_EXIT_RC=""
+  LOCK_HOLDER_STATE=backend_absent
+  LOCK_HOLDER_RESUME_STATE=backend_absent
+  WRAPPER_SNAPSHOT_MODE="$mode"
+  WRAPPER_SNAPSHOT_CALLS=0
+  WRAPPER_SLEEP_CALLS=0
+  WRAPPER_WAIT_CALLS=0
+  WRAPPER_WAIT_RC="$wait_rc"
+}
+
+run_fake_wrapper_reap_case() {
+  local label="$1" mode="$2" wait_rc="$3" expected_rc="$4" expected_snapshots="$5" expected_sleeps="$6" expected_waits="$7" actual_rc
+  prepare_fake_wrapper_reap "$mode" "$wait_rc"
+  if reap_active_lock_holder_wrapper "$boundary_db"; then actual_rc=0; else actual_rc=$?; fi
+  assert_rc "$actual_rc" "$expected_rc" "$label wrapper reap"
+  [[ "$WRAPPER_SNAPSHOT_CALLS" -eq "$expected_snapshots" ]] || fail_test "$label wrapper snapshot count changed"
+  [[ "$WRAPPER_SLEEP_CALLS" -eq "$expected_sleeps" ]] || fail_test "$label wrapper sleep count changed"
+  [[ "$WRAPPER_WAIT_CALLS" -eq "$expected_waits" ]] || fail_test "$label wrapper wait count changed"
+}
+
+run_fake_wrapper_reap_case immediate_zero gone 0 0 1 0 1
+[[ "$LOCK_HOLDER_STATE" == wrapper_reaped && "$LOCK_HOLDER_WRAPPER_EXIT_RC" == 0 ]] || fail_test "wrapper exit 0 state was not preserved"
+run_fake_wrapper_reap_case expected_psql_disconnect gone 2 0 1 0 1
+[[ "$LOCK_HOLDER_STATE" == wrapper_reaped && "$LOCK_HOLDER_WRAPPER_EXIT_RC" == 2 ]] || fail_test "wrapper exit 2 was not accepted explicitly"
+run_fake_wrapper_reap_case exit_42 gone 42 42 1 0 1
+[[ "$LOCK_HOLDER_STATE" == cleanup_failed && "$LOCK_HOLDER_WRAPPER_REAPED" -eq 1 ]] || fail_test "wrapper exit 42 was not recorded as a reaped failure"
+run_fake_wrapper_reap_case wait_127 gone 127 127 1 0 1
+run_fake_wrapper_reap_case running_then_zero running_then_zombie 0 0 2 1 1
+run_fake_wrapper_reap_case hung_timeout hung 0 "$LOCK_HOLDER_WRAPPER_TIMEOUT_RC" 50 50 0
+run_fake_wrapper_reap_case stopped_timeout stopped 0 "$LOCK_HOLDER_WRAPPER_TIMEOUT_RC" 50 50 0
+run_fake_wrapper_reap_case pid_starttime_drift drift 0 "$LOCK_HOLDER_WRAPPER_IDENTITY_RC" 1 0 0
+prepare_fake_wrapper_reap hung 0
+if complete_active_lock_holder_cleanup "$boundary_db"; then hung_cleanup_first_rc=0; else hung_cleanup_first_rc=$?; fi
+if complete_active_lock_holder_cleanup "$boundary_db"; then hung_cleanup_second_rc=0; else hung_cleanup_second_rc=$?; fi
+assert_rc "$hung_cleanup_first_rc" "$LOCK_HOLDER_WRAPPER_TIMEOUT_RC" "hung wrapper first cleanup"
+assert_rc "$hung_cleanup_second_rc" "$LOCK_HOLDER_WRAPPER_TIMEOUT_RC" "hung wrapper repeated cleanup"
+[[ "$WRAPPER_SNAPSHOT_CALLS" -eq 100 && "$WRAPPER_WAIT_CALLS" -eq 0 ]] || fail_test "hung wrapper cleanup used an unbounded or hidden wait"
+
+# Inject INT/TERM after the wait helper has selected the real child status but
+# before it returns to the reaper.  The reaper must commit the wrapper state
+# first, then replay the signal without a second cleanup wait.
+run_wait_commit_signal_case() {
+  local signal="$1" injected_wait_rc="$2" expected_signal_rc="$3" marker actual_rc
+  marker="$TMP_ROOT/wait-commit-${signal}.state"
+  rm -f -- "$marker"
+  set +e
+  (
+    trap - EXIT INT TERM
+    prepare_fake_wrapper_reap gone "$injected_wait_rc"
+    wait_lock_holder_wrapper_child() {
+      WRAPPER_WAIT_CALLS=$((WRAPPER_WAIT_CALLS + 1))
+      kill -s "$signal" "$BASHPID"
+      return "$injected_wait_rc"
+    }
+    on_signal() {
+      [[ "$1" == "$signal" && "$2" == "$expected_signal_rc" ]] || exit 98
+      [[ "$LOCK_HOLDER_WRAPPER_REAPED" -eq 1 && "$LOCK_HOLDER_ACTIVE" -eq 0 ]] || exit 97
+      [[ "$LOCK_HOLDER_WRAPPER_EXIT_RC" == "$injected_wait_rc" && "$LOCK_HOLDER_STATE" == wrapper_reaped ]] || exit 96
+      [[ "$WRAPPER_WAIT_CALLS" -eq 1 ]] || exit 95
+      printf 'COMMITTED_BEFORE_%s\n' "$signal" >"$marker"
+      exit "$2"
+    }
+    reap_active_lock_holder_wrapper "$boundary_db"
+    exit 94
+  ) >/dev/null 2>&1
+  actual_rc=$?
+  set -e
+  assert_rc "$actual_rc" "$expected_signal_rc" "$signal wait-to-commit signal window"
+  assert_contains "$marker" "COMMITTED_BEFORE_${signal}"
+}
+run_wait_commit_signal_case INT 0 130
+run_wait_commit_signal_case TERM 2 143
+
+set +e
+(
+  trap - EXIT
+  trap '' INT TERM
+  prepare_fake_wrapper_reap gone 0
+  wait_lock_holder_wrapper_child() {
+    WRAPPER_WAIT_CALLS=$((WRAPPER_WAIT_CALLS + 1))
+    kill -INT "$BASHPID"
+    kill -TERM "$BASHPID"
+    return 0
+  }
+  on_signal() { exit 99; }
+  reap_active_lock_holder_wrapper "$boundary_db"
+  [[ "$LOCK_HOLDER_STATE" == wrapper_reaped && "$WRAPPER_WAIT_CALLS" -eq 1 ]]
+) >/dev/null 2>&1
+ignored_cleanup_signal_rc=$?
+set -e
+assert_rc "$ignored_cleanup_signal_rc" 0 "on_exit ignored-signal wrapper commit"
+
+# If Bash reports the deferred signal status from wait itself, retry exactly
+# once after the already-confirmed child is terminal to obtain its real status.
+interrupted_wait_marker="$TMP_ROOT/wait-interrupted.state"
+rm -f -- "$interrupted_wait_marker"
+set +e
+(
+  trap - EXIT INT TERM
+  prepare_fake_wrapper_reap gone 0
+  wait_lock_holder_wrapper_child() {
+    WRAPPER_WAIT_CALLS=$((WRAPPER_WAIT_CALLS + 1))
+    if [[ "$WRAPPER_WAIT_CALLS" -eq 1 ]]; then
+      kill -INT "$BASHPID"
+      return 130
+    fi
+    return 0
+  }
+  on_signal() {
+    [[ "$LOCK_HOLDER_STATE" == wrapper_reaped && "$LOCK_HOLDER_WRAPPER_EXIT_RC" == 0 ]] || exit 98
+    [[ "$WRAPPER_WAIT_CALLS" -eq 2 ]] || exit 97
+    printf 'INTERRUPTED_WAIT_RETRIED_ONCE\n' >"$interrupted_wait_marker"
+    exit "$2"
+  }
+  reap_active_lock_holder_wrapper "$boundary_db"
+  exit 96
+) >/dev/null 2>&1
+interrupted_wait_rc=$?
+set -e
+assert_rc "$interrupted_wait_rc" 130 "interrupted terminal wrapper wait"
+assert_contains "$interrupted_wait_marker" "INTERRUPTED_WAIT_RETRIED_ONCE"
+
+# Restore real process observation and wait, then prove the accepted statuses
+# against actual children.  A gate prevents exit before starttime is captured.
+eval "$ORIGINAL_READ_LOCK_HOLDER_WRAPPER_SNAPSHOT"
+eval "$ORIGINAL_CAPTURE_LOCK_HOLDER_WRAPPER_STARTTIME"
+eval "$ORIGINAL_LOCK_HOLDER_WRAPPER_POLL_SLEEP"
+eval "$ORIGINAL_WAIT_LOCK_HOLDER_WRAPPER_CHILD"
+
+run_actual_wrapper_exit_case() {
+  local label="$1" child_rc="$2" expected_rc="$3" gate child actual_rc
+  gate="$TMP_ROOT/wrapper-${label}.gate"
+  clear_active_lock_holder
+  : >"$gate"
+  ( while [[ -e "$gate" ]]; do /usr/bin/sleep 0.01; done; exit "$child_rc" ) &
+  child=$!
+  register_active_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$child" || fail_test "$label could not register actual wrapper"
+  LOCK_HOLDER_STATE=backend_absent
+  LOCK_HOLDER_RESUME_STATE=backend_absent
+  rm -f -- "$gate"
+  if reap_active_lock_holder_wrapper "$boundary_db"; then actual_rc=0; else actual_rc=$?; fi
+  assert_rc "$actual_rc" "$expected_rc" "$label actual wrapper"
+  if kill -0 "$child" 2>/dev/null; then fail_test "$label left the actual wrapper running"; fi
+  clear_active_lock_holder
+}
+run_actual_wrapper_exit_case immediate_exit_0 0 0
+run_actual_wrapper_exit_case expected_disconnect_2 2 0
+run_actual_wrapper_exit_case unknown_exit_42 42 42
+
+run_actual_nonterminal_wrapper_case() {
+  local label="$1" stop_child="$2" child actual_rc
+  clear_active_lock_holder
+  ( while :; do /usr/bin/sleep 0.05; done ) &
+  child=$!
+  register_active_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$child" || fail_test "$label registration failed"
+  LOCK_HOLDER_STATE=backend_absent
+  LOCK_HOLDER_RESUME_STATE=backend_absent
+  if [[ "$stop_child" == 1 ]]; then
+    kill -STOP "$child"
+    /usr/bin/sleep 0.05
+  fi
+  WRAPPER_SLEEP_CALLS=0
+  WRAPPER_WAIT_CALLS=0
+  lock_holder_wrapper_poll_sleep() { WRAPPER_SLEEP_CALLS=$((WRAPPER_SLEEP_CALLS + 1)); }
+  wait_lock_holder_wrapper_child() { WRAPPER_WAIT_CALLS=$((WRAPPER_WAIT_CALLS + 1)); builtin wait "$1"; }
+  if reap_active_lock_holder_wrapper "$boundary_db"; then actual_rc=0; else actual_rc=$?; fi
+  assert_rc "$actual_rc" "$LOCK_HOLDER_WRAPPER_TIMEOUT_RC" "$label bounded timeout"
+  [[ "$WRAPPER_SLEEP_CALLS" -eq 50 && "$WRAPPER_WAIT_CALLS" -eq 0 ]] || fail_test "$label entered wait or lost the 50-poll bound"
+  if [[ "$stop_child" == 1 ]]; then kill -CONT "$child"; fi
+  kill -TERM "$child" 2>/dev/null || true
+  builtin wait "$child" 2>/dev/null || true
+  eval "$ORIGINAL_LOCK_HOLDER_WRAPPER_POLL_SLEEP"
+  eval "$ORIGINAL_WAIT_LOCK_HOLDER_WRAPPER_CHILD"
+  clear_active_lock_holder
+}
+run_actual_nonterminal_wrapper_case hung_child 0
+run_actual_nonterminal_wrapper_case stopped_child 1
+
+# Exercise the formal backend/wrapper cleanup state machine.  The fake database
+# owns one exact marker; every call still crosses the production capture/parser.
+read_lock_holder_wrapper_snapshot() {
+  LOCK_HOLDER_SNAPSHOT_STATE=gone
+  LOCK_HOLDER_SNAPSHOT_STARTTIME=""
+}
+lock_holder_wrapper_poll_sleep() { fail_test "gone fake wrapper unexpectedly slept"; }
+WRAPPER_WAIT_CALLS=0
+WRAPPER_WAIT_RC=0
+wait_lock_holder_wrapper_child() { WRAPPER_WAIT_CALLS=$((WRAPPER_WAIT_CALLS + 1)); return "$WRAPPER_WAIT_RC"; }
+
+LOCK_BACKEND_TEST_MODE=success
+LOCK_CONNECTION_TEST_MODE=backend_marker
+: >"$LOCK_BACKEND_TARGET_MARKER"
+: >"$LOCK_BACKEND_NON_TARGET_MARKER"
+LOCK_BACKEND_TERMINATE_CALLS=0
+activate_test_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID"
+complete_active_lock_holder_cleanup "$boundary_db" || fail_test "first exact holder cleanup failed"
+[[ "$LOCK_HOLDER_STATE" == wrapper_reaped ]] || fail_test "first holder cleanup did not reach wrapper_reaped"
+[[ "$LOCK_BACKEND_TERMINATE_CALLS" -eq 1 && "$WRAPPER_WAIT_CALLS" -eq 1 ]] || fail_test "first cleanup did not terminate/reap exactly once"
+complete_active_lock_holder_cleanup "$boundary_db" || fail_test "second exact holder cleanup failed"
+complete_active_lock_holder_cleanup "$boundary_db" || fail_test "third exact holder cleanup failed"
+[[ "$LOCK_BACKEND_TERMINATE_CALLS" -eq 1 && "$WRAPPER_WAIT_CALLS" -eq 1 ]] || fail_test "repeat cleanup repeated terminate or reap"
+assert_lock_target_still_isolated "idempotent holder cleanup"
+
+# A signal can arrive after PostgreSQL has ended the backend but before Bash
+# stores termination_succeeded.  A prior handshake plus an exact zero probe is
+# the only recovery path, and it must not call terminate again.
+for race_state in active_verified termination_requested; do
+  activate_test_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID"
+  LOCK_HOLDER_STATE="$race_state"
+  LOCK_HOLDER_RESUME_STATE="$race_state"
+  rm -f -- "$LOCK_BACKEND_TARGET_MARKER"
+  race_terminate_before="$LOCK_BACKEND_TERMINATE_CALLS"
+  race_connections_before="$LOCK_CONNECTION_TEST_CALLS"
+  complete_active_lock_holder_cleanup "$boundary_db" || fail_test "$race_state backend-absence recovery failed"
+  [[ "$LOCK_BACKEND_TERMINATE_CALLS" -eq "$race_terminate_before" ]] || fail_test "$race_state recovery repeated backend termination"
+  [[ $((LOCK_CONNECTION_TEST_CALLS - race_connections_before)) -eq 1 ]] || fail_test "$race_state recovery did not prove exact backend absence"
+done
+
+# Without a completed holder handshake, zero connections is not promoted to a
+# successful exact termination state.
+clear_active_lock_holder
+capture_lock_holder_wrapper_starttime() { LOCK_HOLDER_SNAPSHOT_STATE=R; LOCK_HOLDER_SNAPSHOT_STARTTIME=42424200; }
+register_active_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" 424242 || fail_test "unverified wrapper registration failed"
+eval "$ORIGINAL_CAPTURE_LOCK_HOLDER_WRAPPER_STARTTIME"
+unverified_terminate_before="$LOCK_BACKEND_TERMINATE_CALLS"
+if complete_active_lock_holder_cleanup "$boundary_db"; then unverified_cleanup_rc=0; else unverified_cleanup_rc=$?; fi
+assert_rc "$unverified_cleanup_rc" "$LOCK_HOLDER_HANDSHAKE_REQUIRED_RC" "unverified holder cleanup"
+[[ "$LOCK_BACKEND_TERMINATE_CALLS" -eq "$unverified_terminate_before" ]] || fail_test "unverified holder reached exact termination"
+clear_active_lock_holder
+
+# A false, malformed, or failed exact termination remains fail-closed while the
+# target is still present.  The original transport status remains authoritative.
+run_holder_cleanup_rejection() {
+  local label="$1" mode="$2" connection_mode="$3" expected_rc="$4" actual_rc
+  : >"$LOCK_BACKEND_TARGET_MARKER"
+  : >"$LOCK_BACKEND_NON_TARGET_MARKER"
+  LOCK_BACKEND_TEST_MODE="$mode"
+  LOCK_CONNECTION_TEST_MODE="$connection_mode"
+  activate_test_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID"
+  if complete_active_lock_holder_cleanup "$boundary_db"; then actual_rc=0; else actual_rc=$?; fi
+  assert_rc "$actual_rc" "$expected_rc" "$label cleanup rejection"
+  [[ -e "$LOCK_BACKEND_TARGET_MARKER" ]] || fail_test "$label removed the target despite rejection"
+  assert_lock_target_still_isolated "$label cleanup rejection"
+  clear_active_lock_holder
+}
+run_holder_cleanup_rejection terminate_false terminate_false backend_marker "$QUERY_CAPTURE_VALIDATION_RC"
+run_holder_cleanup_rejection terminate_null terminate_null backend_marker "$QUERY_CAPTURE_VALIDATION_RC"
+run_holder_cleanup_rejection terminate_invalid terminate_invalid backend_marker "$QUERY_CAPTURE_VALIDATION_RC"
+run_holder_cleanup_rejection terminate_transport42 transport42 backend_marker 42
+run_holder_cleanup_rejection duplicate_target success output_two "$QUERY_CAPTURE_VALIDATION_RC"
+
+# cleanup_database itself is repeatable: after exact completion, later calls
+# neither terminate the backend nor reap the wrapper again.
+LOCK_BACKEND_TEST_MODE=success
+LOCK_CONNECTION_TEST_MODE=backend_marker
+: >"$LOCK_BACKEND_TARGET_MARKER"
+: >"$LOCK_BACKEND_NON_TARGET_MARKER"
+activate_test_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID"
+terminate_calls_before_idempotent="$LOCK_BACKEND_TERMINATE_CALLS"
+wrapper_waits_before_idempotent="$WRAPPER_WAIT_CALLS"
+admin_terminate_before_idempotent="$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG")"
+for cleanup_iteration in 1 2 3; do
+  cleanup_database "$boundary_db" || fail_test "cleanup_database idempotency iteration $cleanup_iteration failed"
+done
+[[ $((LOCK_BACKEND_TERMINATE_CALLS - terminate_calls_before_idempotent)) -eq 1 ]] || fail_test "cleanup_database repeated exact termination"
+[[ $((WRAPPER_WAIT_CALLS - wrapper_waits_before_idempotent)) -eq 1 ]] || fail_test "cleanup_database repeated wrapper reap"
+admin_terminate_after_idempotent="$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG")"
+[[ "$admin_terminate_after_idempotent" == "$admin_terminate_before_idempotent" ]] || fail_test "completed exact holder used broad terminate fallback"
+assert_lock_target_still_isolated "cleanup_database idempotency"
+clear_active_lock_holder
+
+# Once exact pg_terminate_backend has returned 1, a later absence-query failure
+# must never fall back to broad database termination.  Repeated cleanup remains
+# fail-closed without issuing either exact or broad termination again.
+LOCK_BACKEND_TEST_MODE=success
+LOCK_CONNECTION_TEST_MODE=backend_marker_then_transport42
+: >"$LOCK_BACKEND_TARGET_MARKER"
+: >"$LOCK_BACKEND_NON_TARGET_MARKER"
+activate_test_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID"
+post_terminate_exact_before="$LOCK_BACKEND_TERMINATE_CALLS"
+post_terminate_broad_before="$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG")"
+for cleanup_iteration in 1 2; do
+  if cleanup_or_fail "$boundary_db"; then post_terminate_cleanup_rc=0; else post_terminate_cleanup_rc=$?; fi
+  assert_rc "$post_terminate_cleanup_rc" 75 "post-termination query failure cleanup $cleanup_iteration"
+done
+post_terminate_broad_after="$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG")"
+[[ $((LOCK_BACKEND_TERMINATE_CALLS - post_terminate_exact_before)) -eq 1 ]] || fail_test "post-termination query failure repeated exact termination"
+[[ "$post_terminate_broad_after" == "$post_terminate_broad_before" ]] || fail_test "post-termination query failure used broad termination"
+[[ -e "$LOCK_BACKEND_NON_TARGET_MARKER" ]] || fail_test "post-termination query failure touched a non-target connection"
+clear_active_lock_holder
+rm -f -- "$LOCK_BACKEND_NON_TARGET_MARKER"
+
+cleanup_guard_calls_before="$(wc -l <"$SCRIPT_TRANSPORT_LOG" | tr -d ' ')"
+CLEANUP_DATABASE_IN_PROGRESS=1
+if cleanup_database "$boundary_db"; then cleanup_guard_rc=0; else cleanup_guard_rc=$?; fi
+CLEANUP_DATABASE_IN_PROGRESS=0
+assert_rc "$cleanup_guard_rc" 89 "recursive cleanup_database guard"
+cleanup_guard_calls_after="$(wc -l <"$SCRIPT_TRANSPORT_LOG" | tr -d ' ')"
+[[ "$cleanup_guard_calls_after" == "$cleanup_guard_calls_before" ]] || fail_test "recursive cleanup_database reached PostgreSQL"
+
+# on_exit masks later INT/TERM while cleanup is already active, so a combined
+# EXIT -> INT -> TERM sequence cannot recursively enter cleanup or overwrite rc.
+cleanup_reentry_log="$TMP_ROOT/cleanup-reentry.log"
+: >"$cleanup_reentry_log"
+set +e
+(
+  RUN_ACTIVE=1
+  CLEANUP_DATABASE_IN_PROGRESS=1
+  CLEANUP_ALL_IN_PROGRESS=1
+  cleanup_all() {
+    [[ "$CLEANUP_DATABASE_IN_PROGRESS" -eq 0 && "$CLEANUP_ALL_IN_PROGRESS" -eq 0 ]] || return 99
+    printf 'cleanup\n' >>"$cleanup_reentry_log"
+    kill -INT "$BASHPID"
+    kill -TERM "$BASHPID"
+    return 0
+  }
+  remove_work_directory() { return 0; }
+  on_exit 0
+) >/dev/null 2>&1
+cleanup_reentry_rc=$?
+set -e
+assert_rc "$cleanup_reentry_rc" 0 "EXIT INT TERM cleanup reentry"
+[[ "$(wc -l <"$cleanup_reentry_log" | tr -d ' ')" == 1 ]] || fail_test "cleanup reentry executed cleanup more than once"
+
+eval "$ORIGINAL_READ_LOCK_HOLDER_WRAPPER_SNAPSHOT"
+eval "$ORIGINAL_CAPTURE_LOCK_HOLDER_WRAPPER_STARTTIME"
+eval "$ORIGINAL_LOCK_HOLDER_WRAPPER_POLL_SLEEP"
+eval "$ORIGINAL_WAIT_LOCK_HOLDER_WRAPPER_CHILD"
+LOCK_BACKEND_TEST_MODE=""
+LOCK_CONNECTION_TEST_MODE=""
+
 # The root-owned query files share the established WORK_DIR lifecycle and are
 # removed on normal, INT, and TERM exits without widening the delete boundary.
 for cleanup_spec in EXIT:0 INT:130 TERM:143; do
@@ -1448,7 +1837,7 @@ done
 # Active-holder cleanup uses the same exact backend termination on normal exit
 # and both signal paths.  The wrapper observes backend removal and exits on its
 # own; reap waits for that exact child and never signals an arbitrary PID.
-for holder_cleanup_spec in EXIT:0 INT:130 TERM:143; do
+for holder_cleanup_spec in EXIT:0 INT:130 TERM:143 RACE_INT:130 EXIT_INT_TERM:0; do
   holder_cleanup_kind="${holder_cleanup_spec%%:*}"
   holder_cleanup_expected_rc="${holder_cleanup_spec##*:}"
   holder_cleanup_parent="$TMP_ROOT/holder-cleanup-$holder_cleanup_kind"
@@ -1460,6 +1849,8 @@ for holder_cleanup_spec in EXIT:0 INT:130 TERM:143; do
   chmod 700 "$holder_cleanup_dir"
   : >"$holder_target_marker"
   : >"$holder_non_target_marker"
+  holder_terminate_calls_before="$(grep -c '^lock_terminate'$'\t' "$SCRIPT_TRANSPORT_LOG")"
+  holder_cleanup_start_ms="$(date +%s%3N)"
   set +e
   (
     WORK_DIR="$holder_cleanup_dir"
@@ -1475,7 +1866,11 @@ for holder_cleanup_spec in EXIT:0 INT:130 TERM:143; do
     LOCK_BACKEND_TARGET_USER=postgres
     LOCK_BACKEND_TARGET_APP="memoryai_auth_matrix_lock_${RUN_NONCE}"
     LOCK_BACKEND_TARGET_PID=0000042420
-    LOCK_BACKEND_TEST_MODE=success
+    if [[ "$holder_cleanup_kind" == RACE_INT ]]; then
+      LOCK_BACKEND_TEST_MODE=signal_after_terminate
+    else
+      LOCK_BACKEND_TEST_MODE=success
+    fi
     LOCK_CONNECTION_TEST_MODE=backend_marker
     remove_work_directory() {
       [[ "$WORK_DIR" == "$holder_cleanup_dir" && -d "$WORK_DIR" && ! -L "$WORK_DIR" ]] || return 1
@@ -1488,18 +1883,32 @@ for holder_cleanup_spec in EXIT:0 INT:130 TERM:143; do
     holder_cleanup_wrapper=$!
     printf '%s\n' "$holder_cleanup_wrapper" >"$holder_pid_file"
     register_active_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$holder_cleanup_wrapper" || exit 99
-    LOCK_HOLDER_BACKEND_PID="$LOCK_BACKEND_TARGET_PID"
+    mark_lock_holder_backend_verified "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID" || exit 99
+    if [[ "$holder_cleanup_kind" == EXIT_INT_TERM ]]; then
+      wait_lock_holder_wrapper_child() {
+        kill -INT "$BASHPID"
+        kill -TERM "$BASHPID"
+        builtin wait "$1"
+      }
+    fi
     install_runtime_traps
     case "$holder_cleanup_kind" in
       EXIT) exit 0 ;;
-      INT) on_signal INT 130 ;;
-      TERM) on_signal TERM 143 ;;
+      INT) kill -INT "$BASHPID"; exit 94 ;;
+      TERM) kill -TERM "$BASHPID"; exit 94 ;;
+      RACE_INT) complete_active_lock_holder_cleanup "$boundary_db"; exit 94 ;;
+      EXIT_INT_TERM) exit 0 ;;
     esac
   ) >/dev/null 2>&1
   holder_cleanup_rc=$?
   set -e
+  holder_cleanup_end_ms="$(date +%s%3N)"
   assert_rc "$holder_cleanup_rc" "$holder_cleanup_expected_rc" "$holder_cleanup_kind active holder cleanup"
+  holder_cleanup_elapsed_ms=$((holder_cleanup_end_ms - holder_cleanup_start_ms))
+  [[ "$holder_cleanup_elapsed_ms" -le 20000 ]] || fail_test "$holder_cleanup_kind active holder cleanup exceeded the 20s end-to-end deadline (${holder_cleanup_elapsed_ms}ms)"
   [[ ! -e "$holder_target_marker" ]] || fail_test "$holder_cleanup_kind left the target backend connected"
+  holder_terminate_calls_after="$(grep -c '^lock_terminate'$'\t' "$SCRIPT_TRANSPORT_LOG")"
+  [[ $((holder_terminate_calls_after - holder_terminate_calls_before)) -eq 1 ]] || fail_test "$holder_cleanup_kind repeated exact backend termination"
   [[ -e "$holder_non_target_marker" ]] || fail_test "$holder_cleanup_kind terminated the other-database connection"
   holder_cleanup_wrapper="$(<"$holder_pid_file")"
   if kill -0 "$holder_cleanup_wrapper" 2>/dev/null; then fail_test "$holder_cleanup_kind left the holder wrapper running"; fi

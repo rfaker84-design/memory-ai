@@ -24,6 +24,11 @@ readonly POSTGRES_USER="postgres"
 readonly ADMIN_DB="postgres"
 readonly STARTUP_VALIDATION_RC=68
 readonly QUERY_CAPTURE_VALIDATION_RC=67
+readonly LOCK_HOLDER_WRAPPER_IDENTITY_RC=86
+readonly LOCK_HOLDER_WRAPPER_TIMEOUT_RC=87
+readonly LOCK_HOLDER_HANDSHAKE_REQUIRED_RC=85
+readonly LOCK_HOLDER_WRAPPER_MAX_POLLS=50
+readonly LOCK_HOLDER_WRAPPER_POLL_INTERVAL=0.1
 RUN_ID="${MATRIX_RUN_ID:-$(date -u +%Y%m%d%H%M%S)_$$_${RANDOM}}"
 readonly CALLER_RUN_NONCE_PRESENT="${RUN_NONCE+x}"
 RUN_NONCE=""
@@ -55,6 +60,19 @@ LOCK_HOLDER_DATABASE=""
 LOCK_HOLDER_APPLICATION_NAME=""
 LOCK_HOLDER_WRAPPER_PID=""
 LOCK_HOLDER_BACKEND_PID=""
+LOCK_HOLDER_WRAPPER_STARTTIME=""
+LOCK_HOLDER_WRAPPER_REAPED=0
+LOCK_HOLDER_WRAPPER_EXIT_RC=""
+LOCK_HOLDER_STATE="not_started"
+LOCK_HOLDER_RESUME_STATE="not_started"
+LOCK_HOLDER_CLEANUP_FAILURE_RC=""
+LOCK_HOLDER_SNAPSHOT_STATE=""
+LOCK_HOLDER_SNAPSHOT_STARTTIME=""
+LOCK_HOLDER_CONNECTIONS=""
+LOCK_HOLDER_DEFERRED_SIGNAL=""
+CLEANUP_DATABASE_IN_PROGRESS=0
+CLEANUP_ALL_IN_PROGRESS=0
+CLEANUP_EXIT_IN_PROGRESS=0
 
 readonly -a CHALLENGE_SCENARIOS=(
   challenge_id_type
@@ -552,6 +570,8 @@ terminate_exact_lock_holder_backend() {
   [[ "$LOCK_HOLDER_DATABASE" == "$database" ]] || return 64
   [[ "$LOCK_HOLDER_APPLICATION_NAME" == "$application_name" ]] || return 64
   [[ "$LOCK_HOLDER_BACKEND_PID" == "$backend_pid" ]] || return 64
+  case "$LOCK_HOLDER_STATE" in active_verified|termination_requested) ;; *) return 64 ;; esac
+  LOCK_HOLDER_STATE="termination_requested"
   initialize_query_capture_files lock_terminate || return $?
   if database_psql_script "$database" lock_terminate "$application_name" "$backend_pid" \
     >"$QUERY_CAPTURE_STDOUT_FILE" 2>"$QUERY_CAPTURE_STDERR_FILE" <<'LOCK_TERMINATE_SQL'
@@ -587,7 +607,14 @@ LOCK_TERMINATE_SQL
   QUERY_CAPTURE_STDOUT_BYTES="$(query_capture_file_size "$QUERY_CAPTURE_STDOUT_FILE")" || return "$QUERY_CAPTURE_VALIDATION_RC"
   QUERY_CAPTURE_STDERR_BYTES="$(query_capture_file_size "$QUERY_CAPTURE_STDERR_FILE")" || return "$QUERY_CAPTURE_VALIDATION_RC"
   [[ "$QUERY_CAPTURE_STDOUT_BYTES" =~ ^[0-9]+$ && "$QUERY_CAPTURE_STDERR_BYTES" == "0" ]] || return "$QUERY_CAPTURE_VALIDATION_RC"
-  read_exact_query_scalar one
+  read_exact_query_scalar zero_or_one || return $?
+  if [[ "$QUERY_CAPTURE_VALUE" != "1" ]]; then
+    QUERY_CAPTURE_VALUE=""
+    return "$QUERY_CAPTURE_VALIDATION_RC"
+  fi
+  LOCK_HOLDER_STATE="termination_succeeded"
+  LOCK_HOLDER_RESUME_STATE="termination_succeeded"
+  LOCK_HOLDER_CLEANUP_FAILURE_RC=""
 }
 
 drop_database_command() {
@@ -608,29 +635,48 @@ remove_created_database() {
 }
 
 cleanup_database() {
-  local database="$1" cleanup_rc=0 exact_holder_rc=0 terminate_rc=0 holder_rc=0 connections_rc=0 drop_rc=0 exists_rc=0
-  validate_test_database_name "$database"
-  if [[ "$LOCK_HOLDER_ACTIVE" -eq 1 && "$LOCK_HOLDER_DATABASE" == "$database" && -n "$LOCK_HOLDER_BACKEND_PID" ]]; then
-    if terminate_exact_lock_holder_backend "$database" "$LOCK_HOLDER_APPLICATION_NAME" "$LOCK_HOLDER_BACKEND_PID"; then
-      exact_holder_rc=0
+  local database="$1" cleanup_rc=0 terminate_rc=0 holder_rc=0 connections_rc=0 drop_rc=0 exists_rc=0
+  local holder_known=0 holder_complete=0 holder_reap_attempted=0
+  validate_test_database_name "$database" || return $?
+  (( CLEANUP_DATABASE_IN_PROGRESS == 0 )) || return 89
+  CLEANUP_DATABASE_IN_PROGRESS=1
+
+  if [[ "$LOCK_HOLDER_DATABASE" == "$database" && "$LOCK_HOLDER_STATE" != "not_started" ]]; then
+    holder_known=1
+    if complete_active_lock_holder_cleanup "$database"; then
+      holder_complete=1
     else
-      exact_holder_rc=$?
-      record_state "FAILED_cleanup_exact_lock_holder_${exact_holder_rc}"
+      holder_rc=$?
+      case "${LOCK_HOLDER_STATE}:${LOCK_HOLDER_RESUME_STATE}" in
+        cleanup_failed:wrapper_started)
+          ;;
+        cleanup_failed:termination_succeeded|cleanup_failed:backend_absent|cleanup_failed:wrapper_reaped)
+          holder_reap_attempted=1
+          record_state "FAILED_cleanup_lock_holder_${holder_rc}"
+          cleanup_rc=1
+          ;;
+        *)
+          record_state "FAILED_cleanup_lock_holder_${holder_rc}"
+          cleanup_rc=1
+          ;;
+      esac
+    fi
+  fi
+
+  if (( holder_complete == 0 && holder_reap_attempted == 0 )); then
+    set +e
+    admin_psql_script terminate "$database" >/dev/null <<'CLEANUP_TERMINATE_SQL'
+SELECT pg_catalog.pg_terminate_backend(pid) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db' AND pid <> pg_catalog.pg_backend_pid();
+CLEANUP_TERMINATE_SQL
+    terminate_rc=$?
+    set -e
+    if [[ "$terminate_rc" -ne 0 ]]; then
+      record_state "FAILED_cleanup_terminate_${terminate_rc} $database"
       cleanup_rc=1
     fi
   fi
-  set +e
-  admin_psql_script terminate "$database" >/dev/null <<'CLEANUP_TERMINATE_SQL'
-SELECT pg_catalog.pg_terminate_backend(pid) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db' AND pid <> pg_catalog.pg_backend_pid();
-CLEANUP_TERMINATE_SQL
-  terminate_rc=$?
-  set -e
-  if [[ "$terminate_rc" -ne 0 ]]; then
-    record_state "FAILED_cleanup_terminate_${terminate_rc} $database"
-    cleanup_rc=1
-  fi
 
-  if [[ "$LOCK_HOLDER_ACTIVE" -eq 1 && "$LOCK_HOLDER_DATABASE" == "$database" ]]; then
+  if (( holder_known == 1 && holder_complete == 0 && holder_reap_attempted == 0 )); then
     if [[ "$terminate_rc" -eq 0 ]]; then
       if wait_for_lock_holder_connections "$database" "$LOCK_HOLDER_APPLICATION_NAME"; then
         holder_rc=0
@@ -641,7 +687,12 @@ CLEANUP_TERMINATE_SQL
       holder_rc="$terminate_rc"
     fi
     if (( holder_rc == 0 )); then
+      LOCK_HOLDER_STATE="backend_absent"
+      LOCK_HOLDER_RESUME_STATE="backend_absent"
+      LOCK_HOLDER_CLEANUP_FAILURE_RC=""
+      holder_reap_attempted=1
       if reap_active_lock_holder_wrapper "$database"; then
+        holder_complete=1
         holder_rc=0
       else
         holder_rc=$?
@@ -689,8 +740,13 @@ CLEANUP_EXISTS_SQL
   fi
 
   if [[ "$drop_rc" -eq 0 && "$exists_rc" -eq 0 ]]; then
-    if [[ "$LOCK_HOLDER_ACTIVE" -eq 1 && "$LOCK_HOLDER_DATABASE" == "$database" ]]; then
+    if (( holder_known == 1 && holder_complete == 0 && holder_reap_attempted == 0 )); then
+      LOCK_HOLDER_STATE="backend_absent"
+      LOCK_HOLDER_RESUME_STATE="backend_absent"
+      LOCK_HOLDER_CLEANUP_FAILURE_RC=""
+      holder_reap_attempted=1
       if reap_active_lock_holder_wrapper "$database"; then
+        holder_complete=1
         holder_rc=0
       else
         holder_rc=$?
@@ -703,6 +759,7 @@ CLEANUP_EXISTS_SQL
   if [[ "$cleanup_rc" -eq 0 ]]; then
     record_state "CLEANUP_PASS $database"
   fi
+  CLEANUP_DATABASE_IN_PROGRESS=0
   return "$cleanup_rc"
 }
 
@@ -746,6 +803,8 @@ PREEXISTING_DATABASES_SQL
 
 cleanup_all() {
   local database rc=0
+  (( CLEANUP_ALL_IN_PROGRESS == 0 )) || return 89
+  CLEANUP_ALL_IN_PROGRESS=1
   for database in "${CREATED_DATABASES[@]:-}"; do
     [[ -n "$database" ]] || continue
     if ! cleanup_database "$database"; then
@@ -766,6 +825,7 @@ cleanup_all() {
     record_state "CLEANUP_PASS residual=0"
     CLEANUP_RECORDED=1
   fi
+  CLEANUP_ALL_IN_PROGRESS=0
   return "$rc"
 }
 
@@ -889,7 +949,15 @@ remove_work_directory() {
 
 on_exit() {
   local original_rc="$1" cleanup_rc=0 final_rc
+  (( CLEANUP_EXIT_IN_PROGRESS == 0 )) || exit 75
+  CLEANUP_EXIT_IN_PROGRESS=1
   trap - EXIT INT TERM
+  trap '' INT TERM
+  # A signal may have interrupted an earlier cleanup frame before its guard was
+  # cleared.  That frame is being unwound by exit, so the final trap owns the
+  # sole bounded, idempotent retry.
+  CLEANUP_DATABASE_IN_PROGRESS=0
+  CLEANUP_ALL_IN_PROGRESS=0
   if [[ "$RUN_ACTIVE" -eq 1 ]]; then
     if ! cleanup_all; then
       cleanup_rc=1
@@ -1423,6 +1491,74 @@ run_negative_scenario() {
   if cleanup_or_fail "$database"; then :; else return 75; fi
 }
 
+read_lock_holder_wrapper_snapshot() {
+  [[ "$#" -eq 1 ]] || return "$LOCK_HOLDER_WRAPPER_IDENTITY_RC"
+  local wrapper_pid="$1" stat_path stat_line stat_fields_text
+  local -a stat_fields=()
+  LOCK_HOLDER_SNAPSHOT_STATE=""
+  LOCK_HOLDER_SNAPSHOT_STARTTIME=""
+  [[ "$wrapper_pid" =~ ^[1-9][0-9]*$ ]] || return "$LOCK_HOLDER_WRAPPER_IDENTITY_RC"
+  stat_path="/proc/${wrapper_pid}/stat"
+  if [[ ! -e "$stat_path" ]]; then
+    LOCK_HOLDER_SNAPSHOT_STATE="gone"
+    return 0
+  fi
+  if ! IFS= read -r stat_line <"$stat_path"; then
+    if [[ ! -e "$stat_path" ]]; then
+      LOCK_HOLDER_SNAPSHOT_STATE="gone"
+      return 0
+    fi
+    return "$LOCK_HOLDER_WRAPPER_IDENTITY_RC"
+  fi
+  stat_fields_text="${stat_line##*) }"
+  [[ "$stat_fields_text" != "$stat_line" ]] || return "$LOCK_HOLDER_WRAPPER_IDENTITY_RC"
+  read -r -a stat_fields <<<"$stat_fields_text"
+  (( ${#stat_fields[@]} > 19 )) || return "$LOCK_HOLDER_WRAPPER_IDENTITY_RC"
+  case "${stat_fields[0]}" in R|S|D|I|T|t|Z|X|x|W|P) ;; *) return "$LOCK_HOLDER_WRAPPER_IDENTITY_RC" ;; esac
+  [[ "${stat_fields[19]}" =~ ^[1-9][0-9]*$ ]] || return "$LOCK_HOLDER_WRAPPER_IDENTITY_RC"
+  LOCK_HOLDER_SNAPSHOT_STATE="${stat_fields[0]}"
+  LOCK_HOLDER_SNAPSHOT_STARTTIME="${stat_fields[19]}"
+}
+
+capture_lock_holder_wrapper_starttime() {
+  [[ "$#" -eq 1 ]] || return "$LOCK_HOLDER_WRAPPER_IDENTITY_RC"
+  read_lock_holder_wrapper_snapshot "$1" || return $?
+  [[ "$LOCK_HOLDER_SNAPSHOT_STATE" != "gone" && -n "$LOCK_HOLDER_SNAPSHOT_STARTTIME" ]] || return "$LOCK_HOLDER_WRAPPER_IDENTITY_RC"
+}
+
+lock_holder_wrapper_poll_sleep() { sleep "$LOCK_HOLDER_WRAPPER_POLL_INTERVAL"; }
+wait_lock_holder_wrapper_child() { wait "$1" 2>/dev/null; }
+
+restore_lock_holder_signal_trap() {
+  [[ "$#" -eq 2 ]] || return 64
+  local signal="$1" saved_trap="$2"
+  case "$signal|$saved_trap" in
+    INT\|) trap - INT ;;
+    TERM\|) trap - TERM ;;
+    INT\|"trap -- '' SIGINT") trap '' INT ;;
+    TERM\|"trap -- '' SIGTERM") trap '' TERM ;;
+    INT\|"trap -- 'on_signal INT 130' SIGINT") trap 'on_signal INT 130' INT ;;
+    TERM\|"trap -- 'on_signal TERM 143' SIGTERM") trap 'on_signal TERM 143' TERM ;;
+    *) return 64 ;;
+  esac
+}
+
+lock_holder_signal_trap_is_ignored() {
+  [[ "$#" -eq 2 ]] || return 1
+  case "$1|$2" in
+    INT\|"trap -- '' SIGINT"|TERM\|"trap -- '' SIGTERM") return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+dispatch_deferred_lock_holder_signal() {
+  case "$1" in
+    INT) on_signal INT 130 ;;
+    TERM) on_signal TERM 143 ;;
+    *) return 64 ;;
+  esac
+}
+
 register_active_lock_holder() {
   [[ "$#" -eq 3 ]] || return 64
   local database="$1" application_name="$2" wrapper_pid="$3"
@@ -1431,12 +1567,31 @@ register_active_lock_holder() {
   [[ "$wrapper_pid" =~ ^[1-9][0-9]*$ ]] || return 64
   (( wrapper_pid <= 2147483647 )) || return 64
   [[ "$wrapper_pid" -ne "$$" && "$wrapper_pid" -ne "$BASHPID" ]] || return 64
-  [[ "$LOCK_HOLDER_ACTIVE" -eq 0 ]] || return 64
+  [[ "$LOCK_HOLDER_ACTIVE" -eq 0 && "$LOCK_HOLDER_STATE" == "not_started" ]] || return 64
+  capture_lock_holder_wrapper_starttime "$wrapper_pid" || return $?
   LOCK_HOLDER_ACTIVE=1
   LOCK_HOLDER_DATABASE="$database"
   LOCK_HOLDER_APPLICATION_NAME="$application_name"
   LOCK_HOLDER_WRAPPER_PID="$wrapper_pid"
+  LOCK_HOLDER_WRAPPER_STARTTIME="$LOCK_HOLDER_SNAPSHOT_STARTTIME"
+  LOCK_HOLDER_WRAPPER_REAPED=0
+  LOCK_HOLDER_WRAPPER_EXIT_RC=""
   LOCK_HOLDER_BACKEND_PID=""
+  LOCK_HOLDER_STATE="wrapper_started"
+  LOCK_HOLDER_RESUME_STATE="wrapper_started"
+  LOCK_HOLDER_CLEANUP_FAILURE_RC=""
+}
+
+mark_lock_holder_backend_verified() {
+  [[ "$#" -eq 3 ]] || return 64
+  local database="$1" application_name="$2" backend_pid="$3"
+  [[ "$LOCK_HOLDER_ACTIVE" -eq 1 && "$LOCK_HOLDER_STATE" == "wrapper_started" ]] || return 64
+  [[ "$LOCK_HOLDER_DATABASE" == "$database" && "$LOCK_HOLDER_APPLICATION_NAME" == "$application_name" ]] || return 64
+  [[ "$backend_pid" =~ ^[0-9]{10}$ ]] || return 64
+  (( 10#$backend_pid >= 1 && 10#$backend_pid <= 2147483647 )) || return 64
+  LOCK_HOLDER_BACKEND_PID="$backend_pid"
+  LOCK_HOLDER_STATE="active_verified"
+  LOCK_HOLDER_RESUME_STATE="active_verified"
 }
 
 clear_active_lock_holder() {
@@ -1445,58 +1600,243 @@ clear_active_lock_holder() {
   LOCK_HOLDER_APPLICATION_NAME=""
   LOCK_HOLDER_WRAPPER_PID=""
   LOCK_HOLDER_BACKEND_PID=""
+  LOCK_HOLDER_WRAPPER_STARTTIME=""
+  LOCK_HOLDER_WRAPPER_REAPED=0
+  LOCK_HOLDER_WRAPPER_EXIT_RC=""
+  LOCK_HOLDER_STATE="not_started"
+  LOCK_HOLDER_RESUME_STATE="not_started"
+  LOCK_HOLDER_CLEANUP_FAILURE_RC=""
+}
+
+set_lock_holder_cleanup_failure() {
+  [[ "$#" -eq 1 && "$1" =~ ^[1-9][0-9]*$ ]] || return 64
+  if [[ "$LOCK_HOLDER_STATE" != "cleanup_failed" ]]; then
+    LOCK_HOLDER_RESUME_STATE="$LOCK_HOLDER_STATE"
+  fi
+  LOCK_HOLDER_STATE="cleanup_failed"
+  LOCK_HOLDER_CLEANUP_FAILURE_RC="$1"
+}
+
+restore_lock_holder_cleanup_state() {
+  [[ "$LOCK_HOLDER_STATE" == "cleanup_failed" ]] || return 0
+  if (( LOCK_HOLDER_WRAPPER_REAPED == 1 )); then
+    return "${LOCK_HOLDER_WRAPPER_EXIT_RC:-$LOCK_HOLDER_WRAPPER_IDENTITY_RC}"
+  fi
+  LOCK_HOLDER_STATE="$LOCK_HOLDER_RESUME_STATE"
+  LOCK_HOLDER_CLEANUP_FAILURE_RC=""
 }
 
 reap_active_lock_holder_wrapper() {
   [[ "$#" -eq 1 ]] || return 64
-  local database="$1" wrapper_pid wait_rc
+  local database="$1" wrapper_pid poll wait_rc snapshot_rc reap_rc deferred_signal interrupted_rc
+  local saved_int_trap saved_term_trap wait_attempt
+  if (( LOCK_HOLDER_WRAPPER_REAPED == 1 )); then
+    case "$LOCK_HOLDER_WRAPPER_EXIT_RC" in 0|2) return 0 ;; *) return "${LOCK_HOLDER_WRAPPER_EXIT_RC:-$LOCK_HOLDER_WRAPPER_IDENTITY_RC}" ;; esac
+  fi
   [[ "$LOCK_HOLDER_ACTIVE" -eq 1 ]] || return 0
   [[ "$LOCK_HOLDER_DATABASE" == "$database" ]] || return 64
+  [[ "$LOCK_HOLDER_STATE" == "backend_absent" ]] || return 64
   wrapper_pid="$LOCK_HOLDER_WRAPPER_PID"
-  [[ "$wrapper_pid" =~ ^[1-9][0-9]*$ ]] || return 86
-  if wait "$wrapper_pid" 2>/dev/null; then
-    wait_rc=0
-  else
-    wait_rc=$?
+  [[ "$wrapper_pid" =~ ^[1-9][0-9]*$ && "$LOCK_HOLDER_WRAPPER_STARTTIME" =~ ^[1-9][0-9]*$ ]] || return "$LOCK_HOLDER_WRAPPER_IDENTITY_RC"
+
+  for ((poll=1; poll<=LOCK_HOLDER_WRAPPER_MAX_POLLS; poll++)); do
+    if read_lock_holder_wrapper_snapshot "$wrapper_pid"; then
+      snapshot_rc=0
+    else
+      snapshot_rc=$?
+    fi
+    (( snapshot_rc == 0 )) || return "$snapshot_rc"
+    if [[ "$LOCK_HOLDER_SNAPSHOT_STATE" == "gone" ]]; then
+      break
+    fi
+    [[ "$LOCK_HOLDER_SNAPSHOT_STARTTIME" == "$LOCK_HOLDER_WRAPPER_STARTTIME" ]] || return "$LOCK_HOLDER_WRAPPER_IDENTITY_RC"
+    case "$LOCK_HOLDER_SNAPSHOT_STATE" in
+      Z|X|x) break ;;
+      R|S|D|I|T|t|W|P) lock_holder_wrapper_poll_sleep || return $? ;;
+      *) return "$LOCK_HOLDER_WRAPPER_IDENTITY_RC" ;;
+    esac
+  done
+  if [[ "$LOCK_HOLDER_SNAPSHOT_STATE" != "gone" && "$LOCK_HOLDER_SNAPSHOT_STATE" != "Z" && \
+        "$LOCK_HOLDER_SNAPSHOT_STATE" != "X" && "$LOCK_HOLDER_SNAPSHOT_STATE" != "x" ]]; then
+    return "$LOCK_HOLDER_WRAPPER_TIMEOUT_RC"
   fi
-  [[ "$wait_rc" -ne 127 ]] || return 86
-  clear_active_lock_holder
+
+  saved_int_trap="$(trap -p INT)"
+  saved_term_trap="$(trap -p TERM)"
+  LOCK_HOLDER_DEFERRED_SIGNAL=""
+  if ! lock_holder_signal_trap_is_ignored INT "$saved_int_trap"; then
+    trap '[[ -n "$LOCK_HOLDER_DEFERRED_SIGNAL" ]] || LOCK_HOLDER_DEFERRED_SIGNAL=INT' INT
+  fi
+  if ! lock_holder_signal_trap_is_ignored TERM "$saved_term_trap"; then
+    trap '[[ -n "$LOCK_HOLDER_DEFERRED_SIGNAL" ]] || LOCK_HOLDER_DEFERRED_SIGNAL=TERM' TERM
+  fi
+  for wait_attempt in 1 2; do
+    if wait_lock_holder_wrapper_child "$wrapper_pid"; then
+      wait_rc=0
+    else
+      wait_rc=$?
+    fi
+    case "$LOCK_HOLDER_DEFERRED_SIGNAL" in INT) interrupted_rc=130 ;; TERM) interrupted_rc=143 ;; *) interrupted_rc=0 ;; esac
+    if (( wait_attempt == 1 && interrupted_rc != 0 && wait_rc == interrupted_rc )); then
+      trap '' INT TERM
+      continue
+    fi
+    break
+  done
+  LOCK_HOLDER_WRAPPER_REAPED=1
+  LOCK_HOLDER_WRAPPER_EXIT_RC="$wait_rc"
+  LOCK_HOLDER_ACTIVE=0
+  # psql documents 0 for normal completion and 2 for a lost non-interactive
+  # server connection; runuser propagates that child status unchanged.
+  case "$wait_rc" in
+    0|2)
+      LOCK_HOLDER_STATE="wrapper_reaped"
+      LOCK_HOLDER_RESUME_STATE="wrapper_reaped"
+      LOCK_HOLDER_CLEANUP_FAILURE_RC=""
+      reap_rc=0
+      ;;
+    *)
+      LOCK_HOLDER_RESUME_STATE="backend_absent"
+      LOCK_HOLDER_STATE="cleanup_failed"
+      LOCK_HOLDER_CLEANUP_FAILURE_RC="$wait_rc"
+      reap_rc="$wait_rc"
+      ;;
+  esac
+  deferred_signal="$LOCK_HOLDER_DEFERRED_SIGNAL"
+  restore_lock_holder_signal_trap INT "$saved_int_trap" || return $?
+  restore_lock_holder_signal_trap TERM "$saved_term_trap" || return $?
+  [[ -n "$deferred_signal" ]] || deferred_signal="$LOCK_HOLDER_DEFERRED_SIGNAL"
+  LOCK_HOLDER_DEFERRED_SIGNAL=""
+  if [[ -n "$deferred_signal" ]]; then
+    dispatch_deferred_lock_holder_signal "$deferred_signal"
+  fi
+  return "$reap_rc"
+}
+
+capture_lock_holder_connection_count() {
+  [[ "$#" -eq 2 ]] || return 64
+  local database="$1" application_name="$2"
+  LOCK_HOLDER_CONNECTIONS=""
+  if capture_scalar_query database "$database" lock_connections "$application_name" zero_or_one <<'LOCK_CONNECTIONS_SQL'
+SELECT CASE WHEN count(*)=0 THEN 0 WHEN count(*)=1 AND pg_catalog.bool_and(usename=CURRENT_USER AND CURRENT_USER='postgres'::name AND backend_type='client backend') THEN 1 ELSE 2 END FROM pg_catalog.pg_stat_activity WHERE datname=pg_catalog.current_database() AND application_name=:'lock_app';
+LOCK_CONNECTIONS_SQL
+  then
+    LOCK_HOLDER_CONNECTIONS="$QUERY_CAPTURE_VALUE"
+    return 0
+  else
+    return $?
+  fi
 }
 
 wait_for_lock_holder_connections() {
   [[ "$#" -eq 2 ]] || return 64
-  local database="$1" application_name="$2" connections poll connections_rc
+  local database="$1" application_name="$2" poll connections_rc
   QUERY_CAPTURE_VALUE=""
+  LOCK_HOLDER_CONNECTIONS=""
   for poll in {1..50}; do
-    if capture_scalar_query database "$database" lock_connections "$application_name" zero_or_one <<'LOCK_CONNECTIONS_SQL'
-SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname=pg_catalog.current_database() AND usename=CURRENT_USER AND application_name=:'lock_app' AND backend_type='client backend';
-LOCK_CONNECTIONS_SQL
-    then
+    if capture_lock_holder_connection_count "$database" "$application_name"; then
       connections_rc=0
-      connections="$QUERY_CAPTURE_VALUE"
     else
       connections_rc=$?
     fi
     if (( connections_rc != 0 )); then
       QUERY_CAPTURE_VALUE=""
+      LOCK_HOLDER_CONNECTIONS=""
       return "$connections_rc"
     fi
-    case "$connections" in
+    case "$LOCK_HOLDER_CONNECTIONS" in
       0) return 0 ;;
       1) ;;
-      *) QUERY_CAPTURE_VALUE=""; return "$QUERY_CAPTURE_VALIDATION_RC" ;;
+      *) QUERY_CAPTURE_VALUE=""; LOCK_HOLDER_CONNECTIONS=""; return "$QUERY_CAPTURE_VALIDATION_RC" ;;
     esac
     if (( poll < 50 )); then
       sleep 0.1
     fi
   done
   QUERY_CAPTURE_VALUE=""
+  LOCK_HOLDER_CONNECTIONS=""
   return 82
+}
+
+complete_active_lock_holder_cleanup() {
+  [[ "$#" -eq 1 ]] || return 64
+  local database="$1" rc
+  [[ "$LOCK_HOLDER_DATABASE" == "$database" ]] || return 64
+  if [[ "$LOCK_HOLDER_STATE" == "cleanup_failed" ]]; then
+    if restore_lock_holder_cleanup_state; then
+      rc=0
+    else
+      rc=$?
+    fi
+    (( rc == 0 )) || return "$rc"
+  fi
+  case "$LOCK_HOLDER_STATE" in
+    not_started|wrapper_reaped) return 0 ;;
+    wrapper_started)
+      set_lock_holder_cleanup_failure "$LOCK_HOLDER_HANDSHAKE_REQUIRED_RC"
+      return "$LOCK_HOLDER_HANDSHAKE_REQUIRED_RC"
+      ;;
+    active_verified|termination_requested)
+      if capture_lock_holder_connection_count "$database" "$LOCK_HOLDER_APPLICATION_NAME"; then
+        rc=0
+      else
+        rc=$?
+      fi
+      if (( rc != 0 )); then
+        set_lock_holder_cleanup_failure "$rc"
+        return "$rc"
+      fi
+      case "$LOCK_HOLDER_CONNECTIONS" in
+        0)
+          LOCK_HOLDER_STATE="backend_absent"
+          LOCK_HOLDER_RESUME_STATE="backend_absent"
+          ;;
+        1)
+          if terminate_exact_lock_holder_backend "$database" "$LOCK_HOLDER_APPLICATION_NAME" "$LOCK_HOLDER_BACKEND_PID"; then
+            rc=0
+          else
+            rc=$?
+          fi
+          if (( rc != 0 )); then
+            set_lock_holder_cleanup_failure "$rc"
+            return "$rc"
+          fi
+          ;;
+        *)
+          set_lock_holder_cleanup_failure "$QUERY_CAPTURE_VALIDATION_RC"
+          return "$QUERY_CAPTURE_VALIDATION_RC"
+          ;;
+      esac
+      ;;
+  esac
+  if [[ "$LOCK_HOLDER_STATE" == "termination_succeeded" ]]; then
+    if wait_for_lock_holder_connections "$database" "$LOCK_HOLDER_APPLICATION_NAME"; then
+      rc=0
+    else
+      rc=$?
+    fi
+    if (( rc != 0 )); then
+      set_lock_holder_cleanup_failure "$rc"
+      return "$rc"
+    fi
+    LOCK_HOLDER_STATE="backend_absent"
+    LOCK_HOLDER_RESUME_STATE="backend_absent"
+  fi
+  if [[ "$LOCK_HOLDER_STATE" == "backend_absent" ]]; then
+    if reap_active_lock_holder_wrapper "$database"; then
+      return 0
+    else
+      rc=$?
+    fi
+    [[ "$LOCK_HOLDER_STATE" == "cleanup_failed" ]] || set_lock_holder_cleanup_failure "$rc"
+    return "$rc"
+  fi
+  return 64
 }
 
 run_lock_timeout_scenario() {
   local scenario="lock_timeout" database before after holder application_name granted="0" granted_rc=0
-  local backend_pid="" backend_pid_rc=0 terminate_backend_rc=0 connections_rc=0 poll start_ms end_ms elapsed_ms external_timeout=8
+  local backend_pid="" backend_pid_rc=0 holder_cleanup_rc=0 poll start_ms end_ms elapsed_ms external_timeout=8
   database="$(database_for_scenario "$scenario")"
   application_name="memoryai_auth_matrix_lock_${RUN_NONCE}"
   record_state "SCENARIO_STARTED $scenario locking"
@@ -1559,7 +1899,7 @@ LOCK_BACKEND_PID_SQL
     backend_pid_rc=$?
   fi
   (( backend_pid_rc == 0 )) || return "$backend_pid_rc"
-  LOCK_HOLDER_BACKEND_PID="$backend_pid"
+  mark_lock_holder_backend_verified "$database" "$application_name" "$backend_pid" || return $?
 
   start_ms="$(date +%s%3N)"
   expect_006_rejection "$database" "$scenario" "$external_timeout"
@@ -1567,23 +1907,16 @@ LOCK_BACKEND_PID_SQL
   elapsed_ms=$((end_ms - start_ms))
   [[ "$elapsed_ms" -ge 1500 && "$elapsed_ms" -le 6000 ]] || fail lock_elapsed 81 "lock timeout elapsed ${elapsed_ms}ms outside 1500-6000ms"
 
-  if terminate_exact_lock_holder_backend "$database" "$application_name" "$backend_pid"; then
-    terminate_backend_rc=0
+  if complete_active_lock_holder_cleanup "$database"; then
+    holder_cleanup_rc=0
   else
-    terminate_backend_rc=$?
+    holder_cleanup_rc=$?
   fi
-  (( terminate_backend_rc == 0 )) || return "$terminate_backend_rc"
-  if wait_for_lock_holder_connections "$database" "$application_name"; then
-    connections_rc=0
-  else
-    connections_rc=$?
-  fi
-  if (( connections_rc == 82 )); then
+  if (( holder_cleanup_rc == 82 )); then
     fail lock_holder_cleanup 82 "holder connection remained after 50 polls"
-  elif (( connections_rc != 0 )); then
-    return "$connections_rc"
+  elif (( holder_cleanup_rc != 0 )); then
+    return "$holder_cleanup_rc"
   fi
-  reap_active_lock_holder_wrapper "$database" || return $?
   catalog_snapshot "$database" "$after"
   cmp -s "$before" "$after" || fail catalog_drift 72 "$scenario changed the catalog"
   record_state "EXPECTED_REJECTION_PASS $scenario elapsed_ms=$elapsed_ms"
