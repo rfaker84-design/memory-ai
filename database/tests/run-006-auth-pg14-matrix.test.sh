@@ -898,6 +898,7 @@ declare -A SCRIPT_QUERY_RCS=()
 LOCK_CONNECTION_TEST_MODE=""
 LOCK_CONNECTION_TEST_ZERO_AT=1
 LOCK_CONNECTION_TEST_CALLS=0
+LOCK_CONNECTION_TEST_FAILURES_REMAINING=0
 LOCK_CONNECTION_TEST_LOG="$TMP_ROOT/lock-connection-polls.log"
 LOCK_BACKEND_TEST_MODE=""
 LOCK_BACKEND_TEST_CALLS=0
@@ -1042,6 +1043,19 @@ execute_postgres_command() {
                 fi
                 printf '0\n'
                 return 42
+                ;;
+              backend_marker_then_failures_then_zero)
+                if [[ -e "$LOCK_BACKEND_TARGET_MARKER" ]]; then
+                  printf '1\n'
+                  return 0
+                fi
+                if (( LOCK_CONNECTION_TEST_FAILURES_REMAINING > 0 )); then
+                  LOCK_CONNECTION_TEST_FAILURES_REMAINING=$((LOCK_CONNECTION_TEST_FAILURES_REMAINING - 1))
+                  printf '0\n'
+                  return 42
+                fi
+                printf '0\n'
+                return 0
                 ;;
               transport42) printf '1\n'; return 42 ;;
               output_two) printf '2\n'; return 0 ;;
@@ -1756,6 +1770,193 @@ post_terminate_broad_after="$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG")
 [[ -e "$LOCK_BACKEND_NON_TARGET_MARKER" ]] || fail_test "post-termination query failure touched a non-target connection"
 clear_active_lock_holder
 rm -f -- "$LOCK_BACKEND_NON_TARGET_MARKER"
+
+# Audit the outer cleanup control flow itself.  These cases retain the formal
+# cleanup_database(), cleanup_all(), and on_exit() functions; only the fake
+# PostgreSQL process and dropdb result are injected.
+OUTER_CLEANUP_LOG="$TMP_ROOT/outer-cleanup.log"
+: >"$OUTER_CLEANUP_LOG"
+outer_log_count() { grep -c "^$1$" "$OUTER_CLEANUP_LOG" || true; }
+outer_broad_count() { grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG" || true; }
+outer_exact_count() { grep -c '^terminate'$'\t' "$LOCK_BACKEND_TRANSPORT_LOG" || true; }
+OUTER_DROP_MODE=success
+OUTER_DROP_CALLS=0
+drop_database_command() {
+  OUTER_DROP_CALLS=$((OUTER_DROP_CALLS + 1))
+  printf 'drop\n' >>"$OUTER_CLEANUP_LOG"
+  [[ "$OUTER_DROP_MODE" == success ]] && return 0
+  return 42
+}
+wait_lock_holder_wrapper_child() {
+  WRAPPER_WAIT_CALLS=$((WRAPPER_WAIT_CALLS + 1))
+  printf 'reap\n' >>"$OUTER_CLEANUP_LOG"
+  return 0
+}
+
+# A wrapper with no catalog-verified backend may use the current-run broad
+# fallback, but that success cannot erase the handshake error or its tracking
+# item.  on_exit must observe and return the same first error on its retry.
+clear_active_lock_holder
+capture_lock_holder_wrapper_starttime() { LOCK_HOLDER_SNAPSHOT_STATE=R; LOCK_HOLDER_SNAPSHOT_STARTTIME=42424200; }
+register_active_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" 424242 || fail_test "outer unverified wrapper registration failed"
+eval "$ORIGINAL_CAPTURE_LOCK_HOLDER_WRAPPER_STARTTIME"
+CREATED_DATABASES=("$boundary_db")
+outer_unverified_broad_before="$(outer_broad_count)"
+if cleanup_all; then outer_unverified_rc=0; else outer_unverified_rc=$?; fi
+assert_rc "$outer_unverified_rc" "$LOCK_HOLDER_HANDSHAKE_REQUIRED_RC" "outer unverified cleanup_all"
+[[ "$LOCK_HOLDER_STATE" == cleanup_failed && "$LOCK_HOLDER_RESUME_STATE" == wrapper_started ]] || \
+  fail_test "outer unverified cleanup advanced to a successful holder state"
+[[ "$(outer_broad_count)" -eq $((outer_unverified_broad_before + 1)) ]] || fail_test "outer unverified cleanup skipped safe broad fallback"
+[[ "${#CREATED_DATABASES[@]}" -eq 1 && "${CREATED_DATABASES[0]}" == "$boundary_db" ]] || \
+  fail_test "successful fallback drop erased the handshake failure tracking"
+set +e
+(
+  RUN_ACTIVE=1
+  WORK_DIR_CREATED=0
+  remove_work_directory() { return 0; }
+  on_exit 0
+) >/dev/null 2>&1
+outer_unverified_exit_rc=$?
+set -e
+assert_rc "$outer_unverified_exit_rc" "$LOCK_HOLDER_HANDSHAKE_REQUIRED_RC" "outer unverified on_exit"
+[[ "$(outer_broad_count)" -eq $((outer_unverified_broad_before + 2)) ]] || fail_test "outer unverified on_exit lost fallback retry"
+clear_active_lock_holder
+
+run_pending_absence_cleanup_case() {
+  local label="$1" failures="$2" expected_attempts="$3" attempt actual_rc exact_before broad_before drops_before reaps_before
+  clear_active_lock_holder
+  : >"$LOCK_BACKEND_TARGET_MARKER"
+  : >"$LOCK_BACKEND_NON_TARGET_MARKER"
+  LOCK_BACKEND_TEST_MODE=success
+  LOCK_CONNECTION_TEST_MODE=backend_marker_then_failures_then_zero
+  LOCK_CONNECTION_TEST_FAILURES_REMAINING="$failures"
+  CREATED_DATABASES=("$boundary_db")
+  exact_before="$(outer_exact_count)"
+  broad_before="$(outer_broad_count)"
+  drops_before="$(outer_log_count drop)"
+  reaps_before="$(outer_log_count reap)"
+  activate_test_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID"
+  for ((attempt=1; attempt<=expected_attempts; attempt++)); do
+    if cleanup_all; then actual_rc=0; else actual_rc=$?; fi
+    if (( attempt <= failures )); then
+      assert_rc "$actual_rc" 42 "$label absence failure $attempt"
+      [[ "${#CREATED_DATABASES[@]}" -eq 1 ]] || fail_test "$label failure $attempt removed pending database"
+      [[ "$(outer_log_count drop)" -eq "$drops_before" && "$(outer_log_count reap)" -eq "$reaps_before" ]] || \
+        fail_test "$label failure $attempt dropped or reaped before exact absence proof"
+      [[ "$LOCK_HOLDER_STATE" == cleanup_failed && "$LOCK_HOLDER_RESUME_STATE" == termination_succeeded ]] || \
+        fail_test "$label failure $attempt lost termination_succeeded recovery state"
+    else
+      assert_rc "$actual_rc" 0 "$label final cleanup"
+    fi
+  done
+  [[ "$(outer_exact_count)" -eq $((exact_before + 1)) ]] || fail_test "$label repeated exact termination"
+  [[ "$(outer_broad_count)" -eq "$broad_before" ]] || fail_test "$label used broad termination after exact success"
+  [[ "$(outer_log_count drop)" -eq $((drops_before + 1)) && "$(outer_log_count reap)" -eq $((reaps_before + 1)) ]] || \
+    fail_test "$label did not perform one reap and one drop after absence proof"
+  [[ "${#CREATED_DATABASES[@]}" -eq 0 ]] || fail_test "$label final cleanup retained a dropped database"
+  assert_lock_target_still_isolated "$label"
+}
+
+# First absence transport failure leaves the pending database untouched.  A
+# later real on_exit retry continues from termination_succeeded, reaps once,
+# and only then drops it.
+clear_active_lock_holder
+: >"$LOCK_BACKEND_TARGET_MARKER"
+: >"$LOCK_BACKEND_NON_TARGET_MARKER"
+LOCK_BACKEND_TEST_MODE=success
+LOCK_CONNECTION_TEST_MODE=backend_marker_then_failures_then_zero
+LOCK_CONNECTION_TEST_FAILURES_REMAINING=1
+CREATED_DATABASES=("$boundary_db")
+outer_exit_exact_before="$(outer_exact_count)"
+outer_exit_broad_before="$(outer_broad_count)"
+outer_exit_drops_before="$(outer_log_count drop)"
+outer_exit_reaps_before="$(outer_log_count reap)"
+activate_test_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID"
+if cleanup_all; then outer_exit_first_rc=0; else outer_exit_first_rc=$?; fi
+assert_rc "$outer_exit_first_rc" 42 "outer pending absence cleanup_all"
+[[ "${#CREATED_DATABASES[@]}" -eq 1 && "$LOCK_HOLDER_STATE" == cleanup_failed && "$LOCK_HOLDER_RESUME_STATE" == termination_succeeded ]] || \
+  fail_test "outer pending absence cleanup lost its recoverable state"
+[[ "$(outer_log_count drop)" -eq "$outer_exit_drops_before" && "$(outer_log_count reap)" -eq "$outer_exit_reaps_before" ]] || \
+  fail_test "outer pending absence cleanup dropped or reaped early"
+set +e
+(
+  RUN_ACTIVE=1
+  WORK_DIR_CREATED=0
+  remove_work_directory() { return 0; }
+  on_exit 0
+) >/dev/null 2>&1
+outer_exit_retry_rc=$?
+set -e
+assert_rc "$outer_exit_retry_rc" 0 "outer pending absence on_exit retry"
+[[ "$(outer_exact_count)" -eq $((outer_exit_exact_before + 1)) && "$(outer_broad_count)" -eq "$outer_exit_broad_before" ]] || \
+  fail_test "outer pending absence on_exit repeated termination"
+[[ "$(outer_log_count reap)" -eq $((outer_exit_reaps_before + 1)) && "$(outer_log_count drop)" -eq $((outer_exit_drops_before + 1)) ]] || \
+  fail_test "outer pending absence on_exit did not reap then drop"
+
+# Two consecutive absence failures must remain pending; the third real outer
+# cleanup resumes from the exact termination state and completes once.
+run_pending_absence_cleanup_case absence_two_failures_then_success 2 3
+
+# A dropdb failure is likewise recoverable: keep the tracking entry until a
+# later cleanup_all call observes a successful drop.
+clear_active_lock_holder
+LOCK_CONNECTION_TEST_MODE=""
+CREATED_DATABASES=("$boundary_db")
+OUTER_DROP_MODE=fail
+outer_drop_before="$(outer_log_count drop)"
+if cleanup_all; then outer_drop_first_rc=0; else outer_drop_first_rc=$?; fi
+assert_rc "$outer_drop_first_rc" 42 "outer drop failure cleanup_all"
+[[ "${#CREATED_DATABASES[@]}" -eq 1 && "$(outer_log_count drop)" -eq $((outer_drop_before + 1)) ]] || \
+  fail_test "outer drop failure lost database tracking"
+OUTER_DROP_MODE=success
+cleanup_all || fail_test "outer drop retry cleanup_all failed"
+[[ "${#CREATED_DATABASES[@]}" -eq 0 && "$(outer_log_count drop)" -eq $((outer_drop_before + 2)) ]] || \
+  fail_test "outer drop retry did not remove tracking after success"
+OUTER_DROP_MODE=success
+
+# EXIT, INT, and TERM all reach the real cleanup_all/on_exit path.  While the
+# absence query is still transport-failed, none may repeat exact termination,
+# fall back broadly, reap, drop, or lose the pending database.
+run_pending_outer_exit_case() {
+  local label="$1" original_rc="$2" use_signal="$3" actual_rc exact_before broad_before drops_before reaps_before
+  clear_active_lock_holder
+  : >"$LOCK_BACKEND_TARGET_MARKER"
+  : >"$LOCK_BACKEND_NON_TARGET_MARKER"
+  LOCK_BACKEND_TEST_MODE=success
+  LOCK_CONNECTION_TEST_MODE=backend_marker_then_transport42
+  CREATED_DATABASES=("$boundary_db")
+  activate_test_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID"
+  rm -f -- "$LOCK_BACKEND_TARGET_MARKER"
+  LOCK_HOLDER_STATE=termination_succeeded
+  LOCK_HOLDER_RESUME_STATE=termination_succeeded
+  exact_before="$(outer_exact_count)"
+  broad_before="$(outer_broad_count)"
+  drops_before="$(outer_log_count drop)"
+  reaps_before="$(outer_log_count reap)"
+  set +e
+  (
+    RUN_ACTIVE=1
+    WORK_DIR_CREATED=0
+    remove_work_directory() { return 0; }
+    if [[ "$use_signal" == 1 ]]; then
+      install_runtime_traps
+      on_signal "$label" "$original_rc"
+    else
+      on_exit "$original_rc"
+    fi
+  ) >/dev/null 2>&1
+  actual_rc=$?
+  set -e
+  assert_rc "$actual_rc" "$original_rc" "$label pending outer cleanup exit status"
+  [[ "$(outer_exact_count)" -eq "$exact_before" && "$(outer_broad_count)" -eq "$broad_before" && \
+     "$(outer_log_count drop)" -eq "$drops_before" && "$(outer_log_count reap)" -eq "$reaps_before" ]] || \
+    fail_test "$label pending outer cleanup changed protected work"
+  [[ "${#CREATED_DATABASES[@]}" -eq 1 && "${CREATED_DATABASES[0]}" == "$boundary_db" ]] || \
+    fail_test "$label pending outer cleanup lost database tracking"
+}
+run_pending_outer_exit_case EXIT 42 0
+run_pending_outer_exit_case INT 130 1
+run_pending_outer_exit_case TERM 143 1
 
 cleanup_guard_calls_before="$(wc -l <"$SCRIPT_TRANSPORT_LOG" | tr -d ' ')"
 CLEANUP_DATABASE_IN_PROGRESS=1

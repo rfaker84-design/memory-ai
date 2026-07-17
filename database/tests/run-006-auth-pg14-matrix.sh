@@ -635,35 +635,42 @@ remove_created_database() {
 }
 
 cleanup_database() {
-  local database="$1" cleanup_rc=0 terminate_rc=0 holder_rc=0 connections_rc=0 drop_rc=0 exists_rc=0
-  local holder_known=0 holder_complete=0 holder_reap_attempted=0
+  local database="$1" first_error=0 terminate_rc=0 holder_rc=0 connections_rc=0 drop_rc=0 exists_rc=0
+  local holder_complete=0 allow_broad_fallback=1 allow_database_drop=1
   validate_test_database_name "$database" || return $?
   (( CLEANUP_DATABASE_IN_PROGRESS == 0 )) || return 89
   CLEANUP_DATABASE_IN_PROGRESS=1
 
   if [[ "$LOCK_HOLDER_DATABASE" == "$database" && "$LOCK_HOLDER_STATE" != "not_started" ]]; then
-    holder_known=1
     if complete_active_lock_holder_cleanup "$database"; then
       holder_complete=1
     else
       holder_rc=$?
+      (( first_error == 0 )) && first_error="$holder_rc"
       case "${LOCK_HOLDER_STATE}:${LOCK_HOLDER_RESUME_STATE}" in
         cleanup_failed:wrapper_started)
+          # There is no catalog-verified backend identity yet.  A current-run
+          # database is still safe for the ordinary best-effort fallback, but
+          # that fallback must never turn the missing handshake into success.
           ;;
         cleanup_failed:termination_succeeded|cleanup_failed:backend_absent|cleanup_failed:wrapper_reaped)
-          holder_reap_attempted=1
+          # Exact termination has already happened or an exact reap remains
+          # pending.  Keep the database and resume state for a later retry;
+          # broad termination or --force drop would destroy that evidence.
+          allow_broad_fallback=0
+          allow_database_drop=0
           record_state "FAILED_cleanup_lock_holder_${holder_rc}"
-          cleanup_rc=1
           ;;
         *)
+          allow_broad_fallback=0
+          allow_database_drop=0
           record_state "FAILED_cleanup_lock_holder_${holder_rc}"
-          cleanup_rc=1
           ;;
       esac
     fi
   fi
 
-  if (( holder_complete == 0 && holder_reap_attempted == 0 )); then
+  if (( allow_broad_fallback == 1 && holder_complete == 0 )); then
     set +e
     admin_psql_script terminate "$database" >/dev/null <<'CLEANUP_TERMINATE_SQL'
 SELECT pg_catalog.pg_terminate_backend(pid) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db' AND pid <> pg_catalog.pg_backend_pid();
@@ -672,35 +679,7 @@ CLEANUP_TERMINATE_SQL
     set -e
     if [[ "$terminate_rc" -ne 0 ]]; then
       record_state "FAILED_cleanup_terminate_${terminate_rc} $database"
-      cleanup_rc=1
-    fi
-  fi
-
-  if (( holder_known == 1 && holder_complete == 0 && holder_reap_attempted == 0 )); then
-    if [[ "$terminate_rc" -eq 0 ]]; then
-      if wait_for_lock_holder_connections "$database" "$LOCK_HOLDER_APPLICATION_NAME"; then
-        holder_rc=0
-      else
-        holder_rc=$?
-      fi
-    else
-      holder_rc="$terminate_rc"
-    fi
-    if (( holder_rc == 0 )); then
-      LOCK_HOLDER_STATE="backend_absent"
-      LOCK_HOLDER_RESUME_STATE="backend_absent"
-      LOCK_HOLDER_CLEANUP_FAILURE_RC=""
-      holder_reap_attempted=1
-      if reap_active_lock_holder_wrapper "$database"; then
-        holder_complete=1
-        holder_rc=0
-      else
-        holder_rc=$?
-      fi
-    fi
-    if (( holder_rc != 0 )); then
-      record_state "FAILED_cleanup_lock_holder_${holder_rc}"
-      cleanup_rc=1
+      (( first_error == 0 )) && first_error="$terminate_rc"
     fi
   fi
 
@@ -714,53 +693,46 @@ CLEANUP_CONNECTIONS_SQL
   fi
   if [[ "$connections_rc" -ne 0 ]]; then
     record_state "FAILED_cleanup_connections_${connections_rc} stdout_bytes=${QUERY_CAPTURE_STDOUT_BYTES:-unchecked} stderr_bytes=${QUERY_CAPTURE_STDERR_BYTES:-unchecked}"
-    cleanup_rc=1
+    (( first_error == 0 )) && first_error="$connections_rc"
   fi
 
-  set +e
-  drop_database_command "$database" >/dev/null
-  drop_rc=$?
-  set -e
-  if [[ "$drop_rc" -ne 0 ]]; then
-    record_state "FAILED_cleanup_dropdb_${drop_rc} $database"
-    cleanup_rc=1
+  if (( allow_database_drop == 1 && connections_rc == 0 )); then
+    set +e
+    drop_database_command "$database" >/dev/null
+    drop_rc=$?
+    set -e
+    if [[ "$drop_rc" -ne 0 ]]; then
+      record_state "FAILED_cleanup_dropdb_${drop_rc} $database"
+      (( first_error == 0 )) && first_error="$drop_rc"
+    fi
   fi
 
-  if capture_scalar_query admin "$ADMIN_DB" database_exists "$database" zero <<'CLEANUP_EXISTS_SQL'
+  if (( allow_database_drop == 1 && connections_rc == 0 )); then
+    if capture_scalar_query admin "$ADMIN_DB" database_exists "$database" zero <<'CLEANUP_EXISTS_SQL'
 SELECT count(*) FROM pg_catalog.pg_database WHERE datname = :'matrix_db';
 CLEANUP_EXISTS_SQL
-  then
-    exists_rc=0
-  else
-    exists_rc=$?
-  fi
-  if [[ "$exists_rc" -ne 0 ]]; then
-    record_state "FAILED_cleanup_database_exists_${exists_rc} stdout_bytes=${QUERY_CAPTURE_STDOUT_BYTES:-unchecked} stderr_bytes=${QUERY_CAPTURE_STDERR_BYTES:-unchecked}"
-    cleanup_rc=1
+    then
+      exists_rc=0
+    else
+      exists_rc=$?
+    fi
+    if [[ "$exists_rc" -ne 0 ]]; then
+      record_state "FAILED_cleanup_database_exists_${exists_rc} stdout_bytes=${QUERY_CAPTURE_STDOUT_BYTES:-unchecked} stderr_bytes=${QUERY_CAPTURE_STDERR_BYTES:-unchecked}"
+      (( first_error == 0 )) && first_error="$exists_rc"
+    fi
   fi
 
-  if [[ "$drop_rc" -eq 0 && "$exists_rc" -eq 0 ]]; then
-    if (( holder_known == 1 && holder_complete == 0 && holder_reap_attempted == 0 )); then
-      LOCK_HOLDER_STATE="backend_absent"
-      LOCK_HOLDER_RESUME_STATE="backend_absent"
-      LOCK_HOLDER_CLEANUP_FAILURE_RC=""
-      holder_reap_attempted=1
-      if reap_active_lock_holder_wrapper "$database"; then
-        holder_complete=1
-        holder_rc=0
-      else
-        holder_rc=$?
-        record_state "FAILED_cleanup_lock_holder_reap_${holder_rc}"
-        cleanup_rc=1
-      fi
-    fi
+  # A successful best-effort drop is not evidence that an earlier holder
+  # failure was resolved.  Keep its tracking entry until a clean retry can
+  # complete without replacing the first failure.
+  if (( first_error == 0 && allow_database_drop == 1 && connections_rc == 0 && drop_rc == 0 && exists_rc == 0 )); then
     remove_created_database "$database"
   fi
-  if [[ "$cleanup_rc" -eq 0 ]]; then
+  if [[ "$first_error" -eq 0 ]]; then
     record_state "CLEANUP_PASS $database"
   fi
   CLEANUP_DATABASE_IN_PROGRESS=0
-  return "$cleanup_rc"
+  return "$first_error"
 }
 
 cleanup_or_fail() {
@@ -802,13 +774,16 @@ PREEXISTING_DATABASES_SQL
 }
 
 cleanup_all() {
-  local database rc=0
+  local database rc=0 database_rc=0
   (( CLEANUP_ALL_IN_PROGRESS == 0 )) || return 89
   CLEANUP_ALL_IN_PROGRESS=1
   for database in "${CREATED_DATABASES[@]:-}"; do
     [[ -n "$database" ]] || continue
-    if ! cleanup_database "$database"; then
-      rc=1
+    if cleanup_database "$database"; then
+      database_rc=0
+    else
+      database_rc=$?
+      (( rc == 0 )) && rc="$database_rc"
     fi
   done
   local residual_rc
@@ -819,7 +794,7 @@ cleanup_all() {
   fi
   if [[ "$residual_rc" -ne 0 ]]; then
     record_state "FAILED_cleanup_residual_${residual_rc} stdout_bytes=${QUERY_CAPTURE_STDOUT_BYTES:-unchecked} stderr_bytes=${QUERY_CAPTURE_STDERR_BYTES:-unchecked}"
-    rc=1
+    (( rc == 0 )) && rc="$residual_rc"
   fi
   if [[ "$rc" -eq 0 && "$CLEANUP_RECORDED" -eq 0 ]]; then
     record_state "CLEANUP_PASS residual=0"
@@ -959,21 +934,23 @@ on_exit() {
   CLEANUP_DATABASE_IN_PROGRESS=0
   CLEANUP_ALL_IN_PROGRESS=0
   if [[ "$RUN_ACTIVE" -eq 1 ]]; then
-    if ! cleanup_all; then
-      cleanup_rc=1
-      record_state "FAILED_cleanup_all_1 original_rc=$original_rc"
-      record_state "CLEANUP_FAILED_RC_75 original_rc=$original_rc"
+    if cleanup_all; then
+      cleanup_rc=0
+    else
+      cleanup_rc=$?
+      record_state "FAILED_cleanup_all_${cleanup_rc} original_rc=$original_rc"
+      record_state "CLEANUP_FAILED_RC_${cleanup_rc} original_rc=$original_rc"
     fi
     if ! remove_work_directory; then
-      cleanup_rc=1
+      (( cleanup_rc == 0 )) && cleanup_rc=75
       record_state "FAILED_cleanup_workdir_1 original_rc=$original_rc"
-      record_state "CLEANUP_FAILED_RC_75 original_rc=$original_rc"
+      record_state "CLEANUP_FAILED_RC_${cleanup_rc} original_rc=$original_rc"
     fi
     if [[ "$original_rc" -ne 0 ]]; then
       final_rc="$original_rc"
       [[ "$FAILED_RECORDED" -eq 1 ]] || record_state "FAILED_${CURRENT_STAGE}_${original_rc}"
     elif [[ "$cleanup_rc" -ne 0 ]]; then
-      final_rc=75
+      final_rc="$cleanup_rc"
     else
       final_rc=0
       record_state "COMPLETE"
