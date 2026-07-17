@@ -78,9 +78,11 @@ ORIGINAL_RECORD_STATE="$(declare -f record_state)"
 ORIGINAL_EXECUTE_POSTGRES_COMMAND="$(declare -f execute_postgres_command)"
 ORIGINAL_RUN_EXTERNAL_TIMEOUT="$(declare -f run_external_timeout)"
 ORIGINAL_STARTUP_PROBE_FILE_OWNER="$(declare -f startup_probe_file_owner)"
+ORIGINAL_STARTUP_PROBE_FILE_GROUP="$(declare -f startup_probe_file_group)"
 ORIGINAL_STARTUP_PROBE_FILE_MODE="$(declare -f startup_probe_file_mode)"
 ORIGINAL_CREATE_QUERY_CAPTURE_FILE="$(declare -f create_query_capture_file)"
 ORIGINAL_QUERY_CAPTURE_FILE_OWNER="$(declare -f query_capture_file_owner)"
+ORIGINAL_QUERY_CAPTURE_FILE_GROUP="$(declare -f query_capture_file_group)"
 ORIGINAL_QUERY_CAPTURE_FILE_MODE="$(declare -f query_capture_file_mode)"
 RUN_ID="source-test-run"
 generate_run_nonce() { RUN_NONCE=33333333333333333333333333333333; }
@@ -112,8 +114,14 @@ TEST_WORK="$TMP_ROOT/rejection-work"
 mkdir "$TEST_WORK"
 WORK_DIR="$TEST_WORK"
 QUERY_CAPTURE_OWNER_LOG="$TMP_ROOT/query-capture-owner-checks.log"
+QUERY_CAPTURE_GROUP_LOG="$TMP_ROOT/query-capture-group-checks.log"
 QUERY_CAPTURE_MODE_LOG="$TMP_ROOT/query-capture-mode-checks.log"
+QUERY_CAPTURE_TEST_OWNER=0
+QUERY_CAPTURE_TEST_GROUP=0
+QUERY_CAPTURE_TEST_GROUP_NAME=root
+QUERY_CAPTURE_POST_EXEC_GID_MARKER=""
 : >"$QUERY_CAPTURE_OWNER_LOG"
+: >"$QUERY_CAPTURE_GROUP_LOG"
 : >"$QUERY_CAPTURE_MODE_LOG"
 create_query_capture_file() {
   [[ "$#" -eq 2 ]] || return 76
@@ -129,7 +137,15 @@ create_query_capture_file() {
 }
 query_capture_file_owner() {
   printf '%s\n' "$1" >>"$QUERY_CAPTURE_OWNER_LOG"
-  printf '0\n'
+  printf '%s\n' "$QUERY_CAPTURE_TEST_OWNER"
+}
+query_capture_file_group() {
+  printf '%s\n' "$1" >>"$QUERY_CAPTURE_GROUP_LOG"
+  if [[ -n "$QUERY_CAPTURE_POST_EXEC_GID_MARKER" && -e "$QUERY_CAPTURE_POST_EXEC_GID_MARKER" ]]; then
+    printf '1000\n'
+  else
+    printf '%s\n' "$QUERY_CAPTURE_TEST_GROUP"
+  fi
 }
 query_capture_file_mode() {
   printf '%s\n' "$1" >>"$QUERY_CAPTURE_MODE_LOG"
@@ -249,15 +265,24 @@ capture_and_validate_script_transport() {
 # transport input before any runtime directory or database command is created.
 ORIGINAL_FIXED_EXECUTABLE_AVAILABLE="$(declare -f fixed_executable_available)"
 ORIGINAL_ORCHESTRATOR_UID="$(declare -f orchestrator_uid)"
+ORIGINAL_ORCHESTRATOR_GID="$(declare -f orchestrator_gid)"
 ORIGINAL_DATABASE_OS_USER_EXISTS="$(declare -f database_os_user_exists)"
 fixed_executable_available() { return 0; }
 orchestrator_uid() { printf '1000\n'; }
+orchestrator_gid() { printf '0\n'; }
 set +e
 ( validate_orchestrator_identity ) >/dev/null 2>&1
 non_root_rc=$?
 set -e
 assert_rc "$non_root_rc" 76 "non-root orchestrator"
 orchestrator_uid() { printf '0\n'; }
+orchestrator_gid() { printf '1000\n'; }
+set +e
+( validate_orchestrator_identity ) >/dev/null 2>&1
+non_root_group_rc=$?
+set -e
+assert_rc "$non_root_group_rc" 76 "root uid with non-root primary gid"
+orchestrator_gid() { printf '0\n'; }
 validate_orchestrator_identity
 
 for rejected_host in '' localhost 127.0.0.1 ::1 /tmp /run/postgresql /var/run/postgresql/; do
@@ -341,6 +366,7 @@ set -e
 assert_rc "$missing_postgres_user_rc" 69 "missing postgres OS user"
 eval "$ORIGINAL_FIXED_EXECUTABLE_AVAILABLE"
 eval "$ORIGINAL_ORCHESTRATOR_UID"
+eval "$ORIGINAL_ORCHESTRATOR_GID"
 eval "$ORIGINAL_DATABASE_OS_USER_EXISTS"
 
 IDENTITY_EVIDENCE='140023|postgres|postgres|postgres|unix_socket'
@@ -348,13 +374,20 @@ IDENTITY_STDERR=''
 IDENTITY_TRANSPORT_RC=0
 IDENTITY_BOUNDARY_LOG="$TMP_ROOT/identity-boundary.log"
 IDENTITY_OWNER_LOG="$TMP_ROOT/identity-owner-checks.log"
+IDENTITY_GROUP_LOG="$TMP_ROOT/identity-group-checks.log"
 IDENTITY_MODE_LOG="$TMP_ROOT/identity-mode-checks.log"
+IDENTITY_GROUP=0
 : >"$IDENTITY_BOUNDARY_LOG"
 : >"$IDENTITY_OWNER_LOG"
+: >"$IDENTITY_GROUP_LOG"
 : >"$IDENTITY_MODE_LOG"
 startup_probe_file_owner() {
   printf '%s\n' "$1" >>"$IDENTITY_OWNER_LOG"
   printf '0\n'
+}
+startup_probe_file_group() {
+  printf '%s\n' "$1" >>"$IDENTITY_GROUP_LOG"
+  printf '%s\n' "$IDENTITY_GROUP"
 }
 startup_probe_file_mode() {
   printf '%s\n' "$1" >>"$IDENTITY_MODE_LOG"
@@ -414,6 +447,7 @@ run_identity_probe_case() {
     [[ "$(cd "$(dirname "$file")" && pwd -P)" == "$(cd "$case_dir" && pwd -P)" ]] || fail_test "$label probe escaped WORK_DIR"
     [[ -f "$file" && ! -L "$file" ]] || fail_test "$label probe is not a regular non-symlink file"
     grep -Fxq -- "$file" "$IDENTITY_OWNER_LOG" || fail_test "$label probe did not execute the root-owner check"
+    grep -Fxq -- "$file" "$IDENTITY_GROUP_LOG" || fail_test "$label probe did not execute the root-group check"
     grep -Fxq -- "$file" "$IDENTITY_MODE_LOG" || fail_test "$label probe did not execute the 0600 mode check"
     case "${file##*/}" in
       postgresql-startup-identity.stdout.*|postgresql-startup-identity.stderr.*) ;;
@@ -442,6 +476,26 @@ run_identity_probe_case newline '140023|postgres|postgres|postgres|unix_socket' 
 run_identity_probe_case space '140023|postgres|postgres|postgres|unix_socket' ' ' 0 "$STARTUP_VALIDATION_RC"
 run_identity_probe_case transport42 '140023|postgres|postgres|postgres|unix_socket' 'WARNING: must not override transport failure' 42 42
 run_identity_probe_case invalid_stdout '140022|postgres|postgres|postgres|unix_socket' '' 0 65
+
+bad_startup_gid_dir="$TMP_ROOT/identity-case-bad-gid"
+mkdir "$bad_startup_gid_dir"
+chmod 700 "$bad_startup_gid_dir"
+identity_calls_before="$(wc -l <"$IDENTITY_BOUNDARY_LOG" | tr -d ' ')"
+IDENTITY_GROUP=1000
+set +e
+(
+  WORK_DIR="$bad_startup_gid_dir"
+  FAILED_RECORDED=0
+  CURRENT_STAGE=startup
+  verify_postgresql_identity
+) >/dev/null 2>&1
+bad_startup_gid_rc=$?
+set -e
+assert_rc "$bad_startup_gid_rc" "$STARTUP_VALIDATION_RC" "startup capture with non-root gid"
+identity_calls_after="$(wc -l <"$IDENTITY_BOUNDARY_LOG" | tr -d ' ')"
+[[ "$identity_calls_after" == "$identity_calls_before" ]] || fail_test "bad startup capture gid reached PostgreSQL"
+IDENTITY_GROUP=0
+rm -rf -- "$bad_startup_gid_dir"
 
 for bad_identity in \
   '140023|memoryai|postgres|postgres|unix_socket' \
@@ -559,6 +613,7 @@ execute_postgres_command() {
 postgres_file_readable /staging/006.sql || fail_test "staging readability did not use the postgres boundary"
 eval "$ORIGINAL_EXECUTE_POSTGRES_COMMAND"
 eval "$ORIGINAL_STARTUP_PROBE_FILE_OWNER"
+eval "$ORIGINAL_STARTUP_PROBE_FILE_GROUP"
 eval "$ORIGINAL_STARTUP_PROBE_FILE_MODE"
 
 # Independent test oracles.  These do not call the runner's contract helpers;
@@ -820,6 +875,10 @@ mkdir "$QUERY_FIXTURE_DIR"
 declare -A SCRIPT_QUERY_STDOUT_FILES=()
 declare -A SCRIPT_QUERY_STDERR_FILES=()
 declare -A SCRIPT_QUERY_RCS=()
+LOCK_CONNECTION_TEST_MODE=""
+LOCK_CONNECTION_TEST_ZERO_AT=1
+LOCK_CONNECTION_TEST_CALLS=0
+LOCK_CONNECTION_TEST_LOG="$TMP_ROOT/lock-connection-polls.log"
 declare -a SCALAR_QUERY_OPERATIONS=(
   connection_count database_exists residual_count preexisting_count lock_granted lock_connections
 )
@@ -891,7 +950,28 @@ execute_postgres_command() {
       cat >"$script_file"
       capture_and_validate_script_transport "$script_file" || return $?
       [[ "$SCRIPT_TRANSPORT_FORCED_RC" -eq 0 ]] || return "$SCRIPT_TRANSPORT_FORCED_RC"
+      if [[ -n "$QUERY_CAPTURE_POST_EXEC_GID_MARKER" ]]; then
+        : >"$QUERY_CAPTURE_POST_EXEC_GID_MARKER"
+      fi
       case "$TEST_SCRIPT_OPERATION" in
+        lock_connections)
+          if [[ -n "$LOCK_CONNECTION_TEST_MODE" ]]; then
+            LOCK_CONNECTION_TEST_CALLS=$((LOCK_CONNECTION_TEST_CALLS + 1))
+            printf '%s\n' "$LOCK_CONNECTION_TEST_CALLS" >>"$LOCK_CONNECTION_TEST_LOG"
+            case "$LOCK_CONNECTION_TEST_MODE" in
+              sequence)
+                if (( LOCK_CONNECTION_TEST_CALLS >= LOCK_CONNECTION_TEST_ZERO_AT )); then printf '0\n'; else printf '1\n'; fi
+                return 0
+                ;;
+              all_one) printf '1\n'; return 0 ;;
+              transport42) printf '1\n'; return 42 ;;
+              output_two) printf '2\n'; return 0 ;;
+              trailing_blank) printf '1\n\n'; return 0 ;;
+              missing_lf) printf '1'; return 0 ;;
+              *) return 97 ;;
+            esac
+          fi
+          ;;&
         connection_count|database_exists|residual_count|preexisting_count|lock_granted|lock_connections)
           stdout_fixture="${SCRIPT_QUERY_STDOUT_FILES[$TEST_SCRIPT_OPERATION]}"
           stderr_fixture="${SCRIPT_QUERY_STDERR_FILES[$TEST_SCRIPT_OPERATION]}"
@@ -964,7 +1044,7 @@ SELECT count(*) FROM pg_catalog.pg_locks l JOIN pg_catalog.pg_stat_activity a ON
 TEST_LOCK_GRANTED_SQL
       ;;
     lock_connections)
-      capture_scalar_query database "$boundary_db" lock_connections "$lock_app" zero <<'TEST_LOCK_CONNECTIONS_SQL'
+      capture_scalar_query database "$boundary_db" lock_connections "$lock_app" zero_or_one <<'TEST_LOCK_CONNECTIONS_SQL'
 SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE application_name=:'lock_app';
 TEST_LOCK_CONNECTIONS_SQL
       ;;
@@ -990,7 +1070,7 @@ for scalar_operation in "${SCALAR_QUERY_OPERATIONS[@]}"; do
     if [[ "$raw_shape" == exact_zero ]]; then
       expected_scalar_rc=0
       expected_scalar_value=0
-    elif [[ "$raw_shape" == exact_one && "$scalar_operation" == lock_granted ]]; then
+    elif [[ "$raw_shape" == exact_one && ( "$scalar_operation" == lock_granted || "$scalar_operation" == lock_connections ) ]]; then
       expected_scalar_rc=0
       expected_scalar_value=1
     elif [[ "$raw_shape" == transport42 ]]; then
@@ -1008,6 +1088,7 @@ for scalar_operation in "${SCALAR_QUERY_OPERATIONS[@]}"; do
       [[ "$(cd "$(dirname "$capture_file")" && pwd -P)" == "$(cd "$WORK_DIR" && pwd -P)" ]] || \
         fail_test "$scalar_operation $raw_shape capture escaped WORK_DIR"
       grep -Fxq -- "$capture_file" "$QUERY_CAPTURE_OWNER_LOG" || fail_test "$scalar_operation $raw_shape skipped owner validation"
+      grep -Fxq -- "$capture_file" "$QUERY_CAPTURE_GROUP_LOG" || fail_test "$scalar_operation $raw_shape skipped group validation"
       grep -Fxq -- "$capture_file" "$QUERY_CAPTURE_MODE_LOG" || fail_test "$scalar_operation $raw_shape skipped mode validation"
       case "${capture_file##*/}" in
         postgresql-query.${scalar_operation}.stdout.*|postgresql-query.${scalar_operation}.stderr.*) ;;
@@ -1026,6 +1107,79 @@ for scalar_operation in "${SCALAR_QUERY_OPERATIONS[@]}"; do
     prepare_query_fixture "$scalar_operation" exact_zero
   fi
 done
+
+# Numeric uid:gid:mode is authoritative.  A misleading group name cannot
+# compensate for a nonzero numeric gid, and unsafe metadata must stop before
+# the PostgreSQL command boundary.
+query_gid_calls_before="$(wc -l <"$SCRIPT_TRANSPORT_LOG" | tr -d ' ')"
+QUERY_CAPTURE_TEST_GROUP=1000
+QUERY_CAPTURE_TEST_GROUP_NAME=root
+QUERY_CAPTURE_VALUE=stale
+if invoke_scalar_query_operation connection_count; then query_bad_gid_rc=0; else query_bad_gid_rc=$?; fi
+assert_rc "$query_bad_gid_rc" 76 "query capture uid0 gid1000 mode600"
+[[ "$QUERY_CAPTURE_VALUE" == "" ]] || fail_test "bad query gid retained a stale scalar value"
+query_gid_calls_after="$(wc -l <"$SCRIPT_TRANSPORT_LOG" | tr -d ' ')"
+[[ "$query_gid_calls_after" == "$query_gid_calls_before" ]] || fail_test "bad query gid reached PostgreSQL"
+
+QUERY_CAPTURE_TEST_GROUP=0
+QUERY_CAPTURE_TEST_OWNER=1000
+QUERY_CAPTURE_VALUE=stale
+if invoke_scalar_query_operation connection_count; then query_bad_uid_rc=0; else query_bad_uid_rc=$?; fi
+assert_rc "$query_bad_uid_rc" 76 "query capture uid1000 gid0 mode600"
+[[ "$QUERY_CAPTURE_VALUE" == "" ]] || fail_test "bad query uid retained a stale scalar value"
+query_uid_calls_after="$(wc -l <"$SCRIPT_TRANSPORT_LOG" | tr -d ' ')"
+[[ "$query_uid_calls_after" == "$query_gid_calls_before" ]] || fail_test "bad query uid reached PostgreSQL"
+
+QUERY_CAPTURE_TEST_OWNER=0
+QUERY_CAPTURE_TEST_GROUP=0
+QUERY_CAPTURE_POST_EXEC_GID_MARKER="$TMP_ROOT/query-post-exec-bad-gid.marker"
+rm -f -- "$QUERY_CAPTURE_POST_EXEC_GID_MARKER"
+QUERY_CAPTURE_VALUE=stale
+if invoke_scalar_query_operation connection_count; then query_replaced_gid_rc=0; else query_replaced_gid_rc=$?; fi
+assert_rc "$query_replaced_gid_rc" "$QUERY_CAPTURE_VALIDATION_RC" "query capture gid changed after database command"
+[[ "$QUERY_CAPTURE_VALUE" == "" ]] || fail_test "post-exec gid replacement retained a scalar value"
+query_replaced_calls_after="$(wc -l <"$SCRIPT_TRANSPORT_LOG" | tr -d ' ')"
+[[ $((query_replaced_calls_after - query_uid_calls_after)) -eq 1 ]] || fail_test "post-exec gid replacement did not execute exactly one query"
+rm -f -- "$QUERY_CAPTURE_POST_EXEC_GID_MARKER"
+QUERY_CAPTURE_POST_EXEC_GID_MARKER=""
+
+# Exercise the production 50-poll helper itself.  Only the external sleep and
+# database transport are injected; the parser, capture files, value state, and
+# finite-loop implementation remain the runner's real functions.
+run_lock_connection_poll_case() {
+  local label="$1" mode="$2" zero_at="$3" expected_rc="$4" expected_calls="$5" actual_rc expected_value
+  LOCK_CONNECTION_TEST_MODE="$mode"
+  LOCK_CONNECTION_TEST_ZERO_AT="$zero_at"
+  LOCK_CONNECTION_TEST_CALLS=0
+  : >"$LOCK_CONNECTION_TEST_LOG"
+  QUERY_CAPTURE_VALUE=stale
+  if wait_for_lock_holder_connections "$boundary_db" "memoryai_auth_matrix_lock_${RUN_NONCE}"; then
+    actual_rc=0
+  else
+    actual_rc=$?
+  fi
+  assert_rc "$actual_rc" "$expected_rc" "lock connection poll $label"
+  [[ "$LOCK_CONNECTION_TEST_CALLS" -eq "$expected_calls" ]] || \
+    fail_test "$label executed $LOCK_CONNECTION_TEST_CALLS polls instead of $expected_calls"
+  [[ "$(wc -l <"$LOCK_CONNECTION_TEST_LOG" | tr -d ' ')" -eq "$expected_calls" ]] || \
+    fail_test "$label transport log count changed"
+  if [[ "$expected_rc" -eq 0 ]]; then expected_value=0; else expected_value=""; fi
+  [[ "$QUERY_CAPTURE_VALUE" == "$expected_value" ]] || fail_test "$label leaked a stale query value"
+}
+
+sleep() { :; }
+run_lock_connection_poll_case first_zero sequence 1 0 1
+run_lock_connection_poll_case one_then_zero sequence 2 0 2
+run_lock_connection_poll_case two_ones_then_zero sequence 3 0 3
+run_lock_connection_poll_case fifty_ones all_one 0 82 50
+run_lock_connection_poll_case forty_nine_ones_then_zero sequence 50 0 50
+run_lock_connection_poll_case transport_rc42 transport42 0 42 1
+run_lock_connection_poll_case output_two output_two 0 "$QUERY_CAPTURE_VALIDATION_RC" 1
+run_lock_connection_poll_case trailing_blank trailing_blank 0 "$QUERY_CAPTURE_VALIDATION_RC" 1
+run_lock_connection_poll_case missing_lf missing_lf 0 "$QUERY_CAPTURE_VALIDATION_RC" 1
+unset -f sleep
+LOCK_CONNECTION_TEST_MODE=""
+LOCK_CONNECTION_TEST_CALLS=0
 
 # The root-owned query files share the established WORK_DIR lifecycle and are
 # removed on normal, INT, and TERM exits without widening the delete boundary.
@@ -1570,6 +1724,82 @@ set -e
 assert_rc "$clean_exit_rc" 0 "clean EXIT"
 assert_contains "$SIGNAL_STATE" "COMPLETE"
 
+# Every filesystem boundary uses numeric gid values, never an NSS group name.
+gid_boundary_root="$TMP_ROOT/gid-boundaries"
+mkdir "$gid_boundary_root"
+chmod 700 "$gid_boundary_root"
+gid_state_file="$gid_boundary_root/state.file"
+printf 'sentinel\n' >"$gid_state_file"
+chmod 600 "$gid_state_file"
+
+set +e
+(
+  stat() {
+    case "$2" in %u) printf '0\n' ;; %g) printf '1000\n' ;; %a) printf '700\n' ;; *) return 99 ;; esac
+  }
+  validate_secure_directory "$gid_boundary_root" 0 0
+) >/dev/null 2>&1
+bad_work_gid_rc=$?
+set -e
+assert_rc "$bad_work_gid_rc" 1 "WORK_DIR numeric gid"
+
+set +e
+(
+  stat() {
+    case "$2" in %u) printf '0\n' ;; %g) printf '1000\n' ;; %a) printf '700\n' ;; *) return 99 ;; esac
+  }
+  validate_state_directory "$gid_boundary_root" 0 0
+) >/dev/null 2>&1
+bad_state_dir_gid_rc=$?
+set -e
+assert_rc "$bad_state_dir_gid_rc" 1 "state directory numeric gid"
+
+set +e
+(
+  stat() {
+    case "$2" in '%u:%g:%a') printf '0:1000:600\n' ;; *) return 99 ;; esac
+  }
+  validate_new_state_file "$gid_state_file" 0 0 "$gid_boundary_root"
+) >/dev/null 2>&1
+bad_state_file_gid_rc=$?
+set -e
+assert_rc "$bad_state_file_gid_rc" 1 "state file numeric gid"
+
+state_before_bad_gid="$(<"$gid_state_file")"
+set +e
+(
+  eval "$ORIGINAL_RECORD_STATE"
+  STATE_FILE="$gid_state_file"
+  STATE_DEVICE_INODE='1:2'
+  RUNTIME_READY=1
+  stat() {
+    case "$2" in '%d:%i') printf '1:2\n' ;; '%u:%g:%a') printf '0:1000:600\n' ;; *) return 99 ;; esac
+  }
+  record_state should-not-write
+) >/dev/null 2>&1
+bad_state_write_gid_rc=$?
+set -e
+assert_rc "$bad_state_write_gid_rc" 76 "state write numeric gid"
+[[ "$(<"$gid_state_file")" == "$state_before_bad_gid" ]] || fail_test "bad state gid modified the state file"
+
+gid_delete_parent="$TMP_ROOT/gid-delete-parent"
+gid_delete_dir="$gid_delete_parent/memoryai-auth-pg14-matrix.${RUN_NONCE}.capture"
+mkdir -p "$gid_delete_dir"
+set +e
+(
+  WORK_DIR="$gid_delete_dir"
+  WORK_DIR_CREATED=1
+  runtime_parent_path() { printf '%s\n' "$gid_delete_parent"; }
+  stat() {
+    case "$2" in %u) printf '0\n' ;; %g) printf '1000\n' ;; %a) printf '700\n' ;; *) return 99 ;; esac
+  }
+  remove_work_directory
+) >/dev/null 2>&1
+bad_delete_gid_rc=$?
+set -e
+assert_rc "$bad_delete_gid_rc" 1 "WORK_DIR pre-delete numeric gid"
+[[ -d "$gid_delete_dir" ]] || fail_test "bad gid WORK_DIR was deleted"
+
 # State-path attacks use fresh sourced subshells and never write the link target.
 state_attack_root="$TMP_ROOT/state-attacks"
 mkdir "$state_attack_root"
@@ -1578,7 +1808,7 @@ ln -s "$state_attack_root/real-dir" "$state_attack_root/link-dir"
 set +e
 (
   RUN_NONCE=44444444444444444444444444444444
-  initialize_state_file "$state_attack_root/link-dir" "$(id -u)"
+  initialize_state_file "$state_attack_root/link-dir" "$(id -u)" "$(id -g)"
 ) >/dev/null 2>&1
 state_dir_rc=$?
 set -e
@@ -1592,7 +1822,7 @@ set +e
   RUN_NONCE=55555555555555555555555555555555
   validate_state_directory() { return 0; }
   create_state_file() { printf '%s\n' "$preexisting"; }
-  initialize_state_file "$state_attack_root" "$(id -u)"
+  initialize_state_file "$state_attack_root" "$(id -u)" "$(id -g)"
 ) >/dev/null 2>&1
 preexisting_rc=$?
 set -e

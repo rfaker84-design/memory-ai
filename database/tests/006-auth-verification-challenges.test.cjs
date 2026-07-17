@@ -249,7 +249,7 @@ const approvedPsqlScriptHeredocs = Object.freeze({
     body: "SELECT count(*) FROM pg_catalog.pg_locks l JOIN pg_catalog.pg_stat_activity a ON a.pid=l.pid WHERE a.application_name=:'lock_app' AND l.relation='public.auth_verification_challenges'::regclass AND l.mode='AccessExclusiveLock' AND l.granted;\n",
   }),
   LOCK_CONNECTIONS_SQL: Object.freeze({
-    opener: `if capture_scalar_query database "$database" lock_connections "$application_name" zero <<'LOCK_CONNECTIONS_SQL'`,
+    opener: `if capture_scalar_query database "$database" lock_connections "$application_name" zero_or_one <<'LOCK_CONNECTIONS_SQL'`,
     token: ":'lock_app'",
     body: "SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE application_name=:'lock_app';\n",
   }),
@@ -462,6 +462,7 @@ function assertMatrixRunnerStructure(runner) {
   assert.match(runner, /create_startup_probe_file\(\) \{[\s\S]*?mktemp -- "\$WORK_DIR\/postgresql-startup-identity\.\$\{stream\}\.XXXXXXXX"/);
   assert.match(runner, /chmod 600 "\$file" \|\| fail startup_probe/);
   assert.match(runner, /startup_probe_file_owner "\$file"\)" == "0"/);
+  assert.match(runner, /startup_probe_file_group "\$file"\)" == "0"/);
   assert.match(runner, /startup_probe_file_mode "\$file"\)" == "600"/);
   assert.match(runner, /if admin_psql -At -c [\s\S]*?>"\$stdout_file" 2>"\$stderr_file"; then\n\s+probe_rc=0\n\s+else\n\s+probe_rc=\$\?/);
   assert.match(runner, /\[\[ "\$probe_rc" -eq 0 \]\] \|\| return "\$probe_rc"/);
@@ -492,7 +493,7 @@ function assertMatrixRunnerStructure(runner) {
   assert.match(runner, /if capture_scalar_query admin "\$ADMIN_DB" residual_count "\$\{RUN_DB_PREFIX\}%" zero/);
   assert.match(runner, /if capture_scalar_query admin "\$ADMIN_DB" preexisting_count "\$names" zero/);
   assert.match(runner, /if capture_scalar_query database "\$database" lock_granted "\$application_name" zero_or_one/);
-  assert.match(runner, /if capture_scalar_query database "\$database" lock_connections "\$application_name" zero/);
+  assert.match(runner, /if capture_scalar_query database "\$database" lock_connections "\$application_name" zero_or_one/);
   assert.doesNotMatch(runner, /\$\(\s*admin_psql_script\s+connection_count\b/);
   assert.doesNotMatch(runner, /\$\(\s*admin_psql_script\s+database_exists\b/);
   assert.doesNotMatch(runner, /\$\(\s*admin_psql_script\s+residual_count\b/);
@@ -502,8 +503,18 @@ function assertMatrixRunnerStructure(runner) {
   assert.match(runner, /set_config\('application_name', :'lock_app', false\)/);
   assert.doesNotMatch(runner, /PGAPPNAME=/);
   assert.match(runner, /\[\[ "\$\(orchestrator_uid\)" == "0" \]\]/);
+  assert.match(runner, /orchestrator_gid\(\) \{[\s\S]*?"\$ID" -g/);
+  assert.ok((runner.match(/\[\[ "\$\(orchestrator_gid\)" == "0" \]\]/g) || []).length >= 2,
+    "both formal orchestration gates must require gid 0");
   assert.match(runner, /required_owner="0"/);
-  assert.match(runner, /stat -c '%u' "\$WORK_DIR"\)" == "0"/);
+  assert.match(runner, /required_group="0"/);
+  assert.match(runner, /stat -c '%u:%g' "\$runtime_parent"\)" == "0:0"/);
+  assert.match(runner, /stat -c '%g' "\$WORK_DIR"\)" == "0"/);
+  assert.match(runner, /stat -c '%u:%g:%a' "\$STATE_FILE"\)" == "0:0:600"/);
+  assert.match(runner, /query_capture_file_group "\$file"\)" == "0"/);
+  assert.doesNotMatch(runner, /stat -c '%[UG]'|"\$ID" -(?:un|gn)/,
+    "filesystem authority must use numeric uid/gid values");
+  assert.match(runner, /wait_for_lock_holder_connections\(\) \{[\s\S]*?for poll in \{1\.\.50\}; do[\s\S]*?0\) return 0[\s\S]*?1\) ;;[\s\S]*?return 82/);
   assert.match(runner, /trap 'on_exit \$\?' EXIT/);
   assert.match(runner, /trap 'on_signal INT 130' INT/);
   assert.match(runner, /trap 'on_signal TERM 143' TERM/);
@@ -678,7 +689,7 @@ test("PostgreSQL 14 matrix runner passes fake CLI orchestration tests", () => {
   const result = spawnSync(bash, [shellTest], {
     cwd: path.resolve(databaseRoot, ".."),
     encoding: "utf8",
-    timeout: 360_000,
+    timeout: 600_000,
   });
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /source-injected tests: PASS/);

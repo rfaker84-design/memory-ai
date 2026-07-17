@@ -226,7 +226,7 @@ record_state() {
   [[ "$RUNTIME_READY" -eq 1 && -n "$STATE_FILE" ]] || return 0
   [[ -f "$STATE_FILE" && ! -L "$STATE_FILE" ]] || return 76
   [[ "$(stat -c '%d:%i' "$STATE_FILE")" == "$STATE_DEVICE_INODE" ]] || return 76
-  [[ "$(stat -c '%u' "$STATE_FILE")" == "0" && "$(stat -c '%a' "$STATE_FILE")" == "600" ]] || return 76
+  [[ "$(stat -c '%u:%g:%a' "$STATE_FILE")" == "0:0:600" ]] || return 76
   printf '%(%Y-%m-%dT%H:%M:%SZ)T\t%s\n' -1 "$1" >>"$STATE_FILE"
 }
 
@@ -386,6 +386,7 @@ create_query_capture_file() {
 }
 
 query_capture_file_owner() { stat -c '%u' "$1"; }
+query_capture_file_group() { stat -c '%g' "$1"; }
 query_capture_file_mode() { stat -c '%a' "$1"; }
 query_capture_file_size() { stat -c '%s' "$1"; }
 
@@ -399,6 +400,7 @@ validate_query_capture_file() {
   work_parent="$(cd "$WORK_DIR" && pwd -P)" || return 1
   [[ "$file_parent" == "$work_parent" ]] || return 1
   [[ "$(query_capture_file_owner "$file")" == "0" ]] || return 1
+  [[ "$(query_capture_file_group "$file")" == "0" ]] || return 1
   [[ "$(query_capture_file_mode "$file")" == "600" ]]
 }
 
@@ -447,10 +449,11 @@ read_exact_query_scalar() {
 }
 
 capture_scalar_query() {
+  QUERY_CAPTURE_VALUE=""
   [[ "$#" -eq 5 ]] || return 64
   local scope="$1" database="$2" operation="$3" variable_value="$4" expectation="$5" rc
   case "$operation:$expectation" in
-    lock_granted:zero_or_one|connection_count:zero|database_exists:zero|residual_count:zero|preexisting_count:zero|lock_connections:zero) ;;
+    lock_granted:zero_or_one|lock_connections:zero_or_one|connection_count:zero|database_exists:zero|residual_count:zero|preexisting_count:zero) ;;
     *) return 64 ;;
   esac
   initialize_query_capture_files "$operation" || return $?
@@ -624,9 +627,10 @@ cleanup_all() {
 }
 
 validate_secure_directory() {
-  local directory="$1" required_owner="$2" mode
+  local directory="$1" required_owner="$2" required_group="$3" mode
   [[ -d "$directory" && ! -L "$directory" ]] || return 1
   [[ "$(stat -c '%u' "$directory")" == "$required_owner" ]] || return 1
+  [[ "$(stat -c '%g' "$directory")" == "$required_group" ]] || return 1
   mode="$(stat -c '%a' "$directory")"
   [[ "$mode" == "700" ]]
 }
@@ -636,17 +640,22 @@ state_parent_path() { printf '/var/log/memoryai\n'; }
 create_state_file() { mktemp "$1"; }
 
 validate_state_directory() {
-  local directory="$1" owner="$2" mode
+  local directory="$1" owner="$2" group="$3" mode
   [[ -d "$directory" && ! -L "$directory" ]] || return 1
   [[ "$(stat -c '%u' "$directory")" == "$owner" ]] || return 1
+  [[ "$(stat -c '%g' "$directory")" == "$group" ]] || return 1
   mode="$(stat -c '%a' "$directory")"
   (( (8#$mode & 0022) == 0 ))
 }
 
 validate_new_state_file() {
-  local file="$1" owner="$2"
+  local file="$1" owner="$2" group="$3" expected_parent="$4" file_parent state_parent
   [[ -f "$file" && ! -L "$file" ]] || return 1
-  [[ "$(stat -c '%u' "$file")" == "$owner" && "$(stat -c '%a' "$file")" == "600" ]]
+  [[ "$file" == */* ]] || return 1
+  file_parent="$(cd "${file%/*}" && pwd -P)" || return 1
+  state_parent="$(cd "$expected_parent" && pwd -P)" || return 1
+  [[ "$file_parent" == "$state_parent" ]] || return 1
+  [[ "$(stat -c '%u:%g:%a' "$file")" == "$owner:$group:600" ]]
 }
 
 create_startup_probe_file() {
@@ -659,6 +668,7 @@ create_startup_probe_file() {
 }
 
 startup_probe_file_owner() { stat -c '%u' "$1"; }
+startup_probe_file_group() { stat -c '%g' "$1"; }
 startup_probe_file_mode() { stat -c '%a' "$1"; }
 
 validate_startup_probe_file() {
@@ -669,6 +679,7 @@ validate_startup_probe_file() {
   work_parent="$(cd "$WORK_DIR" && pwd -P)" || return 1
   [[ "$file_parent" == "$work_parent" ]] || return 1
   [[ "$(startup_probe_file_owner "$file")" == "0" ]] || return 1
+  [[ "$(startup_probe_file_group "$file")" == "0" ]] || return 1
   [[ "$(startup_probe_file_mode "$file")" == "600" ]]
 }
 
@@ -682,8 +693,8 @@ initialize_startup_probe_file() {
 }
 
 initialize_state_file() {
-  local state_parent="$1" required_owner="$2" preexisting_state_inodes state_inode
-  validate_state_directory "$state_parent" "$required_owner" || fail runtime 76 "unsafe state directory"
+  local state_parent="$1" required_owner="$2" required_group="$3" preexisting_state_inodes state_inode
+  validate_state_directory "$state_parent" "$required_owner" "$required_group" || fail runtime 76 "unsafe state directory"
   preexisting_state_inodes="$(find "$state_parent" -maxdepth 1 -type f -printf '%d:%i\n')"
   STATE_FILE="$(create_state_file "$state_parent/memoryai-auth-pg14-matrix.${RUN_NONCE}.state.XXXXXXXX")" || fail runtime 76 "cannot create state file"
   [[ -n "$STATE_FILE" ]] || fail runtime 76 "state file creator returned an empty path"
@@ -692,27 +703,29 @@ initialize_state_file() {
     fail runtime 76 "state file creator returned a pre-existing target"
   fi
   chmod 600 "$STATE_FILE" || fail runtime 76 "cannot protect state file"
-  validate_new_state_file "$STATE_FILE" "$required_owner" || fail runtime 76 "state file ownership, type, or mode is unsafe"
+  validate_new_state_file "$STATE_FILE" "$required_owner" "$required_group" "$state_parent" || fail runtime 76 "state file ownership, type, mode, or parent is unsafe"
   STATE_DEVICE_INODE="$(stat -c '%d:%i' "$STATE_FILE")"
 }
 
 initialize_runtime() {
-  local runtime_parent state_parent required_owner runtime_mode
+  local runtime_parent state_parent required_owner required_group runtime_mode
   [[ "$(orchestrator_uid)" == "0" ]] || fail runtime 76 "matrix runtime must execute as root"
+  [[ "$(orchestrator_gid)" == "0" ]] || fail runtime 76 "matrix runtime must execute with root primary group"
   umask 077
   runtime_parent="$(runtime_parent_path)"
   state_parent="$(state_parent_path)"
   required_owner="0"
-  [[ -d "$runtime_parent" && ! -L "$runtime_parent" && "$(stat -c '%u' "$runtime_parent")" == "0" ]] || fail runtime 76 "unsafe /var/tmp"
+  required_group="0"
+  [[ -d "$runtime_parent" && ! -L "$runtime_parent" && "$(stat -c '%u:%g' "$runtime_parent")" == "0:0" ]] || fail runtime 76 "unsafe /var/tmp"
   runtime_mode="$(stat -c '%a' "$runtime_parent")"
   [[ "$runtime_mode" == "1777" ]] || fail runtime 76 "/var/tmp must be root-owned mode 1777"
 
   WORK_DIR="$(mktemp -d "$runtime_parent/memoryai-auth-pg14-matrix.${RUN_NONCE}.XXXXXXXX")" || fail runtime 76 "cannot create work directory"
   WORK_DIR_CREATED=1
   chmod 700 "$WORK_DIR" || fail runtime 76 "cannot protect work directory"
-  validate_secure_directory "$WORK_DIR" "$required_owner" || fail runtime 76 "work directory validation failed"
+  validate_secure_directory "$WORK_DIR" "$required_owner" "$required_group" || fail runtime 76 "work directory validation failed"
 
-  initialize_state_file "$state_parent" "$required_owner"
+  initialize_state_file "$state_parent" "$required_owner" "$required_group"
   [[ "$STATE_FILE" != "$WORK_DIR"/* ]] || fail runtime 76 "state file must not be inside work directory"
   RUNTIME_READY=1
 }
@@ -725,6 +738,7 @@ remove_work_directory() {
   expected_parent="$(runtime_parent_path)"
   [[ "$(cd "$(dirname "$WORK_DIR")" && pwd -P)" == "$expected_parent" ]] || return 1
   [[ "$(stat -c '%u' "$WORK_DIR")" == "0" ]] || return 1
+  [[ "$(stat -c '%g' "$WORK_DIR")" == "0" ]] || return 1
   [[ "$(stat -c '%a' "$WORK_DIR")" == "700" ]] || return 1
   rm -rf -- "$WORK_DIR"
   [[ ! -e "$WORK_DIR" ]]
@@ -876,6 +890,10 @@ orchestrator_uid() {
   "$ID" -u
 }
 
+orchestrator_gid() {
+  "$ID" -g
+}
+
 database_os_user_exists() {
   "$ID" -u "$POSTGRES_OS_USER" >/dev/null 2>&1
 }
@@ -887,6 +905,7 @@ postgres_file_readable() {
 validate_orchestrator_identity() {
   fixed_executable_available "$ID" || fail runtime 69 "fixed id binary is unavailable"
   [[ "$(orchestrator_uid)" == "0" ]] || fail runtime 76 "matrix runtime must execute as root"
+  [[ "$(orchestrator_gid)" == "0" ]] || fail runtime 76 "matrix runtime must execute with root primary group"
 }
 
 validate_connection_inputs() {
@@ -1261,6 +1280,37 @@ run_negative_scenario() {
   if cleanup_or_fail "$database"; then :; else return 75; fi
 }
 
+wait_for_lock_holder_connections() {
+  [[ "$#" -eq 2 ]] || return 64
+  local database="$1" application_name="$2" connections poll connections_rc
+  QUERY_CAPTURE_VALUE=""
+  for poll in {1..50}; do
+    if capture_scalar_query database "$database" lock_connections "$application_name" zero_or_one <<'LOCK_CONNECTIONS_SQL'
+SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE application_name=:'lock_app';
+LOCK_CONNECTIONS_SQL
+    then
+      connections_rc=0
+      connections="$QUERY_CAPTURE_VALUE"
+    else
+      connections_rc=$?
+    fi
+    if (( connections_rc != 0 )); then
+      QUERY_CAPTURE_VALUE=""
+      return "$connections_rc"
+    fi
+    case "$connections" in
+      0) return 0 ;;
+      1) ;;
+      *) QUERY_CAPTURE_VALUE=""; return "$QUERY_CAPTURE_VALIDATION_RC" ;;
+    esac
+    if (( poll < 50 )); then
+      sleep 0.1
+    fi
+  done
+  QUERY_CAPTURE_VALUE=""
+  return 82
+}
+
 run_lock_timeout_scenario() {
   local scenario="lock_timeout" database before after holder application_name granted="0" granted_rc=0
   local connections_rc=0 poll start_ms end_ms elapsed_ms external_timeout=8
@@ -1310,21 +1360,16 @@ LOCK_GRANTED_SQL
 
   kill "$holder" 2>/dev/null || true
   wait "$holder" 2>/dev/null || true
-  for poll in {1..50}; do
-    if capture_scalar_query database "$database" lock_connections "$application_name" zero <<'LOCK_CONNECTIONS_SQL'
-SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE application_name=:'lock_app';
-LOCK_CONNECTIONS_SQL
-    then
-      connections_rc=0
-    else
-      connections_rc=$?
-    fi
-    if (( connections_rc != 0 )); then
-      return "$connections_rc"
-    fi
-    break
-  done
-  [[ "$connections_rc" == "0" ]] || fail lock_holder_cleanup 82 "holder connection remained after termination"
+  if wait_for_lock_holder_connections "$database" "$application_name"; then
+    connections_rc=0
+  else
+    connections_rc=$?
+  fi
+  if (( connections_rc == 82 )); then
+    fail lock_holder_cleanup 82 "holder connection remained after 50 polls"
+  elif (( connections_rc != 0 )); then
+    return "$connections_rc"
+  fi
   catalog_snapshot "$database" "$after"
   cmp -s "$before" "$after" || fail catalog_drift 72 "$scenario changed the catalog"
   record_state "EXPECTED_REJECTION_PASS $scenario elapsed_ms=$elapsed_ms"
