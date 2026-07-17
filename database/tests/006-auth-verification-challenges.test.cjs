@@ -209,6 +209,52 @@ test("006 preflight and postflight expose operational evidence", () => {
 
 const psqlVariableTokenPattern = /:'[^'\r\n]+'|:"[^"\r\n]+"|:\{\?[^}\r\n]+\}/g;
 
+const approvedPsqlScriptHeredocs = Object.freeze({
+  CLEANUP_TERMINATE_SQL: Object.freeze({
+    opener: `admin_psql_script terminate "$database" >/dev/null <<'CLEANUP_TERMINATE_SQL'`,
+    token: ":'matrix_db'",
+    body: "SELECT pg_catalog.pg_terminate_backend(pid) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db' AND pid <> pg_catalog.pg_backend_pid();\n",
+  }),
+  CLEANUP_CONNECTIONS_SQL: Object.freeze({
+    opener: `if capture_scalar_query admin "$ADMIN_DB" connection_count "$database" zero <<'CLEANUP_CONNECTIONS_SQL'`,
+    token: ":'matrix_db'",
+    body: "SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db';\n",
+  }),
+  CLEANUP_EXISTS_SQL: Object.freeze({
+    opener: `if capture_scalar_query admin "$ADMIN_DB" database_exists "$database" zero <<'CLEANUP_EXISTS_SQL'`,
+    token: ":'matrix_db'",
+    body: "SELECT count(*) FROM pg_catalog.pg_database WHERE datname = :'matrix_db';\n",
+  }),
+  RESIDUAL_DATABASES_SQL: Object.freeze({
+    opener: `if capture_scalar_query admin "$ADMIN_DB" residual_count "\${RUN_DB_PREFIX}%" zero <<'RESIDUAL_DATABASES_SQL'`,
+    token: ":'matrix_prefix'",
+    body: "SELECT count(*) FROM pg_catalog.pg_database WHERE datname LIKE :'matrix_prefix';\n",
+  }),
+  PREEXISTING_DATABASES_SQL: Object.freeze({
+    opener: `if capture_scalar_query admin "$ADMIN_DB" preexisting_count "$names" zero <<'PREEXISTING_DATABASES_SQL'`,
+    token: ":'matrix_names'",
+    body: "SELECT count(*) FROM pg_catalog.pg_database WHERE datname = ANY(pg_catalog.string_to_array(:'matrix_names', ','));\n",
+  }),
+  LOCK_SQL: Object.freeze({
+    opener: `database_psql_script "$database" lock_holder "$application_name" >/dev/null 2>&1 <<'LOCK_SQL' &`,
+    token: ":'lock_app'",
+    body: "SELECT pg_catalog.set_config('application_name', :'lock_app', false);\n" +
+      "BEGIN;\n" +
+      "LOCK TABLE public.auth_verification_challenges IN ACCESS EXCLUSIVE MODE;\n" +
+      "SELECT pg_catalog.pg_sleep(30);\n",
+  }),
+  LOCK_GRANTED_SQL: Object.freeze({
+    opener: `if capture_scalar_query database "$database" lock_granted "$application_name" zero_or_one <<'LOCK_GRANTED_SQL'`,
+    token: ":'lock_app'",
+    body: "SELECT count(*) FROM pg_catalog.pg_locks l JOIN pg_catalog.pg_stat_activity a ON a.pid=l.pid WHERE a.application_name=:'lock_app' AND l.relation='public.auth_verification_challenges'::regclass AND l.mode='AccessExclusiveLock' AND l.granted;\n",
+  }),
+  LOCK_CONNECTIONS_SQL: Object.freeze({
+    opener: `if capture_scalar_query database "$database" lock_connections "$application_name" zero <<'LOCK_CONNECTIONS_SQL'`,
+    token: ":'lock_app'",
+    body: "SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE application_name=:'lock_app';\n",
+  }),
+});
+
 function collectQuotedScriptHeredocs(shell) {
   const lines = shell.split("\n");
   const starts = [];
@@ -231,6 +277,7 @@ function collectQuotedScriptHeredocs(shell) {
     ranges.push({
       start: starts[lineIndex] + lines[lineIndex].length + 1,
       end: starts[closing],
+      delimiter,
       opener: lines.slice(commandStart, lineIndex + 1).join("\n"),
     });
     lineIndex = closing;
@@ -340,22 +387,46 @@ function psqlCommandVariableViolations(input, label = "psql command source") {
   return violations;
 }
 
-function assertPsqlVariableTransportSafe(input, expectedCounts) {
-  const shell = normalizeShellBuffer(Buffer.isBuffer(input) ? input : Buffer.from(input, "utf8"), "psql transport source");
+function commandAreaPsqlVariableTokens(shell) {
+  const commandArea = commandAreaWithoutHeredocs(shell);
+  const matches = [...commandArea.matchAll(new RegExp(psqlVariableTokenPattern.source, "g"))]
+    .map((match) => match[0]);
+  for (const words of lexShellCommands(commandArea)) {
+    for (const word of words) {
+      for (const match of word.matchAll(new RegExp(psqlVariableTokenPattern.source, "g"))) {
+        matches.push(match[0]);
+      }
+    }
+  }
+  return [...new Set(matches)];
+}
+
+function assertPsqlVariableTransportSafe(input, label = "psql transport source") {
+  const shell = normalizeShellBuffer(Buffer.isBuffer(input) ? input : Buffer.from(input, "utf8"), label);
+  const commandTokens = commandAreaPsqlVariableTokens(shell);
+  assert.deepEqual(commandTokens, [], "psql variable token is forbidden everywhere in command area");
+
   assert.deepEqual(psqlCommandVariableViolations(Buffer.from(shell), "psql transport commands"), [],
     "psql variable token must not use -c/--command transport");
   const heredocs = collectQuotedScriptHeredocs(shell);
-  const matches = [...shell.matchAll(new RegExp(psqlVariableTokenPattern.source, "g"))];
-  const counts = new Map();
-  for (const match of matches) {
-    const body = heredocs.find(({ start, end }) => match.index >= start && match.index < end);
-    assert.ok(body, `${match[0]} must not appear in -c/--command or outside an approved stdin heredoc`);
-    assert.match(body.opener, /\b(?:admin_psql_script|database_psql_script)\b/);
-    assert.doesNotMatch(body.opener, /(?:^|[ \t])(?:-c|--command)(?:[= \t]|$)/);
-    const name = match[0].startsWith(":{?") ? match[0].slice(3, -1) : match[0].slice(2, -1);
-    counts.set(name, (counts.get(name) || 0) + 1);
+  const seen = new Set();
+  for (const heredoc of heredocs) {
+    const body = shell.slice(heredoc.start, heredoc.end);
+    const tokens = [...body.matchAll(new RegExp(psqlVariableTokenPattern.source, "g"))]
+      .map((match) => match[0]);
+    if (tokens.length === 0) continue;
+
+    const expected = approvedPsqlScriptHeredocs[heredoc.delimiter];
+    assert.ok(expected, `unapproved heredoc ${heredoc.delimiter} contains a psql variable token`);
+    assert.equal(seen.has(heredoc.delimiter), false, `duplicate approved heredoc ${heredoc.delimiter}`);
+    assert.equal(heredoc.opener.replace(/\\\n/g, "").trim(), expected.opener,
+      `${heredoc.delimiter} opener drift`);
+    assert.deepEqual(tokens, [expected.token], `${heredoc.delimiter} token mapping drift`);
+    assert.equal(body, expected.body, `${heredoc.delimiter} SQL body drift`);
+    seen.add(heredoc.delimiter);
   }
-  if (expectedCounts) assert.deepEqual(Object.fromEntries([...counts].sort()), expectedCounts);
+  assert.deepEqual([...seen].sort(), Object.keys(approvedPsqlScriptHeredocs).sort(),
+    "approved psql heredoc set drift");
 }
 
 function assertMatrixRunnerStructure(runner) {
@@ -416,11 +487,18 @@ function assertMatrixRunnerStructure(runner) {
   ]) assert.ok(runner.includes(startupToken), `runner missing startup identity contract ${startupToken}`);
   assert.doesNotMatch(runner, /\(pg_catalog\.inet_client_addr\(\) IS NULL\)::text/);
   assert.match(runner, /database_psql_script "\$database" lock_holder "\$application_name"/);
-  assert.match(runner, /database_psql_script "\$database" lock_granted "\$application_name"/);
-  assert.match(runner, /database_psql_script "\$database" lock_connections "\$application_name"/);
-  assert.match(runner, /if output="\$\(admin_psql_script residual_count[\s\S]*?if \(\( rc != 0 \)\); then[\s\S]*?return "\$rc"/);
-  assert.match(runner, /if granted="\$\(database_psql_script "\$database" lock_granted[\s\S]*?return "\$granted_rc"/);
-  assert.match(runner, /if connections="\$\(database_psql_script "\$database" lock_connections[\s\S]*?return "\$connections_rc"/);
+  assert.match(runner, /if capture_scalar_query admin "\$ADMIN_DB" connection_count "\$database" zero/);
+  assert.match(runner, /if capture_scalar_query admin "\$ADMIN_DB" database_exists "\$database" zero/);
+  assert.match(runner, /if capture_scalar_query admin "\$ADMIN_DB" residual_count "\$\{RUN_DB_PREFIX\}%" zero/);
+  assert.match(runner, /if capture_scalar_query admin "\$ADMIN_DB" preexisting_count "\$names" zero/);
+  assert.match(runner, /if capture_scalar_query database "\$database" lock_granted "\$application_name" zero_or_one/);
+  assert.match(runner, /if capture_scalar_query database "\$database" lock_connections "\$application_name" zero/);
+  assert.doesNotMatch(runner, /\$\(\s*admin_psql_script\s+connection_count\b/);
+  assert.doesNotMatch(runner, /\$\(\s*admin_psql_script\s+database_exists\b/);
+  assert.doesNotMatch(runner, /\$\(\s*admin_psql_script\s+residual_count\b/);
+  assert.doesNotMatch(runner, /\$\(\s*admin_psql_script\s+preexisting_count\b/);
+  assert.doesNotMatch(runner, /\$\(\s*database_psql_script\s+"\$database"\s+lock_granted\b/);
+  assert.doesNotMatch(runner, /\$\(\s*database_psql_script\s+"\$database"\s+lock_connections\b/);
   assert.match(runner, /set_config\('application_name', :'lock_app', false\)/);
   assert.doesNotMatch(runner, /PGAPPNAME=/);
   assert.match(runner, /\[\[ "\$\(orchestrator_uid\)" == "0" \]\]/);
@@ -454,12 +532,7 @@ function assertMatrixRunnerStructure(runner) {
   assert.doesNotMatch(runner, /(?:MATRIX_WORK_DIR|MATRIX_STATE_FILE)\s*=|\$\{(?:MATRIX_WORK_DIR|MATRIX_STATE_FILE)/);
   assert.doesNotMatch(runner, /printf\s+'?%\.63s/);
   assert.doesNotMatch(runner, /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE)\s+pg_catalog\./i);
-  assertPsqlVariableTransportSafe(runner, {
-    lock_app: 3,
-    matrix_db: 3,
-    matrix_names: 1,
-    matrix_prefix: 1,
-  });
+  assertPsqlVariableTransportSafe(runner);
   const scriptBoundary = runner.match(/psql_script_command\(\) \{([\s\S]*?)^\}/m)?.[1];
   assert.ok(scriptBoundary, "missing psql stdin script boundary");
   assert.match(scriptBoundary, /"--set=\$\{variable_name\}=\$\{variable_value\}" --file=-/);
@@ -471,21 +544,63 @@ test("PostgreSQL 14 matrix runner has a bounded destructive scope", () => {
   assertMatrixRunnerStructure(readShell("tests/run-006-auth-pg14-matrix.sh"));
 });
 
-test("psql variable scanner rejects every command transport spelling", () => {
-  for (const fixture of [
-    `admin_psql -c "SELECT :'matrix_db';"`,
-    `admin_psql --command 'SELECT :"matrix_db";'`,
-    `admin_psql "--command=SELECT :{?matrix_db};"`,
-  ]) {
+test("approved psql heredocs freeze delimiter, opener, body, and token mappings", () => {
+  const runner = readShell("tests/run-006-auth-pg14-matrix.sh");
+  const delimiter = "CLEANUP_CONNECTIONS_SQL";
+  const approved = approvedPsqlScriptHeredocs[delimiter];
+
+  const openerDrift = runner.replace(
+    approved.opener,
+    approved.opener.replace("connection_count", "database_exists"),
+  );
+  assert.notEqual(openerDrift, runner, "opener drift fixture did not change the runner");
+  assert.throws(() => assertPsqlVariableTransportSafe(openerDrift), /CLEANUP_CONNECTIONS_SQL opener drift/);
+
+  const bodyDriftValue = approved.body.replace(";\n", "; \n");
+  const bodyDrift = runner.replace(approved.body, bodyDriftValue);
+  assert.notEqual(bodyDrift, runner, "body drift fixture did not change the runner");
+  assert.throws(() => assertPsqlVariableTransportSafe(bodyDrift), /CLEANUP_CONNECTIONS_SQL SQL body drift/);
+
+  const tokenDriftValue = approved.body.replace(":'matrix_db'", ":'wrong_db'");
+  const tokenDrift = runner.replace(approved.body, tokenDriftValue);
+  assert.notEqual(tokenDrift, runner, "token drift fixture did not change the runner");
+  assert.throws(() => assertPsqlVariableTransportSafe(tokenDrift), /CLEANUP_CONNECTIONS_SQL token mapping drift/);
+
+  const duplicate = `${runner}\n${approved.opener}\n${approved.body}${delimiter}\n`;
+  assert.throws(() => assertPsqlVariableTransportSafe(duplicate), /duplicate approved heredoc CLEANUP_CONNECTIONS_SQL/);
+});
+
+test("psql variable scanner rejects tokens everywhere in the command area", () => {
+  const fixtures = Object.freeze({
+    "variable assignment then -c": `sql="SELECT :'matrix_db';"\nadmin_psql -c "$sql"\n`,
+    "combined -Atc": `admin_psql -Atc "SELECT :'matrix_db';"\n`,
+    "dynamic flag": `flag=-c\nadmin_psql "$flag" "SELECT :'matrix_db';"\n`,
+    "--command variable": `sql='SELECT :"matrix_db";'\nadmin_psql --command "$sql"\n`,
+    "--command= variable": `sql="SELECT :{?matrix_db};"\nadmin_psql "--command=$sql"\n`,
+  });
+  for (const [label, fixture] of Object.entries(fixtures)) {
     assert.throws(
-      () => assertPsqlVariableTransportSafe(fixture),
-      /psql variable token must not use -c\/--command transport/,
+      () => assertPsqlVariableTransportSafe(Buffer.from(fixture), `${label} LF`),
+      /psql variable token is forbidden everywhere in command area/,
+      `${label} LF bypassed the global command-area scanner`,
+    );
+    assert.throws(
+      () => assertPsqlVariableTransportSafe(Buffer.from(fixture.replaceAll("\n", "\r\n")), `${label} CRLF`),
+      /psql variable token is forbidden everywhere in command area/,
+      `${label} CRLF bypassed the global command-area scanner`,
     );
   }
-  assert.doesNotThrow(() => assertPsqlVariableTransportSafe(
-    `admin_psql_script terminate "$database" <<'SQL'\nSELECT :'matrix_db';\nSQL\n`,
-    { matrix_db: 1 },
-  ));
+
+  const unapprovedHeredoc = `admin_psql_script terminate "$database" <<'UNAPPROVED_SQL'\nSELECT :'matrix_db';\nUNAPPROVED_SQL\n`;
+  assert.deepEqual(psqlCommandVariableViolations(Buffer.from(unapprovedHeredoc), "unapproved heredoc command scan"), []);
+  assert.throws(
+    () => assertPsqlVariableTransportSafe(Buffer.from(unapprovedHeredoc)),
+    /unapproved heredoc UNAPPROVED_SQL contains a psql variable token/,
+  );
+  assert.throws(
+    () => assertPsqlVariableTransportSafe(Buffer.from(unapprovedHeredoc.replaceAll("\n", "\r\n"))),
+    /unapproved heredoc UNAPPROVED_SQL contains a psql variable token/,
+  );
 });
 
 test("psql variable scanner follows Bash continuations outside heredocs", () => {
@@ -502,21 +617,25 @@ test("psql variable scanner follows Bash continuations outside heredocs", () => 
     assert.equal(violations.length, 1, `LF continuation fixture ${index + 1} bypassed the scanner`);
     assert.throws(
       () => assertPsqlVariableTransportSafe(Buffer.from(fixture)),
-      /psql variable token must not use -c\/--command transport/,
+      /psql variable token is forbidden everywhere in command area/,
     );
   }
-  for (const [index, fixture] of lfFixtures.slice(0, 3).entries()) {
+  for (const [index, fixture] of lfFixtures.entries()) {
     const crlfFixture = Buffer.from(fixture.replaceAll("\n", "\r\n"));
     const violations = psqlCommandVariableViolations(crlfFixture, `CRLF continuation fixture ${index + 1}`);
     assert.equal(violations.length, 1, `CRLF continuation fixture ${index + 1} bypassed the scanner`);
     assert.throws(
       () => assertPsqlVariableTransportSafe(crlfFixture),
-      /psql variable token must not use -c\/--command transport/,
+      /psql variable token is forbidden everywhere in command area/,
     );
   }
 
-  const heredocDecoy = `cat <<'SQL'\nadmin_psql -${continuation}c "SELECT :${continuation}'decoy';"\nSQL\n`;
+  const heredocDecoy = `cat <<'SQL'\nadmin_psql -${continuation}c "SELECT :'decoy';"\nSQL\n`;
   assert.deepEqual(psqlCommandVariableViolations(Buffer.from(heredocDecoy), "heredoc decoy"), []);
+  assert.throws(
+    () => assertPsqlVariableTransportSafe(Buffer.from(heredocDecoy)),
+    /unapproved heredoc SQL contains a psql variable token/,
+  );
 });
 
 test("shell static contracts accept LF and pure CRLF but reject unsafe bytes", () => {
@@ -524,21 +643,24 @@ test("shell static contracts accept LF and pure CRLF but reject unsafe bytes", (
   const pureCrlf = Buffer.from(lf.replaceAll("\n", "\r\n"), "utf8");
   const normalizedCrlf = normalizeShellBuffer(pureCrlf, "pure CRLF fixture");
   assert.equal(normalizedCrlf, lf);
+  assert.doesNotThrow(() => assertPsqlVariableTransportSafe(Buffer.from(lf), "formal runner LF"));
+  assert.doesNotThrow(() => assertPsqlVariableTransportSafe(pureCrlf, "formal runner CRLF"));
   assertMatrixRunnerStructure(lf);
   assertMatrixRunnerStructure(normalizedCrlf);
 
-  assert.throws(
-    () => normalizeShellBuffer(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(lf)]), "BOM fixture"),
-    /must not contain a BOM/,
-  );
-  assert.throws(
-    () => normalizeShellBuffer(Buffer.from(lf.replace("\n", "\r")), "lone CR fixture"),
-    /contains a lone CR/,
-  );
-  assert.throws(
-    () => normalizeShellBuffer(Buffer.from(lf.replace("\n", "\r\n")), "mixed fixture"),
-    /contains mixed LF and CRLF/,
-  );
+  const unsafeByteFixtures = [
+    {
+      label: "BOM fixture",
+      input: Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(lf)]),
+      error: /must not contain a BOM/,
+    },
+    { label: "lone CR fixture", input: Buffer.from(lf.replace("\n", "\r")), error: /contains a lone CR/ },
+    { label: "mixed fixture", input: Buffer.from(lf.replace("\n", "\r\n")), error: /contains mixed LF and CRLF/ },
+  ];
+  for (const { label, input, error } of unsafeByteFixtures) {
+    assert.throws(() => normalizeShellBuffer(input, label), error);
+    assert.throws(() => assertPsqlVariableTransportSafe(input, label), error);
+  }
 });
 
 test("PostgreSQL 14 matrix runner passes fake CLI orchestration tests", () => {
@@ -556,7 +678,7 @@ test("PostgreSQL 14 matrix runner passes fake CLI orchestration tests", () => {
   const result = spawnSync(bash, [shellTest], {
     cwd: path.resolve(databaseRoot, ".."),
     encoding: "utf8",
-    timeout: 180_000,
+    timeout: 360_000,
   });
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /source-injected tests: PASS/);

@@ -23,6 +23,7 @@ readonly POSTGRES_PORT="5432"
 readonly POSTGRES_USER="postgres"
 readonly ADMIN_DB="postgres"
 readonly STARTUP_VALIDATION_RC=68
+readonly QUERY_CAPTURE_VALIDATION_RC=67
 RUN_ID="${MATRIX_RUN_ID:-$(date -u +%Y%m%d%H%M%S)_$$_${RANDOM}}"
 readonly CALLER_RUN_NONCE_PRESENT="${RUN_NONCE+x}"
 RUN_NONCE=""
@@ -44,6 +45,11 @@ declare -A SCENARIO_DATABASES=()
 DERIVED_DATABASE=""
 CURRENT_REJECTION_ORACLE=""
 CURRENT_BEHAVIOR_ORACLE=""
+QUERY_CAPTURE_STDOUT_FILE=""
+QUERY_CAPTURE_STDERR_FILE=""
+QUERY_CAPTURE_STDOUT_BYTES=""
+QUERY_CAPTURE_STDERR_BYTES=""
+QUERY_CAPTURE_VALUE=""
 
 readonly -a CHALLENGE_SCENARIOS=(
   challenge_id_type
@@ -368,6 +374,117 @@ database_psql_script() {
   psql_script_command "$1" "$2" "$3"
 }
 
+create_query_capture_file() {
+  [[ "$#" -eq 2 ]] || return 76
+  local operation="$1" stream="$2"
+  case "$operation" in
+    connection_count|database_exists|residual_count|preexisting_count|lock_granted|lock_connections) ;;
+    *) return 76 ;;
+  esac
+  case "$stream" in stdout|stderr) ;; *) return 76 ;; esac
+  mktemp -- "$WORK_DIR/postgresql-query.${operation}.${stream}.XXXXXXXX"
+}
+
+query_capture_file_owner() { stat -c '%u' "$1"; }
+query_capture_file_mode() { stat -c '%a' "$1"; }
+query_capture_file_size() { stat -c '%s' "$1"; }
+
+validate_query_capture_file() {
+  [[ "$#" -eq 1 ]] || return 1
+  local file="$1" file_parent work_parent
+  [[ -n "$WORK_DIR" && -d "$WORK_DIR" && ! -L "$WORK_DIR" ]] || return 1
+  [[ -n "$file" && -f "$file" && ! -L "$file" ]] || return 1
+  [[ "$file" == */* ]] || return 1
+  file_parent="$(cd "${file%/*}" && pwd -P)" || return 1
+  work_parent="$(cd "$WORK_DIR" && pwd -P)" || return 1
+  [[ "$file_parent" == "$work_parent" ]] || return 1
+  [[ "$(query_capture_file_owner "$file")" == "0" ]] || return 1
+  [[ "$(query_capture_file_mode "$file")" == "600" ]]
+}
+
+initialize_query_capture_files() {
+  [[ "$#" -eq 1 ]] || return 76
+  local operation="$1" stdout_file stderr_file
+  QUERY_CAPTURE_STDOUT_FILE=""
+  QUERY_CAPTURE_STDERR_FILE=""
+  QUERY_CAPTURE_STDOUT_BYTES=""
+  QUERY_CAPTURE_STDERR_BYTES=""
+  QUERY_CAPTURE_VALUE=""
+  stdout_file="$(create_query_capture_file "$operation" stdout)" || return 76
+  [[ -n "$stdout_file" ]] || return 76
+  stderr_file="$(create_query_capture_file "$operation" stderr)" || return 76
+  [[ -n "$stderr_file" && "$stderr_file" != "$stdout_file" ]] || return 76
+  chmod 600 "$stdout_file" "$stderr_file" || return 76
+  validate_query_capture_file "$stdout_file" || return 76
+  validate_query_capture_file "$stderr_file" || return 76
+  QUERY_CAPTURE_STDOUT_FILE="$stdout_file"
+  QUERY_CAPTURE_STDERR_FILE="$stderr_file"
+}
+
+read_exact_query_scalar() {
+  [[ "$#" -eq 1 ]] || return "$QUERY_CAPTURE_VALIDATION_RC"
+  local expectation="$1" first second fd
+  QUERY_CAPTURE_VALUE=""
+  [[ "$QUERY_CAPTURE_STDOUT_BYTES" == "2" ]] || return "$QUERY_CAPTURE_VALIDATION_RC"
+  validate_query_capture_file "$QUERY_CAPTURE_STDOUT_FILE" || return "$QUERY_CAPTURE_VALIDATION_RC"
+  exec {fd}<"$QUERY_CAPTURE_STDOUT_FILE" || return "$QUERY_CAPTURE_VALIDATION_RC"
+  if ! IFS= read -r -N 1 first <&"$fd"; then
+    exec {fd}<&-
+    return "$QUERY_CAPTURE_VALIDATION_RC"
+  fi
+  if ! IFS= read -r -N 1 second <&"$fd"; then
+    exec {fd}<&-
+    return "$QUERY_CAPTURE_VALIDATION_RC"
+  fi
+  exec {fd}<&-
+  [[ "$second" == $'\n' ]] || return "$QUERY_CAPTURE_VALIDATION_RC"
+  case "$expectation" in
+    zero) [[ "$first" == "0" ]] || return "$QUERY_CAPTURE_VALIDATION_RC" ;;
+    zero_or_one) [[ "$first" == "0" || "$first" == "1" ]] || return "$QUERY_CAPTURE_VALIDATION_RC" ;;
+    *) return "$QUERY_CAPTURE_VALIDATION_RC" ;;
+  esac
+  QUERY_CAPTURE_VALUE="$first"
+}
+
+capture_scalar_query() {
+  [[ "$#" -eq 5 ]] || return 64
+  local scope="$1" database="$2" operation="$3" variable_value="$4" expectation="$5" rc
+  case "$operation:$expectation" in
+    lock_granted:zero_or_one|connection_count:zero|database_exists:zero|residual_count:zero|preexisting_count:zero|lock_connections:zero) ;;
+    *) return 64 ;;
+  esac
+  initialize_query_capture_files "$operation" || return $?
+  case "$scope:$operation" in
+    admin:connection_count|admin:database_exists|admin:residual_count|admin:preexisting_count)
+      [[ "$database" == "$ADMIN_DB" ]] || return 64
+      if admin_psql_script "$operation" "$variable_value" >"$QUERY_CAPTURE_STDOUT_FILE" 2>"$QUERY_CAPTURE_STDERR_FILE"; then
+        rc=0
+      else
+        rc=$?
+      fi
+      ;;
+    database:lock_granted|database:lock_connections)
+      validate_test_database_name "$database" || return 64
+      if database_psql_script "$database" "$operation" "$variable_value" >"$QUERY_CAPTURE_STDOUT_FILE" 2>"$QUERY_CAPTURE_STDERR_FILE"; then
+        rc=0
+      else
+        rc=$?
+      fi
+      ;;
+    *) return 64 ;;
+  esac
+  if (( rc != 0 )); then
+    return "$rc"
+  fi
+  validate_query_capture_file "$QUERY_CAPTURE_STDOUT_FILE" || return "$QUERY_CAPTURE_VALIDATION_RC"
+  validate_query_capture_file "$QUERY_CAPTURE_STDERR_FILE" || return "$QUERY_CAPTURE_VALIDATION_RC"
+  QUERY_CAPTURE_STDOUT_BYTES="$(query_capture_file_size "$QUERY_CAPTURE_STDOUT_FILE")" || return "$QUERY_CAPTURE_VALIDATION_RC"
+  QUERY_CAPTURE_STDERR_BYTES="$(query_capture_file_size "$QUERY_CAPTURE_STDERR_FILE")" || return "$QUERY_CAPTURE_VALIDATION_RC"
+  [[ "$QUERY_CAPTURE_STDOUT_BYTES" =~ ^[0-9]+$ ]] || return "$QUERY_CAPTURE_VALIDATION_RC"
+  [[ "$QUERY_CAPTURE_STDERR_BYTES" == "0" ]] || return "$QUERY_CAPTURE_VALIDATION_RC"
+  read_exact_query_scalar "$expectation"
+}
+
 drop_database_command() {
   postgres_command 0 "$DROPDB" --if-exists --force "$1"
 }
@@ -386,7 +503,7 @@ remove_created_database() {
 }
 
 cleanup_database() {
-  local database="$1" cleanup_rc=0 terminate_rc=0 connections_rc=0 connections="" drop_rc=0 exists_rc=0 exists=""
+  local database="$1" cleanup_rc=0 terminate_rc=0 connections_rc=0 drop_rc=0 exists_rc=0
   validate_test_database_name "$database"
   set +e
   admin_psql_script terminate "$database" >/dev/null <<'CLEANUP_TERMINATE_SQL'
@@ -399,15 +516,16 @@ CLEANUP_TERMINATE_SQL
     cleanup_rc=1
   fi
 
-  set +e
-  connections="$(admin_psql_script connection_count "$database" 2>/dev/null <<'CLEANUP_CONNECTIONS_SQL'
+  if capture_scalar_query admin "$ADMIN_DB" connection_count "$database" zero <<'CLEANUP_CONNECTIONS_SQL'
 SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db';
 CLEANUP_CONNECTIONS_SQL
-)"
-  connections_rc=$?
-  set -e
-  if [[ "$connections_rc" -ne 0 || "$connections" != "0" ]]; then
-    record_state "FAILED_cleanup_connections_${connections_rc} $database count=${connections:-unknown}"
+  then
+    connections_rc=0
+  else
+    connections_rc=$?
+  fi
+  if [[ "$connections_rc" -ne 0 ]]; then
+    record_state "FAILED_cleanup_connections_${connections_rc} stdout_bytes=${QUERY_CAPTURE_STDOUT_BYTES:-unchecked} stderr_bytes=${QUERY_CAPTURE_STDERR_BYTES:-unchecked}"
     cleanup_rc=1
   fi
 
@@ -420,19 +538,20 @@ CLEANUP_CONNECTIONS_SQL
     cleanup_rc=1
   fi
 
-  set +e
-  exists="$(admin_psql_script database_exists "$database" 2>/dev/null <<'CLEANUP_EXISTS_SQL'
+  if capture_scalar_query admin "$ADMIN_DB" database_exists "$database" zero <<'CLEANUP_EXISTS_SQL'
 SELECT count(*) FROM pg_catalog.pg_database WHERE datname = :'matrix_db';
 CLEANUP_EXISTS_SQL
-)"
-  exists_rc=$?
-  set -e
-  if [[ "$exists_rc" -ne 0 || "$exists" != "0" ]]; then
-    record_state "FAILED_cleanup_database_exists_${exists_rc} $database count=${exists:-unknown}"
+  then
+    exists_rc=0
+  else
+    exists_rc=$?
+  fi
+  if [[ "$exists_rc" -ne 0 ]]; then
+    record_state "FAILED_cleanup_database_exists_${exists_rc} stdout_bytes=${QUERY_CAPTURE_STDOUT_BYTES:-unchecked} stderr_bytes=${QUERY_CAPTURE_STDERR_BYTES:-unchecked}"
     cleanup_rc=1
   fi
 
-  if [[ "$drop_rc" -eq 0 && "$exists_rc" -eq 0 && "$exists" == "0" ]]; then
+  if [[ "$drop_rc" -eq 0 && "$exists_rc" -eq 0 ]]; then
     remove_created_database "$database"
   fi
   if [[ "$cleanup_rc" -eq 0 ]]; then
@@ -450,11 +569,11 @@ cleanup_or_fail() {
 }
 
 assert_no_residual_databases() {
-  local output rc
-  if output="$(admin_psql_script residual_count "${RUN_DB_PREFIX}%" <<'RESIDUAL_DATABASES_SQL'
+  local rc
+  if capture_scalar_query admin "$ADMIN_DB" residual_count "${RUN_DB_PREFIX}%" zero <<'RESIDUAL_DATABASES_SQL'
 SELECT count(*) FROM pg_catalog.pg_database WHERE datname LIKE :'matrix_prefix';
 RESIDUAL_DATABASES_SQL
-)"; then
+  then
     rc=0
   else
     rc=$?
@@ -462,21 +581,21 @@ RESIDUAL_DATABASES_SQL
   if (( rc != 0 )); then
     return "$rc"
   fi
-  [[ "$output" == "0" ]] || return 1
+  return 0
 }
 
 assert_all_database_names_absent() {
-  local names count rc
+  local names rc
   names="$(printf '%s\n' "${SCENARIO_DATABASES[@]}" | sort | paste -sd, -)"
-  set +e
-  count="$(admin_psql_script preexisting_count "$names" 2>/dev/null <<'PREEXISTING_DATABASES_SQL'
+  if capture_scalar_query admin "$ADMIN_DB" preexisting_count "$names" zero <<'PREEXISTING_DATABASES_SQL'
 SELECT count(*) FROM pg_catalog.pg_database WHERE datname = ANY(pg_catalog.string_to_array(:'matrix_names', ','));
 PREEXISTING_DATABASES_SQL
-)"
-  rc=$?
-  set -e
+  then
+    rc=0
+  else
+    rc=$?
+  fi
   [[ "$rc" -eq 0 ]] || fail preexisting 74 "cannot verify matrix database absence"
-  [[ "$count" == "0" ]] || fail preexisting 74 "one or more matrix database names already exist"
 }
 
 cleanup_all() {
@@ -487,8 +606,14 @@ cleanup_all() {
       rc=1
     fi
   done
-  if ! assert_no_residual_databases; then
-    record_state "FAILED_cleanup_residual_1 prefix=$RUN_DB_PREFIX"
+  local residual_rc
+  if assert_no_residual_databases; then
+    residual_rc=0
+  else
+    residual_rc=$?
+  fi
+  if [[ "$residual_rc" -ne 0 ]]; then
+    record_state "FAILED_cleanup_residual_${residual_rc} stdout_bytes=${QUERY_CAPTURE_STDOUT_BYTES:-unchecked} stderr_bytes=${QUERY_CAPTURE_STDERR_BYTES:-unchecked}"
     rc=1
   fi
   if [[ "$rc" -eq 0 && "$CLEANUP_RECORDED" -eq 0 ]]; then
@@ -1138,7 +1263,7 @@ run_negative_scenario() {
 
 run_lock_timeout_scenario() {
   local scenario="lock_timeout" database before after holder application_name granted="0" granted_rc=0
-  local connections="" connections_rc=0 poll start_ms end_ms elapsed_ms external_timeout=8
+  local connections_rc=0 poll start_ms end_ms elapsed_ms external_timeout=8
   database="$(database_for_scenario "$scenario")"
   application_name="memoryai_auth_matrix_lock_${RUN_NONCE}"
   record_state "SCENARIO_STARTED $scenario locking"
@@ -1157,11 +1282,12 @@ LOCK_SQL
   holder=$!
 
   for poll in {1..50}; do
-    if granted="$(database_psql_script "$database" lock_granted "$application_name" <<'LOCK_GRANTED_SQL'
+    if capture_scalar_query database "$database" lock_granted "$application_name" zero_or_one <<'LOCK_GRANTED_SQL'
 SELECT count(*) FROM pg_catalog.pg_locks l JOIN pg_catalog.pg_stat_activity a ON a.pid=l.pid WHERE a.application_name=:'lock_app' AND l.relation='public.auth_verification_challenges'::regclass AND l.mode='AccessExclusiveLock' AND l.granted;
 LOCK_GRANTED_SQL
-)"; then
+    then
       granted_rc=0
+      granted="$QUERY_CAPTURE_VALUE"
     else
       granted_rc=$?
     fi
@@ -1185,10 +1311,10 @@ LOCK_GRANTED_SQL
   kill "$holder" 2>/dev/null || true
   wait "$holder" 2>/dev/null || true
   for poll in {1..50}; do
-    if connections="$(database_psql_script "$database" lock_connections "$application_name" <<'LOCK_CONNECTIONS_SQL'
+    if capture_scalar_query database "$database" lock_connections "$application_name" zero <<'LOCK_CONNECTIONS_SQL'
 SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE application_name=:'lock_app';
 LOCK_CONNECTIONS_SQL
-)"; then
+    then
       connections_rc=0
     else
       connections_rc=$?
@@ -1196,10 +1322,9 @@ LOCK_CONNECTIONS_SQL
     if (( connections_rc != 0 )); then
       return "$connections_rc"
     fi
-    [[ "$connections" == "0" ]] && break
-    sleep 0.1
+    break
   done
-  [[ "$connections" == "0" ]] || fail lock_holder_cleanup 82 "holder connection remained after termination"
+  [[ "$connections_rc" == "0" ]] || fail lock_holder_cleanup 82 "holder connection remained after termination"
   catalog_snapshot "$database" "$after"
   cmp -s "$before" "$after" || fail catalog_drift 72 "$scenario changed the catalog"
   record_state "EXPECTED_REJECTION_PASS $scenario elapsed_ms=$elapsed_ms"

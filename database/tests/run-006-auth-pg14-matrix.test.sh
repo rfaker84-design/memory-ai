@@ -79,6 +79,9 @@ ORIGINAL_EXECUTE_POSTGRES_COMMAND="$(declare -f execute_postgres_command)"
 ORIGINAL_RUN_EXTERNAL_TIMEOUT="$(declare -f run_external_timeout)"
 ORIGINAL_STARTUP_PROBE_FILE_OWNER="$(declare -f startup_probe_file_owner)"
 ORIGINAL_STARTUP_PROBE_FILE_MODE="$(declare -f startup_probe_file_mode)"
+ORIGINAL_CREATE_QUERY_CAPTURE_FILE="$(declare -f create_query_capture_file)"
+ORIGINAL_QUERY_CAPTURE_FILE_OWNER="$(declare -f query_capture_file_owner)"
+ORIGINAL_QUERY_CAPTURE_FILE_MODE="$(declare -f query_capture_file_mode)"
 RUN_ID="source-test-run"
 generate_run_nonce() { RUN_NONCE=33333333333333333333333333333333; }
 configure_run_identity
@@ -93,6 +96,7 @@ validate_oracle_contracts
   initialize_state_file() { printf 'state\n' >>"$NO_IO_LOG"; return 99; }
   create_state_file() { printf 'state-file\n' >>"$NO_IO_LOG"; return 99; }
   create_startup_probe_file() { printf 'startup-probe-file\n' >>"$NO_IO_LOG"; return 99; }
+  create_query_capture_file() { printf 'query-capture-file\n' >>"$NO_IO_LOG"; return 99; }
   create_database_command() { printf 'createdb\n' >>"$NO_IO_LOG"; return 99; }
   drop_database_command() { printf 'dropdb\n' >>"$NO_IO_LOG"; return 99; }
   remove_work_directory() { printf 'remove-runtime\n' >>"$NO_IO_LOG"; return 99; }
@@ -107,6 +111,30 @@ validate_oracle_contracts
 TEST_WORK="$TMP_ROOT/rejection-work"
 mkdir "$TEST_WORK"
 WORK_DIR="$TEST_WORK"
+QUERY_CAPTURE_OWNER_LOG="$TMP_ROOT/query-capture-owner-checks.log"
+QUERY_CAPTURE_MODE_LOG="$TMP_ROOT/query-capture-mode-checks.log"
+: >"$QUERY_CAPTURE_OWNER_LOG"
+: >"$QUERY_CAPTURE_MODE_LOG"
+create_query_capture_file() {
+  [[ "$#" -eq 2 ]] || return 76
+  local operation="$1" stream="$2" file
+  case "$operation" in
+    connection_count|database_exists|residual_count|preexisting_count|lock_granted|lock_connections) ;;
+    *) return 76 ;;
+  esac
+  case "$stream" in stdout|stderr) ;; *) return 76 ;; esac
+  file="$WORK_DIR/postgresql-query.${operation}.${stream}.${BASHPID}.${RANDOM}"
+  ( umask 077; : >"$file" ) || return 76
+  printf '%s\n' "$file"
+}
+query_capture_file_owner() {
+  printf '%s\n' "$1" >>"$QUERY_CAPTURE_OWNER_LOG"
+  printf '0\n'
+}
+query_capture_file_mode() {
+  printf '%s\n' "$1" >>"$QUERY_CAPTURE_MODE_LOG"
+  printf '600\n'
+}
 
 POSTGRES_EXECUTABLE=""
 declare -a POSTGRES_CLI_ARGS=()
@@ -787,12 +815,62 @@ SCRIPT_TRANSPORT_LOG="$TMP_ROOT/psql-script-transport.log"
 : >"$BOUNDARY_LOG"
 : >"$SCRIPT_TRANSPORT_LOG"
 SCRIPT_TRANSPORT_FORCED_RC=0
-SCRIPT_RESIDUAL_OUTPUT=$'0\n'
-SCRIPT_RESIDUAL_RC=0
-SCRIPT_PREEXISTING_OUTPUT=$'0\n'
-SCRIPT_PREEXISTING_RC=0
+QUERY_FIXTURE_DIR="$TMP_ROOT/raw-query-fixtures"
+mkdir "$QUERY_FIXTURE_DIR"
+declare -A SCRIPT_QUERY_STDOUT_FILES=()
+declare -A SCRIPT_QUERY_STDERR_FILES=()
+declare -A SCRIPT_QUERY_RCS=()
+declare -a SCALAR_QUERY_OPERATIONS=(
+  connection_count database_exists residual_count preexisting_count lock_granted lock_connections
+)
+
+prepare_query_fixture() {
+  local operation="$1" shape="$2" transport_rc="${3:-0}" stdout_file stderr_file
+  stdout_file="$QUERY_FIXTURE_DIR/${operation}.stdout"
+  stderr_file="$QUERY_FIXTURE_DIR/${operation}.stderr"
+  : >"$stdout_file"
+  : >"$stderr_file"
+  case "$shape" in
+    exact_zero) printf '0\n' >"$stdout_file" ;;
+    exact_one) printf '1\n' >"$stdout_file" ;;
+    trailing_blank_zero) printf '0\n\n' >"$stdout_file" ;;
+    trailing_blank_one) printf '1\n\n' >"$stdout_file" ;;
+    missing_lf_zero) printf '0' >"$stdout_file" ;;
+    missing_lf_one) printf '1' >"$stdout_file" ;;
+    crlf_zero) printf '0\r\n' >"$stdout_file" ;;
+    leading_space) printf ' 0\n' >"$stdout_file" ;;
+    trailing_space) printf '0 \n' >"$stdout_file" ;;
+    double_zero) printf '00\n' >"$stdout_file" ;;
+    zero_one) printf '01\n' >"$stdout_file" ;;
+    empty) ;;
+    multiline) printf '0\n1\n' >"$stdout_file" ;;
+    nul_extra) printf '0\0' >"$stdout_file" ;;
+    stderr_warning)
+      printf '0\n' >"$stdout_file"
+      printf 'WARNING: scalar query pollution\n' >"$stderr_file"
+      ;;
+    transport42)
+      printf '0\n' >"$stdout_file"
+      printf 'WARNING: rc must remain authoritative\n' >"$stderr_file"
+      transport_rc=42
+      ;;
+    *) fail_test "unknown raw query fixture shape $shape" ;;
+  esac
+  SCRIPT_QUERY_STDOUT_FILES[$operation]="$stdout_file"
+  SCRIPT_QUERY_STDERR_FILES[$operation]="$stderr_file"
+  SCRIPT_QUERY_RCS[$operation]="$transport_rc"
+}
+
+for scalar_operation in "${SCALAR_QUERY_OPERATIONS[@]}"; do
+  if [[ "$scalar_operation" == lock_granted ]]; then
+    prepare_query_fixture "$scalar_operation" exact_one
+  else
+    prepare_query_fixture "$scalar_operation" exact_zero
+  fi
+done
+
 execute_postgres_command() {
-  local joined argument next_argument command_sql="" script_file="" has_script=0 index
+  local joined argument next_argument command_sql="" script_file="" has_script=0 index stdout_fixture stderr_fixture fixture_rc
   capture_postgres_boundary "$@"
   joined=" ${POSTGRES_CLI_ARGS[*]} "
   printf '%s\t%s\n' "$POSTGRES_EXECUTABLE" "$joined" >>"$BOUNDARY_LOG"
@@ -809,15 +887,19 @@ execute_postgres_command() {
       return 3
     fi
     if [[ "$has_script" -gt 0 ]]; then
-      script_file="$(mktemp "$TMP_ROOT/psql-script-stdin.XXXXXXXX")"
+      script_file="$TMP_ROOT/psql-script-stdin.${BASHPID}.${RANDOM}"
       cat >"$script_file"
       capture_and_validate_script_transport "$script_file" || return $?
       [[ "$SCRIPT_TRANSPORT_FORCED_RC" -eq 0 ]] || return "$SCRIPT_TRANSPORT_FORCED_RC"
       case "$TEST_SCRIPT_OPERATION" in
-        connection_count|database_exists|lock_connections) printf '0\n' ;;
-        residual_count) printf '%s' "$SCRIPT_RESIDUAL_OUTPUT"; return "$SCRIPT_RESIDUAL_RC" ;;
-        preexisting_count) printf '%s' "$SCRIPT_PREEXISTING_OUTPUT"; return "$SCRIPT_PREEXISTING_RC" ;;
-        lock_granted) printf '1\n' ;;
+        connection_count|database_exists|residual_count|preexisting_count|lock_granted|lock_connections)
+          stdout_fixture="${SCRIPT_QUERY_STDOUT_FILES[$TEST_SCRIPT_OPERATION]}"
+          stderr_fixture="${SCRIPT_QUERY_STDERR_FILES[$TEST_SCRIPT_OPERATION]}"
+          fixture_rc="${SCRIPT_QUERY_RCS[$TEST_SCRIPT_OPERATION]}"
+          cat -- "$stdout_fixture"
+          cat -- "$stderr_fixture" >&2
+          return "$fixture_rc"
+          ;;
       esac
     fi
     return 0
@@ -850,33 +932,138 @@ grep -Fq $'database_exists\tpostgres\t--set=matrix_db='"$boundary_db" "$SCRIPT_T
 grep -Fq $'residual_count\tpostgres\t--set=matrix_prefix='"${RUN_DB_PREFIX}%" "$SCRIPT_TRANSPORT_LOG" || \
   fail_test "residual database binding changed"
 
-# The real residual function explicitly preserves transport rc and accepts only
-# the normalized scalar 0.  It is intentionally invoked under a conditional so
-# this test reproduces the Bash errexit suppression that exposed the bug.
-run_residual_output_case() {
-  local label="$1" output="$2" transport_rc="$3" expected_rc="$4" actual_rc
-  SCRIPT_RESIDUAL_OUTPUT="$output"
-  SCRIPT_RESIDUAL_RC="$transport_rc"
-  set +e
-  if assert_no_residual_databases; then actual_rc=0; else actual_rc=$?; fi
-  set -e
-  assert_rc "$actual_rc" "$expected_rc" "residual output case $label"
+# All six scalar queries execute through the formal file-capture wrapper.  The
+# fixtures are byte files so neither the fake nor the assertion path trims LF.
+invoke_scalar_query_operation() {
+  local operation="$1" lock_app="memoryai_auth_matrix_lock_${RUN_NONCE}" names
+  names="$(printf '%s\n' "${SCENARIO_DATABASES[@]}" | sort | paste -sd, -)"
+  case "$operation" in
+    connection_count)
+      capture_scalar_query admin "$ADMIN_DB" connection_count "$boundary_db" zero <<'TEST_CONNECTION_COUNT_SQL'
+SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db';
+TEST_CONNECTION_COUNT_SQL
+      ;;
+    database_exists)
+      capture_scalar_query admin "$ADMIN_DB" database_exists "$boundary_db" zero <<'TEST_DATABASE_EXISTS_SQL'
+SELECT count(*) FROM pg_catalog.pg_database WHERE datname = :'matrix_db';
+TEST_DATABASE_EXISTS_SQL
+      ;;
+    residual_count)
+      capture_scalar_query admin "$ADMIN_DB" residual_count "${RUN_DB_PREFIX}%" zero <<'TEST_RESIDUAL_COUNT_SQL'
+SELECT count(*) FROM pg_catalog.pg_database WHERE datname LIKE :'matrix_prefix';
+TEST_RESIDUAL_COUNT_SQL
+      ;;
+    preexisting_count)
+      capture_scalar_query admin "$ADMIN_DB" preexisting_count "$names" zero <<'TEST_PREEXISTING_COUNT_SQL'
+SELECT count(*) FROM pg_catalog.pg_database WHERE datname = ANY(pg_catalog.string_to_array(:'matrix_names', ','));
+TEST_PREEXISTING_COUNT_SQL
+      ;;
+    lock_granted)
+      capture_scalar_query database "$boundary_db" lock_granted "$lock_app" zero_or_one <<'TEST_LOCK_GRANTED_SQL'
+SELECT count(*) FROM pg_catalog.pg_locks l JOIN pg_catalog.pg_stat_activity a ON a.pid=l.pid WHERE a.application_name=:'lock_app' AND l.relation='public.auth_verification_challenges'::regclass AND l.mode='AccessExclusiveLock' AND l.granted;
+TEST_LOCK_GRANTED_SQL
+      ;;
+    lock_connections)
+      capture_scalar_query database "$boundary_db" lock_connections "$lock_app" zero <<'TEST_LOCK_CONNECTIONS_SQL'
+SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE application_name=:'lock_app';
+TEST_LOCK_CONNECTIONS_SQL
+      ;;
+    *) return 64 ;;
+  esac
 }
-residual_calls_before="$(grep -c '^residual_count'$'\t' "$SCRIPT_TRANSPORT_LOG")"
-run_residual_output_case exact_zero $'0\n' 0 0
-run_residual_output_case nonzero $'1\n' 0 1
-run_residual_output_case empty '' 0 1
-run_residual_output_case space $' \n' 0 1
-run_residual_output_case trailing_space $'0 \n' 0 1
-run_residual_output_case multiline $'0\n1\n' 0 1
-run_residual_output_case double_zero $'00\n' 0 1
-run_residual_output_case nonnumeric $'not-a-count\n' 0 1
-run_residual_output_case zero_transport_failure $'0\n' 42 42
-residual_calls_after="$(grep -c '^residual_count'$'\t' "$SCRIPT_TRANSPORT_LOG")"
-[[ $((residual_calls_after - residual_calls_before)) -eq 9 ]] || \
-  fail_test "residual output matrix did not execute the real query function nine times"
-SCRIPT_RESIDUAL_OUTPUT=$'0\n'
-SCRIPT_RESIDUAL_RC=0
+
+declare -a RAW_QUERY_SHAPES=(
+  exact_zero exact_one trailing_blank_zero trailing_blank_one missing_lf_zero missing_lf_one
+  crlf_zero leading_space trailing_space double_zero zero_one empty multiline nul_extra
+  stderr_warning transport42
+)
+scalar_calls_before="$(wc -l <"$SCRIPT_TRANSPORT_LOG" | tr -d ' ')"
+for scalar_operation in "${SCALAR_QUERY_OPERATIONS[@]}"; do
+  for raw_shape in "${RAW_QUERY_SHAPES[@]}"; do
+    prepare_query_fixture "$scalar_operation" "$raw_shape"
+    QUERY_CAPTURE_VALUE="stale"
+    if invoke_scalar_query_operation "$scalar_operation"; then
+      scalar_rc=0
+    else
+      scalar_rc=$?
+    fi
+    if [[ "$raw_shape" == exact_zero ]]; then
+      expected_scalar_rc=0
+      expected_scalar_value=0
+    elif [[ "$raw_shape" == exact_one && "$scalar_operation" == lock_granted ]]; then
+      expected_scalar_rc=0
+      expected_scalar_value=1
+    elif [[ "$raw_shape" == transport42 ]]; then
+      expected_scalar_rc=42
+      expected_scalar_value=""
+    else
+      expected_scalar_rc="$QUERY_CAPTURE_VALIDATION_RC"
+      expected_scalar_value=""
+    fi
+    assert_rc "$scalar_rc" "$expected_scalar_rc" "$scalar_operation raw-byte case $raw_shape"
+    [[ "$QUERY_CAPTURE_VALUE" == "$expected_scalar_value" ]] || \
+      fail_test "$scalar_operation $raw_shape exposed an unexpected scalar value"
+    for capture_file in "$QUERY_CAPTURE_STDOUT_FILE" "$QUERY_CAPTURE_STDERR_FILE"; do
+      [[ -f "$capture_file" && ! -L "$capture_file" ]] || fail_test "$scalar_operation $raw_shape capture is unsafe"
+      [[ "$(cd "$(dirname "$capture_file")" && pwd -P)" == "$(cd "$WORK_DIR" && pwd -P)" ]] || \
+        fail_test "$scalar_operation $raw_shape capture escaped WORK_DIR"
+      grep -Fxq -- "$capture_file" "$QUERY_CAPTURE_OWNER_LOG" || fail_test "$scalar_operation $raw_shape skipped owner validation"
+      grep -Fxq -- "$capture_file" "$QUERY_CAPTURE_MODE_LOG" || fail_test "$scalar_operation $raw_shape skipped mode validation"
+      case "${capture_file##*/}" in
+        postgresql-query.${scalar_operation}.stdout.*|postgresql-query.${scalar_operation}.stderr.*) ;;
+        *) fail_test "$scalar_operation $raw_shape used an uncontrolled capture filename" ;;
+      esac
+    done
+  done
+done
+scalar_calls_after="$(wc -l <"$SCRIPT_TRANSPORT_LOG" | tr -d ' ')"
+[[ $((scalar_calls_after - scalar_calls_before)) -eq $((6 * ${#RAW_QUERY_SHAPES[@]})) ]] || \
+  fail_test "six-query raw-byte matrix did not execute every formal wrapper"
+for scalar_operation in "${SCALAR_QUERY_OPERATIONS[@]}"; do
+  if [[ "$scalar_operation" == lock_granted ]]; then
+    prepare_query_fixture "$scalar_operation" exact_one
+  else
+    prepare_query_fixture "$scalar_operation" exact_zero
+  fi
+done
+
+# The root-owned query files share the established WORK_DIR lifecycle and are
+# removed on normal, INT, and TERM exits without widening the delete boundary.
+for cleanup_spec in EXIT:0 INT:130 TERM:143; do
+  cleanup_kind="${cleanup_spec%%:*}"
+  cleanup_expected_rc="${cleanup_spec##*:}"
+  query_cleanup_parent="$TMP_ROOT/query-capture-cleanup-$cleanup_kind"
+  query_cleanup_dir="$query_cleanup_parent/memoryai-auth-pg14-matrix.${RUN_NONCE}.capture"
+  mkdir -p "$query_cleanup_dir"
+  chmod 700 "$query_cleanup_dir"
+  set +e
+  (
+    WORK_DIR="$query_cleanup_dir"
+    WORK_DIR_CREATED=1
+    RUN_ACTIVE=0
+    RUNTIME_READY=0
+    FAILED_RECORDED=0
+    remove_work_directory() {
+      [[ "$WORK_DIR" == "$query_cleanup_dir" && -d "$WORK_DIR" && ! -L "$WORK_DIR" ]] || return 1
+      rm -rf -- "$WORK_DIR"
+      [[ ! -e "$WORK_DIR" ]]
+    }
+    install_runtime_traps
+    capture_scalar_query admin "$ADMIN_DB" residual_count "${RUN_DB_PREFIX}%" zero <<'QUERY_CLEANUP_SQL'
+SELECT count(*) FROM pg_catalog.pg_database WHERE datname LIKE :'matrix_prefix';
+QUERY_CLEANUP_SQL
+    [[ "$(find "$WORK_DIR" -maxdepth 1 -type f -name 'postgresql-query.residual_count.*' | wc -l | tr -d ' ')" == "2" ]] || exit 99
+    case "$cleanup_kind" in
+      EXIT) exit 0 ;;
+      INT) on_signal INT 130 ;;
+      TERM) on_signal TERM 143 ;;
+    esac
+  ) >/dev/null 2>&1
+  query_cleanup_rc=$?
+  set -e
+  assert_rc "$query_cleanup_rc" "$cleanup_expected_rc" "$cleanup_kind query capture cleanup"
+  [[ ! -e "$query_cleanup_dir" ]] || fail_test "$cleanup_kind left query capture files behind"
+done
 
 # Reproduce the field failure: psql command transport sends the token literally,
 # while the formal preexisting query sends the same SQL through --file=-.
@@ -898,22 +1085,22 @@ legacy_preexisting_rc=$?
 set -e
 assert_rc "$legacy_preexisting_rc" 74 "legacy preexisting -c transport reproduction"
 assert_contains "$TMP_ROOT/legacy-preexisting.stderr" 'syntax error at or near ":"'
+preexisting_calls_before="$(grep -c '^preexisting_count'$'\t' "$SCRIPT_TRANSPORT_LOG")"
 assert_all_database_names_absent || fail_test "preexisting stdin transport did not replace psql variables"
-[[ "$(grep -c '^preexisting_count'$'\t' "$SCRIPT_TRANSPORT_LOG")" -eq 2 ]] || \
-  fail_test "preexisting query did not traverse --file=- twice"
+preexisting_calls_after="$(grep -c '^preexisting_count'$'\t' "$SCRIPT_TRANSPORT_LOG")"
+[[ $((preexisting_calls_after - preexisting_calls_before)) -eq 1 ]] || \
+  fail_test "preexisting query did not traverse --file=- exactly once"
 
 # Both formal preflight queries map transport failures to 74 before dispatch.
 # The real assert_all_database_names_absent and assert_no_residual_databases
 # functions remain active; only non-database setup and dispatch are injected.
 run_preflight_failure_case() {
-  local label="$1" preexisting_rc="$2" residual_output="$3" residual_rc="$4" expected_rc=74 actual_rc
+  local label="$1" preexisting_shape="$2" preexisting_rc="$3" residual_shape="$4" residual_rc="$5" expected_rc=74 actual_rc
   local state_file="$TMP_ROOT/preflight-${label}.state" dispatch_file="$TMP_ROOT/preflight-${label}.dispatch"
   : >"$state_file"
   rm -f -- "$dispatch_file"
-  SCRIPT_PREEXISTING_OUTPUT=$'0\n'
-  SCRIPT_PREEXISTING_RC="$preexisting_rc"
-  SCRIPT_RESIDUAL_OUTPUT="$residual_output"
-  SCRIPT_RESIDUAL_RC="$residual_rc"
+  prepare_query_fixture preexisting_count "$preexisting_shape" "$preexisting_rc"
+  prepare_query_fixture residual_count "$residual_shape" "$residual_rc"
   set +e
   (
     validate_static_inputs() { :; }
@@ -935,13 +1122,13 @@ run_preflight_failure_case() {
   [[ ! -e "$dispatch_file" ]] || fail_test "$label preflight reached dispatch or database creation"
   ! grep -Fq 'SCENARIO_STARTED' "$state_file" || fail_test "$label preflight recorded SCENARIO_STARTED"
 }
-run_preflight_failure_case preexisting_transport 42 $'0\n' 0
-run_preflight_failure_case residual_transport 0 $'0\n' 42
-run_preflight_failure_case residual_nonzero 0 $'1\n' 0
-SCRIPT_PREEXISTING_OUTPUT=$'0\n'
-SCRIPT_PREEXISTING_RC=0
-SCRIPT_RESIDUAL_OUTPUT=$'0\n'
-SCRIPT_RESIDUAL_RC=0
+run_preflight_failure_case preexisting_transport exact_zero 42 exact_zero 0
+run_preflight_failure_case preexisting_trailing_blank trailing_blank_zero 0 exact_zero 0
+run_preflight_failure_case residual_transport exact_zero 0 exact_zero 42
+run_preflight_failure_case residual_nonzero exact_zero 0 exact_one 0
+run_preflight_failure_case residual_missing_lf exact_zero 0 missing_lf_zero 0
+prepare_query_fixture preexisting_count exact_zero
+prepare_query_fixture residual_count exact_zero
 
 # The public helpers fix binding names and arity.  The low-level fake rejects
 # missing, duplicate, wrong-name, empty-value, and extra bindings.
@@ -1098,7 +1285,7 @@ for residual_exit_spec in 0:75 70:70; do
   residual_cleanup_rc=$?
   set -e
   assert_rc "$residual_cleanup_rc" "$residual_expected_rc" "residual cleanup with original rc $residual_original_rc"
-  assert_contains "$CLEANUP_STATE" "FAILED_cleanup_residual_1"
+  assert_contains "$CLEANUP_STATE" "FAILED_cleanup_residual_42 stdout_bytes=unchecked stderr_bytes=unchecked"
   assert_contains "$CLEANUP_STATE" "CLEANUP_FAILED_RC_75"
 done
 CLEANUP_RESIDUAL_OUTPUT=$'0\n'
@@ -1182,6 +1369,7 @@ run_external_timeout() {
 }
 
 : >"$DISPATCH_STATE"
+: >"$SCRIPT_TRANSPORT_LOG"
 dispatch_all_scenarios
 [[ "$(grep -c '^SCENARIO_STARTED ' "$DISPATCH_STATE")" == "79" ]] || fail_test "not all 79 scenario functions started"
 [[ "$(grep -c '^EXPECTED_REJECTION_PASS ' "$DISPATCH_STATE")" == "77" ]] || fail_test "expected rejection count is not 77"
