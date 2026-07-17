@@ -127,7 +127,7 @@ create_query_capture_file() {
   [[ "$#" -eq 2 ]] || return 76
   local operation="$1" stream="$2" file
   case "$operation" in
-    connection_count|database_exists|residual_count|preexisting_count|lock_granted|lock_connections) ;;
+    connection_count|database_exists|residual_count|preexisting_count|lock_granted|lock_connections|lock_backend_pid|lock_terminate) ;;
     *) return 76 ;;
   esac
   case "$stream" in stdout|stderr) ;; *) return 76 ;; esac
@@ -187,8 +187,10 @@ declare -A TEST_SCRIPT_SQLS=(
   [residual_count]="SELECT count(*) FROM pg_catalog.pg_database WHERE datname LIKE :'matrix_prefix';"
   [preexisting_count]="SELECT count(*) FROM pg_catalog.pg_database WHERE datname = ANY(pg_catalog.string_to_array(:'matrix_names', ','));"
   [lock_holder]=$'SELECT pg_catalog.set_config(\'application_name\', :\'lock_app\', false);\nBEGIN;\nLOCK TABLE public.auth_verification_challenges IN ACCESS EXCLUSIVE MODE;\nSELECT pg_catalog.pg_sleep(30);'
-  [lock_granted]="SELECT count(*) FROM pg_catalog.pg_locks l JOIN pg_catalog.pg_stat_activity a ON a.pid=l.pid WHERE a.application_name=:'lock_app' AND l.relation='public.auth_verification_challenges'::regclass AND l.mode='AccessExclusiveLock' AND l.granted;"
-  [lock_connections]="SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE application_name=:'lock_app';"
+  [lock_granted]="SELECT count(*) FROM pg_catalog.pg_locks l JOIN pg_catalog.pg_stat_activity a ON a.pid=l.pid WHERE a.datname=pg_catalog.current_database() AND a.usename=CURRENT_USER AND a.application_name=:'lock_app' AND a.backend_type='client backend' AND l.database=(SELECT oid FROM pg_catalog.pg_database WHERE datname=pg_catalog.current_database()) AND l.relation='public.auth_verification_challenges'::regclass AND l.mode='AccessExclusiveLock' AND l.granted;"
+  [lock_connections]="SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname=pg_catalog.current_database() AND usename=CURRENT_USER AND application_name=:'lock_app' AND backend_type='client backend';"
+  [lock_backend_pid]=$'WITH holders AS MATERIALIZED (\n  SELECT DISTINCT a.pid\n  FROM pg_catalog.pg_stat_activity a\n  JOIN pg_catalog.pg_locks l ON l.pid = a.pid\n  WHERE a.datname = pg_catalog.current_database()\n    AND a.usename = CURRENT_USER\n    AND CURRENT_USER = \'postgres\'::name\n    AND a.application_name = :\'lock_app\'\n    AND a.backend_type = \'client backend\'\n    AND a.pid <> pg_catalog.pg_backend_pid()\n    AND l.database = (SELECT oid FROM pg_catalog.pg_database WHERE datname = pg_catalog.current_database())\n    AND l.relation = \'public.auth_verification_challenges\'::regclass\n    AND l.mode = \'AccessExclusiveLock\'\n    AND l.granted\n)\nSELECT pg_catalog.lpad(min(pid)::text, 10, \'0\') FROM holders HAVING count(*) = 1;'
+  [lock_terminate]=$'WITH holders AS MATERIALIZED (\n  SELECT DISTINCT a.pid\n  FROM pg_catalog.pg_stat_activity a\n  JOIN pg_catalog.pg_locks l ON l.pid = a.pid\n  WHERE a.datname = pg_catalog.current_database()\n    AND a.usename = CURRENT_USER\n    AND CURRENT_USER = \'postgres\'::name\n    AND a.application_name = :\'lock_app\'\n    AND a.backend_type = \'client backend\'\n    AND a.pid <> pg_catalog.pg_backend_pid()\n    AND l.database = (SELECT oid FROM pg_catalog.pg_database WHERE datname = pg_catalog.current_database())\n    AND l.relation = \'public.auth_verification_challenges\'::regclass\n    AND l.mode = \'AccessExclusiveLock\'\n    AND l.granted\n), eligible AS MATERIALIZED (\n  SELECT pid FROM holders WHERE pid = :\'lock_pid\'::integer AND (SELECT count(*) FROM holders) = 1\n), terminated AS MATERIALIZED (\n  SELECT pg_catalog.pg_terminate_backend(pid) AS ok FROM eligible\n)\nSELECT count(*) FROM terminated WHERE ok;'
 )
 
 script_operation_for_sql() {
@@ -207,6 +209,7 @@ capture_and_validate_script_transport() {
   local stdin_file="$1" argument next_argument token_name="" set_argument="" index sql operation database=""
   local file_count=0 command_count=0 set_count=0 on_error_stop_count=0 token_count=0
   local database_count=0 x_count=0 no_psqlrc_count=0 verbosity_variable_count=0
+  local -a set_arguments=() token_names=()
   [[ -f "$stdin_file" && ! -L "$stdin_file" ]] || return 95
   sql="$(<"$stdin_file")"
   operation="$(script_operation_for_sql "$sql")" || return 95
@@ -218,7 +221,7 @@ capture_and_validate_script_transport() {
       --no-psqlrc) no_psqlrc_count=$((no_psqlrc_count + 1)) ;;
       --file=-) file_count=$((file_count + 1)) ;;
       -c|--command|--command=*) command_count=$((command_count + 1)) ;;
-      --set=*) set_count=$((set_count + 1)); set_argument="$argument" ;;
+      --set=*) set_count=$((set_count + 1)); set_argument="$argument"; set_arguments+=("$argument") ;;
       -v)
         [[ "$next_argument" == ON_ERROR_STOP=1 ]] || return 95
         on_error_stop_count=$((on_error_stop_count + 1)) ;;
@@ -230,16 +233,20 @@ capture_and_validate_script_transport() {
         verbosity_variable_count=$((verbosity_variable_count + 1)) ;;
     esac
   done
-  [[ "$file_count" -eq 1 && "$command_count" -eq 0 && "$set_count" -eq 1 && \
+  [[ "$file_count" -eq 1 && "$command_count" -eq 0 && "$set_count" -ge 1 && "$set_count" -le 2 && \
      "$on_error_stop_count" -eq 1 && "$database_count" -eq 1 && "$x_count" -eq 1 && \
      "$no_psqlrc_count" -eq 1 && "$verbosity_variable_count" -eq 0 ]] || return 95
-  for candidate_name in matrix_db matrix_prefix matrix_names lock_app; do
+  for candidate_name in matrix_db matrix_prefix matrix_names lock_app lock_pid; do
     if [[ "$sql" == *":'$candidate_name'"* ]]; then
       token_count=$((token_count + 1))
       token_name="$candidate_name"
+      token_names+=("$candidate_name")
     fi
   done
-  [[ "$token_count" -eq 1 && "$set_argument" == "--set=${token_name}="* && "$set_argument" != "--set=${token_name}=" ]] || return 95
+  if [[ "$operation" != lock_terminate ]]; then
+    [[ "$token_count" -eq 1 && "$set_count" -eq 1 && "$set_argument" == "--set=${token_name}="* && \
+       "$set_argument" != "--set=${token_name}=" ]] || return 95
+  fi
   case "$operation" in
     terminate|connection_count|database_exists)
       [[ "$database" == postgres && "$token_name" == matrix_db ]] || return 95
@@ -249,16 +256,25 @@ capture_and_validate_script_transport() {
     preexisting_count)
       [[ "$database" == postgres && "$token_name" == matrix_names ]] || return 95
       validate_matrix_database_list "${set_argument#--set=matrix_names=}" || return 95 ;;
-    lock_holder|lock_granted|lock_connections)
+    lock_holder|lock_granted|lock_connections|lock_backend_pid)
       validate_test_database_name "$database" || return 95
-      [[ "$set_argument" == "--set=lock_app=memoryai_auth_matrix_lock_${RUN_NONCE}" ]] || return 95 ;;
+      [[ "$token_count" -eq 1 && "$set_count" -eq 1 && "$token_name" == lock_app && \
+         "$set_argument" == "--set=lock_app=memoryai_auth_matrix_lock_${RUN_NONCE}" ]] || return 95 ;;
+    lock_terminate)
+      validate_test_database_name "$database" || return 95
+      [[ "$token_count" -eq 2 && "$set_count" -eq 2 && "${token_names[*]}" == "lock_app lock_pid" ]] || return 95
+      [[ "${set_arguments[0]}" == "--set=lock_app=memoryai_auth_matrix_lock_${RUN_NONCE}" ]] || return 95
+      [[ "${set_arguments[1]}" =~ ^--set=lock_pid=[0-9]{10}$ ]] || return 95
+      [[ "${set_arguments[1]}" != "--set=lock_pid=0000000000" ]] || return 95 ;;
     *) return 95 ;;
   esac
   if [[ -n "${SCRIPT_TRANSPORT_LOG:-}" ]]; then
-    printf '%s\t%s\t%s\n' "$operation" "$database" "$set_argument" >>"$SCRIPT_TRANSPORT_LOG"
+    printf '%s\t%s\t%s\n' "$operation" "$database" "$(IFS=';'; printf '%s' "${set_arguments[*]}")" >>"$SCRIPT_TRANSPORT_LOG"
   fi
   TEST_SCRIPT_OPERATION="$operation"
   TEST_SCRIPT_SET_ARGUMENT="$set_argument"
+  TEST_SCRIPT_SET_ARGUMENTS=("${set_arguments[@]}")
+  TEST_SCRIPT_DATABASE="$database"
 }
 
 # Formal mode keeps root orchestration while rejecting every non-fixed database
@@ -879,6 +895,17 @@ LOCK_CONNECTION_TEST_MODE=""
 LOCK_CONNECTION_TEST_ZERO_AT=1
 LOCK_CONNECTION_TEST_CALLS=0
 LOCK_CONNECTION_TEST_LOG="$TMP_ROOT/lock-connection-polls.log"
+LOCK_BACKEND_TEST_MODE=""
+LOCK_BACKEND_TEST_CALLS=0
+LOCK_BACKEND_TERMINATE_CALLS=0
+LOCK_BACKEND_TARGET_DB=""
+LOCK_BACKEND_TARGET_USER=postgres
+LOCK_BACKEND_TARGET_APP=""
+LOCK_BACKEND_TARGET_PID=0000042420
+LOCK_BACKEND_TARGET_MARKER="$TMP_ROOT/lock-backend-target.alive"
+LOCK_BACKEND_NON_TARGET_MARKER="$TMP_ROOT/lock-backend-nontarget.alive"
+LOCK_BACKEND_TRANSPORT_LOG="$TMP_ROOT/lock-backend-transport.log"
+: >"$LOCK_BACKEND_TRANSPORT_LOG"
 declare -a SCALAR_QUERY_OPERATIONS=(
   connection_count database_exists residual_count preexisting_count lock_granted lock_connections
 )
@@ -954,6 +981,38 @@ execute_postgres_command() {
         : >"$QUERY_CAPTURE_POST_EXEC_GID_MARKER"
       fi
       case "$TEST_SCRIPT_OPERATION" in
+        lock_backend_pid)
+          LOCK_BACKEND_TEST_CALLS=$((LOCK_BACKEND_TEST_CALLS + 1))
+          printf 'probe\t%s\t%s\t%s\n' "$TEST_SCRIPT_DATABASE" "${TEST_SCRIPT_SET_ARGUMENTS[*]}" "$LOCK_BACKEND_TEST_MODE" >>"$LOCK_BACKEND_TRANSPORT_LOG"
+          case "$LOCK_BACKEND_TEST_MODE" in
+            transport42) return 42 ;;
+          esac
+          if [[ -e "$LOCK_BACKEND_TARGET_MARKER" && "$TEST_SCRIPT_DATABASE" == "$LOCK_BACKEND_TARGET_DB" && \
+                "$LOCK_BACKEND_TARGET_USER" == postgres && "${TEST_SCRIPT_SET_ARGUMENTS[0]}" == "--set=lock_app=${LOCK_BACKEND_TARGET_APP}" ]]; then
+            printf '%s\n' "$LOCK_BACKEND_TARGET_PID"
+          fi
+          return 0
+          ;;
+        lock_terminate)
+          LOCK_BACKEND_TERMINATE_CALLS=$((LOCK_BACKEND_TERMINATE_CALLS + 1))
+          printf 'terminate\t%s\t%s\t%s\n' "$TEST_SCRIPT_DATABASE" "${TEST_SCRIPT_SET_ARGUMENTS[*]}" "$LOCK_BACKEND_TEST_MODE" >>"$LOCK_BACKEND_TRANSPORT_LOG"
+          case "$LOCK_BACKEND_TEST_MODE" in
+            transport42) return 42 ;;
+          esac
+          if [[ -e "$LOCK_BACKEND_TARGET_MARKER" && "$TEST_SCRIPT_DATABASE" == "$LOCK_BACKEND_TARGET_DB" && \
+                "$LOCK_BACKEND_TARGET_USER" == postgres && "${TEST_SCRIPT_SET_ARGUMENTS[0]}" == "--set=lock_app=${LOCK_BACKEND_TARGET_APP}" && \
+                "${TEST_SCRIPT_SET_ARGUMENTS[1]}" == "--set=lock_pid=${LOCK_BACKEND_TARGET_PID}" ]]; then
+            if [[ "$LOCK_BACKEND_TEST_MODE" == terminate_false ]]; then
+              printf '0\n'
+            else
+              rm -f -- "$LOCK_BACKEND_TARGET_MARKER"
+              printf '1\n'
+            fi
+          else
+            printf '0\n'
+          fi
+          return 0
+          ;;
         lock_connections)
           if [[ -n "$LOCK_CONNECTION_TEST_MODE" ]]; then
             LOCK_CONNECTION_TEST_CALLS=$((LOCK_CONNECTION_TEST_CALLS + 1))
@@ -964,6 +1023,7 @@ execute_postgres_command() {
                 return 0
                 ;;
               all_one) printf '1\n'; return 0 ;;
+              backend_marker) [[ -e "$LOCK_BACKEND_TARGET_MARKER" ]] && printf '1\n' || printf '0\n'; return 0 ;;
               transport42) printf '1\n'; return 42 ;;
               output_two) printf '2\n'; return 0 ;;
               trailing_blank) printf '1\n\n'; return 0 ;;
@@ -988,6 +1048,8 @@ execute_postgres_command() {
 }
 record_state() { :; }
 boundary_db="${SCENARIO_DATABASES[challenge_id_nullable]}"
+LOCK_BACKEND_TARGET_DB="$boundary_db"
+LOCK_BACKEND_TARGET_APP="memoryai_auth_matrix_lock_${RUN_NONCE}"
 create_database_command "$boundary_db"
 drop_database_command "$boundary_db"
 admin_psql -At -c 'SELECT 1;' >/dev/null
@@ -1040,12 +1102,12 @@ TEST_PREEXISTING_COUNT_SQL
       ;;
     lock_granted)
       capture_scalar_query database "$boundary_db" lock_granted "$lock_app" zero_or_one <<'TEST_LOCK_GRANTED_SQL'
-SELECT count(*) FROM pg_catalog.pg_locks l JOIN pg_catalog.pg_stat_activity a ON a.pid=l.pid WHERE a.application_name=:'lock_app' AND l.relation='public.auth_verification_challenges'::regclass AND l.mode='AccessExclusiveLock' AND l.granted;
+SELECT count(*) FROM pg_catalog.pg_locks l JOIN pg_catalog.pg_stat_activity a ON a.pid=l.pid WHERE a.datname=pg_catalog.current_database() AND a.usename=CURRENT_USER AND a.application_name=:'lock_app' AND a.backend_type='client backend' AND l.database=(SELECT oid FROM pg_catalog.pg_database WHERE datname=pg_catalog.current_database()) AND l.relation='public.auth_verification_challenges'::regclass AND l.mode='AccessExclusiveLock' AND l.granted;
 TEST_LOCK_GRANTED_SQL
       ;;
     lock_connections)
       capture_scalar_query database "$boundary_db" lock_connections "$lock_app" zero_or_one <<'TEST_LOCK_CONNECTIONS_SQL'
-SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE application_name=:'lock_app';
+SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname=pg_catalog.current_database() AND usename=CURRENT_USER AND application_name=:'lock_app' AND backend_type='client backend';
 TEST_LOCK_CONNECTIONS_SQL
       ;;
     *) return 64 ;;
@@ -1181,6 +1243,170 @@ unset -f sleep
 LOCK_CONNECTION_TEST_MODE=""
 LOCK_CONNECTION_TEST_CALLS=0
 
+# Reproduce the production failure without a database: the outer holder process
+# exits, but the independently modelled backend remains connected.  The real
+# finite poll helper must observe that backend for exactly 50 attempts and
+# return 82 instead of treating wrapper exit as connection cleanup.
+: >"$LOCK_BACKEND_TARGET_MARKER"
+: >"$LOCK_BACKEND_NON_TARGET_MARKER"
+(
+  trap 'exit 0' TERM INT
+  while :; do /usr/bin/sleep 1; done
+) &
+legacy_holder_wrapper=$!
+kill "$legacy_holder_wrapper"
+wait "$legacy_holder_wrapper" 2>/dev/null || true
+if kill -0 "$legacy_holder_wrapper" 2>/dev/null; then fail_test "legacy holder wrapper did not exit"; fi
+[[ -e "$LOCK_BACKEND_TARGET_MARKER" ]] || fail_test "legacy wrapper exit incorrectly removed the backend"
+LOCK_CONNECTION_TEST_MODE=backend_marker
+LOCK_CONNECTION_TEST_CALLS=0
+: >"$LOCK_CONNECTION_TEST_LOG"
+sleep() { :; }
+if wait_for_lock_holder_connections "$boundary_db" "$LOCK_BACKEND_TARGET_APP"; then
+  legacy_holder_poll_rc=0
+else
+  legacy_holder_poll_rc=$?
+fi
+unset -f sleep
+assert_rc "$legacy_holder_poll_rc" 82 "outer holder exit with backend still connected"
+[[ "$LOCK_CONNECTION_TEST_CALLS" -eq 50 ]] || fail_test "legacy holder failure did not reproduce 50 connection polls"
+
+capture_test_lock_backend_pid() {
+  capture_scalar_query database "$1" lock_backend_pid "$2" backend_pid <<'TEST_LOCK_BACKEND_PID_SQL'
+WITH holders AS MATERIALIZED (
+  SELECT DISTINCT a.pid
+  FROM pg_catalog.pg_stat_activity a
+  JOIN pg_catalog.pg_locks l ON l.pid = a.pid
+  WHERE a.datname = pg_catalog.current_database()
+    AND a.usename = CURRENT_USER
+    AND CURRENT_USER = 'postgres'::name
+    AND a.application_name = :'lock_app'
+    AND a.backend_type = 'client backend'
+    AND a.pid <> pg_catalog.pg_backend_pid()
+    AND l.database = (SELECT oid FROM pg_catalog.pg_database WHERE datname = pg_catalog.current_database())
+    AND l.relation = 'public.auth_verification_challenges'::regclass
+    AND l.mode = 'AccessExclusiveLock'
+    AND l.granted
+)
+SELECT pg_catalog.lpad(min(pid)::text, 10, '0') FROM holders HAVING count(*) = 1;
+TEST_LOCK_BACKEND_PID_SQL
+}
+
+activate_test_lock_holder() {
+  clear_active_lock_holder
+  register_active_lock_holder "$1" "$2" 424242 || fail_test "could not register fake lock holder"
+  LOCK_HOLDER_BACKEND_PID="$3"
+}
+
+assert_lock_target_still_isolated() {
+  [[ -e "$LOCK_BACKEND_NON_TARGET_MARKER" ]] || fail_test "$1 terminated the non-target connection"
+}
+
+# The backend PID handshake and termination both use the formal capture and
+# script transports.  A successful termination changes only the exact target,
+# after which the unmodified connection poll observes 1 -> 0.
+LOCK_BACKEND_TEST_MODE=success
+LOCK_BACKEND_TEST_CALLS=0
+LOCK_BACKEND_TERMINATE_CALLS=0
+: >"$LOCK_BACKEND_TARGET_MARKER"
+: >"$LOCK_BACKEND_NON_TARGET_MARKER"
+QUERY_CAPTURE_VALUE=stale
+capture_test_lock_backend_pid "$boundary_db" "$LOCK_BACKEND_TARGET_APP" || fail_test "exact backend PID handshake failed"
+[[ "$QUERY_CAPTURE_VALUE" == "$LOCK_BACKEND_TARGET_PID" ]] || fail_test "backend PID handshake returned the wrong PID"
+for capture_file in "$QUERY_CAPTURE_STDOUT_FILE" "$QUERY_CAPTURE_STDERR_FILE"; do
+  [[ -f "$capture_file" && ! -L "$capture_file" ]] || fail_test "backend PID capture is not a regular non-symlink file"
+  grep -Fxq -- "$capture_file" "$QUERY_CAPTURE_OWNER_LOG" || fail_test "backend PID capture skipped uid validation"
+  grep -Fxq -- "$capture_file" "$QUERY_CAPTURE_GROUP_LOG" || fail_test "backend PID capture skipped gid validation"
+  grep -Fxq -- "$capture_file" "$QUERY_CAPTURE_MODE_LOG" || fail_test "backend PID capture skipped mode validation"
+done
+activate_test_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID"
+LOCK_CONNECTION_TEST_MODE=backend_marker
+LOCK_CONNECTION_TEST_CALLS=0
+invoke_scalar_query_operation lock_connections || fail_test "pre-termination connection probe failed"
+[[ "$QUERY_CAPTURE_VALUE" == 1 ]] || fail_test "pre-termination connection probe did not observe the target"
+QUERY_CAPTURE_VALUE=stale
+terminate_exact_lock_holder_backend "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID" || \
+  fail_test "exact backend termination failed"
+[[ "$QUERY_CAPTURE_VALUE" == 1 ]] || fail_test "exact backend termination did not return strict success"
+[[ ! -e "$LOCK_BACKEND_TARGET_MARKER" ]] || fail_test "exact target backend remained after termination"
+assert_lock_target_still_isolated "exact backend termination"
+sleep() { :; }
+LOCK_CONNECTION_TEST_CALLS=0
+wait_for_lock_holder_connections "$boundary_db" "$LOCK_BACKEND_TARGET_APP" || fail_test "post-termination connection poll failed"
+unset -f sleep
+[[ "$LOCK_CONNECTION_TEST_CALLS" -eq 1 ]] || fail_test "post-termination connection poll did not stop at the first zero"
+clear_active_lock_holder
+
+# Fail closed before or during termination for every identity component.  No
+# mismatch may remove either the target or a non-target connection.
+run_lock_termination_rejection() {
+  local label="$1" call_database="$2" call_app="$3" call_pid="$4" target_user="$5" mode="$6" expected_rc="$7"
+  local actual_rc terminate_calls_before
+  : >"$LOCK_BACKEND_TARGET_MARKER"
+  : >"$LOCK_BACKEND_NON_TARGET_MARKER"
+  LOCK_BACKEND_TARGET_USER="$target_user"
+  LOCK_BACKEND_TEST_MODE="$mode"
+  activate_test_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID"
+  terminate_calls_before="$LOCK_BACKEND_TERMINATE_CALLS"
+  QUERY_CAPTURE_VALUE=stale
+  if terminate_exact_lock_holder_backend "$call_database" "$call_app" "$call_pid"; then actual_rc=0; else actual_rc=$?; fi
+  assert_rc "$actual_rc" "$expected_rc" "lock termination rejection $label"
+  [[ -e "$LOCK_BACKEND_TARGET_MARKER" ]] || fail_test "$label terminated a mismatched target"
+  assert_lock_target_still_isolated "$label"
+  [[ "$QUERY_CAPTURE_VALUE" == "" ]] || fail_test "$label retained stale query state"
+  if [[ "$expected_rc" -eq 64 ]]; then
+    [[ "$LOCK_BACKEND_TERMINATE_CALLS" == "$terminate_calls_before" ]] || fail_test "$label reached the database transport"
+  fi
+  clear_active_lock_holder
+  LOCK_BACKEND_TARGET_USER=postgres
+  LOCK_BACKEND_TEST_MODE=success
+}
+
+wrong_database="${SCENARIO_DATABASES[challenge_id_type]}"
+run_lock_termination_rejection wrong_database "$wrong_database" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID" postgres success 64
+run_lock_termination_rejection wrong_application "$boundary_db" memoryai_auth_matrix_lock_wrong "$LOCK_BACKEND_TARGET_PID" postgres success 64
+run_lock_termination_rejection wrong_pid "$boundary_db" "$LOCK_BACKEND_TARGET_APP" 0000042421 postgres success 64
+run_lock_termination_rejection wrong_user "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID" attacker success "$QUERY_CAPTURE_VALIDATION_RC"
+run_lock_termination_rejection terminate_false "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID" postgres terminate_false "$QUERY_CAPTURE_VALIDATION_RC"
+run_lock_termination_rejection transport_rc42 "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID" postgres transport42 42
+
+# A PID captured during the handshake must not authorize a later PID.  This
+# models backend exit/PID reuse between capture and the atomic server-side
+# revalidation.
+: >"$LOCK_BACKEND_TARGET_MARKER"
+LOCK_BACKEND_TARGET_PID=0000042420
+LOCK_BACKEND_TEST_MODE=success
+capture_test_lock_backend_pid "$boundary_db" "$LOCK_BACKEND_TARGET_APP" || fail_test "PID-race handshake failed"
+captured_backend_pid="$QUERY_CAPTURE_VALUE"
+LOCK_BACKEND_TARGET_PID=0000042421
+activate_test_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$captured_backend_pid"
+if terminate_exact_lock_holder_backend "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$captured_backend_pid"; then
+  pid_race_rc=0
+else
+  pid_race_rc=$?
+fi
+assert_rc "$pid_race_rc" "$QUERY_CAPTURE_VALIDATION_RC" "backend PID changed before termination"
+[[ -e "$LOCK_BACKEND_TARGET_MARKER" ]] || fail_test "PID-race rejection terminated the replacement backend"
+assert_lock_target_still_isolated "PID-race rejection"
+clear_active_lock_holder
+LOCK_BACKEND_TARGET_PID=0000042420
+
+# Unsafe gid metadata must stop both new database operations before the formal
+# PostgreSQL boundary, just like the original six raw-byte queries.
+QUERY_CAPTURE_TEST_GROUP=1000
+lock_backend_calls_before="$(wc -l <"$LOCK_BACKEND_TRANSPORT_LOG" | tr -d ' ')"
+if capture_test_lock_backend_pid "$boundary_db" "$LOCK_BACKEND_TARGET_APP"; then bad_backend_gid_rc=0; else bad_backend_gid_rc=$?; fi
+assert_rc "$bad_backend_gid_rc" 76 "backend PID capture with non-root gid"
+activate_test_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID"
+if terminate_exact_lock_holder_backend "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID"; then bad_terminate_gid_rc=0; else bad_terminate_gid_rc=$?; fi
+assert_rc "$bad_terminate_gid_rc" 76 "backend termination capture with non-root gid"
+clear_active_lock_holder
+lock_backend_calls_after="$(wc -l <"$LOCK_BACKEND_TRANSPORT_LOG" | tr -d ' ')"
+[[ "$lock_backend_calls_after" == "$lock_backend_calls_before" ]] || fail_test "unsafe backend capture gid reached PostgreSQL"
+QUERY_CAPTURE_TEST_GROUP=0
+LOCK_BACKEND_TEST_MODE=""
+LOCK_CONNECTION_TEST_MODE=""
+
 # The root-owned query files share the established WORK_DIR lifecycle and are
 # removed on normal, INT, and TERM exits without widening the delete boundary.
 for cleanup_spec in EXIT:0 INT:130 TERM:143; do
@@ -1217,6 +1443,68 @@ QUERY_CLEANUP_SQL
   set -e
   assert_rc "$query_cleanup_rc" "$cleanup_expected_rc" "$cleanup_kind query capture cleanup"
   [[ ! -e "$query_cleanup_dir" ]] || fail_test "$cleanup_kind left query capture files behind"
+done
+
+# Active-holder cleanup uses the same exact backend termination on normal exit
+# and both signal paths.  The wrapper observes backend removal and exits on its
+# own; reap waits for that exact child and never signals an arbitrary PID.
+for holder_cleanup_spec in EXIT:0 INT:130 TERM:143; do
+  holder_cleanup_kind="${holder_cleanup_spec%%:*}"
+  holder_cleanup_expected_rc="${holder_cleanup_spec##*:}"
+  holder_cleanup_parent="$TMP_ROOT/holder-cleanup-$holder_cleanup_kind"
+  holder_cleanup_dir="$holder_cleanup_parent/memoryai-auth-pg14-matrix.${RUN_NONCE}.holder"
+  holder_target_marker="$holder_cleanup_parent/target.connected"
+  holder_non_target_marker="$holder_cleanup_parent/non-target-other-db.connected"
+  holder_pid_file="$holder_cleanup_parent/wrapper.pid"
+  mkdir -p "$holder_cleanup_dir"
+  chmod 700 "$holder_cleanup_dir"
+  : >"$holder_target_marker"
+  : >"$holder_non_target_marker"
+  set +e
+  (
+    WORK_DIR="$holder_cleanup_dir"
+    WORK_DIR_CREATED=1
+    RUN_ACTIVE=1
+    RUNTIME_READY=0
+    FAILED_RECORDED=0
+    CLEANUP_RECORDED=0
+    CREATED_DATABASES=("$boundary_db")
+    LOCK_BACKEND_TARGET_MARKER="$holder_target_marker"
+    LOCK_BACKEND_NON_TARGET_MARKER="$holder_non_target_marker"
+    LOCK_BACKEND_TARGET_DB="$boundary_db"
+    LOCK_BACKEND_TARGET_USER=postgres
+    LOCK_BACKEND_TARGET_APP="memoryai_auth_matrix_lock_${RUN_NONCE}"
+    LOCK_BACKEND_TARGET_PID=0000042420
+    LOCK_BACKEND_TEST_MODE=success
+    LOCK_CONNECTION_TEST_MODE=backend_marker
+    remove_work_directory() {
+      [[ "$WORK_DIR" == "$holder_cleanup_dir" && -d "$WORK_DIR" && ! -L "$WORK_DIR" ]] || return 1
+      rm -rf -- "$WORK_DIR"
+      [[ ! -e "$WORK_DIR" ]]
+    }
+    (
+      while [[ -e "$holder_target_marker" ]]; do /usr/bin/sleep 0.05; done
+    ) &
+    holder_cleanup_wrapper=$!
+    printf '%s\n' "$holder_cleanup_wrapper" >"$holder_pid_file"
+    register_active_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$holder_cleanup_wrapper" || exit 99
+    LOCK_HOLDER_BACKEND_PID="$LOCK_BACKEND_TARGET_PID"
+    install_runtime_traps
+    case "$holder_cleanup_kind" in
+      EXIT) exit 0 ;;
+      INT) on_signal INT 130 ;;
+      TERM) on_signal TERM 143 ;;
+    esac
+  ) >/dev/null 2>&1
+  holder_cleanup_rc=$?
+  set -e
+  assert_rc "$holder_cleanup_rc" "$holder_cleanup_expected_rc" "$holder_cleanup_kind active holder cleanup"
+  [[ ! -e "$holder_target_marker" ]] || fail_test "$holder_cleanup_kind left the target backend connected"
+  [[ -e "$holder_non_target_marker" ]] || fail_test "$holder_cleanup_kind terminated the other-database connection"
+  holder_cleanup_wrapper="$(<"$holder_pid_file")"
+  if kill -0 "$holder_cleanup_wrapper" 2>/dev/null; then fail_test "$holder_cleanup_kind left the holder wrapper running"; fi
+  [[ ! -e "$holder_cleanup_dir" ]] || fail_test "$holder_cleanup_kind left holder capture files behind"
+  rm -f -- "$holder_non_target_marker" "$holder_pid_file"
 done
 
 # Reproduce the field failure: psql command transport sends the token literally,
@@ -1449,7 +1737,11 @@ CLEANUP_RESIDUAL_RC=0
 DISPATCH_STATE="$TMP_ROOT/dispatch.state"
 DISPATCH_WORK="$TMP_ROOT/dispatch-work"
 HOLDER_MARKER="$TMP_ROOT/holder.locked"
+DISPATCH_BACKEND_MARKER="$TMP_ROOT/holder-backend.connected"
+DISPATCH_NON_TARGET_MARKER="$TMP_ROOT/non-target-backend.connected"
+DISPATCH_BACKEND_PID=0000042420
 mkdir "$DISPATCH_WORK"
+: >"$DISPATCH_NON_TARGET_MARKER"
 WORK_DIR="$DISPATCH_WORK"
 CREATED_DATABASES=()
 CREATE_COUNT=0
@@ -1480,11 +1772,24 @@ execute_postgres_command() {
       lock_holder)
         trap 'rm -f -- "$HOLDER_MARKER"; exit 0' TERM INT EXIT
         : >"$HOLDER_MARKER"
+        : >"$DISPATCH_BACKEND_MARKER"
         sleep 4
         return 0 ;;
-      lock_granted) [[ -e "$HOLDER_MARKER" ]] && printf '1\n' || printf '0\n'; return 0 ;;
-      lock_connections) printf '0\n'; return 0 ;;
-      terminate) return 0 ;;
+      lock_granted) [[ -e "$DISPATCH_BACKEND_MARKER" ]] && printf '1\n' || printf '0\n'; return 0 ;;
+      lock_backend_pid)
+        [[ -e "$DISPATCH_BACKEND_MARKER" ]] && printf '%s\n' "$DISPATCH_BACKEND_PID"
+        return 0 ;;
+      lock_terminate)
+        if [[ -e "$DISPATCH_BACKEND_MARKER" && "${TEST_SCRIPT_SET_ARGUMENTS[0]}" == "--set=lock_app=memoryai_auth_matrix_lock_${RUN_NONCE}" && \
+              "${TEST_SCRIPT_SET_ARGUMENTS[1]}" == "--set=lock_pid=${DISPATCH_BACKEND_PID}" ]]; then
+          rm -f -- "$DISPATCH_BACKEND_MARKER"
+          printf '1\n'
+        else
+          printf '0\n'
+        fi
+        return 0 ;;
+      lock_connections) [[ -e "$DISPATCH_BACKEND_MARKER" ]] && printf '1\n' || printf '0\n'; return 0 ;;
+      terminate) rm -f -- "$DISPATCH_BACKEND_MARKER"; return 0 ;;
       connection_count|database_exists|residual_count|preexisting_count) printf '0\n'; return 0 ;;
       *) return 95 ;;
     esac
@@ -1536,19 +1841,27 @@ dispatch_all_scenarios
 [[ "$BEHAVIOR_SQL_ORACLE_TOTAL" == "33" ]] || fail_test "not all 33 behavior -c SQL statements passed the independent oracle"
 [[ "$(grep -c '^BEHAVIOR_CASE_CALLED ' "$DISPATCH_STATE")" == "33" ]] || fail_test "not all behavior cases executed"
 [[ ! -e "$HOLDER_MARKER" ]] || fail_test "lock holder marker remained"
-for lock_transport in lock_holder lock_granted lock_connections; do
+[[ ! -e "$DISPATCH_BACKEND_MARKER" ]] || fail_test "lock backend marker remained"
+[[ -e "$DISPATCH_NON_TARGET_MARKER" ]] || fail_test "full dispatcher terminated a non-target backend"
+[[ "$LOCK_HOLDER_ACTIVE" -eq 0 ]] || fail_test "full dispatcher retained active holder state"
+for lock_transport in lock_holder lock_granted lock_backend_pid lock_terminate lock_connections; do
   lock_transport_count="$(grep -c "^${lock_transport}"$'\t' "$SCRIPT_TRANSPORT_LOG")"
-  if [[ "$lock_transport" == lock_holder ]]; then
-    [[ "$lock_transport_count" -eq 1 ]] || fail_test "lock_holder did not use exactly one stdin script transport"
+  if [[ "$lock_transport" == lock_holder || "$lock_transport" == lock_backend_pid || "$lock_transport" == lock_terminate ]]; then
+    [[ "$lock_transport_count" -eq 1 ]] || fail_test "$lock_transport did not use exactly one stdin script transport"
   else
     [[ "$lock_transport_count" -ge 1 && "$lock_transport_count" -le 50 ]] || \
       fail_test "$lock_transport poll count is outside 1-50"
   fi
-  expected_lock_transport="${lock_transport}"$'\t'"${SCENARIO_DATABASES[lock_timeout]}"$'\t'"--set=lock_app=memoryai_auth_matrix_lock_${RUN_NONCE}"
+  if [[ "$lock_transport" == lock_terminate ]]; then
+    expected_lock_transport="${lock_transport}"$'\t'"${SCENARIO_DATABASES[lock_timeout]}"$'\t'"--set=lock_app=memoryai_auth_matrix_lock_${RUN_NONCE};--set=lock_pid=${DISPATCH_BACKEND_PID}"
+  else
+    expected_lock_transport="${lock_transport}"$'\t'"${SCENARIO_DATABASES[lock_timeout]}"$'\t'"--set=lock_app=memoryai_auth_matrix_lock_${RUN_NONCE}"
+  fi
   while IFS= read -r lock_transport_row; do
     [[ "$lock_transport_row" == "$expected_lock_transport" ]] || fail_test "$lock_transport binding changed"
   done < <(grep "^${lock_transport}"$'\t' "$SCRIPT_TRANSPORT_LOG")
 done
+rm -f -- "$DISPATCH_NON_TARGET_MARKER"
 
 # SQL drift probes call the same extraction and SQL-oracle functions as the
 # complete fake dispatcher.  A SQL mismatch returns 94 without fabricating a

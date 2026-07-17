@@ -246,12 +246,56 @@ const approvedPsqlScriptHeredocs = Object.freeze({
   LOCK_GRANTED_SQL: Object.freeze({
     opener: `if capture_scalar_query database "$database" lock_granted "$application_name" zero_or_one <<'LOCK_GRANTED_SQL'`,
     token: ":'lock_app'",
-    body: "SELECT count(*) FROM pg_catalog.pg_locks l JOIN pg_catalog.pg_stat_activity a ON a.pid=l.pid WHERE a.application_name=:'lock_app' AND l.relation='public.auth_verification_challenges'::regclass AND l.mode='AccessExclusiveLock' AND l.granted;\n",
+    body: "SELECT count(*) FROM pg_catalog.pg_locks l JOIN pg_catalog.pg_stat_activity a ON a.pid=l.pid WHERE a.datname=pg_catalog.current_database() AND a.usename=CURRENT_USER AND a.application_name=:'lock_app' AND a.backend_type='client backend' AND l.database=(SELECT oid FROM pg_catalog.pg_database WHERE datname=pg_catalog.current_database()) AND l.relation='public.auth_verification_challenges'::regclass AND l.mode='AccessExclusiveLock' AND l.granted;\n",
   }),
   LOCK_CONNECTIONS_SQL: Object.freeze({
     opener: `if capture_scalar_query database "$database" lock_connections "$application_name" zero_or_one <<'LOCK_CONNECTIONS_SQL'`,
     token: ":'lock_app'",
-    body: "SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE application_name=:'lock_app';\n",
+    body: "SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname=pg_catalog.current_database() AND usename=CURRENT_USER AND application_name=:'lock_app' AND backend_type='client backend';\n",
+  }),
+  LOCK_BACKEND_PID_SQL: Object.freeze({
+    opener: `if capture_scalar_query database "$database" lock_backend_pid "$application_name" backend_pid <<'LOCK_BACKEND_PID_SQL'`,
+    token: ":'lock_app'",
+    body: "WITH holders AS MATERIALIZED (\n" +
+      "  SELECT DISTINCT a.pid\n" +
+      "  FROM pg_catalog.pg_stat_activity a\n" +
+      "  JOIN pg_catalog.pg_locks l ON l.pid = a.pid\n" +
+      "  WHERE a.datname = pg_catalog.current_database()\n" +
+      "    AND a.usename = CURRENT_USER\n" +
+      "    AND CURRENT_USER = 'postgres'::name\n" +
+      "    AND a.application_name = :'lock_app'\n" +
+      "    AND a.backend_type = 'client backend'\n" +
+      "    AND a.pid <> pg_catalog.pg_backend_pid()\n" +
+      "    AND l.database = (SELECT oid FROM pg_catalog.pg_database WHERE datname = pg_catalog.current_database())\n" +
+      "    AND l.relation = 'public.auth_verification_challenges'::regclass\n" +
+      "    AND l.mode = 'AccessExclusiveLock'\n" +
+      "    AND l.granted\n" +
+      ")\n" +
+      "SELECT pg_catalog.lpad(min(pid)::text, 10, '0') FROM holders HAVING count(*) = 1;\n",
+  }),
+  LOCK_TERMINATE_SQL: Object.freeze({
+    opener: `if database_psql_script "$database" lock_terminate "$application_name" "$backend_pid"     >"$QUERY_CAPTURE_STDOUT_FILE" 2>"$QUERY_CAPTURE_STDERR_FILE" <<'LOCK_TERMINATE_SQL'`,
+    tokens: [":'lock_app'", ":'lock_pid'"],
+    body: "WITH holders AS MATERIALIZED (\n" +
+      "  SELECT DISTINCT a.pid\n" +
+      "  FROM pg_catalog.pg_stat_activity a\n" +
+      "  JOIN pg_catalog.pg_locks l ON l.pid = a.pid\n" +
+      "  WHERE a.datname = pg_catalog.current_database()\n" +
+      "    AND a.usename = CURRENT_USER\n" +
+      "    AND CURRENT_USER = 'postgres'::name\n" +
+      "    AND a.application_name = :'lock_app'\n" +
+      "    AND a.backend_type = 'client backend'\n" +
+      "    AND a.pid <> pg_catalog.pg_backend_pid()\n" +
+      "    AND l.database = (SELECT oid FROM pg_catalog.pg_database WHERE datname = pg_catalog.current_database())\n" +
+      "    AND l.relation = 'public.auth_verification_challenges'::regclass\n" +
+      "    AND l.mode = 'AccessExclusiveLock'\n" +
+      "    AND l.granted\n" +
+      "), eligible AS MATERIALIZED (\n" +
+      "  SELECT pid FROM holders WHERE pid = :'lock_pid'::integer AND (SELECT count(*) FROM holders) = 1\n" +
+      "), terminated AS MATERIALIZED (\n" +
+      "  SELECT pg_catalog.pg_terminate_backend(pid) AS ok FROM eligible\n" +
+      ")\n" +
+      "SELECT count(*) FROM terminated WHERE ok;\n",
   }),
 });
 
@@ -421,7 +465,7 @@ function assertPsqlVariableTransportSafe(input, label = "psql transport source")
     assert.equal(seen.has(heredoc.delimiter), false, `duplicate approved heredoc ${heredoc.delimiter}`);
     assert.equal(heredoc.opener.replace(/\\\n/g, "").trim(), expected.opener,
       `${heredoc.delimiter} opener drift`);
-    assert.deepEqual(tokens, [expected.token], `${heredoc.delimiter} token mapping drift`);
+    assert.deepEqual(tokens, expected.tokens ?? [expected.token], `${heredoc.delimiter} token mapping drift`);
     assert.equal(body, expected.body, `${heredoc.delimiter} SQL body drift`);
     seen.add(heredoc.delimiter);
   }
@@ -494,14 +538,88 @@ function assertMatrixRunnerStructure(runner) {
   assert.match(runner, /if capture_scalar_query admin "\$ADMIN_DB" preexisting_count "\$names" zero/);
   assert.match(runner, /if capture_scalar_query database "\$database" lock_granted "\$application_name" zero_or_one/);
   assert.match(runner, /if capture_scalar_query database "\$database" lock_connections "\$application_name" zero_or_one/);
+  assert.match(runner, /if capture_scalar_query database "\$database" lock_backend_pid "\$application_name" backend_pid/);
+  assert.match(runner, /if database_psql_script "\$database" lock_terminate "\$application_name" "\$backend_pid"/);
   assert.doesNotMatch(runner, /\$\(\s*admin_psql_script\s+connection_count\b/);
   assert.doesNotMatch(runner, /\$\(\s*admin_psql_script\s+database_exists\b/);
   assert.doesNotMatch(runner, /\$\(\s*admin_psql_script\s+residual_count\b/);
   assert.doesNotMatch(runner, /\$\(\s*admin_psql_script\s+preexisting_count\b/);
   assert.doesNotMatch(runner, /\$\(\s*database_psql_script\s+"\$database"\s+lock_granted\b/);
   assert.doesNotMatch(runner, /\$\(\s*database_psql_script\s+"\$database"\s+lock_connections\b/);
+  assert.doesNotMatch(runner, /\$\(\s*database_psql_script\s+"\$database"\s+lock_backend_pid\b/);
   assert.match(runner, /set_config\('application_name', :'lock_app', false\)/);
   assert.doesNotMatch(runner, /PGAPPNAME=/);
+
+  const backendPidSql = approvedPsqlScriptHeredocs.LOCK_BACKEND_PID_SQL.body;
+  for (const identityPredicate of [
+    "a.datname = pg_catalog.current_database()",
+    "a.usename = CURRENT_USER",
+    "CURRENT_USER = 'postgres'::name",
+    "a.application_name = :'lock_app'",
+    "a.backend_type = 'client backend'",
+    "a.pid <> pg_catalog.pg_backend_pid()",
+    "l.database = (SELECT oid FROM pg_catalog.pg_database WHERE datname = pg_catalog.current_database())",
+    "l.relation = 'public.auth_verification_challenges'::regclass",
+    "l.mode = 'AccessExclusiveLock'",
+    "l.granted",
+  ]) assert.ok(backendPidSql.includes(identityPredicate), `backend PID handshake missing ${identityPredicate}`);
+  assert.match(backendPidSql, /SELECT pg_catalog\.lpad\(min\(pid\)::text, 10, '0'\) FROM holders HAVING count\(\*\) = 1;/,
+    "backend PID handshake must return exactly one fixed-width holder PID");
+
+  const terminateSql = approvedPsqlScriptHeredocs.LOCK_TERMINATE_SQL.body;
+  for (const identityPredicate of [
+    "a.datname = pg_catalog.current_database()",
+    "a.usename = CURRENT_USER",
+    "CURRENT_USER = 'postgres'::name",
+    "a.application_name = :'lock_app'",
+    "a.backend_type = 'client backend'",
+    "a.pid <> pg_catalog.pg_backend_pid()",
+    "l.database = (SELECT oid FROM pg_catalog.pg_database WHERE datname = pg_catalog.current_database())",
+    "l.relation = 'public.auth_verification_challenges'::regclass",
+    "l.mode = 'AccessExclusiveLock'",
+    "l.granted",
+    "pid = :'lock_pid'::integer",
+    "(SELECT count(*) FROM holders) = 1",
+  ]) assert.ok(terminateSql.includes(identityPredicate), `exact holder termination missing ${identityPredicate}`);
+  assert.equal((terminateSql.match(/pg_catalog\.pg_terminate_backend\(/g) || []).length, 1,
+    "exact holder termination must call pg_terminate_backend once");
+  assert.match(terminateSql, /pg_catalog\.pg_terminate_backend\(pid\) AS ok FROM eligible/);
+  assert.match(terminateSql, /SELECT count\(\*\) FROM terminated WHERE ok;/);
+
+  const pidParser = runner.match(/read_exact_query_scalar\(\) \{([\s\S]*?)^\}/m)?.[1];
+  assert.ok(pidParser, "missing raw query scalar parser");
+  assert.match(pidParser, /backend_pid\)[\s\S]*?QUERY_CAPTURE_STDOUT_BYTES" == "11"/);
+  assert.match(pidParser, /for index in \{1\.\.10\}; do/);
+  assert.match(pidParser, /"\$second" == \$'\\n' && "\$pid_text" =~ \^\[0-9\]\{10\}\$/);
+  assert.match(pidParser, /pid_number >= 1 && pid_number <= 2147483647/);
+
+  const exactTermination = runner.match(/terminate_exact_lock_holder_backend\(\) \{([\s\S]*?)^\}/m)?.[1];
+  assert.ok(exactTermination, "missing exact lock-holder backend terminator");
+  assert.match(exactTermination, /LOCK_HOLDER_ACTIVE" -eq 1/);
+  assert.match(exactTermination, /LOCK_HOLDER_DATABASE" == "\$database"/);
+  assert.match(exactTermination, /LOCK_HOLDER_APPLICATION_NAME" == "\$application_name"/);
+  assert.match(exactTermination, /LOCK_HOLDER_BACKEND_PID" == "\$backend_pid"/);
+  assert.match(exactTermination, /read_exact_query_scalar one/);
+
+  const wrapperReaper = runner.match(/reap_active_lock_holder_wrapper\(\) \{([\s\S]*?)^\}/m)?.[1];
+  assert.ok(wrapperReaper, "missing lock-holder wrapper reaper");
+  assert.match(wrapperReaper, /if wait "\$wrapper_pid"/);
+  assert.doesNotMatch(wrapperReaper, /\b(?:kill|pkill|killall)\b/,
+    "a reusable client PID must never be signaled during wrapper reaping");
+
+  const lockScenario = runner.match(/run_lock_timeout_scenario\(\) \{([\s\S]*?)^\}/m)?.[1];
+  assert.ok(lockScenario, "missing lock-timeout scenario");
+  assert.doesNotMatch(lockScenario, /admin_psql_script terminate|cleanup_database|pg_terminate_backend/,
+    "normal lock path must not use broad database termination");
+  assert.doesNotMatch(lockScenario, /kill "\$holder"/,
+    "normal lock path must not treat the client job PID as the backend termination handle");
+  const exactTerminateIndex = lockScenario.indexOf('terminate_exact_lock_holder_backend "$database" "$application_name" "$backend_pid"');
+  const connectionPollIndex = lockScenario.indexOf('wait_for_lock_holder_connections "$database" "$application_name"');
+  const wrapperReapIndex = lockScenario.indexOf('reap_active_lock_holder_wrapper "$database"');
+  assert.ok(exactTerminateIndex >= 0 && exactTerminateIndex < connectionPollIndex && connectionPollIndex < wrapperReapIndex,
+    "normal lock cleanup must terminate the exact backend, poll it away, then reap the client wrapper");
+  assert.equal((runner.match(/admin_psql_script terminate "\$database"/g) || []).length, 1,
+    "broad database termination must remain confined to the cleanup fallback");
   assert.match(runner, /\[\[ "\$\(orchestrator_uid\)" == "0" \]\]/);
   assert.match(runner, /orchestrator_gid\(\) \{[\s\S]*?"\$ID" -g/);
   assert.ok((runner.match(/\[\[ "\$\(orchestrator_gid\)" == "0" \]\]/g) || []).length >= 2,
@@ -546,7 +664,9 @@ function assertMatrixRunnerStructure(runner) {
   assertPsqlVariableTransportSafe(runner);
   const scriptBoundary = runner.match(/psql_script_command\(\) \{([\s\S]*?)^\}/m)?.[1];
   assert.ok(scriptBoundary, "missing psql stdin script boundary");
-  assert.match(scriptBoundary, /"--set=\$\{variable_name\}=\$\{variable_value\}" --file=-/);
+  assert.match(scriptBoundary, /variable_arguments=\("--set=\$\{variable_name\}=\$\{variable_value\}"\)/);
+  assert.match(scriptBoundary, /variable_arguments=\("--set=lock_app=\$\{lock_application_name\}" "--set=lock_pid=\$\{lock_backend_pid\}"\)/);
+  assert.match(scriptBoundary, /"\$\{variable_arguments\[@\]\}" --file=-/);
   assert.doesNotMatch(scriptBoundary, /(?:^|[ \t])(?:-c|--command)(?:[= \t]|$)/m);
   assert.doesNotMatch(scriptBoundary, /\b(?:eval|sh\s+-c)\b/);
 }
@@ -579,6 +699,43 @@ test("approved psql heredocs freeze delimiter, opener, body, and token mappings"
 
   const duplicate = `${runner}\n${approved.opener}\n${approved.body}${delimiter}\n`;
   assert.throws(() => assertPsqlVariableTransportSafe(duplicate), /duplicate approved heredoc CLEANUP_CONNECTIONS_SQL/);
+});
+
+test("lock backend identity and exact termination heredocs are frozen", () => {
+  const runner = readShell("tests/run-006-auth-pg14-matrix.sh");
+  const backendPid = approvedPsqlScriptHeredocs.LOCK_BACKEND_PID_SQL;
+  const terminate = approvedPsqlScriptHeredocs.LOCK_TERMINATE_SQL;
+
+  const pidCardinalityDrift = runner.replace(
+    backendPid.body,
+    backendPid.body.replace("HAVING count(*) = 1", "HAVING count(*) = 2"),
+  );
+  assert.notEqual(pidCardinalityDrift, runner, "backend PID cardinality drift fixture did not change the runner");
+  assert.throws(
+    () => assertPsqlVariableTransportSafe(pidCardinalityDrift),
+    /LOCK_BACKEND_PID_SQL SQL body drift/,
+  );
+
+  const terminateTokenDrift = runner.replace(
+    terminate.body,
+    terminate.body.replace(":'lock_pid'", ":'other_pid'"),
+  );
+  assert.notEqual(terminateTokenDrift, runner, "termination PID token drift fixture did not change the runner");
+  assert.throws(
+    () => assertPsqlVariableTransportSafe(terminateTokenDrift),
+    /LOCK_TERMINATE_SQL token mapping drift/,
+  );
+
+  const terminateOpenerFragment = `database_psql_script "$database" lock_terminate "$application_name" "$backend_pid"`;
+  const terminateOpenerDrift = runner.replace(
+    terminateOpenerFragment,
+    terminateOpenerFragment.replace("lock_terminate", "lock_connections"),
+  );
+  assert.notEqual(terminateOpenerDrift, runner, "termination opener drift fixture did not change the runner");
+  assert.throws(
+    () => assertPsqlVariableTransportSafe(terminateOpenerDrift),
+    /LOCK_TERMINATE_SQL opener drift/,
+  );
 });
 
 test("psql variable scanner rejects tokens everywhere in the command area", () => {

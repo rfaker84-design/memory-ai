@@ -50,6 +50,11 @@ QUERY_CAPTURE_STDERR_FILE=""
 QUERY_CAPTURE_STDOUT_BYTES=""
 QUERY_CAPTURE_STDERR_BYTES=""
 QUERY_CAPTURE_VALUE=""
+LOCK_HOLDER_ACTIVE=0
+LOCK_HOLDER_DATABASE=""
+LOCK_HOLDER_APPLICATION_NAME=""
+LOCK_HOLDER_WRAPPER_PID=""
+LOCK_HOLDER_BACKEND_PID=""
 
 readonly -a CHALLENGE_SCENARIOS=(
   challenge_id_type
@@ -323,16 +328,18 @@ validate_matrix_database_list() {
 }
 
 psql_script_command() {
-  [[ "$#" -eq 3 ]] || return 64
-  local database="$1" operation="$2" variable_value="$3" output_mode variable_name
-  local -a output_arguments=()
+  [[ "$#" -ge 3 && "$#" -le 4 ]] || return 64
+  local database="$1" operation="$2" output_mode variable_name variable_value="" lock_application_name="" lock_backend_pid=""
+  shift 2
+  local -a output_arguments=() variable_arguments=()
   case "$operation" in
     admin_terminate) output_mode=status; variable_name=matrix_db ;;
     admin_connection_count|admin_database_exists) output_mode=records; variable_name=matrix_db ;;
     admin_residual_count) output_mode=records; variable_name=matrix_prefix ;;
     admin_preexisting_count) output_mode=records; variable_name=matrix_names ;;
     lock_holder) output_mode=status; variable_name=lock_app ;;
-    lock_granted|lock_connections) output_mode=records; variable_name=lock_app ;;
+    lock_granted|lock_connections|lock_backend_pid) output_mode=records; variable_name=lock_app ;;
+    lock_terminate) output_mode=records ;;
     *) return 64 ;;
   esac
   case "$output_mode" in
@@ -341,7 +348,21 @@ psql_script_command() {
     *) return 64 ;;
   esac
 
-  if [[ "$database" == "$ADMIN_DB" ]]; then
+  if [[ "$operation" == lock_terminate ]]; then
+    [[ "$#" -eq 2 ]] || return 64
+    lock_application_name="$1"
+    lock_backend_pid="$2"
+    validate_test_database_name "$database" || return 64
+    [[ "$lock_application_name" == "memoryai_auth_matrix_lock_${RUN_NONCE}" ]] || return 64
+    [[ "$lock_backend_pid" =~ ^[0-9]{10}$ ]] || return 64
+    (( 10#$lock_backend_pid >= 1 && 10#$lock_backend_pid <= 2147483647 )) || return 64
+    variable_arguments=("--set=lock_app=${lock_application_name}" "--set=lock_pid=${lock_backend_pid}")
+  else
+    [[ "$#" -eq 1 ]] || return 64
+    variable_value="$1"
+  fi
+
+  if [[ "$operation" != lock_terminate && "$database" == "$ADMIN_DB" ]]; then
     case "$operation" in
       admin_terminate|admin_connection_count|admin_database_exists)
         validate_test_database_name "$variable_value" || return 64 ;;
@@ -351,14 +372,18 @@ psql_script_command() {
         validate_matrix_database_list "$variable_value" || return 64 ;;
       *) return 64 ;;
     esac
-  else
+  elif [[ "$operation" != lock_terminate ]]; then
     validate_test_database_name "$database" || return 64
-    case "$operation" in lock_holder|lock_granted|lock_connections) ;; *) return 64 ;; esac
+    case "$operation" in lock_holder|lock_granted|lock_connections|lock_backend_pid) ;; *) return 64 ;; esac
     [[ "$variable_value" == "memoryai_auth_matrix_lock_${RUN_NONCE}" ]] || return 64
   fi
 
+  if [[ "$operation" != lock_terminate ]]; then
+    variable_arguments=("--set=${variable_name}=${variable_value}")
+  fi
+
   psql_command -X --no-psqlrc -v ON_ERROR_STOP=1 -d "$database" \
-    "${output_arguments[@]}" "--set=${variable_name}=${variable_value}" --file=-
+    "${output_arguments[@]}" "${variable_arguments[@]}" --file=-
 }
 
 admin_psql_script() {
@@ -368,17 +393,21 @@ admin_psql_script() {
 }
 
 database_psql_script() {
-  [[ "$#" -eq 3 ]] || return 64
+  [[ "$#" -ge 3 && "$#" -le 4 ]] || return 64
   validate_test_database_name "$1" || return 64
-  case "$2" in lock_holder|lock_granted|lock_connections) ;; *) return 64 ;; esac
-  psql_script_command "$1" "$2" "$3"
+  case "$2" in
+    lock_holder|lock_granted|lock_connections|lock_backend_pid) [[ "$#" -eq 3 ]] || return 64 ;;
+    lock_terminate) [[ "$#" -eq 4 ]] || return 64 ;;
+    *) return 64 ;;
+  esac
+  psql_script_command "$@"
 }
 
 create_query_capture_file() {
   [[ "$#" -eq 2 ]] || return 76
   local operation="$1" stream="$2"
   case "$operation" in
-    connection_count|database_exists|residual_count|preexisting_count|lock_granted|lock_connections) ;;
+    connection_count|database_exists|residual_count|preexisting_count|lock_granted|lock_connections|lock_backend_pid|lock_terminate) ;;
     *) return 76 ;;
   esac
   case "$stream" in stdout|stderr) ;; *) return 76 ;; esac
@@ -425,27 +454,50 @@ initialize_query_capture_files() {
 
 read_exact_query_scalar() {
   [[ "$#" -eq 1 ]] || return "$QUERY_CAPTURE_VALIDATION_RC"
-  local expectation="$1" first second fd
+  local expectation="$1" first second fd pid_text="" character index pid_number
   QUERY_CAPTURE_VALUE=""
-  [[ "$QUERY_CAPTURE_STDOUT_BYTES" == "2" ]] || return "$QUERY_CAPTURE_VALIDATION_RC"
   validate_query_capture_file "$QUERY_CAPTURE_STDOUT_FILE" || return "$QUERY_CAPTURE_VALIDATION_RC"
   exec {fd}<"$QUERY_CAPTURE_STDOUT_FILE" || return "$QUERY_CAPTURE_VALIDATION_RC"
-  if ! IFS= read -r -N 1 first <&"$fd"; then
-    exec {fd}<&-
-    return "$QUERY_CAPTURE_VALIDATION_RC"
-  fi
-  if ! IFS= read -r -N 1 second <&"$fd"; then
-    exec {fd}<&-
-    return "$QUERY_CAPTURE_VALIDATION_RC"
-  fi
-  exec {fd}<&-
-  [[ "$second" == $'\n' ]] || return "$QUERY_CAPTURE_VALIDATION_RC"
   case "$expectation" in
-    zero) [[ "$first" == "0" ]] || return "$QUERY_CAPTURE_VALIDATION_RC" ;;
-    zero_or_one) [[ "$first" == "0" || "$first" == "1" ]] || return "$QUERY_CAPTURE_VALIDATION_RC" ;;
-    *) return "$QUERY_CAPTURE_VALIDATION_RC" ;;
+    zero|zero_or_one|one)
+      [[ "$QUERY_CAPTURE_STDOUT_BYTES" == "2" ]] || { exec {fd}<&-; return "$QUERY_CAPTURE_VALIDATION_RC"; }
+      if ! IFS= read -r -N 1 first <&"$fd" || ! IFS= read -r -N 1 second <&"$fd"; then
+        exec {fd}<&-
+        return "$QUERY_CAPTURE_VALIDATION_RC"
+      fi
+      exec {fd}<&-
+      [[ "$second" == $'\n' ]] || return "$QUERY_CAPTURE_VALIDATION_RC"
+      case "$expectation" in
+        zero) [[ "$first" == "0" ]] || return "$QUERY_CAPTURE_VALIDATION_RC" ;;
+        zero_or_one) [[ "$first" == "0" || "$first" == "1" ]] || return "$QUERY_CAPTURE_VALIDATION_RC" ;;
+        one) [[ "$first" == "1" ]] || return "$QUERY_CAPTURE_VALIDATION_RC" ;;
+      esac
+      QUERY_CAPTURE_VALUE="$first"
+      ;;
+    backend_pid)
+      [[ "$QUERY_CAPTURE_STDOUT_BYTES" == "11" ]] || { exec {fd}<&-; return "$QUERY_CAPTURE_VALIDATION_RC"; }
+      for index in {1..10}; do
+        if ! IFS= read -r -N 1 character <&"$fd"; then
+          exec {fd}<&-
+          return "$QUERY_CAPTURE_VALIDATION_RC"
+        fi
+        pid_text+="$character"
+      done
+      if ! IFS= read -r -N 1 second <&"$fd"; then
+        exec {fd}<&-
+        return "$QUERY_CAPTURE_VALIDATION_RC"
+      fi
+      exec {fd}<&-
+      [[ "$second" == $'\n' && "$pid_text" =~ ^[0-9]{10}$ ]] || return "$QUERY_CAPTURE_VALIDATION_RC"
+      pid_number=$((10#$pid_text))
+      (( pid_number >= 1 && pid_number <= 2147483647 )) || return "$QUERY_CAPTURE_VALIDATION_RC"
+      QUERY_CAPTURE_VALUE="$pid_text"
+      ;;
+    *)
+      exec {fd}<&-
+      return "$QUERY_CAPTURE_VALIDATION_RC"
+      ;;
   esac
-  QUERY_CAPTURE_VALUE="$first"
 }
 
 capture_scalar_query() {
@@ -453,7 +505,7 @@ capture_scalar_query() {
   [[ "$#" -eq 5 ]] || return 64
   local scope="$1" database="$2" operation="$3" variable_value="$4" expectation="$5" rc
   case "$operation:$expectation" in
-    lock_granted:zero_or_one|lock_connections:zero_or_one|connection_count:zero|database_exists:zero|residual_count:zero|preexisting_count:zero) ;;
+    lock_granted:zero_or_one|lock_connections:zero_or_one|lock_backend_pid:backend_pid|connection_count:zero|database_exists:zero|residual_count:zero|preexisting_count:zero) ;;
     *) return 64 ;;
   esac
   initialize_query_capture_files "$operation" || return $?
@@ -466,7 +518,7 @@ capture_scalar_query() {
         rc=$?
       fi
       ;;
-    database:lock_granted|database:lock_connections)
+    database:lock_granted|database:lock_connections|database:lock_backend_pid)
       validate_test_database_name "$database" || return 64
       if database_psql_script "$database" "$operation" "$variable_value" >"$QUERY_CAPTURE_STDOUT_FILE" 2>"$QUERY_CAPTURE_STDERR_FILE"; then
         rc=0
@@ -488,6 +540,56 @@ capture_scalar_query() {
   read_exact_query_scalar "$expectation"
 }
 
+terminate_exact_lock_holder_backend() {
+  QUERY_CAPTURE_VALUE=""
+  [[ "$#" -eq 3 ]] || return 64
+  local database="$1" application_name="$2" backend_pid="$3" rc
+  validate_test_database_name "$database" || return 64
+  [[ "$application_name" == "memoryai_auth_matrix_lock_${RUN_NONCE}" ]] || return 64
+  [[ "$backend_pid" =~ ^[0-9]{10}$ ]] || return 64
+  (( 10#$backend_pid >= 1 && 10#$backend_pid <= 2147483647 )) || return 64
+  [[ "$LOCK_HOLDER_ACTIVE" -eq 1 ]] || return 64
+  [[ "$LOCK_HOLDER_DATABASE" == "$database" ]] || return 64
+  [[ "$LOCK_HOLDER_APPLICATION_NAME" == "$application_name" ]] || return 64
+  [[ "$LOCK_HOLDER_BACKEND_PID" == "$backend_pid" ]] || return 64
+  initialize_query_capture_files lock_terminate || return $?
+  if database_psql_script "$database" lock_terminate "$application_name" "$backend_pid" \
+    >"$QUERY_CAPTURE_STDOUT_FILE" 2>"$QUERY_CAPTURE_STDERR_FILE" <<'LOCK_TERMINATE_SQL'
+WITH holders AS MATERIALIZED (
+  SELECT DISTINCT a.pid
+  FROM pg_catalog.pg_stat_activity a
+  JOIN pg_catalog.pg_locks l ON l.pid = a.pid
+  WHERE a.datname = pg_catalog.current_database()
+    AND a.usename = CURRENT_USER
+    AND CURRENT_USER = 'postgres'::name
+    AND a.application_name = :'lock_app'
+    AND a.backend_type = 'client backend'
+    AND a.pid <> pg_catalog.pg_backend_pid()
+    AND l.database = (SELECT oid FROM pg_catalog.pg_database WHERE datname = pg_catalog.current_database())
+    AND l.relation = 'public.auth_verification_challenges'::regclass
+    AND l.mode = 'AccessExclusiveLock'
+    AND l.granted
+), eligible AS MATERIALIZED (
+  SELECT pid FROM holders WHERE pid = :'lock_pid'::integer AND (SELECT count(*) FROM holders) = 1
+), terminated AS MATERIALIZED (
+  SELECT pg_catalog.pg_terminate_backend(pid) AS ok FROM eligible
+)
+SELECT count(*) FROM terminated WHERE ok;
+LOCK_TERMINATE_SQL
+  then
+    rc=0
+  else
+    rc=$?
+  fi
+  (( rc == 0 )) || return "$rc"
+  validate_query_capture_file "$QUERY_CAPTURE_STDOUT_FILE" || return "$QUERY_CAPTURE_VALIDATION_RC"
+  validate_query_capture_file "$QUERY_CAPTURE_STDERR_FILE" || return "$QUERY_CAPTURE_VALIDATION_RC"
+  QUERY_CAPTURE_STDOUT_BYTES="$(query_capture_file_size "$QUERY_CAPTURE_STDOUT_FILE")" || return "$QUERY_CAPTURE_VALIDATION_RC"
+  QUERY_CAPTURE_STDERR_BYTES="$(query_capture_file_size "$QUERY_CAPTURE_STDERR_FILE")" || return "$QUERY_CAPTURE_VALIDATION_RC"
+  [[ "$QUERY_CAPTURE_STDOUT_BYTES" =~ ^[0-9]+$ && "$QUERY_CAPTURE_STDERR_BYTES" == "0" ]] || return "$QUERY_CAPTURE_VALIDATION_RC"
+  read_exact_query_scalar one
+}
+
 drop_database_command() {
   postgres_command 0 "$DROPDB" --if-exists --force "$1"
 }
@@ -506,8 +608,17 @@ remove_created_database() {
 }
 
 cleanup_database() {
-  local database="$1" cleanup_rc=0 terminate_rc=0 connections_rc=0 drop_rc=0 exists_rc=0
+  local database="$1" cleanup_rc=0 exact_holder_rc=0 terminate_rc=0 holder_rc=0 connections_rc=0 drop_rc=0 exists_rc=0
   validate_test_database_name "$database"
+  if [[ "$LOCK_HOLDER_ACTIVE" -eq 1 && "$LOCK_HOLDER_DATABASE" == "$database" && -n "$LOCK_HOLDER_BACKEND_PID" ]]; then
+    if terminate_exact_lock_holder_backend "$database" "$LOCK_HOLDER_APPLICATION_NAME" "$LOCK_HOLDER_BACKEND_PID"; then
+      exact_holder_rc=0
+    else
+      exact_holder_rc=$?
+      record_state "FAILED_cleanup_exact_lock_holder_${exact_holder_rc}"
+      cleanup_rc=1
+    fi
+  fi
   set +e
   admin_psql_script terminate "$database" >/dev/null <<'CLEANUP_TERMINATE_SQL'
 SELECT pg_catalog.pg_terminate_backend(pid) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db' AND pid <> pg_catalog.pg_backend_pid();
@@ -517,6 +628,29 @@ CLEANUP_TERMINATE_SQL
   if [[ "$terminate_rc" -ne 0 ]]; then
     record_state "FAILED_cleanup_terminate_${terminate_rc} $database"
     cleanup_rc=1
+  fi
+
+  if [[ "$LOCK_HOLDER_ACTIVE" -eq 1 && "$LOCK_HOLDER_DATABASE" == "$database" ]]; then
+    if [[ "$terminate_rc" -eq 0 ]]; then
+      if wait_for_lock_holder_connections "$database" "$LOCK_HOLDER_APPLICATION_NAME"; then
+        holder_rc=0
+      else
+        holder_rc=$?
+      fi
+    else
+      holder_rc="$terminate_rc"
+    fi
+    if (( holder_rc == 0 )); then
+      if reap_active_lock_holder_wrapper "$database"; then
+        holder_rc=0
+      else
+        holder_rc=$?
+      fi
+    fi
+    if (( holder_rc != 0 )); then
+      record_state "FAILED_cleanup_lock_holder_${holder_rc}"
+      cleanup_rc=1
+    fi
   fi
 
   if capture_scalar_query admin "$ADMIN_DB" connection_count "$database" zero <<'CLEANUP_CONNECTIONS_SQL'
@@ -555,6 +689,15 @@ CLEANUP_EXISTS_SQL
   fi
 
   if [[ "$drop_rc" -eq 0 && "$exists_rc" -eq 0 ]]; then
+    if [[ "$LOCK_HOLDER_ACTIVE" -eq 1 && "$LOCK_HOLDER_DATABASE" == "$database" ]]; then
+      if reap_active_lock_holder_wrapper "$database"; then
+        holder_rc=0
+      else
+        holder_rc=$?
+        record_state "FAILED_cleanup_lock_holder_reap_${holder_rc}"
+        cleanup_rc=1
+      fi
+    fi
     remove_created_database "$database"
   fi
   if [[ "$cleanup_rc" -eq 0 ]]; then
@@ -1280,13 +1423,53 @@ run_negative_scenario() {
   if cleanup_or_fail "$database"; then :; else return 75; fi
 }
 
+register_active_lock_holder() {
+  [[ "$#" -eq 3 ]] || return 64
+  local database="$1" application_name="$2" wrapper_pid="$3"
+  validate_test_database_name "$database" || return 64
+  [[ "$application_name" == "memoryai_auth_matrix_lock_${RUN_NONCE}" ]] || return 64
+  [[ "$wrapper_pid" =~ ^[1-9][0-9]*$ ]] || return 64
+  (( wrapper_pid <= 2147483647 )) || return 64
+  [[ "$wrapper_pid" -ne "$$" && "$wrapper_pid" -ne "$BASHPID" ]] || return 64
+  [[ "$LOCK_HOLDER_ACTIVE" -eq 0 ]] || return 64
+  LOCK_HOLDER_ACTIVE=1
+  LOCK_HOLDER_DATABASE="$database"
+  LOCK_HOLDER_APPLICATION_NAME="$application_name"
+  LOCK_HOLDER_WRAPPER_PID="$wrapper_pid"
+  LOCK_HOLDER_BACKEND_PID=""
+}
+
+clear_active_lock_holder() {
+  LOCK_HOLDER_ACTIVE=0
+  LOCK_HOLDER_DATABASE=""
+  LOCK_HOLDER_APPLICATION_NAME=""
+  LOCK_HOLDER_WRAPPER_PID=""
+  LOCK_HOLDER_BACKEND_PID=""
+}
+
+reap_active_lock_holder_wrapper() {
+  [[ "$#" -eq 1 ]] || return 64
+  local database="$1" wrapper_pid wait_rc
+  [[ "$LOCK_HOLDER_ACTIVE" -eq 1 ]] || return 0
+  [[ "$LOCK_HOLDER_DATABASE" == "$database" ]] || return 64
+  wrapper_pid="$LOCK_HOLDER_WRAPPER_PID"
+  [[ "$wrapper_pid" =~ ^[1-9][0-9]*$ ]] || return 86
+  if wait "$wrapper_pid" 2>/dev/null; then
+    wait_rc=0
+  else
+    wait_rc=$?
+  fi
+  [[ "$wait_rc" -ne 127 ]] || return 86
+  clear_active_lock_holder
+}
+
 wait_for_lock_holder_connections() {
   [[ "$#" -eq 2 ]] || return 64
   local database="$1" application_name="$2" connections poll connections_rc
   QUERY_CAPTURE_VALUE=""
   for poll in {1..50}; do
     if capture_scalar_query database "$database" lock_connections "$application_name" zero_or_one <<'LOCK_CONNECTIONS_SQL'
-SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE application_name=:'lock_app';
+SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname=pg_catalog.current_database() AND usename=CURRENT_USER AND application_name=:'lock_app' AND backend_type='client backend';
 LOCK_CONNECTIONS_SQL
     then
       connections_rc=0
@@ -1313,7 +1496,7 @@ LOCK_CONNECTIONS_SQL
 
 run_lock_timeout_scenario() {
   local scenario="lock_timeout" database before after holder application_name granted="0" granted_rc=0
-  local connections_rc=0 poll start_ms end_ms elapsed_ms external_timeout=8
+  local backend_pid="" backend_pid_rc=0 terminate_backend_rc=0 connections_rc=0 poll start_ms end_ms elapsed_ms external_timeout=8
   database="$(database_for_scenario "$scenario")"
   application_name="memoryai_auth_matrix_lock_${RUN_NONCE}"
   record_state "SCENARIO_STARTED $scenario locking"
@@ -1330,10 +1513,11 @@ LOCK TABLE public.auth_verification_challenges IN ACCESS EXCLUSIVE MODE;
 SELECT pg_catalog.pg_sleep(30);
 LOCK_SQL
   holder=$!
+  register_active_lock_holder "$database" "$application_name" "$holder" || return $?
 
   for poll in {1..50}; do
     if capture_scalar_query database "$database" lock_granted "$application_name" zero_or_one <<'LOCK_GRANTED_SQL'
-SELECT count(*) FROM pg_catalog.pg_locks l JOIN pg_catalog.pg_stat_activity a ON a.pid=l.pid WHERE a.application_name=:'lock_app' AND l.relation='public.auth_verification_challenges'::regclass AND l.mode='AccessExclusiveLock' AND l.granted;
+SELECT count(*) FROM pg_catalog.pg_locks l JOIN pg_catalog.pg_stat_activity a ON a.pid=l.pid WHERE a.datname=pg_catalog.current_database() AND a.usename=CURRENT_USER AND a.application_name=:'lock_app' AND a.backend_type='client backend' AND l.database=(SELECT oid FROM pg_catalog.pg_database WHERE datname=pg_catalog.current_database()) AND l.relation='public.auth_verification_challenges'::regclass AND l.mode='AccessExclusiveLock' AND l.granted;
 LOCK_GRANTED_SQL
     then
       granted_rc=0
@@ -1342,8 +1526,6 @@ LOCK_GRANTED_SQL
       granted_rc=$?
     fi
     if (( granted_rc != 0 )); then
-      kill "$holder" 2>/dev/null || true
-      wait "$holder" 2>/dev/null || true
       return "$granted_rc"
     fi
     [[ "$granted" == "1" ]] && break
@@ -1352,14 +1534,45 @@ LOCK_GRANTED_SQL
   [[ "$granted" == "1" ]] || fail lock_handshake 80 "holder did not acquire ACCESS EXCLUSIVE within 5 seconds"
   record_state "LOCK_GRANTED $scenario application_name=$application_name"
 
+  if capture_scalar_query database "$database" lock_backend_pid "$application_name" backend_pid <<'LOCK_BACKEND_PID_SQL'
+WITH holders AS MATERIALIZED (
+  SELECT DISTINCT a.pid
+  FROM pg_catalog.pg_stat_activity a
+  JOIN pg_catalog.pg_locks l ON l.pid = a.pid
+  WHERE a.datname = pg_catalog.current_database()
+    AND a.usename = CURRENT_USER
+    AND CURRENT_USER = 'postgres'::name
+    AND a.application_name = :'lock_app'
+    AND a.backend_type = 'client backend'
+    AND a.pid <> pg_catalog.pg_backend_pid()
+    AND l.database = (SELECT oid FROM pg_catalog.pg_database WHERE datname = pg_catalog.current_database())
+    AND l.relation = 'public.auth_verification_challenges'::regclass
+    AND l.mode = 'AccessExclusiveLock'
+    AND l.granted
+)
+SELECT pg_catalog.lpad(min(pid)::text, 10, '0') FROM holders HAVING count(*) = 1;
+LOCK_BACKEND_PID_SQL
+  then
+    backend_pid_rc=0
+    backend_pid="$QUERY_CAPTURE_VALUE"
+  else
+    backend_pid_rc=$?
+  fi
+  (( backend_pid_rc == 0 )) || return "$backend_pid_rc"
+  LOCK_HOLDER_BACKEND_PID="$backend_pid"
+
   start_ms="$(date +%s%3N)"
   expect_006_rejection "$database" "$scenario" "$external_timeout"
   end_ms="$(date +%s%3N)"
   elapsed_ms=$((end_ms - start_ms))
   [[ "$elapsed_ms" -ge 1500 && "$elapsed_ms" -le 6000 ]] || fail lock_elapsed 81 "lock timeout elapsed ${elapsed_ms}ms outside 1500-6000ms"
 
-  kill "$holder" 2>/dev/null || true
-  wait "$holder" 2>/dev/null || true
+  if terminate_exact_lock_holder_backend "$database" "$application_name" "$backend_pid"; then
+    terminate_backend_rc=0
+  else
+    terminate_backend_rc=$?
+  fi
+  (( terminate_backend_rc == 0 )) || return "$terminate_backend_rc"
   if wait_for_lock_holder_connections "$database" "$application_name"; then
     connections_rc=0
   else
@@ -1370,6 +1583,7 @@ LOCK_GRANTED_SQL
   elif (( connections_rc != 0 )); then
     return "$connections_rc"
   fi
+  reap_active_lock_holder_wrapper "$database" || return $?
   catalog_snapshot "$database" "$after"
   cmp -s "$before" "$after" || fail catalog_drift 72 "$scenario changed the catalog"
   record_state "EXPECTED_REJECTION_PASS $scenario elapsed_ms=$elapsed_ms"
