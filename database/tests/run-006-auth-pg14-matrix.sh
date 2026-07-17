@@ -450,12 +450,19 @@ cleanup_or_fail() {
 }
 
 assert_no_residual_databases() {
-  local count
-  count="$(admin_psql_script residual_count "${RUN_DB_PREFIX}%" <<'RESIDUAL_DATABASES_SQL'
+  local output rc
+  if output="$(admin_psql_script residual_count "${RUN_DB_PREFIX}%" <<'RESIDUAL_DATABASES_SQL'
 SELECT count(*) FROM pg_catalog.pg_database WHERE datname LIKE :'matrix_prefix';
 RESIDUAL_DATABASES_SQL
-)"
-  [[ "$count" == "0" ]] || return 1
+)"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  if (( rc != 0 )); then
+    return "$rc"
+  fi
+  [[ "$output" == "0" ]] || return 1
 }
 
 assert_all_database_names_absent() {
@@ -1130,7 +1137,8 @@ run_negative_scenario() {
 }
 
 run_lock_timeout_scenario() {
-  local scenario="lock_timeout" database before after holder application_name granted="0" connections="" poll start_ms end_ms elapsed_ms external_timeout=8
+  local scenario="lock_timeout" database before after holder application_name granted="0" granted_rc=0
+  local connections="" connections_rc=0 poll start_ms end_ms elapsed_ms external_timeout=8
   database="$(database_for_scenario "$scenario")"
   application_name="memoryai_auth_matrix_lock_${RUN_NONCE}"
   record_state "SCENARIO_STARTED $scenario locking"
@@ -1149,10 +1157,19 @@ LOCK_SQL
   holder=$!
 
   for poll in {1..50}; do
-    granted="$(database_psql_script "$database" lock_granted "$application_name" <<'LOCK_GRANTED_SQL'
+    if granted="$(database_psql_script "$database" lock_granted "$application_name" <<'LOCK_GRANTED_SQL'
 SELECT count(*) FROM pg_catalog.pg_locks l JOIN pg_catalog.pg_stat_activity a ON a.pid=l.pid WHERE a.application_name=:'lock_app' AND l.relation='public.auth_verification_challenges'::regclass AND l.mode='AccessExclusiveLock' AND l.granted;
 LOCK_GRANTED_SQL
-)"
+)"; then
+      granted_rc=0
+    else
+      granted_rc=$?
+    fi
+    if (( granted_rc != 0 )); then
+      kill "$holder" 2>/dev/null || true
+      wait "$holder" 2>/dev/null || true
+      return "$granted_rc"
+    fi
     [[ "$granted" == "1" ]] && break
     sleep 0.1
   done
@@ -1168,10 +1185,17 @@ LOCK_GRANTED_SQL
   kill "$holder" 2>/dev/null || true
   wait "$holder" 2>/dev/null || true
   for poll in {1..50}; do
-    connections="$(database_psql_script "$database" lock_connections "$application_name" <<'LOCK_CONNECTIONS_SQL'
+    if connections="$(database_psql_script "$database" lock_connections "$application_name" <<'LOCK_CONNECTIONS_SQL'
 SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE application_name=:'lock_app';
 LOCK_CONNECTIONS_SQL
-)"
+)"; then
+      connections_rc=0
+    else
+      connections_rc=$?
+    fi
+    if (( connections_rc != 0 )); then
+      return "$connections_rc"
+    fi
     [[ "$connections" == "0" ]] && break
     sleep 0.1
   done

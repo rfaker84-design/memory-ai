@@ -787,6 +787,10 @@ SCRIPT_TRANSPORT_LOG="$TMP_ROOT/psql-script-transport.log"
 : >"$BOUNDARY_LOG"
 : >"$SCRIPT_TRANSPORT_LOG"
 SCRIPT_TRANSPORT_FORCED_RC=0
+SCRIPT_RESIDUAL_OUTPUT=$'0\n'
+SCRIPT_RESIDUAL_RC=0
+SCRIPT_PREEXISTING_OUTPUT=$'0\n'
+SCRIPT_PREEXISTING_RC=0
 execute_postgres_command() {
   local joined argument next_argument command_sql="" script_file="" has_script=0 index
   capture_postgres_boundary "$@"
@@ -810,7 +814,9 @@ execute_postgres_command() {
       capture_and_validate_script_transport "$script_file" || return $?
       [[ "$SCRIPT_TRANSPORT_FORCED_RC" -eq 0 ]] || return "$SCRIPT_TRANSPORT_FORCED_RC"
       case "$TEST_SCRIPT_OPERATION" in
-        connection_count|database_exists|residual_count|preexisting_count|lock_connections) printf '0\n' ;;
+        connection_count|database_exists|lock_connections) printf '0\n' ;;
+        residual_count) printf '%s' "$SCRIPT_RESIDUAL_OUTPUT"; return "$SCRIPT_RESIDUAL_RC" ;;
+        preexisting_count) printf '%s' "$SCRIPT_PREEXISTING_OUTPUT"; return "$SCRIPT_PREEXISTING_RC" ;;
         lock_granted) printf '1\n' ;;
       esac
     fi
@@ -844,6 +850,34 @@ grep -Fq $'database_exists\tpostgres\t--set=matrix_db='"$boundary_db" "$SCRIPT_T
 grep -Fq $'residual_count\tpostgres\t--set=matrix_prefix='"${RUN_DB_PREFIX}%" "$SCRIPT_TRANSPORT_LOG" || \
   fail_test "residual database binding changed"
 
+# The real residual function explicitly preserves transport rc and accepts only
+# the normalized scalar 0.  It is intentionally invoked under a conditional so
+# this test reproduces the Bash errexit suppression that exposed the bug.
+run_residual_output_case() {
+  local label="$1" output="$2" transport_rc="$3" expected_rc="$4" actual_rc
+  SCRIPT_RESIDUAL_OUTPUT="$output"
+  SCRIPT_RESIDUAL_RC="$transport_rc"
+  set +e
+  if assert_no_residual_databases; then actual_rc=0; else actual_rc=$?; fi
+  set -e
+  assert_rc "$actual_rc" "$expected_rc" "residual output case $label"
+}
+residual_calls_before="$(grep -c '^residual_count'$'\t' "$SCRIPT_TRANSPORT_LOG")"
+run_residual_output_case exact_zero $'0\n' 0 0
+run_residual_output_case nonzero $'1\n' 0 1
+run_residual_output_case empty '' 0 1
+run_residual_output_case space $' \n' 0 1
+run_residual_output_case trailing_space $'0 \n' 0 1
+run_residual_output_case multiline $'0\n1\n' 0 1
+run_residual_output_case double_zero $'00\n' 0 1
+run_residual_output_case nonnumeric $'not-a-count\n' 0 1
+run_residual_output_case zero_transport_failure $'0\n' 42 42
+residual_calls_after="$(grep -c '^residual_count'$'\t' "$SCRIPT_TRANSPORT_LOG")"
+[[ $((residual_calls_after - residual_calls_before)) -eq 9 ]] || \
+  fail_test "residual output matrix did not execute the real query function nine times"
+SCRIPT_RESIDUAL_OUTPUT=$'0\n'
+SCRIPT_RESIDUAL_RC=0
+
 # Reproduce the field failure: psql command transport sends the token literally,
 # while the formal preexisting query sends the same SQL through --file=-.
 matrix_names="$(printf '%s\n' "${SCENARIO_DATABASES[@]}" | sort | paste -sd, -)"
@@ -867,6 +901,47 @@ assert_contains "$TMP_ROOT/legacy-preexisting.stderr" 'syntax error at or near "
 assert_all_database_names_absent || fail_test "preexisting stdin transport did not replace psql variables"
 [[ "$(grep -c '^preexisting_count'$'\t' "$SCRIPT_TRANSPORT_LOG")" -eq 2 ]] || \
   fail_test "preexisting query did not traverse --file=- twice"
+
+# Both formal preflight queries map transport failures to 74 before dispatch.
+# The real assert_all_database_names_absent and assert_no_residual_databases
+# functions remain active; only non-database setup and dispatch are injected.
+run_preflight_failure_case() {
+  local label="$1" preexisting_rc="$2" residual_output="$3" residual_rc="$4" expected_rc=74 actual_rc
+  local state_file="$TMP_ROOT/preflight-${label}.state" dispatch_file="$TMP_ROOT/preflight-${label}.dispatch"
+  : >"$state_file"
+  rm -f -- "$dispatch_file"
+  SCRIPT_PREEXISTING_OUTPUT=$'0\n'
+  SCRIPT_PREEXISTING_RC="$preexisting_rc"
+  SCRIPT_RESIDUAL_OUTPUT="$residual_output"
+  SCRIPT_RESIDUAL_RC="$residual_rc"
+  set +e
+  (
+    validate_static_inputs() { :; }
+    validate_all_database_names() { :; }
+    validate_orchestrator_identity() { :; }
+    validate_inputs() { :; }
+    initialize_runtime() { :; }
+    record_state() { printf '%s\n' "$1" >>"$state_file"; }
+    record_database_mappings() { :; }
+    verify_postgresql_identity() { :; }
+    create_database_command() { printf 'CREATE_DATABASE forbidden\n' >"$dispatch_file"; return 99; }
+    create_database() { printf 'CREATE_DATABASE forbidden\n' >"$dispatch_file"; return 99; }
+    dispatch_all_scenarios() { printf 'SCENARIO_STARTED forbidden\nCREATE_DATABASE forbidden\n' >"$dispatch_file"; }
+    run_matrix
+  ) >/dev/null 2>&1
+  actual_rc=$?
+  set -e
+  assert_rc "$actual_rc" "$expected_rc" "$label preflight failure"
+  [[ ! -e "$dispatch_file" ]] || fail_test "$label preflight reached dispatch or database creation"
+  ! grep -Fq 'SCENARIO_STARTED' "$state_file" || fail_test "$label preflight recorded SCENARIO_STARTED"
+}
+run_preflight_failure_case preexisting_transport 42 $'0\n' 0
+run_preflight_failure_case residual_transport 0 $'0\n' 42
+run_preflight_failure_case residual_nonzero 0 $'1\n' 0
+SCRIPT_PREEXISTING_OUTPUT=$'0\n'
+SCRIPT_PREEXISTING_RC=0
+SCRIPT_RESIDUAL_OUTPUT=$'0\n'
+SCRIPT_RESIDUAL_RC=0
 
 # The public helpers fix binding names and arity.  The low-level fake rejects
 # missing, duplicate, wrong-name, empty-value, and extra bindings.
@@ -929,6 +1004,8 @@ record_state() { printf '%s\n' "$1" >>"$CLEANUP_STATE"; }
 CLEANUP_MODE=success
 DROP_SUCCEEDED=0
 PREEXISTING_NAMES=0
+CLEANUP_RESIDUAL_OUTPUT=$'0\n'
+CLEANUP_RESIDUAL_RC=0
 execute_postgres_command() {
   local script_file has_script=0 argument
   capture_postgres_boundary "$@"
@@ -949,7 +1026,7 @@ execute_postgres_command() {
     database_exists)
       if [[ "$CLEANUP_MODE" == exists || "$CLEANUP_MODE" == dropdb ]]; then printf '1\n'; else printf '0\n'; fi
       return 0 ;;
-    residual_count) printf '0\n'; return 0 ;;
+    residual_count) printf '%s' "$CLEANUP_RESIDUAL_OUTPUT"; return "$CLEANUP_RESIDUAL_RC" ;;
     *) return 95 ;;
   esac
 }
@@ -1000,6 +1077,32 @@ business_cleanup_rc=$?
 set -e
 assert_rc "$business_cleanup_rc" 70 "business rc must survive cleanup failure"
 assert_contains "$CLEANUP_STATE" "CLEANUP_FAILED_RC_75"
+
+# A residual query transport failure is a cleanup failure even when it printed
+# zero.  Clean exits map to 75; an existing business rc remains authoritative.
+for residual_exit_spec in 0:75 70:70; do
+  residual_original_rc="${residual_exit_spec%%:*}"
+  residual_expected_rc="${residual_exit_spec##*:}"
+  : >"$CLEANUP_STATE"
+  CLEANUP_MODE=success
+  CLEANUP_RESIDUAL_OUTPUT=$'0\n'
+  CLEANUP_RESIDUAL_RC=42
+  CREATED_DATABASES=()
+  CLEANUP_RECORDED=0
+  set +e
+  (
+    RUN_ACTIVE=1
+    remove_work_directory() { return 0; }
+    on_exit "$residual_original_rc"
+  ) >/dev/null 2>&1
+  residual_cleanup_rc=$?
+  set -e
+  assert_rc "$residual_cleanup_rc" "$residual_expected_rc" "residual cleanup with original rc $residual_original_rc"
+  assert_contains "$CLEANUP_STATE" "FAILED_cleanup_residual_1"
+  assert_contains "$CLEANUP_STATE" "CLEANUP_FAILED_RC_75"
+done
+CLEANUP_RESIDUAL_OUTPUT=$'0\n'
+CLEANUP_RESIDUAL_RC=0
 
 # Full dispatcher: actual scenario functions execute; only external dependencies are replaced.
 DISPATCH_STATE="$TMP_ROOT/dispatch.state"

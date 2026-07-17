@@ -238,7 +238,112 @@ function collectQuotedScriptHeredocs(shell) {
   return ranges;
 }
 
-function assertPsqlVariableTransportSafe(shell, expectedCounts) {
+function commandAreaWithoutHeredocs(shell) {
+  const characters = shell.split("");
+  for (const { start, end } of collectQuotedScriptHeredocs(shell)) {
+    for (let index = start; index < end; index += 1) {
+      if (characters[index] !== "\n") characters[index] = " ";
+    }
+  }
+  return characters.join("").replace(/\\\n/g, "");
+}
+
+function lexShellCommands(shell) {
+  const commands = [];
+  let words = [];
+  let word = "";
+  let quote = null;
+  let escaped = false;
+  let inComment = false;
+  const flushWord = () => {
+    if (word !== "") words.push(word);
+    word = "";
+  };
+  const flushCommand = () => {
+    flushWord();
+    if (words.length > 0) commands.push(words);
+    words = [];
+  };
+  for (const character of shell) {
+    if (inComment) {
+      if (character === "\n") {
+        inComment = false;
+        flushCommand();
+      }
+      continue;
+    }
+    if (escaped) {
+      word += character;
+      escaped = false;
+      continue;
+    }
+    if (quote === "'") {
+      if (character === "'") quote = null;
+      else word += character;
+      continue;
+    }
+    if (quote === '"') {
+      if (character === '"') quote = null;
+      else if (character === "\\") escaped = true;
+      else word += character;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      continue;
+    }
+    if (character === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (character === "#" && word === "") {
+      inComment = true;
+      continue;
+    }
+    if (character === "\n" || ";|&()".includes(character)) {
+      flushCommand();
+      continue;
+    }
+    if (character === " " || character === "\t") {
+      flushWord();
+      continue;
+    }
+    word += character;
+  }
+  assert.equal(quote, null, "unterminated shell quote in psql command scanner");
+  assert.equal(escaped, false, "unterminated shell escape in psql command scanner");
+  flushCommand();
+  return commands;
+}
+
+function psqlCommandVariableViolations(input, label = "psql command source") {
+  const shell = normalizeShellBuffer(Buffer.isBuffer(input) ? input : Buffer.from(input, "utf8"), label);
+  const commands = lexShellCommands(commandAreaWithoutHeredocs(shell));
+  const violations = [];
+  for (const words of commands) {
+    for (let index = 0; index < words.length; index += 1) {
+      let flag = null;
+      let sql = null;
+      if (words[index] === "-c" || words[index] === "--command") {
+        flag = words[index];
+        sql = words[index + 1] ?? "";
+      } else if (words[index].startsWith("--command=")) {
+        flag = "--command";
+        sql = words[index].slice("--command=".length);
+      } else if (words[index].startsWith("-c") && words[index].length > 2) {
+        flag = "-c";
+        sql = words[index].slice(2);
+      }
+      if (flag && new RegExp(psqlVariableTokenPattern.source).test(sql)) violations.push({ flag, sql });
+    }
+  }
+  return violations;
+}
+
+function assertPsqlVariableTransportSafe(input, expectedCounts) {
+  const shell = normalizeShellBuffer(Buffer.isBuffer(input) ? input : Buffer.from(input, "utf8"), "psql transport source");
+  assert.deepEqual(psqlCommandVariableViolations(Buffer.from(shell), "psql transport commands"), [],
+    "psql variable token must not use -c/--command transport");
   const heredocs = collectQuotedScriptHeredocs(shell);
   const matches = [...shell.matchAll(new RegExp(psqlVariableTokenPattern.source, "g"))];
   const counts = new Map();
@@ -313,6 +418,9 @@ function assertMatrixRunnerStructure(runner) {
   assert.match(runner, /database_psql_script "\$database" lock_holder "\$application_name"/);
   assert.match(runner, /database_psql_script "\$database" lock_granted "\$application_name"/);
   assert.match(runner, /database_psql_script "\$database" lock_connections "\$application_name"/);
+  assert.match(runner, /if output="\$\(admin_psql_script residual_count[\s\S]*?if \(\( rc != 0 \)\); then[\s\S]*?return "\$rc"/);
+  assert.match(runner, /if granted="\$\(database_psql_script "\$database" lock_granted[\s\S]*?return "\$granted_rc"/);
+  assert.match(runner, /if connections="\$\(database_psql_script "\$database" lock_connections[\s\S]*?return "\$connections_rc"/);
   assert.match(runner, /set_config\('application_name', :'lock_app', false\)/);
   assert.doesNotMatch(runner, /PGAPPNAME=/);
   assert.match(runner, /\[\[ "\$\(orchestrator_uid\)" == "0" \]\]/);
@@ -371,13 +479,44 @@ test("psql variable scanner rejects every command transport spelling", () => {
   ]) {
     assert.throws(
       () => assertPsqlVariableTransportSafe(fixture),
-      /must not appear in -c\/--command or outside an approved stdin heredoc/,
+      /psql variable token must not use -c\/--command transport/,
     );
   }
   assert.doesNotThrow(() => assertPsqlVariableTransportSafe(
     `admin_psql_script terminate "$database" <<'SQL'\nSELECT :'matrix_db';\nSQL\n`,
     { matrix_db: 1 },
   ));
+});
+
+test("psql variable scanner follows Bash continuations outside heredocs", () => {
+  const continuation = "\\" + "\n";
+  const lfFixtures = [
+    `admin_psql -c "SELECT :${continuation}'matrix_db';"\n`,
+    `admin_psql --command "SELECT :${continuation}\\"matrix_db\\";"\n`,
+    `admin_psql --command="SELECT :${continuation}{?matrix_db};"\n`,
+    `admin_psql -${continuation}c "SELECT :'matrix_db';"\n`,
+    `admin_psql --comm${continuation}and="SELECT :'matrix_db';"\n`,
+  ];
+  for (const [index, fixture] of lfFixtures.entries()) {
+    const violations = psqlCommandVariableViolations(Buffer.from(fixture), `LF continuation fixture ${index + 1}`);
+    assert.equal(violations.length, 1, `LF continuation fixture ${index + 1} bypassed the scanner`);
+    assert.throws(
+      () => assertPsqlVariableTransportSafe(Buffer.from(fixture)),
+      /psql variable token must not use -c\/--command transport/,
+    );
+  }
+  for (const [index, fixture] of lfFixtures.slice(0, 3).entries()) {
+    const crlfFixture = Buffer.from(fixture.replaceAll("\n", "\r\n"));
+    const violations = psqlCommandVariableViolations(crlfFixture, `CRLF continuation fixture ${index + 1}`);
+    assert.equal(violations.length, 1, `CRLF continuation fixture ${index + 1} bypassed the scanner`);
+    assert.throws(
+      () => assertPsqlVariableTransportSafe(crlfFixture),
+      /psql variable token must not use -c\/--command transport/,
+    );
+  }
+
+  const heredocDecoy = `cat <<'SQL'\nadmin_psql -${continuation}c "SELECT :${continuation}'decoy';"\nSQL\n`;
+  assert.deepEqual(psqlCommandVariableViolations(Buffer.from(heredocDecoy), "heredoc decoy"), []);
 });
 
 test("shell static contracts accept LF and pure CRLF but reject unsafe bytes", () => {
