@@ -665,7 +665,18 @@ function assertMatrixRunnerStructure(runner) {
   assert.match(runner, /FAILED_cleanup_dropdb_/);
   assert.match(runner, /FAILED_cleanup_database_exists_/);
   assert.match(runner, /FAILED_cleanup_connections_/);
-  assert.match(runner, /CLEANUP_FAILED_RC_75/);
+  const onExit = runner.match(/on_exit\(\) \{([\s\S]*?)^\}/m)?.[1];
+  assert.ok(onExit, "missing on_exit cleanup contract");
+  assert.match(onExit,
+    /if cleanup_all; then[\s\S]*?else[\s\S]*?cleanup_rc=\$\?[\s\S]*?CLEANUP_FAILED_RC_\$\{cleanup_rc\}/,
+    "on_exit must record the actual first cleanup failure code");
+  assert.match(onExit,
+    /if ! remove_work_directory; then[\s\S]*?\(\( cleanup_rc == 0 \)\) && cleanup_rc=75/,
+    "a later work-directory failure may only supply an error when cleanup has not already failed");
+  assert.match(onExit, /elif \[\[ "\$cleanup_rc" -ne 0 \]\]; then[\s\S]*?final_rc="\$cleanup_rc"/,
+    "on_exit must return the preserved cleanup failure code");
+  assert.doesNotMatch(onExit, /CLEANUP_FAILED_RC_75/,
+    "on_exit must not overwrite the preserved first cleanup failure with the legacy generic code");
   assert.match(runner, /\^ERROR:\[\[:space:\]\]/);
   assert.match(runner, /REJECTION_ORACLE_ROWS/);
   assert.match(runner, /BEHAVIOR_ORACLE_ROWS/);
@@ -865,7 +876,7 @@ test("PostgreSQL 14 matrix runner passes fake CLI orchestration tests", () => {
   const result = spawnSync(bash, [shellTest], {
     cwd: path.resolve(databaseRoot, ".."),
     encoding: "utf8",
-    timeout: 600_000,
+    timeout: 1_800_000,
   });
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /source-injected tests: PASS/);

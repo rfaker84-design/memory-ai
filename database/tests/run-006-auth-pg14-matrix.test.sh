@@ -1779,6 +1779,7 @@ OUTER_CLEANUP_LOG="$TMP_ROOT/outer-cleanup.log"
 outer_log_count() { grep -c "^$1$" "$OUTER_CLEANUP_LOG" || true; }
 outer_broad_count() { grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG" || true; }
 outer_exact_count() { grep -c '^terminate'$'\t' "$LOCK_BACKEND_TRANSPORT_LOG" || true; }
+ORIGINAL_OUTER_DROP_DATABASE_COMMAND="$(declare -f drop_database_command)"
 OUTER_DROP_MODE=success
 OUTER_DROP_CALLS=0
 drop_database_command() {
@@ -1957,6 +1958,9 @@ run_pending_outer_exit_case() {
 run_pending_outer_exit_case EXIT 42 0
 run_pending_outer_exit_case INT 130 1
 run_pending_outer_exit_case TERM 143 1
+eval "$ORIGINAL_OUTER_DROP_DATABASE_COMMAND"
+clear_active_lock_holder
+CREATED_DATABASES=()
 
 cleanup_guard_calls_before="$(wc -l <"$SCRIPT_TRANSPORT_LOG" | tr -d ' ')"
 CLEANUP_DATABASE_IN_PROGRESS=1
@@ -2315,11 +2319,12 @@ set +e
 business_cleanup_rc=$?
 set -e
 assert_rc "$business_cleanup_rc" 70 "business rc must survive cleanup failure"
-assert_contains "$CLEANUP_STATE" "CLEANUP_FAILED_RC_75"
+assert_contains "$CLEANUP_STATE" "CLEANUP_FAILED_RC_92"
 
 # A residual query transport failure is a cleanup failure even when it printed
-# zero.  Clean exits map to 75; an existing business rc remains authoritative.
-for residual_exit_spec in 0:75 70:70; do
+# zero.  Clean exits preserve its actual rc; an existing business rc remains
+# authoritative.
+for residual_exit_spec in 0:42 70:70; do
   residual_original_rc="${residual_exit_spec%%:*}"
   residual_expected_rc="${residual_exit_spec##*:}"
   : >"$CLEANUP_STATE"
@@ -2338,7 +2343,7 @@ for residual_exit_spec in 0:75 70:70; do
   set -e
   assert_rc "$residual_cleanup_rc" "$residual_expected_rc" "residual cleanup with original rc $residual_original_rc"
   assert_contains "$CLEANUP_STATE" "FAILED_cleanup_residual_42 stdout_bytes=unchecked stderr_bytes=unchecked"
-  assert_contains "$CLEANUP_STATE" "CLEANUP_FAILED_RC_75"
+  assert_contains "$CLEANUP_STATE" "CLEANUP_FAILED_RC_42"
 done
 CLEANUP_RESIDUAL_OUTPUT=$'0\n'
 CLEANUP_RESIDUAL_RC=0
