@@ -76,6 +76,7 @@ source "$RUNNER"
 [[ "$(trap -p EXIT)" == "$trap_before_source" ]] || fail_test "sourcing the runner changed EXIT traps"
 ORIGINAL_RECORD_STATE="$(declare -f record_state)"
 ORIGINAL_EXECUTE_POSTGRES_COMMAND="$(declare -f execute_postgres_command)"
+ORIGINAL_CLEANUP_OR_FAIL="$(declare -f cleanup_or_fail)"
 ORIGINAL_RUN_EXTERNAL_TIMEOUT="$(declare -f run_external_timeout)"
 ORIGINAL_STARTUP_PROBE_FILE_OWNER="$(declare -f startup_probe_file_owner)"
 ORIGINAL_STARTUP_PROBE_FILE_GROUP="$(declare -f startup_probe_file_group)"
@@ -1094,12 +1095,12 @@ assert_all_database_names_absent || fail_test "formal preexisting boundary fake 
 grep -Fq $'/usr/bin/createdb\t' "$BOUNDARY_LOG" || fail_test "createdb bypassed the postgres boundary"
 grep -Fq $'/usr/bin/dropdb\t' "$BOUNDARY_LOG" || fail_test "dropdb bypassed the postgres boundary"
 grep -Fq $'/usr/bin/psql\t' "$BOUNDARY_LOG" || fail_test "psql bypassed the postgres boundary"
-for required_transport in terminate connection_count database_exists residual_count preexisting_count; do
+for required_transport in connection_count database_exists residual_count preexisting_count; do
   [[ "$(grep -c "^${required_transport}"$'\t' "$SCRIPT_TRANSPORT_LOG")" -eq 1 ]] || \
     fail_test "$required_transport did not use the unique script transport"
 done
-grep -Fq $'terminate\tpostgres\t--set=matrix_db='"$boundary_db" "$SCRIPT_TRANSPORT_LOG" || \
-  fail_test "cleanup terminate binding changed"
+[[ "$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG")" -eq 0 ]] || \
+  fail_test "ordinary cleanup used broad termination before proving a residual connection"
 grep -Fq $'connection_count\tpostgres\t--set=matrix_db='"$boundary_db" "$SCRIPT_TRANSPORT_LOG" || \
   fail_test "cleanup connection binding changed"
 grep -Fq $'database_exists\tpostgres\t--set=matrix_db='"$boundary_db" "$SCRIPT_TRANSPORT_LOG" || \
@@ -1283,6 +1284,7 @@ LOCK_CONNECTION_TEST_CALLS=0
 : >"$LOCK_BACKEND_TARGET_MARKER"
 : >"$LOCK_BACKEND_NON_TARGET_MARKER"
 (
+  trap - EXIT
   trap 'exit 0' TERM INT
   while :; do /usr/bin/sleep 1; done
 ) &
@@ -1739,13 +1741,13 @@ LOCK_CONNECTION_TEST_MODE=backend_marker
 activate_test_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID"
 terminate_calls_before_idempotent="$LOCK_BACKEND_TERMINATE_CALLS"
 wrapper_waits_before_idempotent="$WRAPPER_WAIT_CALLS"
-admin_terminate_before_idempotent="$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG")"
+admin_terminate_before_idempotent="$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG" || true)"
 for cleanup_iteration in 1 2 3; do
   cleanup_database "$boundary_db" || fail_test "cleanup_database idempotency iteration $cleanup_iteration failed"
 done
 [[ $((LOCK_BACKEND_TERMINATE_CALLS - terminate_calls_before_idempotent)) -eq 1 ]] || fail_test "cleanup_database repeated exact termination"
 [[ $((WRAPPER_WAIT_CALLS - wrapper_waits_before_idempotent)) -eq 1 ]] || fail_test "cleanup_database repeated wrapper reap"
-admin_terminate_after_idempotent="$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG")"
+admin_terminate_after_idempotent="$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG" || true)"
 [[ "$admin_terminate_after_idempotent" == "$admin_terminate_before_idempotent" ]] || fail_test "completed exact holder used broad terminate fallback"
 assert_lock_target_still_isolated "cleanup_database idempotency"
 clear_active_lock_holder
@@ -1759,12 +1761,12 @@ LOCK_CONNECTION_TEST_MODE=backend_marker_then_transport42
 : >"$LOCK_BACKEND_NON_TARGET_MARKER"
 activate_test_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID"
 post_terminate_exact_before="$LOCK_BACKEND_TERMINATE_CALLS"
-post_terminate_broad_before="$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG")"
+post_terminate_broad_before="$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG" || true)"
 for cleanup_iteration in 1 2; do
   if cleanup_or_fail "$boundary_db"; then post_terminate_cleanup_rc=0; else post_terminate_cleanup_rc=$?; fi
   assert_rc "$post_terminate_cleanup_rc" 75 "post-termination query failure cleanup $cleanup_iteration"
 done
-post_terminate_broad_after="$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG")"
+post_terminate_broad_after="$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG" || true)"
 [[ $((LOCK_BACKEND_TERMINATE_CALLS - post_terminate_exact_before)) -eq 1 ]] || fail_test "post-termination query failure repeated exact termination"
 [[ "$post_terminate_broad_after" == "$post_terminate_broad_before" ]] || fail_test "post-termination query failure used broad termination"
 [[ -e "$LOCK_BACKEND_NON_TARGET_MARKER" ]] || fail_test "post-termination query failure touched a non-target connection"
@@ -2283,11 +2285,21 @@ cleanup_db="${SCENARIO_DATABASES[challenge_id_nullable]}"
 for mode in terminate dropdb exists connections; do
   : >"$CLEANUP_STATE"
   CLEANUP_MODE="$mode"
+  clear_active_lock_holder
+  if [[ "$mode" == terminate ]]; then
+    # Broad termination is now reserved for the explicit no-handshake
+    # fallback; ordinary database cleanup must never reach it.
+    LOCK_HOLDER_ACTIVE=1
+    LOCK_HOLDER_DATABASE="$cleanup_db"
+    LOCK_HOLDER_STATE=wrapper_started
+    LOCK_HOLDER_RESUME_STATE=wrapper_started
+  fi
   CREATED_DATABASES=("$cleanup_db")
   if cleanup_or_fail "$cleanup_db"; then cleanup_rc=0; else cleanup_rc=$?; fi
   assert_rc "$cleanup_rc" 75 "$mode cleanup failure"
   assert_contains "$CLEANUP_STATE" "FAILED_cleanup_"
 done
+clear_active_lock_holder
 
 PREEXISTING_NAMES=1
 set +e
@@ -2404,8 +2416,25 @@ execute_postgres_command() {
         fi
         return 0 ;;
       lock_connections) [[ -e "$DISPATCH_BACKEND_MARKER" ]] && printf '1\n' || printf '0\n'; return 0 ;;
-      terminate) rm -f -- "$DISPATCH_BACKEND_MARKER"; return 0 ;;
-      connection_count|database_exists|residual_count|preexisting_count) printf '0\n'; return 0 ;;
+      terminate)
+        # pg_terminate_backend reports signal delivery, not that a just-
+        # terminated backend has disappeared from pg_stat_activity.  This
+        # source-only switch models the preserved production 1\n -> rc67
+        # window without opening a PostgreSQL connection.
+        [[ "${MATRIX_RACE_AFTER_BROAD:-0}" == 1 ]] && MATRIX_RACE_PENDING=1
+        rm -f -- "$DISPATCH_BACKEND_MARKER"
+        return 0
+        ;;
+      connection_count)
+        if [[ "${MATRIX_RACE_PENDING:-0}" == 1 ]]; then
+          MATRIX_RACE_PENDING=0
+          printf '1\n'
+        else
+          printf '0\n'
+        fi
+        return 0
+        ;;
+      database_exists|residual_count|preexisting_count) printf '0\n'; return 0 ;;
       *) return 95 ;;
     esac
   fi
@@ -2477,6 +2506,43 @@ for lock_transport in lock_holder lock_granted lock_backend_pid lock_terminate l
   done < <(grep "^${lock_transport}"$'\t' "$SCRIPT_TRANSPORT_LOG")
 done
 rm -f -- "$DISPATCH_NON_TARGET_MARKER"
+
+# Production matrix regression: scenario 55 validated successfully, then the
+# unconditional broad cleanup made the first strict connection query observe
+# one asynchronously-terminating backend (two stdout bytes, no stderr), which
+# correctly maps to rc67.  Prove that exact raw value remains rejected, then
+# run the real scenario -> cleanup_or_fail -> cleanup_database path and prove
+# ordinary cleanup never creates the race.  The final check is still exactly
+# zero and no sleep is introduced.
+MATRIX_RACE_AFTER_BROAD=1
+MATRIX_RACE_PENDING=1
+if capture_scalar_query admin "$ADMIN_DB" connection_count "${SCENARIO_DATABASES[idx_auth_challenges_phone_created__wrong_relation]}" zero <<'RACE_REPRO_CONNECTION_SQL'
+SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db';
+RACE_REPRO_CONNECTION_SQL
+then
+  race_raw_rc=0
+else
+  race_raw_rc=$?
+fi
+assert_rc "$race_raw_rc" "$QUERY_CAPTURE_VALIDATION_RC" "production cleanup 1-byte count value remains fail-closed"
+
+eval "$ORIGINAL_CLEANUP_OR_FAIL"
+race_scenario=idx_auth_challenges_phone_created__wrong_relation
+race_database="${SCENARIO_DATABASES[$race_scenario]}"
+race_broad_before="$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG" || true)"
+MATRIX_RACE_PENDING=0
+run_negative_scenario "$race_scenario" index || fail_test "scenario 55 formal cleanup failed"
+[[ "$(grep -c '^EXPECTED_REJECTION_PASS ' "$DISPATCH_STATE")" -ge 78 ]] || \
+  fail_test "scenario 55 did not validate before formal cleanup"
+grep -Fxq -- "CLEANUP_PASS $race_database" "$DISPATCH_STATE" || \
+  fail_test "scenario 55 did not record formal cleanup pass"
+[[ "$(grep -c "^FAILED_cleanup_connections_${QUERY_CAPTURE_VALIDATION_RC}" "$DISPATCH_STATE" || true)" -eq 0 ]] || \
+  fail_test "scenario 55 retained the asynchronous broad cleanup failure"
+[[ "$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG" || true)" -eq "$race_broad_before" ]] || \
+  fail_test "scenario 55 ordinary cleanup used broad termination"
+[[ "${#CREATED_DATABASES[@]}" -eq 0 ]] || fail_test "scenario 55 left its database tracked after successful cleanup"
+MATRIX_RACE_AFTER_BROAD=0
+MATRIX_RACE_PENDING=0
 
 # SQL drift probes call the same extraction and SQL-oracle functions as the
 # complete fake dispatcher.  A SQL mismatch returns 94 without fabricating a

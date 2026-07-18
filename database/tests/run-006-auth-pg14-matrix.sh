@@ -636,7 +636,7 @@ remove_created_database() {
 
 cleanup_database() {
   local database="$1" first_error=0 terminate_rc=0 holder_rc=0 connections_rc=0 drop_rc=0 exists_rc=0
-  local holder_complete=0 allow_broad_fallback=1 allow_database_drop=1
+  local holder_complete=0 allow_broad_fallback=0 allow_database_drop=1
   validate_test_database_name "$database" || return $?
   (( CLEANUP_DATABASE_IN_PROGRESS == 0 )) || return 89
   CLEANUP_DATABASE_IN_PROGRESS=1
@@ -652,6 +652,7 @@ cleanup_database() {
           # There is no catalog-verified backend identity yet.  A current-run
           # database is still safe for the ordinary best-effort fallback, but
           # that fallback must never turn the missing handshake into success.
+          allow_broad_fallback=1
           ;;
         cleanup_failed:termination_succeeded|cleanup_failed:backend_absent|cleanup_failed:wrapper_reaped)
           # Exact termination has already happened or an exact reap remains
