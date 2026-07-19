@@ -4,7 +4,13 @@ set -Eeuo pipefail
 readonly TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly RUNNER="$TEST_SCRIPT_DIR/run-006-auth-pg14-matrix.sh"
 readonly TMP_ROOT="$(mktemp -d)"
-cleanup_test() { rm -rf -- "$TMP_ROOT"; }
+cleanup_test() {
+  if [[ "${TEST_MANAGED_BACKEND_PID:-}" =~ ^[1-9][0-9]*$ ]] && kill -0 "$TEST_MANAGED_BACKEND_PID" 2>/dev/null; then
+    kill -TERM "$TEST_MANAGED_BACKEND_PID" 2>/dev/null || true
+    wait "$TEST_MANAGED_BACKEND_PID" 2>/dev/null || true
+  fi
+  rm -rf -- "$TMP_ROOT"
+}
 trap cleanup_test EXIT
 
 fail_test() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
@@ -911,6 +917,9 @@ LOCK_BACKEND_TARGET_PID=0000042420
 LOCK_BACKEND_TARGET_MARKER="$TMP_ROOT/lock-backend-target.alive"
 LOCK_BACKEND_NON_TARGET_MARKER="$TMP_ROOT/lock-backend-nontarget.alive"
 LOCK_BACKEND_TRANSPORT_LOG="$TMP_ROOT/lock-backend-transport.log"
+TEST_MANAGED_BACKEND_PID=""
+TEST_MANAGED_BACKEND_STOP_FIFO=""
+TEST_MANAGED_BACKEND_DONE_FIFO=""
 : >"$LOCK_BACKEND_TRANSPORT_LOG"
 declare -a SCALAR_QUERY_OPERATIONS=(
   connection_count database_exists residual_count preexisting_count lock_granted lock_connections
@@ -951,6 +960,26 @@ prepare_query_fixture() {
   SCRIPT_QUERY_STDOUT_FILES[$operation]="$stdout_file"
   SCRIPT_QUERY_STDERR_FILES[$operation]="$stderr_file"
   SCRIPT_QUERY_RCS[$operation]="$transport_rc"
+}
+
+# A managed backend is used only by the Linux lifecycle regression below.  It
+# cannot inherit the test's EXIT/INT/TERM traps, and it removes its marker only
+# after the exact-termination fake sends an explicit FIFO command and receives
+# its acknowledgement.  This avoids orphan, SIGHUP, process-group, and timing
+# assumptions while still exercising the formal capture/termination path.
+stop_test_managed_backend() {
+  local stopped
+  [[ -n "$TEST_MANAGED_BACKEND_STOP_FIFO" ]] || return 0
+  [[ -p "$TEST_MANAGED_BACKEND_STOP_FIFO" && -p "$TEST_MANAGED_BACKEND_DONE_FIFO" ]] || return 97
+  [[ "$TEST_MANAGED_BACKEND_PID" =~ ^[1-9][0-9]*$ ]] || return 97
+  printf 'terminate\n' >"$TEST_MANAGED_BACKEND_STOP_FIFO" || return 97
+  IFS= read -r stopped <"$TEST_MANAGED_BACKEND_DONE_FIFO" || return 97
+  [[ "$stopped" == terminated ]] || return 97
+  wait "$TEST_MANAGED_BACKEND_PID" || return 97
+  TEST_MANAGED_BACKEND_PID=""
+  rm -f -- "$TEST_MANAGED_BACKEND_STOP_FIFO" "$TEST_MANAGED_BACKEND_DONE_FIFO"
+  TEST_MANAGED_BACKEND_STOP_FIFO=""
+  TEST_MANAGED_BACKEND_DONE_FIFO=""
 }
 
 for scalar_operation in "${SCALAR_QUERY_OPERATIONS[@]}"; do
@@ -1015,6 +1044,7 @@ execute_postgres_command() {
             elif [[ "$LOCK_BACKEND_TEST_MODE" == terminate_invalid ]]; then
               printf '2\n'
             else
+              stop_test_managed_backend || return $?
               rm -f -- "$LOCK_BACKEND_TARGET_MARKER"
               printf '1\n'
               if [[ "$LOCK_BACKEND_TEST_MODE" == signal_after_terminate ]]; then
@@ -1277,22 +1307,43 @@ unset -f sleep
 LOCK_CONNECTION_TEST_MODE=""
 LOCK_CONNECTION_TEST_CALLS=0
 
-# Reproduce the production failure without a database: the outer holder process
-# exits, but the independently modelled backend remains connected.  The real
-# finite poll helper must observe that backend for exactly 50 attempts and
-# return 82 instead of treating wrapper exit as connection cleanup.
-: >"$LOCK_BACKEND_TARGET_MARKER"
+# Linux lifecycle regression: wrapper and backend are distinct processes.  The
+# wrapper has no authority over the backend marker; the backend has no parent-
+# exit trap and only exits after the formal exact-termination fake completes a
+# FIFO request/acknowledgement.  No sleep, orphan, SIGHUP, process-group, or
+# signal-interruption behavior is used to establish either state.
+legacy_backend_ready_fifo="$TMP_ROOT/legacy-backend.ready"
+legacy_wrapper_hold_fifo="$TMP_ROOT/legacy-wrapper.hold"
+TEST_MANAGED_BACKEND_STOP_FIFO="$TMP_ROOT/legacy-backend.stop"
+TEST_MANAGED_BACKEND_DONE_FIFO="$TMP_ROOT/legacy-backend.done"
+mkfifo "$legacy_backend_ready_fifo" "$legacy_wrapper_hold_fifo" "$TEST_MANAGED_BACKEND_STOP_FIFO" "$TEST_MANAGED_BACKEND_DONE_FIFO"
+(
+  trap - EXIT INT TERM
+  : >"$LOCK_BACKEND_TARGET_MARKER"
+  printf 'ready\n' >"$legacy_backend_ready_fifo"
+  IFS= read -r legacy_backend_command <"$TEST_MANAGED_BACKEND_STOP_FIFO" || exit 97
+  [[ "$legacy_backend_command" == terminate ]] || exit 98
+  rm -f -- "$LOCK_BACKEND_TARGET_MARKER"
+  printf 'terminated\n' >"$TEST_MANAGED_BACKEND_DONE_FIFO"
+) &
+TEST_MANAGED_BACKEND_PID=$!
+IFS= read -r legacy_backend_ready <"$legacy_backend_ready_fifo" || fail_test "legacy backend did not signal readiness"
+[[ "$legacy_backend_ready" == ready ]] || fail_test "legacy backend readiness was malformed"
+kill -0 "$TEST_MANAGED_BACKEND_PID" 2>/dev/null || fail_test "legacy backend exited before wrapper"
 : >"$LOCK_BACKEND_NON_TARGET_MARKER"
 (
-  trap - EXIT
-  trap 'exit 0' TERM INT
-  while :; do /usr/bin/sleep 1; done
+  trap - EXIT INT TERM
+  IFS= read -r legacy_wrapper_command <"$legacy_wrapper_hold_fifo" || exit 97
+  [[ "$legacy_wrapper_command" == exit ]] || exit 98
 ) &
 legacy_holder_wrapper=$!
-kill "$legacy_holder_wrapper"
+kill -0 "$legacy_holder_wrapper" 2>/dev/null || fail_test "legacy holder wrapper did not start"
+printf 'exit\n' >"$legacy_wrapper_hold_fifo"
 wait "$legacy_holder_wrapper" 2>/dev/null || true
 if kill -0 "$legacy_holder_wrapper" 2>/dev/null; then fail_test "legacy holder wrapper did not exit"; fi
+rm -f -- "$legacy_backend_ready_fifo" "$legacy_wrapper_hold_fifo"
 [[ -e "$LOCK_BACKEND_TARGET_MARKER" ]] || fail_test "legacy wrapper exit incorrectly removed the backend"
+kill -0 "$TEST_MANAGED_BACKEND_PID" 2>/dev/null || fail_test "legacy wrapper exit terminated the backend process"
 LOCK_CONNECTION_TEST_MODE=backend_marker
 LOCK_CONNECTION_TEST_CALLS=0
 : >"$LOCK_CONNECTION_TEST_LOG"
@@ -1305,6 +1356,27 @@ fi
 unset -f sleep
 assert_rc "$legacy_holder_poll_rc" 82 "outer holder exit with backend still connected"
 [[ "$LOCK_CONNECTION_TEST_CALLS" -eq 50 ]] || fail_test "legacy holder failure did not reproduce 50 connection polls"
+
+# The backend disappears only when the formal, identity-checked termination
+# path succeeds.  Its FIFO acknowledgement removes any scheduling ambiguity.
+LOCK_BACKEND_TEST_MODE=success
+clear_active_lock_holder
+capture_lock_holder_wrapper_starttime() {
+  LOCK_HOLDER_SNAPSHOT_STATE=R
+  LOCK_HOLDER_SNAPSHOT_STARTTIME=42424200
+}
+register_active_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" 424242 || \
+  fail_test "could not register managed backend lock holder"
+eval "$ORIGINAL_CAPTURE_LOCK_HOLDER_WRAPPER_STARTTIME"
+mark_lock_holder_backend_verified "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID" || \
+  fail_test "could not verify managed backend lock holder"
+terminate_exact_lock_holder_backend "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID" || \
+  fail_test "legacy backend exact termination failed"
+[[ ! -e "$LOCK_BACKEND_TARGET_MARKER" ]] || fail_test "exact termination did not remove the managed backend marker"
+[[ -z "$TEST_MANAGED_BACKEND_PID" ]] || fail_test "exact termination left the managed backend process"
+[[ ! -e "$legacy_backend_ready_fifo" && ! -e "$legacy_wrapper_hold_fifo" ]] || \
+  fail_test "legacy lifecycle left wrapper/backend control captures"
+clear_active_lock_holder
 
 capture_test_lock_backend_pid() {
   capture_scalar_query database "$1" lock_backend_pid "$2" backend_pid <<'TEST_LOCK_BACKEND_PID_SQL'
