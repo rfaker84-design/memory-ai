@@ -2531,11 +2531,18 @@ CLEANUP_STATE="$TMP_ROOT/cleanup.state"
 record_state() { printf '%s\n' "$1" >>"$CLEANUP_STATE"; }
 CLEANUP_MODE=success
 DROP_SUCCEEDED=0
+DROP_CALLS=0
 PREEXISTING_NAMES=0
 CLEANUP_RESIDUAL_OUTPUT=$'0\n'
 CLEANUP_RESIDUAL_RC=0
+declare -a CLEANUP_CONNECTION_OUTPUTS=()
+declare -a CLEANUP_CONNECTION_RCS=()
+CLEANUP_CONNECTION_STDERR=""
+CLEANUP_CONNECTION_QUERY_CALLS=0
+CLEANUP_CONNECTION_POLL_SLEEPS=0
+cleanup_connection_poll_sleep() { CLEANUP_CONNECTION_POLL_SLEEPS=$((CLEANUP_CONNECTION_POLL_SLEEPS + 1)); }
 execute_postgres_command() {
-  local script_file has_script=0 argument
+  local script_file has_script=0 argument sequence_index sequence_last output rc
   capture_postgres_boundary "$@"
   [[ "$POSTGRES_EXECUTABLE" == /usr/bin/psql ]] || return 97
   for argument in "${POSTGRES_CLI_ARGS[@]}"; do [[ "$argument" == --file=- ]] && has_script=$((has_script + 1)); done
@@ -2548,6 +2555,17 @@ execute_postgres_command() {
       [[ "$CLEANUP_MODE" == terminate ]] && return 91
       return 0 ;;
     connection_count)
+      if (( ${#CLEANUP_CONNECTION_OUTPUTS[@]} > 0 )); then
+        sequence_index="$CLEANUP_CONNECTION_QUERY_CALLS"
+        sequence_last=$(( ${#CLEANUP_CONNECTION_OUTPUTS[@]} - 1 ))
+        (( sequence_index <= sequence_last )) || sequence_index="$sequence_last"
+        output="${CLEANUP_CONNECTION_OUTPUTS[$sequence_index]}"
+        rc="${CLEANUP_CONNECTION_RCS[$sequence_index]:-0}"
+        CLEANUP_CONNECTION_QUERY_CALLS=$((CLEANUP_CONNECTION_QUERY_CALLS + 1))
+        printf '%s' "$output"
+        printf '%s' "$CLEANUP_CONNECTION_STDERR" >&2
+        return "$rc"
+      fi
       [[ "$CLEANUP_MODE" == connections ]] && printf '1\n' || printf '0\n'
       return 0 ;;
     preexisting_count) printf '%s\n' "$PREEXISTING_NAMES"; return 0 ;;
@@ -2560,6 +2578,7 @@ execute_postgres_command() {
 }
 drop_database_command() {
   [[ "$CLEANUP_MODE" == dropdb ]] && return 92
+  DROP_CALLS=$((DROP_CALLS + 1))
   DROP_SUCCEEDED=1
   return 0
 }
@@ -2568,6 +2587,11 @@ cleanup_db="${SCENARIO_DATABASES[challenge_id_nullable]}"
 for mode in terminate dropdb exists connections; do
   : >"$CLEANUP_STATE"
   CLEANUP_MODE="$mode"
+  CLEANUP_CONNECTION_OUTPUTS=()
+  CLEANUP_CONNECTION_RCS=()
+  CLEANUP_CONNECTION_STDERR=""
+  CLEANUP_CONNECTION_QUERY_CALLS=0
+  CLEANUP_CONNECTION_POLL_SLEEPS=0
   clear_active_lock_holder
   if [[ "$mode" == terminate ]]; then
     # Broad termination is now reserved for the explicit no-handshake
@@ -2583,6 +2607,104 @@ for mode in terminate dropdb exists connections; do
   assert_contains "$CLEANUP_STATE" "FAILED_cleanup_"
 done
 clear_active_lock_holder
+
+# Ordinary cleanup permits only a bounded, byte-exact 1\n -> 0\n transition
+# while a PostgreSQL client backend disappears asynchronously.  It must never
+# substitute broad termination, drop before absence is proven, or lose the
+# created-database tracking entry after a timeout or malformed query result.
+run_ordinary_connection_cleanup_case() {
+  local label="$1" expected_rc="$2" expected_calls="$3" expected_sleeps="$4" expected_drops="$5"
+  local actual_rc broad_before broad_after
+  : >"$CLEANUP_STATE"
+  CLEANUP_MODE=success
+  DROP_SUCCEEDED=0
+  DROP_CALLS=0
+  CLEANUP_CONNECTION_QUERY_CALLS=0
+  CLEANUP_CONNECTION_POLL_SLEEPS=0
+  clear_active_lock_holder
+  CREATED_DATABASES=("$cleanup_db")
+  broad_before="$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG" || true)"
+  if cleanup_database "$cleanup_db"; then actual_rc=0; else actual_rc=$?; fi
+  assert_rc "$actual_rc" "$expected_rc" "$label cleanup_database"
+  broad_after="$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG" || true)"
+  [[ "$CLEANUP_CONNECTION_QUERY_CALLS" == "$expected_calls" ]] || fail_test "$label connection query count changed"
+  [[ "$CLEANUP_CONNECTION_POLL_SLEEPS" == "$expected_sleeps" ]] || fail_test "$label poll interval count changed"
+  [[ "$DROP_CALLS" == "$expected_drops" ]] || fail_test "$label drop ordering changed"
+  [[ "$broad_after" == "$broad_before" ]] || fail_test "$label ordinary cleanup used broad termination"
+  if [[ "$expected_rc" == 0 ]]; then
+    [[ "${#CREATED_DATABASES[@]}" == 0 ]] || fail_test "$label successful cleanup retained database tracking"
+  else
+    [[ "${#CREATED_DATABASES[@]}" == 1 && "${CREATED_DATABASES[0]}" == "$cleanup_db" ]] || \
+      fail_test "$label failed cleanup removed database tracking"
+  fi
+}
+
+CLEANUP_CONNECTION_OUTPUTS=($'0\n')
+CLEANUP_CONNECTION_RCS=(0)
+CLEANUP_CONNECTION_STDERR=""
+run_ordinary_connection_cleanup_case connection_first_zero 0 1 0 1
+
+CLEANUP_CONNECTION_OUTPUTS=($'1\n' $'0\n')
+CLEANUP_CONNECTION_RCS=(0 0)
+run_ordinary_connection_cleanup_case connection_one_then_zero 0 2 1 1
+
+CLEANUP_CONNECTION_OUTPUTS=($'1\n' $'1\n' $'0\n')
+CLEANUP_CONNECTION_RCS=(0 0 0)
+run_ordinary_connection_cleanup_case connection_two_ones_then_zero 0 3 2 1
+
+CLEANUP_CONNECTION_OUTPUTS=()
+CLEANUP_CONNECTION_RCS=()
+for ((cleanup_connection_case_index=1; cleanup_connection_case_index<50; cleanup_connection_case_index++)); do
+  CLEANUP_CONNECTION_OUTPUTS+=($'1\n')
+  CLEANUP_CONNECTION_RCS+=(0)
+done
+CLEANUP_CONNECTION_OUTPUTS+=($'0\n')
+CLEANUP_CONNECTION_RCS+=(0)
+run_ordinary_connection_cleanup_case connection_fiftieth_zero 0 50 49 1
+
+CLEANUP_CONNECTION_OUTPUTS=()
+CLEANUP_CONNECTION_RCS=()
+for ((cleanup_connection_case_index=1; cleanup_connection_case_index<=50; cleanup_connection_case_index++)); do
+  CLEANUP_CONNECTION_OUTPUTS+=($'1\n')
+  CLEANUP_CONNECTION_RCS+=(0)
+done
+CLEANUP_CONNECTION_STDERR=""
+run_ordinary_connection_cleanup_case connection_fifty_ones_timeout "$CLEANUP_CONNECTION_TIMEOUT_RC" 50 49 0
+retry_timeout_broad_before="$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG" || true)"
+CLEANUP_CONNECTION_OUTPUTS=($'0\n')
+CLEANUP_CONNECTION_RCS=(0)
+CLEANUP_CONNECTION_QUERY_CALLS=0
+CLEANUP_CONNECTION_POLL_SLEEPS=0
+DROP_CALLS=0
+cleanup_all || fail_test "connection timeout retry cleanup_all failed"
+[[ "$CLEANUP_CONNECTION_QUERY_CALLS" == 1 && "$CLEANUP_CONNECTION_POLL_SLEEPS" == 0 && "$DROP_CALLS" == 1 ]] || \
+  fail_test "connection timeout retry did not wait for confirmed absence before drop"
+[[ "${#CREATED_DATABASES[@]}" == 0 ]] || fail_test "connection timeout retry retained a dropped database"
+[[ "$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG" || true)" == "$retry_timeout_broad_before" ]] || \
+  fail_test "connection timeout retry used broad termination"
+
+run_invalid_ordinary_connection_cleanup_case() {
+  local label="$1" bytes="$2"
+  CLEANUP_CONNECTION_OUTPUTS=("$bytes")
+  CLEANUP_CONNECTION_RCS=(0)
+  CLEANUP_CONNECTION_STDERR=""
+  run_ordinary_connection_cleanup_case "connection_${label}" "$QUERY_CAPTURE_VALIDATION_RC" 1 0 0
+}
+run_invalid_ordinary_connection_cleanup_case two $'2\n'
+run_invalid_ordinary_connection_cleanup_case invalid $'x\n'
+run_invalid_ordinary_connection_cleanup_case missing_lf '1'
+run_invalid_ordinary_connection_cleanup_case multiline $'0\n1\n'
+CLEANUP_CONNECTION_OUTPUTS=($'0\n')
+CLEANUP_CONNECTION_RCS=(0)
+CLEANUP_CONNECTION_STDERR=$'WARNING: cleanup query stderr\n'
+run_ordinary_connection_cleanup_case connection_stderr "$QUERY_CAPTURE_VALIDATION_RC" 1 0 0
+CLEANUP_CONNECTION_OUTPUTS=($'0\n')
+CLEANUP_CONNECTION_RCS=(42)
+CLEANUP_CONNECTION_STDERR=""
+run_ordinary_connection_cleanup_case connection_transport42 42 1 0 0
+CLEANUP_CONNECTION_OUTPUTS=()
+CLEANUP_CONNECTION_RCS=()
+CLEANUP_CONNECTION_STDERR=""
 
 PREEXISTING_NAMES=1
 set +e
@@ -2702,8 +2824,8 @@ execute_postgres_command() {
       terminate)
         # pg_terminate_backend reports signal delivery, not that a just-
         # terminated backend has disappeared from pg_stat_activity.  This
-        # source-only switch models the preserved production 1\n -> rc67
-        # window without opening a PostgreSQL connection.
+        # source-only switch models the permitted one-backend observation
+        # without claiming the unavailable production capture bytes.
         [[ "${MATRIX_RACE_AFTER_BROAD:-0}" == 1 ]] && MATRIX_RACE_PENDING=1
         rm -f -- "$DISPATCH_BACKEND_MARKER"
         return 0
@@ -2790,16 +2912,14 @@ for lock_transport in lock_holder lock_granted lock_backend_pid lock_terminate l
 done
 rm -f -- "$DISPATCH_NON_TARGET_MARKER"
 
-# Production matrix regression: scenario 55 validated successfully, then the
-# unconditional broad cleanup made the first strict connection query observe
-# one asynchronously-terminating backend (two stdout bytes, no stderr), which
-# correctly maps to rc67.  Prove that exact raw value remains rejected, then
-# run the real scenario -> cleanup_or_fail -> cleanup_database path and prove
-# ordinary cleanup never creates the race.  The final check is still exactly
-# zero and no sleep is introduced.
+# PostgreSQL may report one asynchronously-disappearing client backend after a
+# scenario has validated.  The preserved production capture is unavailable in
+# this workspace, so this source-only fixture asserts only the permitted raw
+# value: strict zero parsing still rejects 1\n, while the real ordinary cleanup
+# path polls boundedly to a later exact 0\n without broad termination.
 MATRIX_RACE_AFTER_BROAD=1
 MATRIX_RACE_PENDING=1
-if capture_scalar_query admin "$ADMIN_DB" connection_count "${SCENARIO_DATABASES[idx_auth_challenges_phone_created__wrong_relation]}" zero <<'RACE_REPRO_CONNECTION_SQL'
+if capture_scalar_query admin "$ADMIN_DB" connection_count "${SCENARIO_DATABASES[ck_auth_challenge_timing__wrong_relation]}" zero <<'RACE_REPRO_CONNECTION_SQL'
 SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db';
 RACE_REPRO_CONNECTION_SQL
 then
@@ -2807,23 +2927,26 @@ then
 else
   race_raw_rc=$?
 fi
-assert_rc "$race_raw_rc" "$QUERY_CAPTURE_VALIDATION_RC" "production cleanup 1-byte count value remains fail-closed"
+assert_rc "$race_raw_rc" "$QUERY_CAPTURE_VALIDATION_RC" "strict zero parser rejects the permitted one-backend value"
 
 eval "$ORIGINAL_CLEANUP_OR_FAIL"
-race_scenario=idx_auth_challenges_phone_created__wrong_relation
+race_scenario=ck_auth_challenge_timing__wrong_relation
 race_database="${SCENARIO_DATABASES[$race_scenario]}"
 race_broad_before="$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG" || true)"
-MATRIX_RACE_PENDING=0
-run_negative_scenario "$race_scenario" index || fail_test "scenario 55 formal cleanup failed"
+race_connection_before="$(grep -c '^connection_count'$'\t' "$SCRIPT_TRANSPORT_LOG" || true)"
+MATRIX_RACE_PENDING=1
+run_negative_scenario "$race_scenario" check_constraint || fail_test "scenario 37 formal cleanup failed"
 [[ "$(grep -c '^EXPECTED_REJECTION_PASS ' "$DISPATCH_STATE")" -ge 78 ]] || \
-  fail_test "scenario 55 did not validate before formal cleanup"
+  fail_test "scenario 37 did not validate before formal cleanup"
 grep -Fxq -- "CLEANUP_PASS $race_database" "$DISPATCH_STATE" || \
-  fail_test "scenario 55 did not record formal cleanup pass"
+  fail_test "scenario 37 did not record formal cleanup pass"
 [[ "$(grep -c "^FAILED_cleanup_connections_${QUERY_CAPTURE_VALIDATION_RC}" "$DISPATCH_STATE" || true)" -eq 0 ]] || \
-  fail_test "scenario 55 retained the asynchronous broad cleanup failure"
+  fail_test "scenario 37 retained an asynchronous connection failure"
 [[ "$(grep -c '^terminate'$'\t' "$SCRIPT_TRANSPORT_LOG" || true)" -eq "$race_broad_before" ]] || \
-  fail_test "scenario 55 ordinary cleanup used broad termination"
-[[ "${#CREATED_DATABASES[@]}" -eq 0 ]] || fail_test "scenario 55 left its database tracked after successful cleanup"
+  fail_test "scenario 37 ordinary cleanup used broad termination"
+[[ "$(grep -c '^connection_count'$'\t' "$SCRIPT_TRANSPORT_LOG" || true)" -eq $((race_connection_before + 2)) ]] || \
+  fail_test "scenario 37 did not poll one backend then exact zero"
+[[ "${#CREATED_DATABASES[@]}" -eq 0 ]] || fail_test "scenario 37 left its database tracked after successful cleanup"
 MATRIX_RACE_AFTER_BROAD=0
 MATRIX_RACE_PENDING=0
 

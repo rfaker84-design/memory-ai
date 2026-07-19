@@ -216,7 +216,7 @@ const approvedPsqlScriptHeredocs = Object.freeze({
     body: "SELECT pg_catalog.pg_terminate_backend(pid) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db' AND pid <> pg_catalog.pg_backend_pid();\n",
   }),
   CLEANUP_CONNECTIONS_SQL: Object.freeze({
-    opener: `if capture_scalar_query admin "$ADMIN_DB" connection_count "$database" zero <<'CLEANUP_CONNECTIONS_SQL'`,
+    opener: `if capture_scalar_query admin "$ADMIN_DB" connection_count "$database" zero_or_one <<'CLEANUP_CONNECTIONS_SQL'`,
     token: ":'matrix_db'",
     body: "SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db';\n",
   }),
@@ -532,7 +532,7 @@ function assertMatrixRunnerStructure(runner) {
   ]) assert.ok(runner.includes(startupToken), `runner missing startup identity contract ${startupToken}`);
   assert.doesNotMatch(runner, /\(pg_catalog\.inet_client_addr\(\) IS NULL\)::text/);
   assert.match(runner, /database_psql_script "\$database" lock_holder "\$application_name"/);
-  assert.match(runner, /if capture_scalar_query admin "\$ADMIN_DB" connection_count "\$database" zero/);
+  assert.match(runner, /if capture_scalar_query admin "\$ADMIN_DB" connection_count "\$database" zero_or_one <<'CLEANUP_CONNECTIONS_SQL'/);
   assert.match(runner, /if capture_scalar_query admin "\$ADMIN_DB" database_exists "\$database" zero/);
   assert.match(runner, /if capture_scalar_query admin "\$ADMIN_DB" residual_count "\$\{RUN_DB_PREFIX\}%" zero/);
   assert.match(runner, /if capture_scalar_query admin "\$ADMIN_DB" preexisting_count "\$names" zero/);
@@ -652,6 +652,46 @@ function assertMatrixRunnerStructure(runner) {
   assert.doesNotMatch(runner, /stat -c '%[UG]'|"\$ID" -(?:un|gn)/,
     "filesystem authority must use numeric uid/gid values");
   assert.match(runner, /wait_for_lock_holder_connections\(\) \{[\s\S]*?for poll in \{1\.\.50\}; do[\s\S]*?0\) return 0[\s\S]*?1\) ;;[\s\S]*?return 82/);
+  const ordinaryCleanupConnectionWait = runner.match(/wait_for_database_connections_absent\(\) \{([\s\S]*?)^\}/m)?.[1];
+  assert.ok(ordinaryCleanupConnectionWait, "missing ordinary cleanup connection-absence poller");
+  assert.match(ordinaryCleanupConnectionWait,
+    /for \(\(poll=1; poll<=CLEANUP_CONNECTION_MAX_POLLS; poll\+\+\)\); do/,
+    "ordinary cleanup must use the fixed connection poll bound");
+  assert.match(ordinaryCleanupConnectionWait,
+    /capture_scalar_query admin "\$ADMIN_DB" connection_count "\$database" zero_or_one <<'CLEANUP_CONNECTIONS_SQL'/,
+    "ordinary cleanup must accept only the explicit zero-or-one connection scalar");
+  assert.match(ordinaryCleanupConnectionWait,
+    /case "\$QUERY_CAPTURE_VALUE" in\s+0\) return 0 ;;\s+1\) ;;\s+\*\) QUERY_CAPTURE_VALUE=""; return "\$QUERY_CAPTURE_VALIDATION_RC" ;;/,
+    "only zero may complete cleanup; one must continue and every other value must fail closed");
+  assert.match(ordinaryCleanupConnectionWait,
+    /if \(\( poll < CLEANUP_CONNECTION_MAX_POLLS \)\); then\s+cleanup_connection_poll_sleep \|\| return \$\?\s+fi/,
+    "the final permitted poll must be evaluated before any further sleep");
+  assert.match(ordinaryCleanupConnectionWait, /return "\$CLEANUP_CONNECTION_TIMEOUT_RC"/,
+    "continuous one-valued results must return the dedicated cleanup timeout");
+  assert.match(runner, /readonly CLEANUP_CONNECTION_MAX_POLLS=50/);
+  assert.match(runner, /readonly CLEANUP_CONNECTION_TIMEOUT_RC=88/);
+  const scalarParser = runner.match(/read_exact_query_scalar\(\) \{([\s\S]*?)^\}/m)?.[1];
+  assert.ok(scalarParser, "missing scalar parser for ordinary cleanup polling");
+  assert.match(scalarParser,
+    /zero\|zero_or_one\|one\)[\s\S]*?QUERY_CAPTURE_STDOUT_BYTES" == "2"[\s\S]*?"\$second" == \$'\\n'[\s\S]*?zero_or_one\) \[\[ "\$first" == "0" \|\| "\$first" == "1" \]\] \|\| return "\$QUERY_CAPTURE_VALIDATION_RC"/,
+    "ordinary cleanup must reject malformed, multiline, missing-LF, and non-zero-or-one scalar bytes");
+  const scalarCapture = runner.match(/capture_scalar_query\(\) \{([\s\S]*?)^\}/m)?.[1];
+  assert.ok(scalarCapture, "missing scalar capture boundary");
+  assert.match(scalarCapture, /if \(\( rc != 0 \)\); then\s+return "\$rc"/,
+    "transport failure must propagate unchanged");
+  assert.match(scalarCapture, /\[\[ "\$QUERY_CAPTURE_STDERR_BYTES" == "0" \]\] \|\| return "\$QUERY_CAPTURE_VALIDATION_RC"/,
+    "ordinary cleanup must reject every stderr byte");
+  const cleanupDatabase = runner.match(/cleanup_database\(\) \{([\s\S]*?)^\}/m)?.[1];
+  assert.ok(cleanupDatabase, "missing cleanup database state machine");
+  assert.match(cleanupDatabase,
+    /if \(\( allow_database_drop == 1 && connections_rc == 0 \)\); then\s+set \+e\s+drop_database_command/,
+    "drop must remain gated on confirmed zero connections");
+  assert.match(cleanupDatabase,
+    /if \(\( first_error == 0 && allow_database_drop == 1 && connections_rc == 0 && drop_rc == 0 && exists_rc == 0 \)\); then\s+remove_created_database/,
+    "tracking removal must remain gated on confirmed absence and successful drop");
+  assert.match(cleanupDatabase,
+    /local holder_complete=0 allow_broad_fallback=0 allow_database_drop=1/,
+    "ordinary cleanup must begin with broad fallback disabled");
   assert.match(runner, /trap 'on_exit \$\?' EXIT/);
   assert.match(runner, /trap 'on_signal INT 130' INT/);
   assert.match(runner, /trap 'on_signal TERM 143' TERM/);

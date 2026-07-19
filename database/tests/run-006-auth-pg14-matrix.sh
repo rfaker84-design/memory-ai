@@ -29,6 +29,9 @@ readonly LOCK_HOLDER_WRAPPER_TIMEOUT_RC=87
 readonly LOCK_HOLDER_HANDSHAKE_REQUIRED_RC=85
 readonly LOCK_HOLDER_WRAPPER_MAX_POLLS=50
 readonly LOCK_HOLDER_WRAPPER_POLL_INTERVAL=0.1
+readonly CLEANUP_CONNECTION_MAX_POLLS=50
+readonly CLEANUP_CONNECTION_POLL_INTERVAL=0.1
+readonly CLEANUP_CONNECTION_TIMEOUT_RC=88
 RUN_ID="${MATRIX_RUN_ID:-$(date -u +%Y%m%d%H%M%S)_$$_${RANDOM}}"
 readonly CALLER_RUN_NONCE_PRESENT="${RUN_NONCE+x}"
 RUN_NONCE=""
@@ -523,7 +526,7 @@ capture_scalar_query() {
   [[ "$#" -eq 5 ]] || return 64
   local scope="$1" database="$2" operation="$3" variable_value="$4" expectation="$5" rc
   case "$operation:$expectation" in
-    lock_granted:zero_or_one|lock_connections:zero_or_one|lock_backend_pid:backend_pid|connection_count:zero|database_exists:zero|residual_count:zero|preexisting_count:zero) ;;
+    lock_granted:zero_or_one|lock_connections:zero_or_one|lock_backend_pid:backend_pid|connection_count:zero|connection_count:zero_or_one|database_exists:zero|residual_count:zero|preexisting_count:zero) ;;
     *) return 64 ;;
   esac
   initialize_query_capture_files "$operation" || return $?
@@ -634,6 +637,36 @@ remove_created_database() {
   CREATED_DATABASES=("${remaining[@]}")
 }
 
+cleanup_connection_poll_sleep() { sleep "$CLEANUP_CONNECTION_POLL_INTERVAL"; }
+
+wait_for_database_connections_absent() {
+  [[ "$#" -eq 1 ]] || return 64
+  local database="$1" poll connections_rc
+  validate_test_database_name "$database" || return $?
+  QUERY_CAPTURE_VALUE=""
+  for ((poll=1; poll<=CLEANUP_CONNECTION_MAX_POLLS; poll++)); do
+    if capture_scalar_query admin "$ADMIN_DB" connection_count "$database" zero_or_one <<'CLEANUP_CONNECTIONS_SQL'
+SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db';
+CLEANUP_CONNECTIONS_SQL
+    then
+      connections_rc=0
+    else
+      connections_rc=$?
+    fi
+    (( connections_rc == 0 )) || return "$connections_rc"
+    case "$QUERY_CAPTURE_VALUE" in
+      0) return 0 ;;
+      1) ;;
+      *) QUERY_CAPTURE_VALUE=""; return "$QUERY_CAPTURE_VALIDATION_RC" ;;
+    esac
+    if (( poll < CLEANUP_CONNECTION_MAX_POLLS )); then
+      cleanup_connection_poll_sleep || return $?
+    fi
+  done
+  QUERY_CAPTURE_VALUE=""
+  return "$CLEANUP_CONNECTION_TIMEOUT_RC"
+}
+
 cleanup_database() {
   local database="$1" first_error=0 terminate_rc=0 holder_rc=0 connections_rc=0 drop_rc=0 exists_rc=0
   local holder_complete=0 allow_broad_fallback=0 allow_database_drop=1
@@ -684,9 +717,7 @@ CLEANUP_TERMINATE_SQL
     fi
   fi
 
-  if capture_scalar_query admin "$ADMIN_DB" connection_count "$database" zero <<'CLEANUP_CONNECTIONS_SQL'
-SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname = :'matrix_db';
-CLEANUP_CONNECTIONS_SQL
+  if wait_for_database_connections_absent "$database"
   then
     connections_rc=0
   else
