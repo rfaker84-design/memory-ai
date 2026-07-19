@@ -874,7 +874,7 @@ initialize_startup_probe_file() {
 initialize_state_file() {
   local state_parent="$1" required_owner="$2" required_group="$3" preexisting_state_inodes state_inode
   validate_state_directory "$state_parent" "$required_owner" "$required_group" || fail runtime 76 "unsafe state directory"
-  preexisting_state_inodes="$(find "$state_parent" -maxdepth 1 -type f -printf '%d:%i\n')"
+  preexisting_state_inodes="$(find "$state_parent" -maxdepth 1 -type f -printf '%D:%i\n')"
   STATE_FILE="$(create_state_file "$state_parent/memoryai-auth-pg14-matrix.${RUN_NONCE}.state.XXXXXXXX")" || fail runtime 76 "cannot create state file"
   [[ -n "$STATE_FILE" ]] || fail runtime 76 "state file creator returned an empty path"
   state_inode="$(stat -c '%d:%i' "$STATE_FILE" 2>/dev/null || true)"

@@ -17,6 +17,13 @@ fail_test() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 assert_contains() { grep -Fq -- "$2" "$1" || fail_test "$1 does not contain $2"; }
 assert_rc() { [[ "$1" == "$2" ]] || fail_test "expected rc $2, got $1: $3"; }
 
+# In GNU find, %d is traversal depth; device identity is %D.  The runner's
+# pre-existing-state exclusion must never compare stat %d:%i with find %d:%i.
+grep -Eq "find .* -printf '.*%D:%i" "$RUNNER" || \
+  fail_test "runner does not collect find device/inode identities with uppercase D"
+! grep -Eq "find .* -printf '.*%d:%i" "$RUNNER" || \
+  fail_test "runner uses find lowercase d as a device/inode identity"
+
 # Formal --list uses an unoverrideable kernel UUID nonce and performs no runtime writes.
 list_one="$TMP_ROOT/list-one.tsv"
 list_two="$TMP_ROOT/list-two.tsv"
@@ -1416,13 +1423,23 @@ legacy_sequence_state_gid="$(stat -c '%g' "$legacy_sequence_state_root")"
 legacy_sequence_uid="$(stat -c '%u' "$legacy_sequence_preexisting")"
 legacy_sequence_gid="$(stat -c '%g' "$legacy_sequence_preexisting")"
 legacy_sequence_before_inode="$(stat -c '%d:%i' "$legacy_sequence_preexisting")"
+legacy_sequence_find_device_inode="$(find "$legacy_sequence_preexisting" -maxdepth 0 -printf '%D:%i')"
+# GNU find %d is the traversal depth, not stat's decimal device number.  Keep
+# this separate from the identity value above so future changes cannot reuse it.
+legacy_sequence_find_depth_inode="$(find "$legacy_sequence_preexisting" -maxdepth 0 -printf '%d:%i')"
+[[ "$legacy_sequence_before_inode" == "$legacy_sequence_find_device_inode" ]] || \
+  fail_test "legacy fixture sequence find device/inode format differs from stat"
+[[ "$legacy_sequence_find_depth_inode" == "0:${legacy_sequence_before_inode#*:}" ]] || \
+  fail_test "legacy fixture sequence find lowercase d is not traversal depth"
+[[ "$legacy_sequence_find_depth_inode" != "$legacy_sequence_before_inode" ]] || \
+  fail_test "legacy fixture sequence used find lowercase d as a device identity"
 legacy_sequence_before_mode="$(stat -c '%a' "$legacy_sequence_preexisting")"
 legacy_sequence_before_links="$(stat -c '%h' "$legacy_sequence_preexisting")"
 legacy_sequence_before_size="$(stat -c '%s' "$legacy_sequence_preexisting")"
 legacy_sequence_before_type="$(stat -c '%F' "$legacy_sequence_preexisting")"
 legacy_sequence_before_sha="$(sha256sum "$legacy_sequence_preexisting" | awk '{print $1}')"
 legacy_sequence_before_content="$(od -An -tx1 -v "$legacy_sequence_preexisting" | tr -d ' \n')"
-legacy_sequence_before_tree="$(find "$legacy_sequence_state_root" -maxdepth 1 -mindepth 1 -printf '%f:%y:%d:%i\n' | LC_ALL=C sort)"
+legacy_sequence_before_tree="$(find "$legacy_sequence_state_root" -maxdepth 1 -mindepth 1 -printf '%f:%y:%D:%i\n' | LC_ALL=C sort)"
 legacy_sequence_stat_fixture=0
 if [[ "$legacy_sequence_before_mode" != 600 ]]; then
   case "$(uname -s)" in
@@ -1457,33 +1474,72 @@ cmp -s <(printf '%s' "$legacy_sequence_sentinel") "$legacy_sequence_preexisting"
 legacy_sequence_transport_before="$(wc -l <"$SCRIPT_TRANSPORT_LOG" | tr -d ' ')"
 legacy_sequence_lock_transport_before="$(wc -l <"$LOCK_BACKEND_TRANSPORT_LOG" | tr -d ' ')"
 legacy_sequence_stat_log="$TMP_ROOT/legacy-then-state.stat"
+legacy_sequence_create_log="$TMP_ROOT/legacy-then-state.create"
+legacy_sequence_trace="$TMP_ROOT/legacy-then-state.trace"
+legacy_sequence_inner_stdout="$TMP_ROOT/legacy-then-state.stdout"
+legacy_sequence_inner_stderr="$TMP_ROOT/legacy-then-state.stderr"
 : >"$legacy_sequence_stat_log"
+legacy_sequence_preexisting_inodes="$(find "$legacy_sequence_state_root" -maxdepth 1 -type f -printf '%D:%i\n')"
+grep -Fxq -- "$legacy_sequence_before_inode" <<<"$legacy_sequence_preexisting_inodes" || \
+  fail_test "legacy fixture sequence preflight cannot see the pre-existing target inode"
 set +e
 (
   RUN_NONCE=56565656565656565656565656565656
-  create_state_file() { printf '%s\n' "$legacy_sequence_preexisting"; }
+  printf 'STATE_DIR=%s STATE_FILE_BEFORE=%s STATE_DEVICE_INODE=%s RUNTIME_READY=%s\n' \
+    "$legacy_sequence_state_root" "${STATE_FILE:-}" "${STATE_DEVICE_INODE:-}" "${RUNTIME_READY:-}" >>"$legacy_sequence_create_log"
+  create_state_file() {
+    printf 'CREATE_TEMPLATE=%s CREATE_TARGET=%s TARGET_EXISTS=%s\n' "$1" "$legacy_sequence_preexisting" \
+      "$(test -e "$legacy_sequence_preexisting" && printf yes || printf no)" >>"$legacy_sequence_create_log"
+    printf '%s\n' "$legacy_sequence_preexisting"
+  }
   execute_postgres_command() { printf 'unexpected\n' >>"$legacy_sequence_database_calls"; return 99; }
   run_external_timeout() { printf 'unexpected\n' >>"$legacy_sequence_database_calls"; return 99; }
-  stat() {
-    local format="$2" path="$3" result
-    if [[ "$1" != -c || "$#" -ne 3 ]]; then command stat "$@"; return $?; fi
-    case "$path:$format" in
-      "$legacy_sequence_state_root:%u") result="$legacy_sequence_state_uid" ;;
-      "$legacy_sequence_state_root:%g") result="$legacy_sequence_state_gid" ;;
-      "$legacy_sequence_state_root:%a") result=700 ;;
-      "$legacy_sequence_preexisting:%a") result=600 ;;
-      "$legacy_sequence_preexisting:%d:%i") result="$(command stat -c '%d:%i' "$path")" || return $? ;;
-      *) command stat "$@"; return $? ;;
-    esac
-    printf '%s\t%s\t%s\n' "$format" "$path" "$result" >>"$legacy_sequence_stat_log"
-    printf '%s\n' "$result"
-  }
-  [[ "$(stat -c '%a' "$legacy_sequence_preexisting")" == 600 ]] || exit 97
+  if [[ "$legacy_sequence_stat_fixture" -eq 1 ]]; then
+    stat() {
+      local format="$2" path="$3" result
+      if [[ "$1" != -c || "$#" -ne 3 ]]; then command stat "$@"; return $?; fi
+      case "$path:$format" in
+        "$legacy_sequence_state_root:%u") result="$legacy_sequence_state_uid" ;;
+        "$legacy_sequence_state_root:%g") result="$legacy_sequence_state_gid" ;;
+        "$legacy_sequence_state_root:%a") result=700 ;;
+        "$legacy_sequence_preexisting:%a") result=600 ;;
+        "$legacy_sequence_preexisting:%d:%i") result="$(command stat -c '%d:%i' "$path")" || return $? ;;
+        *) command stat "$@"; return $? ;;
+      esac
+      printf '%s\t%s\t%s\n' "$format" "$path" "$result" >>"$legacy_sequence_stat_log"
+      printf '%s\n' "$result"
+    }
+    [[ "$(stat -c '%a' "$legacy_sequence_preexisting")" == 600 ]] || exit 97
+  fi
+  exec 9>"$legacy_sequence_trace"
+  BASH_XTRACEFD=9
+  PS4='+${BASH_SOURCE}:${LINENO}:${FUNCNAME[0]}: '
+  set -x
   validate_state_directory "$legacy_sequence_state_root" "$legacy_sequence_state_uid" "$legacy_sequence_state_gid" || exit 98
   initialize_state_file "$legacy_sequence_state_root" "$legacy_sequence_state_uid" "$legacy_sequence_state_gid"
-) >/dev/null 2>&1
+) >"$legacy_sequence_inner_stdout" 2>"$legacy_sequence_inner_stderr"
 legacy_sequence_preexisting_rc=$?
 set -e
+legacy_sequence_validate_calls="$(grep -Fc 'validate_state_directory' "$legacy_sequence_trace" || true)"
+if [[ "$legacy_sequence_preexisting_rc" != 76 ]]; then
+  {
+    printf 'STATE_FIXTURE_DIAG target=%s exists=%s type=%s uid=%s gid=%s mode=%s inode=%s nlink=%s size=%s sha256=%s\n' \
+      "$legacy_sequence_preexisting" "$(test -e "$legacy_sequence_preexisting" && printf yes || printf no)" \
+      "$(stat -c '%F' "$legacy_sequence_preexisting")" "$(stat -c '%u' "$legacy_sequence_preexisting")" \
+      "$(stat -c '%g' "$legacy_sequence_preexisting")" "$(stat -c '%a' "$legacy_sequence_preexisting")" \
+      "$(stat -c '%d:%i' "$legacy_sequence_preexisting")" "$(stat -c '%h' "$legacy_sequence_preexisting")" \
+      "$(stat -c '%s' "$legacy_sequence_preexisting")" "$(sha256sum "$legacy_sequence_preexisting" | awk '{print $1}')"
+    printf 'STATE_FIXTURE_DIAG state_dir=%s state_file_target=%s run_nonce=%s validate_calls=%s database_calls=%s\n' \
+      "$legacy_sequence_state_root" "$legacy_sequence_preexisting" "$RUN_NONCE" "$legacy_sequence_validate_calls" \
+      "$(wc -l <"$legacy_sequence_database_calls" | tr -d ' ')"
+    printf 'STATE_FIXTURE_DIAG preexisting_inodes=%q\n' "$legacy_sequence_preexisting_inodes"
+    sed -n '1,80p' "$legacy_sequence_create_log"
+    sed -n '1,120p' "$legacy_sequence_trace"
+    sed -n '1,40p' "$legacy_sequence_inner_stdout"
+    sed -n '1,40p' "$legacy_sequence_inner_stderr"
+    sed -n '1,80p' "$legacy_sequence_stat_log"
+  } >&2
+fi
 assert_rc "$legacy_sequence_preexisting_rc" 76 "legacy fixture followed by pre-existing state target"
 [[ ! -s "$legacy_sequence_database_calls" ]] || \
   fail_test "legacy fixture sequence reached a database boundary"
@@ -1491,16 +1547,18 @@ assert_rc "$legacy_sequence_preexisting_rc" 76 "legacy fixture followed by pre-e
   fail_test "legacy fixture sequence reached the psql transport"
 [[ "$(wc -l <"$LOCK_BACKEND_TRANSPORT_LOG" | tr -d ' ')" == "$legacy_sequence_lock_transport_before" ]] || \
   fail_test "legacy fixture sequence reached the lock backend transport"
-[[ "$(grep -Fxc -- $'%u\t'"$legacy_sequence_state_root"$'\t'"$legacy_sequence_state_uid" "$legacy_sequence_stat_log")" == 2 ]] || \
-  fail_test "legacy fixture sequence did not validate the state directory uid twice"
-[[ "$(grep -Fxc -- $'%g\t'"$legacy_sequence_state_root"$'\t'"$legacy_sequence_state_gid" "$legacy_sequence_stat_log")" == 2 ]] || \
-  fail_test "legacy fixture sequence did not validate the state directory gid twice"
-[[ "$(grep -Fxc -- $'%a\t'"$legacy_sequence_state_root"$'\t700' "$legacy_sequence_stat_log")" == 2 ]] || \
-  fail_test "legacy fixture sequence did not validate the state directory mode twice"
-[[ "$(grep -Fxc -- $'%a\t'"$legacy_sequence_preexisting"$'\t600' "$legacy_sequence_stat_log")" == 1 ]] || \
-  fail_test "legacy fixture sequence did not validate the pre-existing target mode"
-[[ "$(grep -Fxc -- $'%d:%i\t'"$legacy_sequence_preexisting"$'\t'"$legacy_sequence_before_inode" "$legacy_sequence_stat_log")" == 1 ]] || \
-  fail_test "legacy fixture sequence did not inspect the pre-existing target inode"
+if [[ "$legacy_sequence_stat_fixture" -eq 1 ]]; then
+  [[ "$(grep -Fxc -- $'%u\t'"$legacy_sequence_state_root"$'\t'"$legacy_sequence_state_uid" "$legacy_sequence_stat_log")" == 2 ]] || \
+    fail_test "legacy fixture sequence did not validate the state directory uid twice"
+  [[ "$(grep -Fxc -- $'%g\t'"$legacy_sequence_state_root"$'\t'"$legacy_sequence_state_gid" "$legacy_sequence_stat_log")" == 2 ]] || \
+    fail_test "legacy fixture sequence did not validate the state directory gid twice"
+  [[ "$(grep -Fxc -- $'%a\t'"$legacy_sequence_state_root"$'\t700' "$legacy_sequence_stat_log")" == 2 ]] || \
+    fail_test "legacy fixture sequence did not validate the state directory mode twice"
+  [[ "$(grep -Fxc -- $'%a\t'"$legacy_sequence_preexisting"$'\t600' "$legacy_sequence_stat_log")" == 1 ]] || \
+    fail_test "legacy fixture sequence did not validate the pre-existing target mode"
+  [[ "$(grep -Fxc -- $'%d:%i\t'"$legacy_sequence_preexisting"$'\t'"$legacy_sequence_before_inode" "$legacy_sequence_stat_log")" == 1 ]] || \
+    fail_test "legacy fixture sequence did not inspect the pre-existing target inode"
+fi
 legacy_sequence_after_inode="$(stat -c '%d:%i' "$legacy_sequence_preexisting")"
 legacy_sequence_after_mode="$(stat -c '%a' "$legacy_sequence_preexisting")"
 legacy_sequence_after_links="$(stat -c '%h' "$legacy_sequence_preexisting")"
@@ -1510,7 +1568,7 @@ legacy_sequence_after_size="$(stat -c '%s' "$legacy_sequence_preexisting")"
 legacy_sequence_after_type="$(stat -c '%F' "$legacy_sequence_preexisting")"
 legacy_sequence_after_sha="$(sha256sum "$legacy_sequence_preexisting" | awk '{print $1}')"
 legacy_sequence_after_content="$(od -An -tx1 -v "$legacy_sequence_preexisting" | tr -d ' \n')"
-legacy_sequence_after_tree="$(find "$legacy_sequence_state_root" -maxdepth 1 -mindepth 1 -printf '%f:%y:%d:%i\n' | LC_ALL=C sort)"
+legacy_sequence_after_tree="$(find "$legacy_sequence_state_root" -maxdepth 1 -mindepth 1 -printf '%f:%y:%D:%i\n' | LC_ALL=C sort)"
 [[ -f "$legacy_sequence_preexisting" && ! -L "$legacy_sequence_preexisting" ]] || \
   fail_test "legacy fixture sequence replaced the target with a non-regular or symlink file"
 [[ "$legacy_sequence_after_type" == "regular file" ]] || fail_test "legacy fixture sequence changed target type"
@@ -1523,9 +1581,12 @@ legacy_sequence_after_tree="$(find "$legacy_sequence_state_root" -maxdepth 1 -mi
 [[ "$legacy_sequence_after_size" == "$legacy_sequence_before_size" ]] || fail_test "legacy fixture sequence changed target size"
 [[ "$legacy_sequence_after_content" == "$legacy_sequence_before_content" ]] || fail_test "legacy fixture sequence changed target raw sentinel"
 [[ "$legacy_sequence_after_tree" == "$legacy_sequence_before_tree" ]] || fail_test "legacy fixture sequence created or removed a state file"
-rm -f -- "$legacy_sequence_stat_log" "$legacy_sequence_database_calls" "$legacy_sequence_preexisting"
+rm -f -- "$legacy_sequence_stat_log" "$legacy_sequence_create_log" "$legacy_sequence_trace" \
+  "$legacy_sequence_inner_stdout" "$legacy_sequence_inner_stderr" "$legacy_sequence_database_calls" "$legacy_sequence_preexisting"
 rmdir "$legacy_sequence_state_root" || fail_test "legacy fixture sequence could not remove its exact state directory"
-[[ ! -e "$legacy_sequence_stat_log" && ! -e "$legacy_sequence_database_calls" && ! -e "$legacy_sequence_preexisting" && ! -e "$legacy_sequence_state_root" ]] || \
+[[ ! -e "$legacy_sequence_stat_log" && ! -e "$legacy_sequence_create_log" && ! -e "$legacy_sequence_trace" && \
+   ! -e "$legacy_sequence_inner_stdout" && ! -e "$legacy_sequence_inner_stderr" && ! -e "$legacy_sequence_database_calls" && \
+   ! -e "$legacy_sequence_preexisting" && ! -e "$legacy_sequence_state_root" ]] || \
   fail_test "legacy fixture sequence left state artifacts behind"
 
 capture_test_lock_backend_pid() {
