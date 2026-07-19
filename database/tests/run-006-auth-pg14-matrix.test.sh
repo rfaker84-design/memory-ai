@@ -1308,75 +1308,112 @@ LOCK_CONNECTION_TEST_MODE=""
 LOCK_CONNECTION_TEST_CALLS=0
 
 # Linux lifecycle regression: wrapper and backend are distinct processes.  The
-# wrapper has no authority over the backend marker; the backend has no parent-
-# exit trap and only exits after the formal exact-termination fake completes a
-# FIFO request/acknowledgement.  No sleep, orphan, SIGHUP, process-group, or
-# signal-interruption behavior is used to establish either state.
-legacy_backend_ready_fifo="$TMP_ROOT/legacy-backend.ready"
-legacy_wrapper_hold_fifo="$TMP_ROOT/legacy-wrapper.hold"
-TEST_MANAGED_BACKEND_STOP_FIFO="$TMP_ROOT/legacy-backend.stop"
-TEST_MANAGED_BACKEND_DONE_FIFO="$TMP_ROOT/legacy-backend.done"
-mkfifo "$legacy_backend_ready_fifo" "$legacy_wrapper_hold_fifo" "$TEST_MANAGED_BACKEND_STOP_FIFO" "$TEST_MANAGED_BACKEND_DONE_FIFO"
-(
+# fixture runs in an explicit subshell so its FIFO variables, holder state,
+# function replacements, traps, and shell options cannot affect a later formal
+# state-file test.  The wrapper has no authority over the backend marker; the
+# backend has no parent-exit trap and only exits after exact termination sends
+# an explicit FIFO command and receives its acknowledgement.
+run_legacy_wrapper_backend_fixture() (
   trap - EXIT INT TERM
-  : >"$LOCK_BACKEND_TARGET_MARKER"
-  printf 'ready\n' >"$legacy_backend_ready_fifo"
-  IFS= read -r legacy_backend_command <"$TEST_MANAGED_BACKEND_STOP_FIFO" || exit 97
-  [[ "$legacy_backend_command" == terminate ]] || exit 98
-  rm -f -- "$LOCK_BACKEND_TARGET_MARKER"
-  printf 'terminated\n' >"$TEST_MANAGED_BACKEND_DONE_FIFO"
-) &
-TEST_MANAGED_BACKEND_PID=$!
-IFS= read -r legacy_backend_ready <"$legacy_backend_ready_fifo" || fail_test "legacy backend did not signal readiness"
-[[ "$legacy_backend_ready" == ready ]] || fail_test "legacy backend readiness was malformed"
-kill -0 "$TEST_MANAGED_BACKEND_PID" 2>/dev/null || fail_test "legacy backend exited before wrapper"
-: >"$LOCK_BACKEND_NON_TARGET_MARKER"
-(
-  trap - EXIT INT TERM
-  IFS= read -r legacy_wrapper_command <"$legacy_wrapper_hold_fifo" || exit 97
-  [[ "$legacy_wrapper_command" == exit ]] || exit 98
-) &
-legacy_holder_wrapper=$!
-kill -0 "$legacy_holder_wrapper" 2>/dev/null || fail_test "legacy holder wrapper did not start"
-printf 'exit\n' >"$legacy_wrapper_hold_fifo"
-wait "$legacy_holder_wrapper" 2>/dev/null || true
-if kill -0 "$legacy_holder_wrapper" 2>/dev/null; then fail_test "legacy holder wrapper did not exit"; fi
-rm -f -- "$legacy_backend_ready_fifo" "$legacy_wrapper_hold_fifo"
-[[ -e "$LOCK_BACKEND_TARGET_MARKER" ]] || fail_test "legacy wrapper exit incorrectly removed the backend"
-kill -0 "$TEST_MANAGED_BACKEND_PID" 2>/dev/null || fail_test "legacy wrapper exit terminated the backend process"
-LOCK_CONNECTION_TEST_MODE=backend_marker
-LOCK_CONNECTION_TEST_CALLS=0
-: >"$LOCK_CONNECTION_TEST_LOG"
-sleep() { :; }
-if wait_for_lock_holder_connections "$boundary_db" "$LOCK_BACKEND_TARGET_APP"; then
-  legacy_holder_poll_rc=0
-else
-  legacy_holder_poll_rc=$?
-fi
-unset -f sleep
-assert_rc "$legacy_holder_poll_rc" 82 "outer holder exit with backend still connected"
-[[ "$LOCK_CONNECTION_TEST_CALLS" -eq 50 ]] || fail_test "legacy holder failure did not reproduce 50 connection polls"
+  local legacy_backend_ready_fifo="$TMP_ROOT/legacy-backend.ready"
+  local legacy_wrapper_hold_fifo="$TMP_ROOT/legacy-wrapper.hold"
+  local legacy_holder_wrapper legacy_backend_ready legacy_holder_poll_rc
+  TEST_MANAGED_BACKEND_STOP_FIFO="$TMP_ROOT/legacy-backend.stop"
+  TEST_MANAGED_BACKEND_DONE_FIFO="$TMP_ROOT/legacy-backend.done"
+  mkfifo "$legacy_backend_ready_fifo" "$legacy_wrapper_hold_fifo" "$TEST_MANAGED_BACKEND_STOP_FIFO" "$TEST_MANAGED_BACKEND_DONE_FIFO"
+  (
+    trap - EXIT INT TERM
+    : >"$LOCK_BACKEND_TARGET_MARKER"
+    printf 'ready\n' >"$legacy_backend_ready_fifo"
+    IFS= read -r legacy_backend_command <"$TEST_MANAGED_BACKEND_STOP_FIFO" || exit 97
+    [[ "$legacy_backend_command" == terminate ]] || exit 98
+    rm -f -- "$LOCK_BACKEND_TARGET_MARKER"
+    printf 'terminated\n' >"$TEST_MANAGED_BACKEND_DONE_FIFO"
+  ) &
+  TEST_MANAGED_BACKEND_PID=$!
+  IFS= read -r legacy_backend_ready <"$legacy_backend_ready_fifo" || return 97
+  [[ "$legacy_backend_ready" == ready ]] || return 98
+  kill -0 "$TEST_MANAGED_BACKEND_PID" 2>/dev/null || return 99
+  : >"$LOCK_BACKEND_NON_TARGET_MARKER"
+  (
+    trap - EXIT INT TERM
+    IFS= read -r legacy_wrapper_command <"$legacy_wrapper_hold_fifo" || exit 97
+    [[ "$legacy_wrapper_command" == exit ]] || exit 98
+  ) &
+  legacy_holder_wrapper=$!
+  kill -0 "$legacy_holder_wrapper" 2>/dev/null || return 99
+  printf 'exit\n' >"$legacy_wrapper_hold_fifo"
+  wait "$legacy_holder_wrapper" 2>/dev/null || return 97
+  if kill -0 "$legacy_holder_wrapper" 2>/dev/null; then return 99; fi
+  rm -f -- "$legacy_backend_ready_fifo" "$legacy_wrapper_hold_fifo"
+  [[ -e "$LOCK_BACKEND_TARGET_MARKER" ]] || return 99
+  kill -0 "$TEST_MANAGED_BACKEND_PID" 2>/dev/null || return 99
+  LOCK_CONNECTION_TEST_MODE=backend_marker
+  LOCK_CONNECTION_TEST_CALLS=0
+  : >"$LOCK_CONNECTION_TEST_LOG"
+  sleep() { :; }
+  if wait_for_lock_holder_connections "$boundary_db" "$LOCK_BACKEND_TARGET_APP"; then
+    legacy_holder_poll_rc=0
+  else
+    legacy_holder_poll_rc=$?
+  fi
+  unset -f sleep
+  [[ "$legacy_holder_poll_rc" -eq 82 && "$LOCK_CONNECTION_TEST_CALLS" -eq 50 ]] || return 99
 
-# The backend disappears only when the formal, identity-checked termination
-# path succeeds.  Its FIFO acknowledgement removes any scheduling ambiguity.
-LOCK_BACKEND_TEST_MODE=success
-clear_active_lock_holder
-capture_lock_holder_wrapper_starttime() {
-  LOCK_HOLDER_SNAPSHOT_STATE=R
-  LOCK_HOLDER_SNAPSHOT_STARTTIME=42424200
-}
-register_active_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" 424242 || \
-  fail_test "could not register managed backend lock holder"
-eval "$ORIGINAL_CAPTURE_LOCK_HOLDER_WRAPPER_STARTTIME"
-mark_lock_holder_backend_verified "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID" || \
-  fail_test "could not verify managed backend lock holder"
-terminate_exact_lock_holder_backend "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID" || \
-  fail_test "legacy backend exact termination failed"
-[[ ! -e "$LOCK_BACKEND_TARGET_MARKER" ]] || fail_test "exact termination did not remove the managed backend marker"
-[[ -z "$TEST_MANAGED_BACKEND_PID" ]] || fail_test "exact termination left the managed backend process"
-[[ ! -e "$legacy_backend_ready_fifo" && ! -e "$legacy_wrapper_hold_fifo" ]] || \
-  fail_test "legacy lifecycle left wrapper/backend control captures"
-clear_active_lock_holder
+  # The backend disappears only when the formal, identity-checked termination
+  # path succeeds.  Its FIFO acknowledgement removes scheduling ambiguity.
+  LOCK_BACKEND_TEST_MODE=success
+  clear_active_lock_holder
+  capture_lock_holder_wrapper_starttime() {
+    LOCK_HOLDER_SNAPSHOT_STATE=R
+    LOCK_HOLDER_SNAPSHOT_STARTTIME=42424200
+  }
+  register_active_lock_holder "$boundary_db" "$LOCK_BACKEND_TARGET_APP" 424242 || return 99
+  eval "$ORIGINAL_CAPTURE_LOCK_HOLDER_WRAPPER_STARTTIME"
+  mark_lock_holder_backend_verified "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID" || return 99
+  terminate_exact_lock_holder_backend "$boundary_db" "$LOCK_BACKEND_TARGET_APP" "$LOCK_BACKEND_TARGET_PID" || return $?
+  [[ ! -e "$LOCK_BACKEND_TARGET_MARKER" ]] || return 99
+  [[ -z "$TEST_MANAGED_BACKEND_PID" ]] || return 99
+  [[ ! -e "$legacy_backend_ready_fifo" && ! -e "$legacy_wrapper_hold_fifo" ]] || return 99
+  clear_active_lock_holder
+)
+legacy_fixture_parent_traps="$(trap -p EXIT INT TERM)"
+legacy_fixture_parent_options="$(set +o)"
+legacy_fixture_parent_capture="$(declare -f capture_lock_holder_wrapper_starttime)"
+if run_legacy_wrapper_backend_fixture; then legacy_fixture_rc=0; else legacy_fixture_rc=$?; fi
+assert_rc "$legacy_fixture_rc" 0 "legacy wrapper/backend fixture"
+[[ "$(trap -p EXIT INT TERM)" == "$legacy_fixture_parent_traps" ]] || fail_test "legacy fixture changed parent traps"
+[[ "$(set +o)" == "$legacy_fixture_parent_options" ]] || fail_test "legacy fixture changed parent shell options"
+[[ "$(declare -f capture_lock_holder_wrapper_starttime)" == "$legacy_fixture_parent_capture" ]] || \
+  fail_test "legacy fixture changed parent wrapper-starttime capture"
+[[ -z "$TEST_MANAGED_BACKEND_PID$TEST_MANAGED_BACKEND_STOP_FIFO$TEST_MANAGED_BACKEND_DONE_FIFO" ]] || \
+  fail_test "legacy fixture leaked backend FIFO tracking"
+
+# Run the actual pre-existing-state safety gate immediately after the complete
+# legacy lifecycle fixture.  The returned path is the already-created regular
+# file that initialize_state_file itself snapshots; no database boundary may be
+# reached and that sentinel must remain byte-for-byte intact.
+legacy_sequence_state_root="$TMP_ROOT/legacy-then-state"
+legacy_sequence_preexisting="$legacy_sequence_state_root/preexisting.state"
+legacy_sequence_database_calls="$TMP_ROOT/legacy-then-state.database-calls"
+mkdir "$legacy_sequence_state_root"
+printf 'sentinel\n' >"$legacy_sequence_preexisting"
+: >"$legacy_sequence_database_calls"
+set +e
+(
+  RUN_NONCE=56565656565656565656565656565656
+  validate_state_directory() { return 0; }
+  create_state_file() { printf '%s\n' "$legacy_sequence_preexisting"; }
+  execute_postgres_command() { printf 'unexpected\n' >>"$legacy_sequence_database_calls"; return 99; }
+  initialize_state_file "$legacy_sequence_state_root" "$(id -u)" "$(id -g)"
+) >/dev/null 2>&1
+legacy_sequence_preexisting_rc=$?
+set -e
+assert_rc "$legacy_sequence_preexisting_rc" 76 "legacy fixture followed by pre-existing state target"
+[[ "$(<"$legacy_sequence_preexisting")" == sentinel ]] || \
+  fail_test "legacy fixture sequence modified the pre-existing state target"
+[[ ! -s "$legacy_sequence_database_calls" ]] || \
+  fail_test "legacy fixture sequence reached a database boundary"
 
 capture_test_lock_backend_pid() {
   capture_scalar_query database "$1" lock_backend_pid "$2" backend_pid <<'TEST_LOCK_BACKEND_PID_SQL'
