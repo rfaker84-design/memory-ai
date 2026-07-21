@@ -31,6 +31,7 @@ export class AuthService {
     const phoneE164 = normalizeChinaPhone(phoneInput);
     if (!phoneE164) return { status: "invalid_phone" };
 
+    this.smsProvider.assertConfigured?.();
     const now = this.now();
     const challengeId = randomUUID();
     const code = generateVerificationCode();

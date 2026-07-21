@@ -9,13 +9,14 @@ export type SmsVerificationSendResult = {
 };
 
 export interface SmsVerificationProvider {
+  assertConfigured?(): void;
   sendVerificationCode(
     input: SmsVerificationSendInput
   ): Promise<SmsVerificationSendResult>;
 }
 
 export type SmsProviderErrorCode =
-  | "SMS_NOT_CONFIGURED"
+  | "SMS_PROVIDER_CONFIGURATION_INVALID"
   | "SMS_RATE_LIMITED"
   | "SMS_REJECTED"
   | "SMS_UNAVAILABLE";

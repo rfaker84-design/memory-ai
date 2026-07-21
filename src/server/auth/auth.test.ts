@@ -20,6 +20,7 @@ import { AUTH_POLICY, AUTH_SESSION_COOKIE } from "./config";
 import { generateVerificationCode, sessionSecret, verificationDigestsEqual } from "./crypto";
 import { issueSession, verifySessionToken } from "./session";
 import { FakeSmsVerificationProvider } from "./sms/fake-sms-verification-provider";
+import { TencentSmsVerificationProvider } from "./sms/tencent-sms-verification-provider";
 
 process.env.AUTH_VERIFICATION_PEPPER = "test-only-pepper-value-with-at-least-32-bytes";
 process.env.SESSION_SECRET = "test-only-session-value-with-at-least-32-bytes";
@@ -31,8 +32,10 @@ class InMemoryAuthRepository implements AuthRepositoryPort {
   challenge?: NewChallenge & { attempts: number; consumed: boolean };
   createResult: ChallengeCreateResult = "created";
   providerRequestId: string | null = null;
+  createCalls = 0;
 
   async createChallenge(input: NewChallenge): Promise<ChallengeCreateResult> {
+    this.createCalls += 1;
     if (this.createResult === "created") {
       this.challenge = { ...input, attempts: 0, consumed: false };
     }
@@ -78,6 +81,50 @@ class InMemoryAuthRepository implements AuthRepositoryPort {
     };
   }
 }
+
+test("SMS configuration failure returns 503 before a challenge or session can be created", async (t) => {
+  const names = [
+    "TENCENT_SMS_SECRET_ID",
+    "TENCENT_SMS_SECRET_KEY",
+    "TENCENT_SMS_REGION",
+    "TENCENT_SMS_SDK_APP_ID",
+    "TENCENT_SMS_SIGN_NAME",
+    "TENCENT_SMS_TEMPLATE_ID",
+  ] as const;
+  const previous = new Map(names.map((name) => [name, process.env[name]]));
+  for (const fixture of ["missing", "partial"] as const) {
+    await t.test(fixture, async () => {
+      for (const name of names) delete process.env[name];
+      if (fixture === "partial") process.env.TENCENT_SMS_SECRET_ID = "partial-only";
+      try {
+        const repository = new InMemoryAuthRepository();
+        const handler = createSendCodeHandler(
+          () => new AuthService(repository, new TencentSmsVerificationProvider())
+        );
+        const response = await handler(new NextRequest("https://memoryai.test/api/auth/send-code", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            origin: "https://memoryai.test",
+            "x-real-ip": "127.0.0.1",
+          },
+          body: JSON.stringify({ phone: "13800000000" }),
+        }));
+        assert.equal(response.status, 503);
+        assert.deepEqual(await response.json(), { error: "SMS_PROVIDER_CONFIGURATION_INVALID" });
+        assert.equal(repository.createCalls, 0);
+        assert.equal(repository.challenge, undefined);
+        assert.equal(response.headers.get("set-cookie"), null);
+      } finally {
+        for (const name of names) {
+          const value = previous.get(name);
+          if (value === undefined) delete process.env[name];
+          else process.env[name] = value;
+        }
+      }
+    });
+  }
+});
 
 test("send code uses fake provider and never exposes the verification code", async () => {
   const repository = new InMemoryAuthRepository();

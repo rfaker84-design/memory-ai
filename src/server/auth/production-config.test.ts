@@ -16,15 +16,9 @@ const productionEnvironment: NodeJS.ProcessEnv = {
   AUTH_ALLOWED_ORIGIN: "https://memoryai.test",
   AUTH_TRUST_NGINX_PROXY: "true",
   AUTH_PROXY_LOOPBACK_ONLY: "true",
-  TENCENT_SMS_SECRET_ID: "sms-secret-id",
-  TENCENT_SMS_SECRET_KEY: "sms-secret-key",
-  TENCENT_SMS_REGION: "ap-guangzhou",
-  TENCENT_SMS_SDK_APP_ID: "1234567890",
-  TENCENT_SMS_SIGN_NAME: "MemoryAI",
-  TENCENT_SMS_TEMPLATE_ID: "123456",
 };
 
-test("production authentication startup configuration accepts the complete contract", () => {
+test("production startup accepts core authentication configuration without SMS capability variables", () => {
   assert.doesNotThrow(() => assertProductionAuthConfiguration(productionEnvironment));
 });
 
@@ -36,12 +30,6 @@ test("production authentication startup configuration fails closed for every req
     ["AUTH_ALLOWED_ORIGIN", "AUTH_ALLOWED_ORIGIN_NOT_CONFIGURED"],
     ["AUTH_TRUST_NGINX_PROXY", "AUTH_TRUST_NGINX_PROXY_NOT_CONFIGURED"],
     ["AUTH_PROXY_LOOPBACK_ONLY", "AUTH_PROXY_LOOPBACK_CONTRACT_NOT_CONFIGURED"],
-    ["TENCENT_SMS_SECRET_ID", "TENCENT_SMS_SECRET_ID_NOT_CONFIGURED"],
-    ["TENCENT_SMS_SECRET_KEY", "TENCENT_SMS_SECRET_KEY_NOT_CONFIGURED"],
-    ["TENCENT_SMS_REGION", "TENCENT_SMS_REGION_NOT_CONFIGURED"],
-    ["TENCENT_SMS_SDK_APP_ID", "TENCENT_SMS_SDK_APP_ID_NOT_CONFIGURED"],
-    ["TENCENT_SMS_SIGN_NAME", "TENCENT_SMS_SIGN_NAME_NOT_CONFIGURED"],
-    ["TENCENT_SMS_TEMPLATE_ID", "TENCENT_SMS_TEMPLATE_ID_NOT_CONFIGURED"],
   ];
 
   for (const [name, code] of cases) {
@@ -81,13 +69,13 @@ test("production instrumentation invokes the startup gate before serving request
   const previousRuntime = process.env.NEXT_RUNTIME;
   try {
     Object.assign(process.env, productionEnvironment);
-    delete process.env.TENCENT_SMS_TEMPLATE_ID;
+    delete process.env.SESSION_SECRET;
     delete process.env.NEXT_PHASE;
     process.env.NEXT_RUNTIME = "nodejs";
     await assert.rejects(
       register(),
       (error: unknown) => error instanceof ProductionAuthConfigurationError
-        && error.code === "TENCENT_SMS_TEMPLATE_ID_NOT_CONFIGURED"
+        && error.code === "SESSION_SECRET_NOT_CONFIGURED"
     );
   } finally {
     for (const key of keys) {

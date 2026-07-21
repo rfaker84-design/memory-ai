@@ -5,15 +5,6 @@ export class ProductionAuthConfigurationError extends Error {
   }
 }
 
-const REQUIRED_SMS_VARIABLES = [
-  "TENCENT_SMS_SECRET_ID",
-  "TENCENT_SMS_SECRET_KEY",
-  "TENCENT_SMS_REGION",
-  "TENCENT_SMS_SDK_APP_ID",
-  "TENCENT_SMS_SIGN_NAME",
-  "TENCENT_SMS_TEMPLATE_ID",
-] as const;
-
 function requireValue(environment: NodeJS.ProcessEnv, name: string): string {
   const value = environment[name]?.trim();
   if (!value) throw new ProductionAuthConfigurationError(`${name}_NOT_CONFIGURED`);
@@ -57,8 +48,8 @@ function requirePostgresUrl(environment: NodeJS.ProcessEnv): void {
 
 /**
  * Prevent a production process from becoming healthy while authentication is
- * unusable. This validates configuration only; it never opens a database or
- * contacts Tencent.
+ * unusable. SMS is intentionally capability-scoped so an unavailable SMS
+ * provider does not prevent unrelated production routes from starting.
  */
 export function assertProductionAuthConfiguration(
   environment: NodeJS.ProcessEnv = process.env
@@ -76,5 +67,4 @@ export function assertProductionAuthConfiguration(
   if (environment.AUTH_PROXY_LOOPBACK_ONLY !== "true") {
     throw new ProductionAuthConfigurationError("AUTH_PROXY_LOOPBACK_CONTRACT_NOT_CONFIGURED");
   }
-  for (const name of REQUIRED_SMS_VARIABLES) requireValue(environment, name);
 }

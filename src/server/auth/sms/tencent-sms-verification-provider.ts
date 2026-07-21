@@ -31,21 +31,41 @@ type TencentSmsDependencies = {
   createClient?: (config: TencentSmsConfig) => SmsApiClient;
 };
 
-function required(name: keyof NodeJS.ProcessEnv): string {
-  const value = process.env[name]?.trim();
-  if (!value) throw new SmsProviderError("SMS_NOT_CONFIGURED");
+const SMS_ENVIRONMENT_NAMES = [
+  "TENCENT_SMS_SECRET_ID",
+  "TENCENT_SMS_SECRET_KEY",
+  "TENCENT_SMS_REGION",
+  "TENCENT_SMS_SDK_APP_ID",
+  "TENCENT_SMS_SIGN_NAME",
+  "TENCENT_SMS_TEMPLATE_ID",
+] as const;
+
+function configurationError(): never {
+  throw new SmsProviderError("SMS_PROVIDER_CONFIGURATION_INVALID");
+}
+
+function required(environment: NodeJS.ProcessEnv, name: (typeof SMS_ENVIRONMENT_NAMES)[number]): string {
+  const raw = environment[name];
+  const value = raw?.trim();
+  if (!value || raw !== value) configurationError();
   return value;
 }
 
-function loadTencentSmsConfig(): TencentSmsConfig {
-  return {
-    secretId: required("TENCENT_SMS_SECRET_ID"),
-    secretKey: required("TENCENT_SMS_SECRET_KEY"),
-    region: required("TENCENT_SMS_REGION"),
-    sdkAppId: required("TENCENT_SMS_SDK_APP_ID"),
-    signName: required("TENCENT_SMS_SIGN_NAME"),
-    templateId: required("TENCENT_SMS_TEMPLATE_ID"),
+export function loadTencentSmsConfig(environment: NodeJS.ProcessEnv = process.env): TencentSmsConfig {
+  const config = {
+    secretId: required(environment, "TENCENT_SMS_SECRET_ID"),
+    secretKey: required(environment, "TENCENT_SMS_SECRET_KEY"),
+    region: required(environment, "TENCENT_SMS_REGION"),
+    sdkAppId: required(environment, "TENCENT_SMS_SDK_APP_ID"),
+    signName: required(environment, "TENCENT_SMS_SIGN_NAME"),
+    templateId: required(environment, "TENCENT_SMS_TEMPLATE_ID"),
   };
+  if (
+    !/^[a-z]+(?:-[a-z0-9]+)+$/.test(config.region)
+    || !/^\d+$/.test(config.sdkAppId)
+    || !/^\d+$/.test(config.templateId)
+  ) configurationError();
+  return config;
 }
 
 function createTencentSmsClient(config: TencentSmsConfig): SmsApiClient {
@@ -91,10 +111,16 @@ export class TencentSmsVerificationProvider
     this.createClient = dependencies.createClient ?? createTencentSmsClient;
   }
 
-  private resolveRuntime(): { config: TencentSmsConfig; client: SmsApiClient } {
+  assertConfigured(): void {
     this.config ??= this.loadConfig();
-    this.client ??= this.createClient(this.config);
-    return { config: this.config, client: this.client };
+  }
+
+  private resolveRuntime(): { config: TencentSmsConfig; client: SmsApiClient } {
+    this.assertConfigured();
+    const config = this.config;
+    if (!config) configurationError();
+    this.client ??= this.createClient(config);
+    return { config, client: this.client };
   }
 
   async sendVerificationCode(

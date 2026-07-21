@@ -3,7 +3,10 @@ import { randomInt } from "node:crypto";
 import test from "node:test";
 
 import { SmsProviderError } from "./sms-verification-provider";
-import { TencentSmsVerificationProvider } from "./tencent-sms-verification-provider";
+import {
+  loadTencentSmsConfig,
+  TencentSmsVerificationProvider,
+} from "./tencent-sms-verification-provider";
 
 const config = {
   secretId: "test-secret-id",
@@ -15,6 +18,60 @@ const config = {
 };
 
 const verificationCode = () => randomInt(0, 1_000_000).toString().padStart(6, "0");
+
+const environment: NodeJS.ProcessEnv = {
+  NODE_ENV: "test",
+  TENCENT_SMS_SECRET_ID: "test-secret-id",
+  TENCENT_SMS_SECRET_KEY: "test-secret-key",
+  TENCENT_SMS_REGION: "ap-guangzhou",
+  TENCENT_SMS_SDK_APP_ID: "1400000000",
+  TENCENT_SMS_SIGN_NAME: "MemoryAI",
+  TENCENT_SMS_TEMPLATE_ID: "100000",
+};
+const smsEnvironmentNames = [
+  "TENCENT_SMS_SECRET_ID",
+  "TENCENT_SMS_SECRET_KEY",
+  "TENCENT_SMS_REGION",
+  "TENCENT_SMS_SDK_APP_ID",
+  "TENCENT_SMS_SIGN_NAME",
+  "TENCENT_SMS_TEMPLATE_ID",
+] as const;
+
+test("Tencent SMS capability configuration is all-or-nothing and does not initialize a client", () => {
+  assert.doesNotThrow(() => loadTencentSmsConfig(environment));
+  for (const name of smsEnvironmentNames) {
+    const partial = { ...environment, [name]: "" };
+    assert.throws(
+      () => loadTencentSmsConfig(partial),
+      (error: unknown) => error instanceof SmsProviderError
+        && error.code === "SMS_PROVIDER_CONFIGURATION_INVALID",
+      name,
+    );
+  }
+  for (const [name, value] of [
+    ["TENCENT_SMS_REGION", "not a region"],
+    ["TENCENT_SMS_SDK_APP_ID", "not-a-number"],
+    ["TENCENT_SMS_TEMPLATE_ID", "not-a-number"],
+  ]) {
+    assert.throws(
+      () => loadTencentSmsConfig({ ...environment, [name]: value }),
+      (error: unknown) => error instanceof SmsProviderError
+        && error.code === "SMS_PROVIDER_CONFIGURATION_INVALID",
+      name,
+    );
+  }
+
+  let clientCreates = 0;
+  const provider = new TencentSmsVerificationProvider({
+    loadConfig: () => loadTencentSmsConfig(environment),
+    createClient: () => {
+      clientCreates += 1;
+      return { SendSms: async () => ({ SendStatusSet: [{ Code: "Ok" }] }) };
+    },
+  });
+  provider.assertConfigured();
+  assert.equal(clientCreates, 0);
+});
 
 test("Tencent provider initializes only on first runtime send", async () => {
   let configLoads = 0;
