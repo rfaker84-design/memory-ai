@@ -37,6 +37,11 @@
 .copyBlock p:not(.kicker) { max-width: 44ch; margin: 0; color: var(--muted); font-size: 15px; line-height: 1.75; }
 .greeting { color: #d4def5 !important; font-family: var(--font-noto-serif-sc), serif; font-size: clamp(18px, 4vw, 22px) !important; }
 .fieldGrid { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.previewNotice, .inlineStatus { margin: 0 0 16px; color: #b8c8e9; font-size: 13px; line-height: 1.55; }
+.previewNotice { padding: 10px 12px; border: 1px solid rgba(121, 217, 230, .34); border-radius: 12px; background: rgba(57, 120, 153, .15); color: #bceaf0; }
+.fileField { display: grid; gap: 8px; color: #d2dbef; font-size: 14px; }
+.fileField span { color: var(--muted); font-size: 12px; }
+.fileField input { width: 100%; color: #c8d5ef; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding-top: 4px; }
 .textButton { min-height: 44px; padding: 8px 10px; color: #bfcae6; text-decoration: underline; text-underline-offset: 4px; }
 .textButton:hover, .textButton:focus-visible, .wordmark:focus-visible { color: white; outline: 2px solid var(--cyan); outline-offset: 4px; border-radius: 8px; }
