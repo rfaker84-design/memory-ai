@@ -99,8 +99,14 @@ export function FirstPresenceFlow() {
         method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: phone.trim() }),
       });
       const payload = await responsePayload(response);
-      if (response.status === 503 && (payload.error === "SMS_PROVIDER_CONFIGURATION_INVALID" || payload.error === "SMS_UNAVAILABLE")) { setError("短信登录暂未开放。请稍后再试，当前不会创建登录会话或写入任何亲人资料。"); setStage("sms-unavailable"); return; }
-      if (response.status === 503) { setError("登录服务暂时不可用，尚未创建登录会话或写入任何亲人资料。请稍后重试。"); setRetryAction("send-code"); setStage("network-failed"); return; }
+      if (response.status === 503) {
+        const smsUnavailable = payload.error === "SMS_PROVIDER_CONFIGURATION_INVALID" || payload.error === "SMS_UNAVAILABLE";
+        setError(smsUnavailable
+          ? "短信登录暂未开放。请稍后再试，当前不会创建登录会话或写入任何亲人资料。"
+          : "短信登录暂未开放或登录服务暂时不可用。当前不会创建登录会话或写入任何亲人资料。请稍后重试。");
+        setStage("sms-unavailable");
+        return;
+      }
       if (!response.ok || !payload.challengeId) { setError(response.status === 429 ? "请求过于频繁，请稍后再试。" : "暂时无法发送验证码，请检查号码后重试。"); return; }
       setChallengeId(payload.challengeId); setCode(""); setStage("login-code");
     } catch {
