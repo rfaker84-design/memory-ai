@@ -170,6 +170,12 @@ export class AuthPostgresRepository implements AuthRepositoryPort {
         ON CONFLICT (external_id) DO UPDATE SET updated_at = NOW()
         RETURNING id, external_id, created_at
       `, [input.externalUserId]);
+      await client.query(
+        `INSERT INTO public.business_funnel_events (user_id, event_type, event_key)
+         VALUES ($1, 'login_completed', $2)
+         ON CONFLICT (event_type, event_key) DO NOTHING`,
+        [user.rows[0].id, `login_completed:${user.rows[0].id}`],
+      );
       return {
         status: "verified",
         user: {

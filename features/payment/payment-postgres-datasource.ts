@@ -145,6 +145,12 @@ export class PaymentPostgresDataSource implements PaymentDataSource {
          FROM written JOIN users u ON u.id = written.user_id`,
         [userId, memoryId, orderNo, requestKey, product.id, product.priceFen, product.durationDays, product.chatQuota, expiresAt],
       );
+      await client.query(
+        `INSERT INTO public.business_funnel_events (user_id, memory_id, event_type, event_key)
+         VALUES ($1, $2, 'order_created', $3)
+         ON CONFLICT (event_type, event_key) DO NOTHING`,
+        [userId, memoryId, `order_created:${inserted.rows[0].id}`],
+      );
       return toOrder(inserted.rows[0]);
     });
   }
@@ -232,6 +238,12 @@ export class PaymentPostgresDataSource implements PaymentDataSource {
            VALUES ($1, $2, 'payment.refunded', 'info', 'Payment refunded', $3::jsonb)`,
           [order.user_id, order.memory_id, JSON.stringify({ orderNo: order.order_no })],
         );
+        await client.query(
+          `INSERT INTO public.business_funnel_events (user_id, memory_id, event_type, event_key)
+           VALUES ($1, $2, 'payment_refunded', $3)
+           ON CONFLICT (event_type, event_key) DO NOTHING`,
+          [order.user_id, order.memory_id, `payment_refunded:${order.id}`],
+        );
         return { outcome: "refunded", ...base };
       }
 
@@ -269,6 +281,12 @@ export class PaymentPostgresDataSource implements PaymentDataSource {
         `INSERT INTO audit_logs (user_id, memory_id, action, level, message, metadata)
          VALUES ($1, $2, 'payment.success', 'info', 'Payment settled', $3::jsonb)`,
         [order.user_id, order.memory_id, JSON.stringify({ orderNo: order.order_no, amountFen: order.amount_fen })],
+      );
+      await client.query(
+        `INSERT INTO public.business_funnel_events (user_id, memory_id, event_type, event_key)
+         VALUES ($1, $2, 'payment_completed', $3)
+         ON CONFLICT (event_type, event_key) DO NOTHING`,
+        [order.user_id, order.memory_id, `payment_completed:${order.id}`],
       );
       return { outcome: "paid", ...base };
     });

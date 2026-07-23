@@ -12,6 +12,7 @@ import {
   type PaymentSnapshot,
 } from "./memoryExperienceClient";
 import styles from "./MemoryExperienceOffer.module.css";
+import { recordBusinessView } from "../business-metrics/businessMetricsClient";
 
 type Props = { memoryId: string; tone?: "dark" | "light" };
 
@@ -29,6 +30,7 @@ export function MemoryExperienceOffer({ memoryId, tone = "dark" }: Props) {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [notice, setNotice] = useState("");
   const checkoutKey = useRef<string | null>(null);
+  const viewedRef = useRef(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -44,6 +46,13 @@ export function MemoryExperienceOffer({ memoryId, tone = "dark" }: Props) {
   }, [memoryId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  useEffect(() => {
+    if (!viewedRef.current) {
+      viewedRef.current = true;
+      recordBusinessView("payment_entry_viewed", memoryId);
+    }
+  }, [memoryId]);
 
   const beginPurchase = async () => {
     if (checkoutLoading) return;

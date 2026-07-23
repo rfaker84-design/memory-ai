@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useId, useRef, useState } from "reac
 
 import { MemoryAvatar, MemoryButton } from "../memory-ui";
 import { MemoryExperienceOffer } from "../payment/MemoryExperienceOffer";
+import { recordBusinessView } from "../business-metrics/businessMetricsClient";
 import { useReducedMotion } from "../../motion";
 
 import {
@@ -55,6 +56,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   const inFlightRef = useRef(false);
   const greetingRequestedRef = useRef(false);
   const retryCandidateRef = useRef<PendingMessage | null>(null);
+  const greetingViewedRef = useRef(false);
   const titleId = useId();
 
   const restore = useCallback(async (signal?: AbortSignal) => {
@@ -98,6 +100,13 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   useEffect(() => {
     if (phase === "ready") inputRef.current?.focus();
   }, [phase]);
+
+  useEffect(() => {
+    if (!greetingViewedRef.current && messages.some((message) => message.role === "assistant")) {
+      greetingViewedRef.current = true;
+      recordBusinessView("first_greeting_viewed", memoryId);
+    }
+  }, [memoryId, messages]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

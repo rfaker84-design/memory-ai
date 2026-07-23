@@ -355,6 +355,12 @@ export class MemoryChatTurnPostgresDataSource
          WHERE id = $1 AND user_id = $2 AND memory_id = $3`,
         [conversationId, internalUserId, memoryId]
       );
+      await client.query(
+        `INSERT INTO public.business_funnel_events (user_id, memory_id, event_type, event_key)
+         VALUES ($1, $2, 'first_conversation_completed', $3)
+         ON CONFLICT (event_type, event_key) DO NOTHING`,
+        [internalUserId, memoryId, `first_conversation_completed:${memoryId}`],
+      );
       return { conversation, userMessage, assistantMessage };
     });
   }

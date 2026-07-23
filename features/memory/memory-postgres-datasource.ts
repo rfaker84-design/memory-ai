@@ -306,6 +306,12 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
         );
 
         await replaceFragments(client, result.rows[0].id, fragments);
+        await client.query(
+          `INSERT INTO public.business_funnel_events (user_id, memory_id, event_type, event_key)
+           VALUES ($1, $2, 'memory_created', $3)
+           ON CONFLICT (event_type, event_key) DO NOTHING`,
+          [userId, result.rows[0].id, `memory_created:${result.rows[0].id}`],
+        );
         return { row: result.rows[0], created: true };
       } catch (error) {
         if ((error as { code?: string }).code !== "23505") throw error;
