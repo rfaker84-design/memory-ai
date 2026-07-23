@@ -150,6 +150,42 @@ test("send code uses fake provider and never exposes the verification code", asy
   assert.equal(repository.providerRequestId, "fake-request-id");
 });
 
+test("formal SMS endpoints reject extra client-controlled fields before service calls", async () => {
+  let sendCalls = 0;
+  let verifyCalls = 0;
+  const send = createSendCodeHandler(() => ({
+    sendCode: async () => {
+      sendCalls += 1;
+      return { status: "rate_limited" as const };
+    },
+  }));
+  const verify = createVerifyCodeHandler(() => ({
+    verifyCode: async () => {
+      verifyCalls += 1;
+      return { status: "invalid" as const };
+    },
+  }));
+  const headers = {
+    "content-type": "application/json",
+    origin: "https://memoryai.test",
+    "x-real-ip": "127.0.0.1",
+  };
+
+  const sendResponse = await send(new NextRequest("https://memoryai.test/api/auth/send-code", {
+    method: "POST", headers, body: JSON.stringify({ phone: "13800000000", userId: "attacker" }),
+  }));
+  const verifyResponse = await verify(new NextRequest("https://memoryai.test/api/auth/verify-code", {
+    method: "POST", headers, body: JSON.stringify({
+      phone: "13800000000", code: "123456", challengeId: "00000000-0000-4000-8000-000000000002", requestId: "attacker",
+    }),
+  }));
+
+  assert.equal(sendResponse.status, 400);
+  assert.equal(verifyResponse.status, 400);
+  assert.equal(sendCalls, 0);
+  assert.equal(verifyCalls, 0);
+});
+
 test("trusted proxy IP handling fails closed and ignores X-Forwarded-For", async (t) => {
   const request = (headers: Record<string, string>) => new NextRequest(
     "https://memoryai.test/api/auth/send-code",

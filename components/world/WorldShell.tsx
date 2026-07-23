@@ -285,8 +285,24 @@ function HomeOverlay({ onLoginSuccess, onPreview }: { onLoginSuccess: () => void
   const [challengeId, setChallengeId] = useState("");
   const [notice, setNotice] = useState("");
 
+  const isChinaMobile = (value: string) => {
+    const compact = value.trim().replace(/[\s()-]/g, "");
+    const national = compact.startsWith("+86")
+      ? compact.slice(3)
+      : compact.startsWith("0086")
+        ? compact.slice(4)
+        : compact.startsWith("86") && compact.length === 13
+          ? compact.slice(2)
+          : compact;
+    return /^1[3-9]\d{9}$/.test(national);
+  };
+
   const sendCode = async () => {
-    if (!phone || sending) return;
+    if (sending) return;
+    if (!isChinaMobile(phone)) {
+      setNotice("请输入有效的中国大陆手机号。");
+      return;
+    }
     setSending(true);
     setNotice("");
     try {
@@ -296,19 +312,22 @@ function HomeOverlay({ onLoginSuccess, onPreview }: { onLoginSuccess: () => void
         credentials: "same-origin",
         body: JSON.stringify({ phone }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.status === 202 && data.accepted && data.challengeId) {
         setChallengeId(data.challengeId);
-        setSending(false);
         setStep('code');
         setCountdown(60);
+      } else if (res.status === 429) {
+        setNotice("请求过于频繁，请稍后再试。");
+      } else if (res.status === 400) {
+        setNotice("请输入有效的中国大陆手机号。");
       } else {
-        setSending(false);
         setNotice("短信登录暂时不可用，请稍后重试。");
       }
     } catch {
-      setSending(false);
       setNotice("网络连接暂时中断，请检查网络后重试。");
+    } finally {
+      setSending(false);
     }
   };
 
@@ -328,7 +347,7 @@ function HomeOverlay({ onLoginSuccess, onPreview }: { onLoginSuccess: () => void
         credentials: "same-origin",
         body: JSON.stringify({ phone, code, challengeId }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok && data.authenticated) {
         setStep("phone");
         setPhone("");
@@ -383,6 +402,9 @@ function HomeOverlay({ onLoginSuccess, onPreview }: { onLoginSuccess: () => void
               value={phone}
               onChange={e => { setPhone(e.target.value); setNotice(""); }}
               placeholder="输入手机号"
+              inputMode="numeric"
+              autoComplete="tel"
+              maxLength={16}
               autoFocus
               style={{
                 height: 48, padding: "0 18px", borderRadius: 14,
@@ -392,7 +414,7 @@ function HomeOverlay({ onLoginSuccess, onPreview }: { onLoginSuccess: () => void
                 fontWeight: 300, letterSpacing: "0.04em",
               }}
             />
-            <button onClick={sendCode} disabled={!phone || sending} style={{
+            <button type="button" onClick={sendCode} disabled={!phone || sending} style={{
               height: 48, borderRadius: 14, border: "none",
               background: phone ? "rgba(214,168,110,0.2)" : "rgba(255,255,255,0.03)",
               color: phone ? "#FFD2A6" : "rgba(255,255,255,0.2)",
@@ -421,6 +443,8 @@ function HomeOverlay({ onLoginSuccess, onPreview }: { onLoginSuccess: () => void
               value={code}
               onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
               placeholder="输入验证码"
+              inputMode="numeric"
+              autoComplete="one-time-code"
               autoFocus
               maxLength={6}
               style={{
@@ -431,21 +455,24 @@ function HomeOverlay({ onLoginSuccess, onPreview }: { onLoginSuccess: () => void
                 fontWeight: 300, letterSpacing: "0.3em", textAlign: "center",
               }}
             />
-            <button onClick={verifyCode} disabled={code.length < 4} style={{
+            <button type="button" onClick={verifyCode} disabled={code.length !== 6} style={{
               height: 48, borderRadius: 14, border: "none",
-              background: code.length >= 4 ? "rgba(214,168,110,0.2)" : "rgba(255,255,255,0.03)",
-              color: code.length >= 4 ? "#FFD2A6" : "rgba(255,255,255,0.2)",
-              fontSize: 15, fontWeight: 400, cursor: code.length >= 4 ? "pointer" : "default",
+              background: code.length === 6 ? "rgba(214,168,110,0.2)" : "rgba(255,255,255,0.03)",
+              color: code.length === 6 ? "#FFD2A6" : "rgba(255,255,255,0.2)",
+              fontSize: 15, fontWeight: 400, cursor: code.length === 6 ? "pointer" : "default",
               transition: "all 0.3s ease",
             }}>
               进入忆见
             </button>
-            <button onClick={() => setStep("phone")} style={{
+            <button type="button" onClick={() => {
+              if (countdown === 0) void sendCode();
+              else setStep("phone");
+            }} disabled={sending} style={{
               background: "none", border: "none",
               color: "#8a7060", fontSize: 12, cursor: "pointer",
               alignSelf: "center",
             }}>
-              {countdown > 0 ? `${countdown}s 后重发` : "更换手机号"}
+              {countdown > 0 ? `${countdown}s 后更换手机号` : "重新发送验证码"}
             </button>
           </>
         )}

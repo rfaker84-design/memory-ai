@@ -29,6 +29,10 @@ export function createVerifyCodeHandler(serviceFactory: () => ServicePort = crea
         return authJson({ error: "VERIFICATION_FAILED" }, { status: 400 });
       }
       const record = body as Record<string, unknown>;
+      const allowedFields = new Set(["phone", "code", "challengeId"]);
+      if (Array.isArray(body) || Object.keys(record).some((field) => !allowedFields.has(field))) {
+        return authJson({ error: "VERIFICATION_FAILED" }, { status: 400 });
+      }
       const result = await serviceFactory().verifyCode({
         phone: record.phone,
         code: typeof record.code === "string" ? record.code : "",

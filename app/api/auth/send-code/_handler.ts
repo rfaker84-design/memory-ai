@@ -25,9 +25,16 @@ export function createSendCodeHandler(serviceFactory: () => ServicePort = create
       } catch {
         return authJson({ error: "INVALID_JSON" }, { status: 400 });
       }
-      const phone = typeof body === "object" && body !== null && "phone" in body
-        ? body.phone
-        : undefined;
+      if (
+        typeof body !== "object"
+        || body === null
+        || Array.isArray(body)
+        || Object.keys(body).length !== 1
+        || !("phone" in body)
+      ) {
+        return authJson({ error: "INVALID_PHONE" }, { status: 400 });
+      }
+      const phone = body.phone;
       const result = await serviceFactory().sendCode(phone, requestIp);
       if (result.status === "invalid_phone") {
         return authJson({ error: "INVALID_PHONE" }, { status: 400 });

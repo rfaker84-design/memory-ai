@@ -18,7 +18,7 @@
     "test:collective-analysis": "tsx --test app/api/collective-analysis/route.test.ts",
     "test:auth-migration": "node --test database/tests/006-auth-verification-challenges.test.cjs",
     "test:sms-provider": "tsx --test src/server/auth/sms/tencent-sms-verification-provider.test.ts",
-    "test:auth": "tsx --test src/server/auth/auth.test.ts src/server/auth/auth-response-cache.test.ts src/server/auth/production-config.test.ts src/server/auth/sms/tencent-sms-verification-provider.test.ts",
+    "test:auth": "tsx --test src/server/auth/auth.test.ts src/server/auth/auth-response-cache.test.ts src/server/auth/production-config.test.ts src/server/auth/sms/tencent-sms-verification-provider.test.ts app/login/login-entry.test.ts",
     "test:security-routes": "tsx --test src/server/security/origin.test.ts app/api/api-policy.test.ts app/api/legacy-route-security.test.ts src/components/auth/client-identity-storage.test.ts",
     "test:startup-contract": "node --test scripts/security/production-startup-contract.test.cjs",
     "test": "npm run test:create-flow && npm run test:memory-item && npm run test:memory-pages && npm run test:media && npm run test:collective-analysis && npm run test:auth && npm run test:security-routes && npm run test:startup-contract",
