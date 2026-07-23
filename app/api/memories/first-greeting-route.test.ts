@@ -103,7 +103,14 @@ test("first greeting rejects malformed and client-authored request bodies before
     sessionResolver
   );
 
-  for (const body of ["not-json", JSON.stringify({ userId: "forged" }), "[]", "null"]) {
+  for (const body of [
+    "not-json",
+    JSON.stringify({ userId: "forged" }),
+    JSON.stringify({ greeting: "client-authored greeting" }),
+    JSON.stringify({ content: "client-authored greeting" }),
+    "[]",
+    "null",
+  ]) {
     const response = await handler(request(idempotencyKey, body), context);
     assert.equal(response.status, 400);
     assert.deepEqual(await response.json(), { error: "INVALID_JSON" });

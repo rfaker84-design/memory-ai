@@ -215,4 +215,8 @@ test("memory-chat validates Unicode length and dangerous question content before
   const safe = await safeHandler(request({ memoryId, question: `<3 ${"😀".repeat(3_997)}` }));
   assert.equal(safe.status, 409);
   assert.deepEqual(await safe.json(), { error: "CHAT_TURN_IN_PROGRESS" });
+
+  const singleCharacter = await safeHandler(request({ memoryId, question: "x" }));
+  assert.equal(singleCharacter.status, 409);
+  assert.deepEqual(await singleCharacter.json(), { error: "CHAT_TURN_IN_PROGRESS" });
 });
