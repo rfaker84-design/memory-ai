@@ -39,3 +39,11 @@ test("provider failure is explicitly retryable while completion precedes LTM per
   assert.doesNotMatch(source, /addiction-score/);
   assert.doesNotMatch(source, /supabase/i);
 });
+
+test("a paid experience reserves exactly one quota before provider work and releases it on provider failure", () => {
+  assert.match(source, /quotaService\.reserveChatQuota/);
+  assert.match(source, /PAYMENT_ENTITLEMENT_REQUIRED/);
+  assert.match(source, /quotaService\.releaseChatQuota/);
+  assert.ok(source.indexOf("reserveChatQuota") < source.indexOf("engineServiceFactory().generateReply"));
+  assert.match(source, /await releaseQuota\(\)/);
+});

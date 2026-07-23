@@ -12,6 +12,9 @@ const FORMAL_API_PATHS = new Set([
   "/api/auth/logout",
   "/api/memories",
   "/api/memory-chat",
+  "/api/payments/orders",
+  "/api/payments/entitlements",
+  "/api/payments/wechat/callback",
   "/api/media/upload",
   "/api/health",
   "/api/health/database",
@@ -39,6 +42,10 @@ export function middleware(request: NextRequest) {
   }
 
   if (!MUTATION_METHODS.has(request.method)) return NextResponse.next();
+
+  // This endpoint is authenticated by WeChat Pay's signed notification, not a
+  // browser Origin. Its Route Handler verifies both signature and encrypted payload.
+  if (request.nextUrl.pathname === "/api/payments/wechat/callback") return NextResponse.next();
 
   const result = checkAllowedOrigin(request);
   if (result.allowed) return NextResponse.next();

@@ -68,6 +68,10 @@ test("detail, chat, and create success paths contain no legacy data requests", (
     assert.match(source, /loadOwnedMemory/, name);
   }
   assert.match(chat, /\/chat-session/);
+  assert.match(chat, /\/api\/payments\/orders/);
+  assert.match(chat, /Idempotency-Key/);
+  assert.doesNotMatch(chat, /history:\s*messages/);
+  assert.doesNotMatch(chat, /fragments:\s*fragments/);
   assert.match(create, /`\/memory\/\$\{created\.id\}`/);
   assert.match(create, /`\/memory-chat\/\$\{created\.id\}`/);
   for (const source of [detail, chat, create]) {

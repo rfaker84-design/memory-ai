@@ -1,9 +1,12 @@
 import { verifyRequestSession } from "../../../src/server/auth";
-import { createMemoryChatHandler } from "./_handler";
+import { createMemoryChatHandler, createPaymentQuotaService } from "./_handler";
 
 export const POST = createMemoryChatHandler(
   undefined,
   undefined,
   undefined,
-  verifyRequestSession
+  verifyRequestSession,
+  undefined,
+  undefined,
+  createPaymentQuotaService,
 );

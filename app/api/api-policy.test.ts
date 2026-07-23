@@ -18,6 +18,9 @@ const EXACT_FORMAL_PATHS = new Set([
   "/api/auth/logout",
   "/api/memories",
   "/api/memory-chat",
+  "/api/payments/orders",
+  "/api/payments/entitlements",
+  "/api/payments/wechat/callback",
   "/api/media/upload",
   "/api/health",
   "/api/health/database",
@@ -105,7 +108,7 @@ test("middleware enforces the formal API allowlist before route execution", asyn
 
 test("every tracked non-formal Route Handler is a route-level 410", async () => {
   const routes = trackedRoutes();
-  assert.equal(routes.length, 87, "the audit must enumerate the complete tracked API surface");
+  assert.equal(routes.length, 90, "the audit must enumerate the complete tracked API surface");
 
   for (const { file, pathname } of routes) {
     const formal = isFormalApiPath(pathname);
@@ -152,6 +155,9 @@ test("formal Session ownership and public health contracts remain explicit", asy
     chatSession: readFileSync("app/api/memories/[id]/chat-session/_handler.ts", "utf8"),
     firstGreeting: readFileSync("app/api/memories/[id]/first-greeting/_handler.ts", "utf8"),
     memoryChat: readFileSync("app/api/memory-chat/route.ts", "utf8"),
+    paymentOrders: readFileSync("app/api/payments/orders/route.ts", "utf8"),
+    paymentEntitlements: readFileSync("app/api/payments/entitlements/route.ts", "utf8"),
+    paymentCallback: readFileSync("app/api/payments/wechat/callback/route.ts", "utf8"),
     media: readFileSync("app/api/media/_lib.ts", "utf8"),
   };
   assert.match(sources.sendCode, /createSendCodeHandler/);
@@ -161,6 +167,9 @@ test("formal Session ownership and public health contracts remain explicit", asy
   for (const source of [sources.memoryChat, sources.media]) assert.match(source, /verifyRequestSession/);
   assert.match(sources.logout, /clearSessionCookie/);
   assert.match(sources.memories, /resolveSessionOwner/);
+  assert.match(sources.paymentOrders, /createPaymentOrdersHandler/);
+  assert.match(sources.paymentEntitlements, /verifyRequestSession/);
+  assert.match(sources.paymentCallback, /createWeChatPayCallbackHandler/);
 
   const { GET: aiHealth } = await import("./health/ai/route");
   const response = await aiHealth();

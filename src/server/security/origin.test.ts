@@ -14,6 +14,7 @@ const mutationPaths = [
   "/api/memories/memory-id/chat-session",
   "/api/memories/memory-id/first-greeting",
   "/api/memory-chat",
+  "/api/payments/orders",
   "/api/media/upload",
   "/api/media/media-id",
 ];
@@ -41,6 +42,13 @@ test("every production API mutation is guarded by the shared Origin boundary", a
       assert.equal(allowed.headers.get("x-middleware-next"), "1");
     });
   }
+});
+
+test("the signed WeChat callback is the sole formal mutation without browser Origin", () => {
+  const response = middleware(new NextRequest("https://memoryai.test/api/payments/wechat/callback", {
+    method: "POST",
+  }));
+  assert.equal(response.headers.get("x-middleware-next"), "1");
 });
 
 test("legacy mutations are closed before Origin or route execution", async (t) => {
