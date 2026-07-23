@@ -13,8 +13,9 @@ const OriginalHomeLogin = dynamic(
 );
 
 const SPLASH_KEY = "memoryai:sprint17:original-home-splash-seen";
+const VISUAL_PREVIEW_ENABLED = process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_MEMORYAI_ENABLE_PRESENCE_PREVIEW === "true";
 
-type EntryStage = "checking" | "splash" | "home" | "presence";
+type EntryStage = "checking" | "splash" | "home" | "presence" | "preview";
 
 export default function HomePage() {
   const [stage, setStage] = useState<EntryStage>("checking");
@@ -32,8 +33,9 @@ export default function HomePage() {
     <MotionProvider>
       {stage === "checking" && <div style={{ minHeight: "100dvh", background: "#000" }} />}
       {stage === "splash" && <SplashScreen onComplete={completeSplash} />}
-      {stage === "home" && <OriginalHomeLogin onAuthenticated={() => setStage("presence")} />}
+      {stage === "home" && <OriginalHomeLogin onAuthenticated={() => setStage("presence")} onPreview={VISUAL_PREVIEW_ENABLED ? () => setStage("preview") : undefined} />}
       {stage === "presence" && <FirstPresenceFlow initialStage="create" onLeaveHome={() => setStage("home")} />}
+      {stage === "preview" && <FirstPresenceFlow onLeaveHome={() => setStage("home")} />}
     </MotionProvider>
   );
 }

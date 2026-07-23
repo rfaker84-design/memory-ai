@@ -1,16 +1,16 @@
 .scene {
-  --ink: #e8eefb;
-  --muted: #a4afc7;
-  --line: rgba(176, 197, 234, 0.18);
-  --violet: #a99cff;
-  --cyan: #79d9e6;
+  --ink: #fff3e8;
+  --muted: #a98f7d;
+  --line: rgba(255, 210, 166, 0.16);
+  --violet: #d6a86e;
+  --cyan: #ffd2a6;
   min-height: 100dvh;
   overflow: hidden;
   color: var(--ink);
   background:
-    radial-gradient(circle at 50% 24%, rgba(115, 129, 213, 0.23), transparent 28rem),
-    radial-gradient(circle at 18% 82%, rgba(55, 136, 162, 0.17), transparent 27rem),
-    linear-gradient(145deg, #0b1020 0%, #11152b 54%, #101226 100%);
+    radial-gradient(circle at 50% 24%, rgba(214, 168, 110, 0.16), transparent 28rem),
+    radial-gradient(circle at 18% 82%, rgba(112, 78, 54, 0.12), transparent 27rem),
+    linear-gradient(145deg, #0b0a08 0%, #12100d 54%, #0b0a08 100%);
 }
 
 .frame { position: relative; z-index: 1; min-height: 100dvh; max-width: 1120px; margin: 0 auto; padding: 20px clamp(20px, 5vw, 64px) max(24px, env(safe-area-inset-bottom)); }
@@ -22,28 +22,28 @@
 .step, .footer { color: var(--muted); font-size: 12px; letter-spacing: .04em; }
 .main { min-height: calc(100dvh - 132px); display: grid; align-content: center; gap: clamp(12px, 3vh, 36px); }
 .presenceStage { position: relative; min-height: min(44vh, 400px); display: grid; place-items: center; isolation: isolate; }
-.lightColumn { position: absolute; width: min(82vw, 380px); height: min(60vw, 300px); border-radius: 50%; background: radial-gradient(ellipse, rgba(120, 167, 255, .28), transparent 66%); filter: blur(7px); transform: translateY(10%); }
+.lightColumn { position: absolute; width: min(82vw, 380px); height: min(60vw, 300px); border-radius: 50%; background: radial-gradient(ellipse, rgba(214, 168, 110, .22), transparent 66%); filter: blur(7px); transform: translateY(10%); }
 .ringOne, .ringTwo { position: absolute; border: 1px solid var(--line); border-radius: 50%; }
 .ringOne { width: min(68vw, 330px); aspect-ratio: 1; animation: ringBreathe 7s ease-in-out infinite; }
-.ringTwo { width: min(49vw, 238px); aspect-ratio: 1; border-color: rgba(121, 217, 230, .28); animation: ringBreathe 7s ease-in-out 900ms infinite reverse; }
+.ringTwo { width: min(49vw, 238px); aspect-ratio: 1; border-color: rgba(255, 210, 166, .22); animation: ringBreathe 7s ease-in-out 900ms infinite reverse; }
 .figureWrap { position: relative; display: grid; justify-items: center; gap: 14px; animation: arrive 1200ms cubic-bezier(.16,.8,.24,1) both; }
-.figureWrap > :global(*) { position: relative; z-index: 1; box-shadow: 0 18px 74px rgba(9, 12, 36, .55), 0 0 0 1px rgba(199, 218, 255, .2); }
-.figureAura { position: absolute; inset: -36px; border-radius: 50%; background: conic-gradient(from 210deg, transparent, rgba(121,217,230,.26), rgba(169,156,255,.31), transparent); filter: blur(17px); animation: haloTurn 14s linear infinite; }
-.presenceName { color: #c5d0ec; font-size: 13px; letter-spacing: .04em; }
-.controlShell { width: min(100%, 648px); margin: 0 auto; padding: clamp(22px, 5vw, 42px); border: 1px solid var(--line); border-radius: 28px; background: linear-gradient(150deg, rgba(28, 35, 67, .78), rgba(18, 23, 49, .84)); box-shadow: 0 30px 80px rgba(4, 6, 20, .38); backdrop-filter: blur(20px); animation: panelArrive 900ms calc(var(--motion-duration) * .33) cubic-bezier(.16,.8,.24,1) both; }
+.figureWrap > :global(*) { position: relative; z-index: 1; box-shadow: 0 18px 74px rgba(0, 0, 0, .48), 0 0 0 1px rgba(255, 210, 166, .18); }
+.figureAura { position: absolute; inset: -36px; border-radius: 50%; background: conic-gradient(from 210deg, transparent, rgba(255,210,166,.24), rgba(214,168,110,.28), transparent); filter: blur(17px); animation: haloTurn 14s linear infinite; }
+.presenceName { color: #d8bfaa; font-size: 13px; letter-spacing: .04em; }
+.controlShell { width: min(100%, 648px); margin: 0 auto; padding: clamp(22px, 5vw, 42px); border: 1px solid var(--line); border-radius: 28px; background: linear-gradient(150deg, rgba(24, 19, 15, .84), rgba(14, 12, 10, .9)); box-shadow: 0 30px 80px rgba(0, 0, 0, .38); backdrop-filter: blur(20px); animation: panelArrive 900ms calc(var(--motion-duration) * .33) cubic-bezier(.16,.8,.24,1) both; }
 .copyBlock { display: grid; gap: 18px; }
 .kicker { margin: 0; color: var(--cyan); font-size: 12px; letter-spacing: .15em; text-transform: uppercase; }
 .copyBlock h1 { margin: 0; color: var(--ink); font-family: var(--font-noto-serif-sc), serif; font-size: clamp(30px, 7vw, 54px); font-weight: 500; line-height: 1.12; letter-spacing: -.035em; }
 .copyBlock p:not(.kicker) { max-width: 44ch; margin: 0; color: var(--muted); font-size: 15px; line-height: 1.75; }
 .greeting { color: #d4def5 !important; font-family: var(--font-noto-serif-sc), serif; font-size: clamp(18px, 4vw, 22px) !important; }
 .fieldGrid { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.previewNotice, .inlineStatus { margin: 0 0 16px; color: #b8c8e9; font-size: 13px; line-height: 1.55; }
-.previewNotice { padding: 10px 12px; border: 1px solid rgba(121, 217, 230, .34); border-radius: 12px; background: rgba(57, 120, 153, .15); color: #bceaf0; }
-.fileField { display: grid; gap: 8px; color: #d2dbef; font-size: 14px; }
+.previewNotice, .inlineStatus { margin: 0 0 16px; color: #d8bfaa; font-size: 13px; line-height: 1.55; }
+.previewNotice { padding: 10px 12px; border: 1px solid rgba(255, 210, 166, .28); border-radius: 12px; background: rgba(214, 168, 110, .1); color: #f0d5bb; }
+.fileField { display: grid; gap: 8px; color: #ead4c0; font-size: 14px; }
 .fileField span { color: var(--muted); font-size: 12px; }
 .fileField input { width: 100%; color: #c8d5ef; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding-top: 4px; }
-.textButton { min-height: 44px; padding: 8px 10px; color: #bfcae6; text-decoration: underline; text-underline-offset: 4px; }
+.textButton { min-height: 44px; padding: 8px 10px; color: #d8bfaa; text-decoration: underline; text-underline-offset: 4px; }
 .textButton:hover, .textButton:focus-visible, .wordmark:focus-visible { color: white; outline: 2px solid var(--cyan); outline-offset: 4px; border-radius: 8px; }
 .progressLine { height: 2px; overflow: hidden; background: rgba(180, 197, 235, .2); border-radius: 99px; }
 .progressLine span { display: block; width: 42%; height: 100%; background: linear-gradient(90deg, var(--violet), var(--cyan)); border-radius: inherit; animation: loadingSlide 1.45s ease-in-out infinite; }

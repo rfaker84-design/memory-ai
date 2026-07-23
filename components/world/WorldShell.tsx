@@ -227,7 +227,7 @@ function DreamScene({ entities, onEntityClick, tabMode, personalities }: {
  * post-login shell.  The latter still contains historical demo entities and
  * must not become a route entry again.
  */
-export function OriginalHomeLogin({ onAuthenticated }: { onAuthenticated: () => void }) {
+export function OriginalHomeLogin({ onAuthenticated, onPreview }: { onAuthenticated: () => void; onPreview?: () => void }) {
   return (
     <div style={{
       position: "fixed", inset: 0, background: DREAM.bg,
@@ -249,7 +249,7 @@ export function OriginalHomeLogin({ onAuthenticated }: { onAuthenticated: () => 
       <div style={{ position: "absolute", inset: 0, zIndex: 5, pointerEvents: "none" }}>
         <MemorySoulBody state="empty" />
       </div>
-      <HomeOverlay onLoginSuccess={onAuthenticated} />
+      <HomeOverlay onLoginSuccess={onAuthenticated} onPreview={onPreview} />
       <div style={{ position: "fixed", bottom: 62, left: 0, right: 0, zIndex: 15, textAlign: "center", pointerEvents: "none" }}>
         <span style={{ fontSize: 9, fontWeight: 300, color: "rgba(255,210,166,0.25)", letterSpacing: "0.04em" }}>
           苏ICP备2026040056号
@@ -276,17 +276,19 @@ function CameraDrift({ tabMode }: { tabMode: TabMode }) {
    HOME OVERLAY 鈥?warm memory welcome
    鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲 */
 
-function HomeOverlay({ onLoginSuccess }: { onLoginSuccess: () => void }) {
+function HomeOverlay({ onLoginSuccess, onPreview }: { onLoginSuccess: () => void; onPreview?: () => void }) {
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"phone" | "code">("phone");
   const [sending, setSending] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [challengeId, setChallengeId] = useState("");
+  const [notice, setNotice] = useState("");
 
   const sendCode = async () => {
     if (!phone || sending) return;
     setSending(true);
+    setNotice("");
     try {
       const res = await fetch("/api/auth/send-code", {
         method: "POST",
@@ -302,11 +304,11 @@ function HomeOverlay({ onLoginSuccess }: { onLoginSuccess: () => void }) {
         setCountdown(60);
       } else {
         setSending(false);
-        alert(data.error || "发送失败");
+        setNotice("短信登录暂时不可用，请稍后重试。");
       }
     } catch {
       setSending(false);
-      alert("网络错误，请重试");
+      setNotice("网络连接暂时中断，请检查网络后重试。");
     }
   };
 
@@ -318,6 +320,7 @@ function HomeOverlay({ onLoginSuccess }: { onLoginSuccess: () => void }) {
 
   const verifyCode = async () => {
     if (code.length !== 6 || !challengeId) return;
+    setNotice("");
     try {
       const res = await fetch("/api/auth/verify-code", {
         method: "POST",
@@ -333,10 +336,10 @@ function HomeOverlay({ onLoginSuccess }: { onLoginSuccess: () => void }) {
         setChallengeId("");
         onLoginSuccess();
       } else {
-        alert(data.error || "发送失败");
+        setNotice("验证码暂时无法确认，请重新获取后再试。");
       }
     } catch {
-      alert("网络错误，请重试");
+      setNotice("网络连接暂时中断，请检查网络后重试。");
     }
   };
 
@@ -372,12 +375,13 @@ function HomeOverlay({ onLoginSuccess }: { onLoginSuccess: () => void }) {
         padding: "28px 24px",
         display: "flex", flexDirection: "column", gap: 16,
       }}>
+        {notice && <p role="alert" style={{ margin: 0, color: "rgba(255,210,166,0.72)", fontSize: 12, lineHeight: 1.6, textAlign: "center" }}>{notice}</p>}
         {step === "phone" ? (
           <>
             <input
               type="tel"
               value={phone}
-              onChange={e => setPhone(e.target.value)}
+              onChange={e => { setPhone(e.target.value); setNotice(""); }}
               placeholder="输入手机号"
               autoFocus
               style={{
@@ -398,6 +402,10 @@ function HomeOverlay({ onLoginSuccess }: { onLoginSuccess: () => void }) {
             }}>
               {sending ? "发送中..." : "获取验证码"}
             </button>
+            {onPreview && <button type="button" onClick={onPreview} style={{
+              alignSelf: "center", background: "none", border: "none", color: "rgba(255,210,166,0.44)",
+              fontSize: 11, letterSpacing: "0.04em", cursor: "pointer", padding: "4px 8px",
+            }}>开发视觉预览</button>}
           </>
         ) : (
           <>
