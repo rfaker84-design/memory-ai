@@ -12,7 +12,7 @@ test("refund qualification is server-derived and retains manual review over unsa
   assert.match(source, /REQUESTED_DUPLICATE_CHARGE/);
   assert.match(source, /REQUESTED_ENTITLEMENT_MISSING/);
   assert.match(source, /REQUESTED_SERVICE_FAILURE/);
-  assert.match(source, /reason === "unused_purchase"/);
+  assert.match(source, /REFUND_REASON_PATTERN = \/\^\(unused_purchase\|duplicate_charge\|entitlement_missing\|service_failure\)\$\//);
   assert.match(source, /DUPLICATE_CHARGE_DETECTED/);
   assert.match(source, /ENTITLEMENT_MISSING_DETECTED/);
   assert.match(source, /PAID_REPLY_ALREADY_USED/);
