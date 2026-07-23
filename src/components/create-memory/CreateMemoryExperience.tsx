@@ -7,6 +7,7 @@ import { useReducedMotion } from "../../motion";
 import { useCreateMemoryDraft } from "./useCreateMemoryDraft";
 import type { CreateStage } from "./types";
 import { completion, createMemoryRequestHeaders, validateStage } from "./createMemoryLogic";
+import { recordTrustConsent, TrustConsentRequestError } from "../trust/trustConsentClient";
 import styles from "./CreateMemoryExperience.module.css";
 
 const stages = [
@@ -58,6 +59,7 @@ export function CreateMemoryExperience() {
 
     setStatus("uploading");
     setUploadState("uploading");
+    await recordTrustConsent("media_asset", memoryId);
     const assets: Array<{ id: string; mediaType: string; status: string }> = [];
 
     for (const file of files) {
@@ -86,6 +88,7 @@ export function CreateMemoryExperience() {
     submitting.current = true; setError("");
     try {
       setStatus("submitting");
+      await recordTrustConsent("memory_profile");
       const fragments = [
         ["personality", draft.personality], ["catch_phrase", draft.catchPhrases], ["shared_experience", draft.sharedExperiences],
         ["life_moment", draft.lifeMoments], ["interest", draft.interests], ["purpose", draft.purpose], ["preferred_address", draft.preferredAddress],
@@ -109,6 +112,10 @@ export function CreateMemoryExperience() {
         setError(mediaError instanceof Error ? mediaError.message : "MEDIA_UPLOAD_FAILED");
       }
     } catch (cause) {
+      if (cause instanceof TrustConsentRequestError) {
+        setStatus("recoverable-error"); setError("确认记录暂未安全保存；尚未创建 TA 或上传素材。恢复连接后可明确重试。");
+        return;
+      }
       setStatus("recoverable-error"); setError(cause instanceof Error ? cause.message : "创建失败，请重试。");
     } finally { submitting.current = false; }
   };
@@ -142,12 +149,12 @@ export function CreateMemoryExperience() {
           <div className={styles.step} key={reducedMotion ? "static" : stage}>
             {stage === 0 && <><div className={styles.grid2}><MemoryInput label="姓名或昵称 *" value={draft.name} onChange={(e: ChangeEvent<HTMLInputElement>) => update("name", e.currentTarget.value)} autoFocus/><MemoryInput label="与你的关系 *" value={draft.relationship} onChange={(e: ChangeEvent<HTMLInputElement>) => update("relationship", e.currentTarget.value)}/></div><MemoryInput label="你希望如何称呼 TA *" value={draft.preferredAddress} onChange={(e: ChangeEvent<HTMLInputElement>) => update("preferredAddress", e.currentTarget.value)}/><MemoryInput label="创建目的 *" value={draft.purpose} onChange={(e: ChangeEvent<HTMLInputElement>) => update("purpose", e.currentTarget.value)} placeholder="例如：保存共同记忆、获得陪伴"/></>}
             {stage === 1 && <><MemoryInput multiline label="性格" value={draft.personality} onChange={(e: ChangeEvent<HTMLTextAreaElement>) => update("personality", e.currentTarget.value)}/><MemoryInput multiline label="常说的话" value={draft.catchPhrases} onChange={(e: ChangeEvent<HTMLTextAreaElement>) => update("catchPhrases", e.currentTarget.value)}/><MemoryInput multiline label="共同经历" value={draft.sharedExperiences} onChange={(e: ChangeEvent<HTMLTextAreaElement>) => update("sharedExperiences", e.currentTarget.value)}/><div className={styles.grid2}><MemoryInput multiline label="生活片段" value={draft.lifeMoments} onChange={(e: ChangeEvent<HTMLTextAreaElement>) => update("lifeMoments", e.currentTarget.value)}/><MemoryInput multiline label="兴趣爱好" value={draft.interests} onChange={(e: ChangeEvent<HTMLTextAreaElement>) => update("interests", e.currentTarget.value)}/></div></>}
-            {stage === 2 && <><label className={styles.file}>选择照片<small>{photo?.name || "JPG、PNG 等，最大 20MB"}</small><input type="file" accept="image/*" onChange={e => chooseFile("photo", e)}/></label><label className={styles.file}>选择声音文件<small>{voice?.name || "常见音频格式，最大 20MB"}</small><input type="file" accept="audio/*" onChange={e => chooseFile("voice", e)}/></label><div className={styles.muted}>素材仅在创建时上传，不会写入 localStorage。上传接口为 /api/media/upload；服务不可用时会明确提示。</div><label className={styles.consent}><input type="checkbox" checked={draft.consent} onChange={e => update("consent", e.target.checked)}/><span>我确认拥有上述素材的合法使用权，并同意素材用于创建 TA。敏感资料请仅在获得本人或权利人授权后提交。</span></label></>}
+            {stage === 2 && <><label className={styles.file}>选择照片<small>{photo?.name || "JPG、PNG 等，最大 20MB"}</small><input type="file" accept="image/*" onChange={e => chooseFile("photo", e)}/></label><label className={styles.file}>选择声音文件<small>{voice?.name || "常见音频格式，最大 20MB"}</small><input type="file" accept="audio/*" onChange={e => chooseFile("voice", e)}/></label><div className={styles.muted}>忆见的回应由 AI 生成，不是现实中的 TA；素材只在创建后上传，不会写入 localStorage。请先阅读 <a href="/privacy">隐私政策</a>、<a href="/terms">用户协议</a> 和 <a href="/authorization">AI 内容和素材说明</a>。数据删除或退款相关请求可从 <a href="/report">投诉与删除</a> 提交。</div><label className={styles.consent}><input type="checkbox" checked={draft.consent} onChange={e => update("consent", e.target.checked)}/><span>我已年满 18 周岁，理解 AI 内容说明，确认拥有上述素材和资料的合法使用权，并同意按隐私政策处理；创建和上传前会记录本次确认。</span></label></>}
             {stage === 3 && <><div className={styles.summary}><div className={styles.metric}><strong>{completeness}%</strong><span>资料完整度</span></div><div className={styles.metric}><strong>{[draft.personality, draft.catchPhrases, photo, voice].filter(Boolean).length}</strong><span>已获得能力线索</span></div></div><div className={styles.metric}><strong>{draft.name}</strong><span>{draft.relationship} · 你称呼 TA 为 {draft.preferredAddress}</span></div><div className={styles.muted}>待完善：{[!draft.personality && "性格", !draft.catchPhrases && "常说的话", !photo && "照片", !voice && "声音"].filter(Boolean).join("、") || "基础资料已齐全"}</div></>}
           </div>
           {error && <div className={styles.error} role="alert">{error}</div>}
           <div className={styles.status}>{status === "saving-draft" ? "正在保存草稿…" : status === "uploading" ? "正在上传素材…" : status === "submitting" ? "正在写入 PostgreSQL…" : uploadState === "unavailable" ? "素材服务尚未就绪" : "草稿已自动保存（不含素材）"}</div>
-          <div className={styles.actions}>{stage > 0 && <MemoryButton variant="ghost" onClick={() => setStage((stage - 1) as CreateStage)}>上一步</MemoryButton>}{stage === 1 && <button className={styles.skip} onClick={() => setStage(2)}>稍后补充</button>}{stage < 3 ? <MemoryButton onClick={next}>继续</MemoryButton> : <MemoryButton loading={status === "submitting" || status === "uploading"} onClick={create}>创建 TA</MemoryButton>}</div>
+          <div className={styles.actions}>{stage > 0 && <MemoryButton variant="ghost" onClick={() => setStage((stage - 1) as CreateStage)}>上一步</MemoryButton>}{stage === 1 && <button className={styles.skip} onClick={() => setStage(2)}>稍后补充</button>}{stage < 3 ? <MemoryButton onClick={next} disabled={stage === 2 && !draft.consent}>继续</MemoryButton> : <MemoryButton loading={status === "submitting" || status === "uploading"} onClick={create}>创建 TA</MemoryButton>}</div>
         </> : <div className={styles.success}><div className={styles.eyebrow}>创建完成</div><h1 className={styles.title}>{created.name} 正在变得清晰</h1><p className={styles.desc}>资料已写入你的记忆空间。</p>{error && <p className={styles.error} role="alert">{error}</p>}{error && (photo || voice) && <MemoryButton variant="secondary" onClick={retryMediaUpload}>重试素材上传</MemoryButton>}<MemoryButton onClick={() => router.push(`/memory/${created.id}`)}>进入 TA 的详情</MemoryButton><MemoryButton variant="secondary" onClick={() => router.push(`/memory-chat/${created.id}`)}>开始对话</MemoryButton></div>}
       </section>
     </div>

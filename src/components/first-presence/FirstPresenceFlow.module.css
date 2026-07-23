@@ -42,6 +42,12 @@
 .fileField { display: grid; gap: 8px; color: #ead4c0; font-size: 14px; }
 .fileField span { color: var(--muted); font-size: 12px; }
 .fileField input { width: 100%; color: #c8d5ef; }
+.trustNotice { display: grid; gap: 7px; padding: 12px; border: 1px solid rgba(255, 210, 166, .2); border-radius: 14px; background: rgba(214, 168, 110, .07); color: #d8bfaa; font-size: 12px; line-height: 1.65; }
+.trustNotice strong { color: #f0d5bb; font-size: 13px; font-weight: 600; }
+.trustNotice a, .trustLinks a { color: #f0d5bb; text-underline-offset: 3px; }
+.trustCheck { display: flex; align-items: flex-start; gap: 10px; color: #d8bfaa; font-size: 13px; line-height: 1.6; }
+.trustCheck input { width: 16px; height: 16px; margin-top: 3px; accent-color: #d6a86e; }
+.trustLinks { max-width: 52ch; margin: -4px 0 0; color: #bda08a; font-size: 12px; line-height: 1.65; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding-top: 4px; }
 .textButton { min-height: 44px; padding: 8px 10px; color: #d8bfaa; text-decoration: underline; text-underline-offset: 4px; }
 .textButton:hover, .textButton:focus-visible, .wordmark:focus-visible { color: white; outline: 2px solid var(--cyan); outline-offset: 4px; border-radius: 8px; }
@@ -57,8 +63,9 @@
 
 @media (max-width: 600px) {
   .frame { padding-inline: 20px; }
-  .presenceStage { min-height: 36vh; }
-  .controlShell { padding: 26px 22px; border-radius: 24px; }
+  .presenceStage { min-height: 30vh; }
+  .controlShell { padding: 20px 22px; border-radius: 24px; }
+  .copyBlock { gap: 12px; }
   .fieldGrid { grid-template-columns: 1fr; }
   .footer { align-items: flex-start; flex-direction: column; gap: 5px; }
 }
@@ -71,7 +78,7 @@
   .presenceStage { min-height: min(31vh, 280px); }
   .controlShell { padding: 24px clamp(24px, 4vw, 36px); }
   .copyBlock { gap: 12px; }
-  .footer { padding-top: 10px; }
+  .footer { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

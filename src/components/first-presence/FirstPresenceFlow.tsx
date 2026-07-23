@@ -8,6 +8,7 @@ import { MemoryMotion } from "../../design";
 import { useReducedMotion } from "../../motion";
 
 import { MemoryConversationScene } from "./MemoryConversationScene";
+import { recordTrustConsent, TrustConsentRequestError } from "../trust/trustConsentClient";
 import styles from "./FirstPresenceFlow.module.css";
 
 type FlowStage =
@@ -56,6 +57,7 @@ export function FirstPresenceFlow({ initialStage = "home", onLeaveHome }: FirstP
   const [code, setCode] = useState("");
   const [challengeId, setChallengeId] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [trustAccepted, setTrustAccepted] = useState(false);
   const [createdMemory, setCreatedMemory] = useState<{ id: string; name: string } | null>(null);
   const [error, setError] = useState("");
   const [retryAction, setRetryAction] = useState<RetryAction>(null);
@@ -139,6 +141,13 @@ export function FirstPresenceFlow({ initialStage = "home", onLeaveHome }: FirstP
 
   const uploadSelectedFile = async (memory: { id: string; name: string }) => {
     if (!selectedFile) return true;
+    try {
+      await recordTrustConsent("media_asset", memory.id);
+    } catch {
+      setError("素材授权确认暂未安全记录；素材尚未上传。恢复连接后可重试，不会自动上传。");
+      setStage("upload-failed");
+      return false;
+    }
     const form = new FormData();
     form.append("file", selectedFile);
     form.append("memoryId", memory.id);
@@ -156,8 +165,10 @@ export function FirstPresenceFlow({ initialStage = "home", onLeaveHome }: FirstP
   const createRealPresence = async () => {
     if (authState !== "authenticated") { setError("需要先完成真实短信登录，才可创建亲人资料。"); setStage("login-phone"); return; }
     if (!name.trim() || !relationship.trim()) { setError("请填写 TA 的名字和与你的关系。"); return; }
+    if (!trustAccepted) { setError("请先确认 AI 说明、隐私处理、素材权利与成年要求。"); return; }
     setBusy(true); resetError(); setStage("creating");
     try {
+      await recordTrustConsent("memory_profile");
       idempotencyKey.current ||= clientIdempotencyKey();
       const response = await fetch("/api/memories", {
         method: "POST", credentials: "same-origin", headers: createMemoryRequestHeaders(idempotencyKey.current),
@@ -170,7 +181,13 @@ export function FirstPresenceFlow({ initialStage = "home", onLeaveHome }: FirstP
       setCreatedMemory(memory);
       const uploaded = await uploadSelectedFile(memory);
       if (uploaded) setStage("created");
-    } catch {
+    } catch (cause) {
+      if (cause instanceof TrustConsentRequestError) {
+        setError("确认记录暂未安全保存；尚未创建 TA 或上传素材。恢复连接后可明确重试。");
+        setRetryAction("create");
+        setStage("network-failed");
+        return;
+      }
       setError("网络连接中断，无法确认亲人资料是否已创建。请稍后从资料列表确认后再继续。"); setRetryAction("create"); setStage("network-failed");
     } finally { setBusy(false); }
   };
@@ -234,6 +251,7 @@ export function FirstPresenceFlow({ initialStage = "home", onLeaveHome }: FirstP
 
             {stage === "login-phone" && <form className={styles.copyBlock} onSubmit={(event) => { event.preventDefault(); void sendCode(); }} noValidate>
               <p className={styles.kicker}>真实短信登录</p><h1 id={titleId}>先确认，是你。</h1><p id="flow-description">验证码只由服务器验证并设置安全会话。输入手机号不会自动进入创建或对话。</p>
+              <p className={styles.trustLinks}>登录前可阅读 <a href="/privacy">隐私政策</a>、<a href="/terms">用户协议</a> 与 <a href="/authorization">AI 内容和素材说明</a>；完成验证后，创建、上传和购买前会再次要求明确确认并记录。</p>
               <MemoryInput label="手机号" type="tel" inputMode="numeric" autoComplete="tel" value={phone} onChange={(event: ChangeEvent<HTMLInputElement>) => setPhone(event.currentTarget.value)} autoFocus error={error || undefined} />
               <div className={styles.actions}><MemoryButton type="submit" loading={busy}>发送验证码</MemoryButton><button className={styles.textButton} type="button" onClick={() => setStage("home")}>返回</button></div>
             </form>}
@@ -250,6 +268,8 @@ export function FirstPresenceFlow({ initialStage = "home", onLeaveHome }: FirstP
               <p className={styles.kicker}>已验证的创建</p><h1 id={titleId}>TA 是谁？</h1><p id="flow-description">只有已确认的服务器会话才可以创建资料。可选素材会在资料创建后按所属关系上传。</p>
               <div className={styles.fieldGrid}><MemoryInput label="TA 的名字" value={name} onChange={(event: ChangeEvent<HTMLInputElement>) => setName(event.currentTarget.value)} autoFocus error={error || undefined} /><MemoryInput label="与你的关系" value={relationship} onChange={(event: ChangeEvent<HTMLInputElement>) => setRelationship(event.currentTarget.value)} /></div>
               <label className={styles.fileField}>可选图片或音频素材 <span>{selectedFile?.name || "未选择；不会在登录前上传"}</span><input type="file" accept="image/*,audio/*" onChange={chooseFile} /></label>
+              <div className={styles.trustNotice}><strong>创建前请确认</strong><span>忆见的回应由 AI 生成，不是现实中的 TA，也不提供医疗或心理治疗建议。只提交你有权使用的资料；上传前会记录素材授权。资料处理方式见 <a href="/privacy">隐私政策</a>，使用边界见 <a href="/terms">用户协议</a> 与 <a href="/authorization">AI 内容和素材说明</a>。你可在 <a href="/report">投诉与删除</a> 提交数据删除或退款相关请求。</span></div>
+              <label className={styles.trustCheck}><input type="checkbox" checked={trustAccepted} onChange={(event) => setTrustAccepted(event.currentTarget.checked)} /><span>我已年满 18 周岁，理解上述 AI 身份与资料处理说明，并确认我拥有提交内容和素材的合法权利。</span></label>
               <div className={styles.actions}><MemoryButton type="submit" loading={busy}>安全创建 TA</MemoryButton><button className={styles.textButton} type="button" onClick={() => setStage("home")}>稍后再说</button></div>
             </form>}
 

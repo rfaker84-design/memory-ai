@@ -18,6 +18,7 @@ const EXACT_FORMAL_PATHS = new Set([
   "/api/auth/logout",
   "/api/memories",
   "/api/memory-chat",
+  "/api/consents",
   "/api/business-events",
   "/api/business-metrics/funnel",
   "/api/payments/orders",
@@ -110,7 +111,7 @@ test("middleware enforces the formal API allowlist before route execution", asyn
 
 test("every tracked non-formal Route Handler is a route-level 410", async () => {
   const routes = trackedRoutes();
-  assert.equal(routes.length, 92, "the audit must enumerate the complete tracked API surface");
+  assert.equal(routes.length, 93, "the audit must enumerate the complete tracked API surface");
 
   for (const { file, pathname } of routes) {
     const formal = isFormalApiPath(pathname);
@@ -157,6 +158,7 @@ test("formal Session ownership and public health contracts remain explicit", asy
     chatSession: readFileSync("app/api/memories/[id]/chat-session/_handler.ts", "utf8"),
     firstGreeting: readFileSync("app/api/memories/[id]/first-greeting/_handler.ts", "utf8"),
     memoryChat: readFileSync("app/api/memory-chat/route.ts", "utf8"),
+    consents: readFileSync("app/api/consents/route.ts", "utf8"),
     businessEvents: readFileSync("app/api/business-events/_handler.ts", "utf8"),
     businessFunnel: readFileSync("app/api/business-metrics/funnel/_handler.ts", "utf8"),
     paymentOrders: readFileSync("app/api/payments/orders/route.ts", "utf8"),
@@ -169,6 +171,7 @@ test("formal Session ownership and public health contracts remain explicit", asy
   assert.match(sources.session, /verifyRequestSession/);
   for (const source of [sources.memoryItem, sources.chatSession, sources.firstGreeting]) assert.match(source, /resolveSessionOwner/);
   for (const source of [sources.memoryChat, sources.media]) assert.match(source, /verifyRequestSession/);
+  assert.match(sources.consents, /createConsentsHandler/);
   assert.match(sources.logout, /clearSessionCookie/);
   assert.match(sources.memories, /resolveSessionOwner/);
   assert.match(sources.paymentOrders, /createPaymentOrdersHandler/);

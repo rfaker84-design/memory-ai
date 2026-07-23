@@ -1,0 +1,35 @@
+export type TrustConsentType = "memory_profile" | "media_asset" | "commercial_use";
+
+export class TrustConsentRequestError extends Error {
+  constructor(readonly code: string) {
+    super(code);
+  }
+}
+
+function idempotencyKey() {
+  const random = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `consent-${random}`;
+}
+
+export async function recordTrustConsent(
+  consentType: TrustConsentType,
+  memoryId?: string,
+  request: typeof fetch = fetch,
+): Promise<void> {
+  const response = await request("/api/consents", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": idempotencyKey(),
+    },
+    body: JSON.stringify(memoryId ? { consentType, memoryId } : { consentType }),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as { error?: unknown };
+    throw new TrustConsentRequestError(typeof body.error === "string" ? body.error : "CONSENT_RECORD_FAILED");
+  }
+}
