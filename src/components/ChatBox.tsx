@@ -5,6 +5,15 @@ import PresenceAvatar from "./PresenceAvatar";
 import { generateShareCard } from "../lib/share";
 import type { Emotion } from "../lib/volc";
 import { updateEmotion } from "../lib/emotionEngine";
+import {
+  buildChatBoxMemoryChatRequest,
+  chatSessionConfirmsPendingMessage,
+  clearPendingChatBoxMessage,
+  hasChatBoxMemoryId,
+  preparePendingChatBoxMessage,
+  retainPendingChatBoxMessage,
+  type PendingChatBoxMessage,
+} from "./chatBoxRequest";
 
 // ������ Types ����������������������������������������������������������������������������������������������������
 type Message = {
@@ -27,9 +36,10 @@ const VIP_NUDGE_THRESHOLD = 10;
 
 // ������ Component ��������������������������������������������������������������������������������������������
 export default function ChatBox({
-  memoryId, memoryName, relationship, lifeStory,
+  memoryId, memoryName, lifeStory,
   avatarUrl: initialAvatar, onAvatarGenerated,
 }: ChatBoxProps) {
+  const hasMemoryId = hasChatBoxMemoryId(memoryId);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -39,6 +49,7 @@ export default function ChatBox({
   const [messageCount, setMessageCount] = useState(0);
   const [showVIPNudge, setShowVIPNudge] = useState(false);
   const [firstMessageLoaded, setFirstMessageLoaded] = useState(false);
+  const [pendingMessage, setPendingMessage] = useState<PendingChatBoxMessage | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -49,6 +60,10 @@ export default function ChatBox({
   useEffect(() => {
     const stored = localStorage.getItem("yijian_msg_count_" + memoryId);
     if (stored) setMessageCount(parseInt(stored, 10));
+  }, [memoryId]);
+
+  useEffect(() => {
+    setPendingMessage((current) => current?.memoryId === memoryId ? current : null);
   }, [memoryId]);
 
   // ������ Show first warm message ��������������������������������������������������������������
@@ -80,14 +95,16 @@ export default function ChatBox({
   }, []);
 
   // ������ ������Ϣ ����������������������������������������������������������������������������������������
-  const sendMessage = useCallback(async () => {
-    const text = input.trim();
-    if (!text || sending) return;
+  const sendMessage = useCallback(async (retryCandidate?: PendingChatBoxMessage) => {
+    const text = (retryCandidate?.question ?? input).trim();
+    if (!text || sending || !hasMemoryId) return;
 
-    setMessages(prev => [...prev, { role: "user", content: text }]);
-    setInput("");
     setSending(true);
     setEmotion("calm");
+
+    if (!retryCandidate) {
+    setMessages(prev => [...prev, { role: "user", content: text }]);
+    setInput("");
 
     const newCount = messageCount + 1;
     setMessageCount(newCount);
@@ -107,20 +124,16 @@ export default function ChatBox({
       setSending(false);
       return;
     }
+    }
+
+    const pending = preparePendingChatBoxMessage(pendingMessage, memoryId, text);
+    setPendingMessage(pending);
 
     try {
-      const res = await fetch("/api/memory-chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          memoryId,
-          history: messages.slice(-8).map(m => ({
-            role: m.role,
-            content: m.content,
-          })),
-          message: text,
-        }),
-      });
+      const res = await fetch(
+        "/api/memory-chat",
+        buildChatBoxMemoryChatRequest(memoryId, text, pending.idempotencyKey)
+      );
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -132,6 +145,10 @@ export default function ChatBox({
         setSending(false);
         return;
       }
+
+      setPendingMessage((current) => current?.idempotencyKey === pending.idempotencyKey
+        ? clearPendingChatBoxMessage()
+        : current);
 
       const data = await res.json();
 
@@ -155,6 +172,9 @@ export default function ChatBox({
         playAudio(data.audioUrl);
       }
     } catch {
+      setPendingMessage((current) => current?.idempotencyKey === pending.idempotencyKey
+        ? retainPendingChatBoxMessage(current)
+        : current);
       setMessages(prev => [...prev, {
         role: "assistant",
         content: "���������쳣�������ԡ�",
@@ -163,7 +183,29 @@ export default function ChatBox({
     }
 
     setSending(false);
-  }, [input, sending, messages, memoryId, memoryName, relationship, lifeStory, playAudio, onAvatarGenerated, messageCount]);
+  }, [hasMemoryId, input, sending, memoryId, pendingMessage, playAudio, onAvatarGenerated, messageCount]);
+
+  const confirmPendingMessage = useCallback(async () => {
+    if (!pendingMessage || pendingMessage.memoryId !== memoryId || sending) return;
+    setSending(true);
+    try {
+      const response = await fetch(`/api/memories/${encodeURIComponent(pendingMessage.memoryId)}/chat-session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        cache: "no-store",
+        body: JSON.stringify({}),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (response.ok && chatSessionConfirmsPendingMessage(body.messages, pendingMessage)) {
+        setPendingMessage((current) => current?.idempotencyKey === pendingMessage.idempotencyKey
+          ? clearPendingChatBoxMessage()
+          : current);
+      }
+    } finally {
+      setSending(false);
+    }
+  }, [memoryId, pendingMessage, sending]);
 
   // ������ Share handler ����������������������������������������������������������������������������������
   const handleShare = useCallback(async () => {
@@ -323,6 +365,21 @@ export default function ChatBox({
         className="shrink-0 px-4 py-4"
         style={{ borderTop: "0.5px solid rgba(255,255,255,0.03)" }}
       >
+        {!hasMemoryId && (
+          <p role="status" aria-live="polite" className="mb-3 text-center text-[12px]" style={{ color: "rgba(200,180,170,0.58)" }}>
+            无法确认这位亲人的资料，暂时不能发送消息。
+          </p>
+        )}
+        {pendingMessage?.memoryId === memoryId && (
+          <div className="mb-3 flex justify-center gap-3 text-[12px]" role="status" aria-live="polite">
+            <button type="button" disabled={sending} onClick={() => void confirmPendingMessage()} className="bg-transparent" style={{ color: "rgba(200,180,170,0.64)", border: "none", cursor: sending ? "default" : "pointer" }}>
+              确认服务端记录
+            </button>
+            <button type="button" disabled={sending} onClick={() => void sendMessage(pendingMessage)} className="bg-transparent" style={{ color: "rgba(200,180,170,0.64)", border: "none", cursor: sending ? "default" : "pointer" }}>
+              重试这条消息
+            </button>
+          </div>
+        )}
         <div className="flex items-center gap-3 max-w-lg mx-auto">
           {/* Share button */}
           {messages.length > 0 && (
@@ -355,7 +412,7 @@ export default function ChatBox({
               }
             }}
             placeholder={sending ? "�Է����ڻ�Ӧ..." : "˵Щʲô..."}
-            disabled={sending}
+            disabled={sending || !hasMemoryId}
             className="flex-1 bg-transparent text-[16px] outline-none px-4 py-3.5 rounded-2xl transition-opacity"
             style={{
               minHeight: 52,
@@ -363,22 +420,22 @@ export default function ChatBox({
               caretColor: "rgba(180,160,200,0.6)",
               border: "0.5px solid rgba(255,255,255,0.06)",
               background: "rgba(18,16,28,0.55)",
-              opacity: sending ? 0.4 : 1,
+              opacity: sending || !hasMemoryId ? 0.4 : 1,
             }}
           />
           <motion.button
             whileHover={{ scale: 1.06 }}
             whileTap={{ scale: 0.94 }}
-            onClick={sendMessage}
-            disabled={!input.trim() || sending}
+            onClick={() => void sendMessage()}
+            disabled={!input.trim() || sending || !hasMemoryId}
             className="rounded-full w-10 h-10 flex items-center justify-center shrink-0 transition-all"
             style={{
-              background: input.trim() && !sending
+              background: input.trim() && !sending && hasMemoryId
                 ? "rgba(130,110,190,0.22)"
                 : "rgba(255,255,255,0.03)",
               border: "0.5px solid rgba(255,255,255,0.06)",
-              cursor: input.trim() && !sending ? "pointer" : "default",
-              opacity: input.trim() && !sending ? 1 : 0.3,
+              cursor: input.trim() && !sending && hasMemoryId ? "pointer" : "default",
+              opacity: input.trim() && !sending && hasMemoryId ? 1 : 0.3,
             }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none"

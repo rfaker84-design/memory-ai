@@ -1,27 +1,30 @@
-﻿export interface LongTermMemory {
+export interface LongTermMemory {
   id: string;
-  userId: string;
   memoryId: string;
   content: string;
+  contentHash: string;
   sourceType: string;
   sourceId: string | null;
   importance: number;
   tags: string[];
+  metadata: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 }
 
-export type CreateLongTermMemoryInput = Omit<
-  LongTermMemory,
-  "id" | "createdAt" | "updatedAt"
->;
-
-export type UpdateLongTermMemoryInput = Partial<
-  Pick<LongTermMemory, "content" | "importance" | "tags">
->;
+export interface CreateLongTermMemoryInput {
+  externalUserId: string;
+  memoryId: string;
+  content: string;
+  sourceType: string;
+  sourceId?: string | null;
+  importance: number;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+}
 
 export interface RecallMemoryInput {
-  userId: string;
+  externalUserId: string;
   memoryId: string;
   query: string;
   topK?: number;

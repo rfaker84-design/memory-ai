@@ -222,6 +222,43 @@ function DreamScene({ entities, onEntityClick, tabMode, personalities }: {
   );
 }
 
+/**
+ * The original unauthenticated home entry, kept separate from the legacy
+ * post-login shell.  The latter still contains historical demo entities and
+ * must not become a route entry again.
+ */
+export function OriginalHomeLogin({ onAuthenticated }: { onAuthenticated: () => void }) {
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: DREAM.bg,
+      fontFamily: "system-ui, -apple-system, 'Noto Serif SC', 'Noto Sans SC', sans-serif",
+    }}>
+      <Canvas
+        camera={{ position: [0, 0, 280], fov: 55, near: 1, far: 800 }}
+        dpr={[1, 1.5]}
+        gl={{
+          antialias: true,
+          toneMapping: THREE.ACESFilmicToneMapping,
+          toneMappingExposure: 0.85,
+          outputColorSpace: THREE.SRGBColorSpace,
+          failIfMajorPerformanceCaveat: false,
+        }}
+      >
+        <DreamScene entities={[]} onEntityClick={() => undefined} tabMode="home" personalities={{}} />
+      </Canvas>
+      <div style={{ position: "absolute", inset: 0, zIndex: 5, pointerEvents: "none" }}>
+        <MemorySoulBody state="empty" />
+      </div>
+      <HomeOverlay onLoginSuccess={onAuthenticated} />
+      <div style={{ position: "fixed", bottom: 62, left: 0, right: 0, zIndex: 15, textAlign: "center", pointerEvents: "none" }}>
+        <span style={{ fontSize: 9, fontWeight: 300, color: "rgba(255,210,166,0.25)", letterSpacing: "0.04em" }}>
+          苏ICP备2026040056号
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function CameraDrift({ tabMode }: { tabMode: TabMode }) {
   useFrame(({ camera }, delta) => {
     const t = runtime.time;

@@ -7,6 +7,7 @@ import { MemoryAvatar, MemoryButton, MemoryInput, MemorySurface } from "../memor
 import { MemoryMotion } from "../../design";
 import { useReducedMotion } from "../../motion";
 
+import { MemoryConversationScene } from "./MemoryConversationScene";
 import styles from "./FirstPresenceFlow.module.css";
 
 type FlowStage =
@@ -26,6 +27,10 @@ type FlowStage =
 type AuthState = "checking" | "authenticated" | "unauthenticated" | "unavailable";
 type RetryAction = "send-code" | "verify-code" | "create" | "upload" | null;
 type ApiPayload = { error?: string; challengeId?: string; authenticated?: boolean; id?: string; name?: string; asset?: { id?: string } };
+type FirstPresenceFlowProps = {
+  initialStage?: FlowStage;
+  onLeaveHome?: () => void;
+};
 
 const greeting = "我在。我们可以先从你想说的那一件小事开始。";
 const VISUAL_PREVIEW_ENABLED = process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_MEMORYAI_ENABLE_PRESENCE_PREVIEW === "true";
@@ -41,9 +46,9 @@ function clientIdempotencyKey() {
   return `presence-${random}`;
 }
 
-export function FirstPresenceFlow() {
+export function FirstPresenceFlow({ initialStage = "home", onLeaveHome }: FirstPresenceFlowProps) {
   const reducedMotion = useReducedMotion();
-  const [stage, setStage] = useState<FlowStage>("home");
+  const [stage, setStage] = useState<FlowStage>(initialStage);
   const [authState, setAuthState] = useState<AuthState>("checking");
   const [name, setName] = useState("");
   const [relationship, setRelationship] = useState("");
@@ -83,7 +88,7 @@ export function FirstPresenceFlow() {
   const isPreview = stage.startsWith("preview-");
   const stageLabel: Record<FlowStage, string> = {
     home: "首访首页", "login-phone": "短信登录", "login-code": "验证短信", "sms-unavailable": "短信暂未开放",
-    create: "创建亲人", creating: "正在创建", "upload-failed": "素材上传失败", created: "创建完成", "network-failed": "网络暂时中断",
+    create: "创建亲人", creating: "正在创建", "upload-failed": "素材上传失败", created: "真实对话", "network-failed": "网络暂时中断",
     "preview-create": "视觉预览", "preview-generating": "视觉预览 · 正在生成", "preview-greeting": "视觉预览 · 第一句问候", "preview-failed": "视觉预览 · 生成失败",
   };
 
@@ -208,11 +213,11 @@ export function FirstPresenceFlow() {
         </header>
 
         <main className={styles.main} aria-labelledby={titleId}>
-          <section className={`${styles.presenceStage} ${stage === "preview-greeting" ? styles.present : ""}`} aria-label="亲人形象">
+          <section className={`${styles.presenceStage} ${stage === "preview-greeting" || stage === "created" ? styles.present : ""}`} aria-label="亲人形象">
             <div className={styles.lightColumn} aria-hidden="true" /><div className={styles.ringOne} aria-hidden="true" /><div className={styles.ringTwo} aria-hidden="true" />
             <div className={styles.figureWrap}>
               <div className={styles.figureAura} aria-hidden="true" />
-              <MemoryAvatar initials={displayName} presence={stage === "preview-greeting" ? "online" : "quiet"} size={136} />
+              <MemoryAvatar initials={displayName} presence={stage === "preview-greeting" || stage === "created" ? "online" : "quiet"} size={136} />
               <span className={styles.presenceName}>{stage === "home" || stage.startsWith("login") ? "一个熟悉的人，会慢慢来到这里" : displayName}</span>
             </div>
           </section>
@@ -252,7 +257,7 @@ export function FirstPresenceFlow() {
 
             {stage === "upload-failed" && <div className={styles.copyBlock} role="alert"><p className={styles.kicker}>素材上传失败</p><h1 id={titleId}>资料已创建，素材仍未上传。</h1><p id="flow-description">{error}</p><div className={styles.actions}><MemoryButton variant="primary" loading={busy} onClick={() => void retryUpload()}>重试素材上传</MemoryButton><button className={styles.textButton} type="button" onClick={() => setStage("created")}>暂不上传</button></div></div>}
 
-            {stage === "created" && <div className={styles.copyBlock} role="status"><p className={styles.kicker}>创建完成</p><h1 id={titleId}>{createdMemory?.name || displayName} 已被安全保存。</h1><p id="flow-description">当前产品不会把本地动画当作真实形象生成或聊天能力。生成与第一句问候可在受保护服务就绪后继续。</p><div className={styles.actions}><MemoryButton variant="secondary" onClick={() => setStage("home")}>回到首页</MemoryButton></div></div>}
+            {stage === "created" && createdMemory && idempotencyKey.current && <MemoryConversationScene memoryId={createdMemory.id} memoryName={createdMemory.name} firstGreetingKey={idempotencyKey.current} onLeave={() => { idempotencyKey.current = null; setCreatedMemory(null); if (onLeaveHome) onLeaveHome(); else setStage("home"); }} />}
 
             {stage === "network-failed" && <div className={styles.copyBlock} role="alert"><p className={styles.kicker}>网络暂时中断</p><h1 id={titleId}>这一步还没有安全完成。</h1><p id="flow-description">{error}</p><div className={styles.actions}>{retryAction && <MemoryButton variant="primary" loading={busy} onClick={retryNetwork}>恢复后重试</MemoryButton>}<button className={styles.textButton} type="button" onClick={() => setStage("home")}>回到首页</button></div></div>}
 

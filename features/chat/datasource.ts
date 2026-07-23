@@ -4,6 +4,11 @@
   CreateMessageInput,
   Message,
 } from "./types";
+import type {
+  ClaimFirstGreetingInput,
+  CompleteFirstGreetingInput,
+  FirstGreetingClaim,
+} from "./types";
 
 export interface ChatDataSource {
   createConversation(input: CreateConversationInput): Promise<Conversation>;
@@ -15,4 +20,7 @@ export interface ChatDataSource {
   ): Promise<Conversation | null>;
   createMessage(input: CreateMessageInput): Promise<Message>;
   listMessages(conversationId: string): Promise<Message[]>;
+  claimFirstGreeting?(input: ClaimFirstGreetingInput): Promise<FirstGreetingClaim>;
+  completeFirstGreeting?(input: CompleteFirstGreetingInput): Promise<Message>;
+  failFirstGreeting?(input: ClaimFirstGreetingInput): Promise<void>;
 }

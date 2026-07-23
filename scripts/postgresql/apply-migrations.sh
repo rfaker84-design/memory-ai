@@ -10,7 +10,10 @@ for migration in \
   "$project_root/database/migrations/003_memoryai_constraints.sql" \
   "$project_root/database/migrations/004_media_storage_foundation.sql" \
   "$project_root/database/migrations/005_memory_creation_idempotency.sql" \
-  "$project_root/database/migrations/006_auth_verification_challenges.sql"
+  "$project_root/database/migrations/006_auth_verification_challenges.sql" \
+  "$project_root/database/migrations/007_long_term_memories.sql" \
+  "$project_root/database/migrations/008_memory_first_greetings.sql" \
+  "$project_root/database/migrations/009_memory_chat_turn_idempotency.sql"
 do
   test -f "$migration"
   sudo -n -u postgres psql -v ON_ERROR_STOP=1 --dbname="$database" --file="$migration" >/dev/null

@@ -13,6 +13,7 @@
     "test:create-flow": "tsx --test src/components/create-memory/createMemoryLogic.test.ts",
     "test:memory-item": "tsx --test app/api/memories/memory-item-route.test.ts app/api/memories/memory-collection-auth.test.ts",
     "test:memory-pages": "tsx --test app/api/memories/chat-session-route.test.ts src/components/memory/ownedMemoryClient.test.ts",
+    "test:first-greeting": "tsx --test app/api/memories/first-greeting-route.test.ts features/chat/first-greeting-service.test.ts features/chat/first-greeting-persistence.test.ts && node --test database/tests/008-memory-first-greetings.test.cjs",
     "test:media": "tsx --test scripts/ops/test-media-storage.ts",
     "test:collective-analysis": "tsx --test app/api/collective-analysis/route.test.ts",
     "test:auth-migration": "node --test database/tests/006-auth-verification-challenges.test.cjs",

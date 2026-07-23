@@ -37,3 +37,22 @@ export interface CreateMessageInput {
   tokens?: number;
   metadata?: Record<string, unknown>;
 }
+
+export type FirstGreetingClaimStatus = "claimed" | "replayed" | "in_progress";
+
+export interface ClaimFirstGreetingInput {
+  userId: string;
+  memoryId: string;
+  idempotencyKey: string;
+}
+
+export interface CompleteFirstGreetingInput extends ClaimFirstGreetingInput {
+  conversationId: string;
+  content: string;
+}
+
+export interface FirstGreetingClaim {
+  status: FirstGreetingClaimStatus;
+  conversation: Conversation;
+  message?: Message;
+}

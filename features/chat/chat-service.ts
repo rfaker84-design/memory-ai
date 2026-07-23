@@ -5,6 +5,11 @@ import type {
   CreateMessageInput,
   Message,
 } from "./types";
+import type {
+  ClaimFirstGreetingInput,
+  CompleteFirstGreetingInput,
+  FirstGreetingClaim,
+} from "./types";
 
 export class ChatService {
   constructor(private readonly chatRepository: ChatRepository) {}
@@ -31,6 +36,18 @@ export class ChatService {
 
   listMessages(conversationId: string): Promise<Message[]> {
     return this.chatRepository.listMessages(conversationId);
+  }
+
+  claimFirstGreeting(input: ClaimFirstGreetingInput): Promise<FirstGreetingClaim> {
+    return this.chatRepository.claimFirstGreeting(input);
+  }
+
+  completeFirstGreeting(input: CompleteFirstGreetingInput): Promise<Message> {
+    return this.chatRepository.completeFirstGreeting(input);
+  }
+
+  failFirstGreeting(input: ClaimFirstGreetingInput): Promise<void> {
+    return this.chatRepository.failFirstGreeting(input);
   }
 
   async getOrCreateConversationByMemory(

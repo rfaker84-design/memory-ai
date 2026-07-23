@@ -21,6 +21,7 @@ const FORMAL_API_PATHS = new Set([
 const FORMAL_DYNAMIC_API_PATHS = [
   /^\/api\/memories\/[^/]+$/,
   /^\/api\/memories\/[^/]+\/chat-session$/,
+  /^\/api\/memories\/[^/]+\/first-greeting$/,
   /^\/api\/media\/[^/]+$/,
 ];
 

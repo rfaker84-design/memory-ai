@@ -1,0 +1,228 @@
+import { NextRequest, NextResponse } from "next/server";
+
+import {
+  ChatNotFoundError,
+  ChatValidationError,
+  MemoryChatTurnPostgresDataSource,
+  MemoryChatTurnRepository,
+  MemoryChatTurnService,
+  type MemoryChatTurnResult,
+} from "../../../features/chat";
+import {
+  LongTermMemoryPostgresDataSource,
+  LongTermMemoryRepository,
+  LongTermMemoryService,
+  persistChatTurnLongTermMemory,
+} from "../../../features/long-term-memory";
+import { MemoryEngineService } from "../../../features/memory-engine/memory-engine-service";
+import { MemoryValidationError } from "../../../features/memory/errors";
+import { MemoryPostgresDataSource } from "../../../features/memory/memory-postgres-datasource";
+import { MemoryRepository } from "../../../features/memory/memory-repository";
+import { MemoryService } from "../../../features/memory/memory-service";
+import {
+  AuthConfigurationError,
+  requireAllowedOrigin,
+  type AuthSession,
+  verifyRequestSession,
+} from "../../../src/server/auth";
+import { DatabaseDependencyError } from "../../../src/server/database";
+import { calculateAddictionScore, getCompanionMode } from "../../../src/lib/addiction-score";
+import { checkConcurrency } from "../../../src/lib/concurrency-control";
+import { checkRateLimit } from "../../../src/lib/cost-control";
+
+type MemoryChatRequest = { memoryId: string; question: string };
+type MemoryOwnershipService = Pick<MemoryService, "getMemoryForUser">;
+type TurnService = Pick<MemoryChatTurnService, "claim" | "complete" | "fail">;
+type EngineService = Pick<MemoryEngineService, "generateReply">;
+type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
+type PersistCompletedTurn = (input: {
+  externalUserId: string;
+  memoryId: string;
+  result: MemoryChatTurnResult;
+}) => Promise<boolean>;
+
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
+
+const createMemoryService = (): MemoryOwnershipService =>
+  new MemoryService(new MemoryRepository(new MemoryPostgresDataSource()));
+
+const createTurnService = (): TurnService =>
+  new MemoryChatTurnService(
+    new MemoryChatTurnRepository(new MemoryChatTurnPostgresDataSource())
+  );
+
+const createEngineService = (): EngineService => new MemoryEngineService();
+
+const persistCompletedTurn: PersistCompletedTurn = ({
+  externalUserId,
+  memoryId,
+  result,
+}) =>
+  persistChatTurnLongTermMemory({
+    service: new LongTermMemoryService(
+      new LongTermMemoryRepository(new LongTermMemoryPostgresDataSource())
+    ),
+    externalUserId,
+    memoryId,
+    sessionId: result.conversation.id,
+    userMessage: result.userMessage,
+    assistantMessage: result.assistantMessage,
+  });
+
+function response(result: MemoryChatTurnResult, addictionProfile?: Awaited<ReturnType<typeof calculateAddictionScore>> | null) {
+  const answer = result.assistantMessage.content;
+  return NextResponse.json({
+    answer,
+    reply: answer,
+    text: answer,
+    sessionId: result.conversation.id,
+    ...(addictionProfile ? {
+      addiction_level: addictionProfile.level,
+      addiction_score: addictionProfile.score,
+      companion_mode: getCompanionMode(addictionProfile.level),
+    } : {}),
+  });
+}
+
+function parseBody(value: unknown): MemoryChatRequest | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const body = value as Record<string, unknown>;
+  const keys = Object.keys(body);
+  if (keys.length !== 2 || !keys.every((key) => key === "memoryId" || key === "question")) {
+    return null;
+  }
+  if (typeof body.memoryId !== "string" || typeof body.question !== "string") return null;
+  const memoryId = body.memoryId.trim();
+  const question = body.question.trim();
+  return memoryId && question ? { memoryId, question } : null;
+}
+
+export function createMemoryChatHandler(
+  memoryServiceFactory: () => MemoryOwnershipService = createMemoryService,
+  turnServiceFactory: () => TurnService = createTurnService,
+  engineServiceFactory: () => EngineService = createEngineService,
+  sessionResolver: SessionResolver = verifyRequestSession,
+  persistTurn: PersistCompletedTurn = persistCompletedTurn
+) {
+  return async function POST(request: NextRequest) {
+    try {
+      const session = await sessionResolver(request);
+      if (!session) {
+        return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
+      }
+      requireAllowedOrigin(request);
+
+      const idempotencyKey = request.headers.get("idempotency-key");
+      if (!idempotencyKey) {
+        return NextResponse.json({ error: "IDEMPOTENCY_KEY_REQUIRED" }, { status: 400 });
+      }
+      if (!IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
+        return NextResponse.json({ error: "INVALID_IDEMPOTENCY_KEY" }, { status: 400 });
+      }
+      if (!request.headers.get("content-type")?.toLowerCase().includes("application/json")) {
+        return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 });
+      }
+
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 });
+      }
+      const parsed = parseBody(body);
+      if (!parsed) return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400 });
+
+      const userId = session.externalUserId;
+      const memory = await memoryServiceFactory().getMemoryForUser(parsed.memoryId, userId);
+      if (!memory) return NextResponse.json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
+
+      const turnInput = { userId, memoryId: parsed.memoryId, idempotencyKey, question: parsed.question };
+      const turnService = turnServiceFactory();
+      const claim = await turnService.claim(turnInput);
+      if (claim.status === "replayed") {
+        if (!claim.result) throw new ChatValidationError("Completed chat turn is inconsistent");
+        return response(claim.result);
+      }
+      if (claim.status === "in_progress") {
+        return NextResponse.json({ error: "CHAT_TURN_IN_PROGRESS" }, { status: 409 });
+      }
+
+      const rateCheck = checkRateLimit(userId);
+      if (!rateCheck.allowed) {
+        await turnService.fail(turnInput);
+        const answer = "TA需要休息一下，我们稍后再见。";
+        return NextResponse.json({ answer, reply: answer, text: answer });
+      }
+      const concurrencyCheck = checkConcurrency(userId, "ai");
+      if (!concurrencyCheck.allowed) {
+        await turnService.fail(turnInput);
+        const answer = "让我缓一缓，马上就好。";
+        return NextResponse.json({ answer, reply: answer, text: answer });
+      }
+
+      let answer: string;
+      try {
+        const engineResponse = await engineServiceFactory().generateReply({
+          userId,
+          memoryId: parsed.memoryId,
+          sessionId: claim.conversation.id,
+          userMessage: parsed.question,
+          routeContext: {
+            memoryName: memory.name,
+            relationship: memory.relationship,
+            lifeStory: memory.lifeStory,
+            personalityProfile: memory.personalityProfile,
+            speechStyle: memory.speechStyle,
+            catchPhrases: memory.catchPhrases,
+          },
+        });
+        answer = engineResponse.content.trim();
+        if (!answer) throw new Error("Provider returned no content");
+      } catch {
+        try {
+          await turnService.fail(turnInput);
+        } catch {
+          console.warn("[memory-chat] CHAT_TURN_FAILURE_MARK_UNAVAILABLE");
+        }
+        return NextResponse.json({ error: "AI_UNAVAILABLE" }, { status: 503 });
+      }
+
+      const result = await turnService.complete({
+        ...turnInput,
+        conversationId: claim.conversation.id,
+        answer,
+      });
+      try {
+        await persistTurn({ externalUserId: userId, memoryId: parsed.memoryId, result });
+      } catch {
+        console.warn("[memory-chat] LTM_WRITE_FAILED");
+      }
+
+      let addictionProfile = null;
+      try {
+        addictionProfile = await calculateAddictionScore(userId);
+      } catch {
+        addictionProfile = null;
+      }
+      return response(result, addictionProfile);
+    } catch (error) {
+      if (error instanceof MemoryValidationError || error instanceof ChatNotFoundError) {
+        return NextResponse.json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
+      }
+      if (error instanceof ChatValidationError) {
+        return NextResponse.json({ error: "IDEMPOTENCY_KEY_CONFLICT" }, { status: 409 });
+      }
+      if (error instanceof DatabaseDependencyError) {
+        return NextResponse.json({ error: "DATABASE_UNAVAILABLE" }, { status: 503 });
+      }
+      if (error instanceof AuthConfigurationError) {
+        return NextResponse.json(
+          { error: error.code === "ORIGIN_NOT_ALLOWED" ? "ORIGIN_NOT_ALLOWED" : "AUTH_UNAVAILABLE" },
+          { status: error.code === "ORIGIN_NOT_ALLOWED" ? 403 : 503 }
+        );
+      }
+      console.error("[api:memory-chat] unexpected request failure");
+      return NextResponse.json({ error: "CHAT_REQUEST_FAILED" }, { status: 500 });
+    }
+  };
+}

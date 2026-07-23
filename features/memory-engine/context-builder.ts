@@ -1,4 +1,4 @@
-﻿import type { MemoryEngineContext, MemoryEngineInput } from "./types";
+import type { MemoryEngineContext, MemoryEngineInput } from "./types";
 import {
   MemoryNotFoundError,
   MemoryRepository,
@@ -12,9 +12,9 @@ import {
 } from "../chat";
 import { EmotionEngineService } from "../emotion-engine";
 import {
+  LongTermMemoryPostgresDataSource,
   LongTermMemoryRepository,
   LongTermMemoryService,
-  LongTermMemorySupabaseDataSource,
 } from "../long-term-memory";
 
 const createMemoryService = (): MemoryService => {
@@ -30,7 +30,7 @@ const createChatService = (): ChatService => {
 };
 
 const createLongTermMemoryService = (): LongTermMemoryService => {
-  const dataSource = new LongTermMemorySupabaseDataSource();
+  const dataSource = new LongTermMemoryPostgresDataSource();
   const repository = new LongTermMemoryRepository(dataSource);
   return new LongTermMemoryService(repository);
 };
@@ -43,26 +43,18 @@ export class MemoryContextBuilder {
 
   async buildContext(input: MemoryEngineInput): Promise<MemoryEngineContext> {
     const memory = await this.memoryService.getMemory(input.memoryId);
-
     if (!memory) {
-      throw new MemoryNotFoundError(
-        "Memory not found: " + input.memoryId
-      );
+      throw new MemoryNotFoundError("Memory not found: " + input.memoryId);
     }
 
     const routeContext = input.routeContext;
-
     let recentMessages: { role: string; content: string }[] = [];
-
     try {
       const fullMessages = await this.chatService.listMessages(input.sessionId);
-      const last10 = fullMessages.slice(-10);
-
-      recentMessages = last10.map((m) => ({
-        role: m.role,
-        content: m.content,
+      recentMessages = fullMessages.slice(-10).map((message) => ({
+        role: message.role,
+        content: message.content,
       }));
-
       if (recentMessages.length === 0 && routeContext?.recentMessages) {
         recentMessages = routeContext.recentMessages;
       }
@@ -70,13 +62,11 @@ export class MemoryContextBuilder {
       recentMessages = routeContext?.recentMessages ?? [];
     }
 
-    // Emotion analysis — safe degradation on failure
     let emotion = "neutral";
     let emotionIntensity = "low";
     let suggestedTone = "温和自然地回应";
     let aiCompanionMode = "guide";
     let aiResponseStyle = "温和自然地回应";
-
     try {
       const emotionCtx = this.emotionEngine.analyze({
         userId: input.userId,
@@ -85,33 +75,28 @@ export class MemoryContextBuilder {
         userMessage: input.userMessage,
         recentMessages,
       });
-
       emotion = emotionCtx.emotion;
       emotionIntensity = emotionCtx.intensity;
       suggestedTone = emotionCtx.suggestedTone;
-
       if (emotionCtx.aiEmotionState) {
         aiCompanionMode = emotionCtx.aiEmotionState.companionMode;
         aiResponseStyle = emotionCtx.aiEmotionState.responseStyle;
       }
     } catch {
-      // Keep defaults — safe degradation
+      // Keep safe defaults when emotion analysis is unavailable.
     }
 
-    // Long-term memory recall — safe degradation on failure
     let longTermMemories: string[] = [];
-
     try {
       const recallResult = await this.ltmService.recallMemory({
-        userId: input.userId,
+        externalUserId: input.userId,
         memoryId: input.memoryId,
         query: input.userMessage,
         topK: 5,
       });
-
-      longTermMemories = recallResult.memories.map((m) => m.content);
+      longTermMemories = recallResult.memories.map((item) => item.content);
     } catch {
-      // Keep longTermMemories as [] — safe degradation
+      // Chat remains available when recall is unavailable; it never falls back.
     }
 
     return {
@@ -123,8 +108,7 @@ export class MemoryContextBuilder {
       relationship: routeContext?.relationship || memory.relationship,
       lifeStory: routeContext?.lifeStory ?? memory.lifeStory,
       speechStyle: routeContext?.speechStyle ?? memory.speechStyle,
-      personalityProfile:
-        routeContext?.personalityProfile ?? memory.personalityProfile,
+      personalityProfile: routeContext?.personalityProfile ?? memory.personalityProfile,
       catchPhrases: routeContext?.catchPhrases ?? memory.catchPhrases,
       birthYear: memory.birthYear,
       deathYear: memory.deathYear,
