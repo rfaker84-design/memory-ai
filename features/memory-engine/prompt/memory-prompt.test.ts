@@ -1,0 +1,34 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { buildMemoryPrompt } from "./memory-prompt";
+
+test("memory prompt carries the confirmed address, phrases, speaking habit, and shared memory", () => {
+  const prompt = buildMemoryPrompt({
+    memoryId: "memory-1",
+    userId: "owner-1",
+    sessionId: "session-1",
+    userMessage: "你好",
+    memoryName: "妈妈",
+    relationship: "母亲",
+    personalityProfile: "用户确认称呼 TA 为：妈妈。",
+    catchPhrases: "别着急，慢慢来。",
+    speechStyle: "说话轻柔，先安慰再给建议。",
+    lifeStory: "一起在厨房做过生日面。",
+    fragments: [],
+    timeline: [],
+    history: [],
+    recentMessages: [],
+    emotion: "neutral",
+    emotionIntensity: "low",
+    suggestedTone: "温和",
+    aiCompanionMode: "guide",
+    aiResponseStyle: "温和",
+    longTermMemories: [],
+  });
+
+  for (const value of ["用户确认称呼 TA 为：妈妈。", "别着急，慢慢来。", "说话轻柔，先安慰再给建议。", "一起在厨房做过生日面。"]) {
+    assert.match(prompt.content, new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  assert.match(prompt.content, /不得以通用模板替代/);
+});

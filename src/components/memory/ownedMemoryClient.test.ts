@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  loadOwnedMediaUrl,
   loadOwnedMemory,
   OwnedMemoryRequestError,
 } from "./ownedMemoryClient";
@@ -42,6 +43,19 @@ test("formal Memory 404 remains a controlled page state", async () => {
       error.status === 404 &&
       error.code === "MEMORY_NOT_FOUND"
   );
+});
+
+test("portrait retrieval uses the owned signed-media endpoint", async () => {
+  const url = await loadOwnedMediaUrl(
+    "portrait-asset",
+    undefined,
+    async (input, init) => {
+      assert.equal(input, "/api/media/portrait-asset");
+      assert.equal(init?.credentials, "same-origin");
+      return Response.json({ url: "https://signed.example.test/portrait" });
+    }
+  );
+  assert.equal(url, "https://signed.example.test/portrait");
 });
 
 test("detail, chat, and create success paths contain no legacy data requests", () => {

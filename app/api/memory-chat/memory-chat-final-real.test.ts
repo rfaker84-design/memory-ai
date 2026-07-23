@@ -92,14 +92,27 @@ function createTurnStore() {
   };
 }
 
-function createHandler(store: ReturnType<typeof createTurnStore>, generateReply: () => Promise<{ content: string }>) {
+type TestQuotaService = {
+  reserveChatQuota: () => Promise<"free" | "reserved" | "unavailable">;
+  releaseChatQuota: () => Promise<void>;
+};
+
+function createHandler(
+  store: ReturnType<typeof createTurnStore>,
+  generateReply: () => Promise<{ content: string }>,
+  quotaService: TestQuotaService = {
+    async reserveChatQuota() { return "free"; },
+    async releaseChatQuota() {},
+  }
+) {
   return createMemoryChatHandler(
     () => ({ async getMemoryForUser(id, owner) { return id === memoryId && owner === userId ? memory : null; } }),
     () => store.service,
     () => ({ async generateReply() { return generateReply(); } }),
     async () => ({ userId: "internal-owner", externalUserId: userId, expiresAt: "2026-07-24T00:00:00.000Z" }),
     async () => false,
-    async () => ({ rateAllowed: true, concurrencyAllowed: true })
+    async () => ({ rateAllowed: true, concurrencyAllowed: true }),
+    () => quotaService,
   );
 }
 
@@ -145,4 +158,24 @@ test("memory-chat provider failure leaves no messages and the same key safely re
   assert.equal(store.status, "completed");
   assert.equal(store.userMessages.length, 1);
   assert.equal(store.assistantMessages.length, 1);
+});
+
+test("unavailable formal AI releases a reserved paid reply and writes no turn messages", async () => {
+  const store = createTurnStore();
+  let releases = 0;
+  const handler = createHandler(
+    store,
+    async () => { throw new Error("formal provider unavailable"); },
+    {
+      async reserveChatQuota() { return "reserved"; },
+      async releaseChatQuota() { releases += 1; },
+    }
+  );
+
+  const failed = await handler(request({ memoryId, question: "Paid reply must not open" }, "memory-chat-paid-failure-key-0001"));
+  assert.equal(failed.status, 503);
+  assert.deepEqual(await failed.json(), { error: "AI_UNAVAILABLE" });
+  assert.equal(releases, 1);
+  assert.equal(store.userMessages.length, 0);
+  assert.equal(store.assistantMessages.length, 0);
 });

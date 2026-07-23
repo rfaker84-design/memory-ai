@@ -8,6 +8,7 @@ import { MemoryMotion } from "../../design";
 import { useReducedMotion } from "../../motion";
 
 import { MemoryConversationScene } from "./MemoryConversationScene";
+import { buildConfirmedMemoryProfile } from "./confirmedMemoryProfile";
 import { recordTrustConsent, TrustConsentRequestError } from "../trust/trustConsentClient";
 import styles from "./FirstPresenceFlow.module.css";
 
@@ -53,6 +54,10 @@ export function FirstPresenceFlow({ initialStage = "home", onLeaveHome }: FirstP
   const [authState, setAuthState] = useState<AuthState>("checking");
   const [name, setName] = useState("");
   const [relationship, setRelationship] = useState("");
+  const [preferredAddress, setPreferredAddress] = useState("");
+  const [catchPhrases, setCatchPhrases] = useState("");
+  const [speechStyle, setSpeechStyle] = useState("");
+  const [sharedMemory, setSharedMemory] = useState("");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [challengeId, setChallengeId] = useState("");
@@ -170,9 +175,19 @@ export function FirstPresenceFlow({ initialStage = "home", onLeaveHome }: FirstP
     try {
       await recordTrustConsent("memory_profile");
       idempotencyKey.current ||= clientIdempotencyKey();
+      const profile = buildConfirmedMemoryProfile({
+        preferredAddress,
+        catchPhrases,
+        speechStyle,
+        sharedMemory,
+      });
       const response = await fetch("/api/memories", {
         method: "POST", credentials: "same-origin", headers: createMemoryRequestHeaders(idempotencyKey.current),
-        body: JSON.stringify({ name: name.trim(), relationship: relationship.trim() }),
+        body: JSON.stringify({
+          name: name.trim(),
+          relationship: relationship.trim(),
+          ...profile,
+        }),
       });
       const payload = await responsePayload(response);
       if (response.status === 401) { setAuthState("unauthenticated"); setError("登录状态已过期，尚未创建亲人资料。请重新验证短信。"); setStage("login-phone"); return; }
@@ -209,7 +224,7 @@ export function FirstPresenceFlow({ initialStage = "home", onLeaveHome }: FirstP
 
   const chooseFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0] ?? null;
-    if (file && !(file.type.startsWith("image/") || file.type.startsWith("audio/"))) { setError("仅支持图片或音频素材。素材不会在登录前上传。"); return; }
+    if (file && !file.type.startsWith("image/")) { setError("仅支持 TA 的照片。照片不会在登录前上传。"); return; }
     setSelectedFile(file); resetError();
   };
 
@@ -267,7 +282,11 @@ export function FirstPresenceFlow({ initialStage = "home", onLeaveHome }: FirstP
             {stage === "create" && <form className={styles.copyBlock} onSubmit={(event) => { event.preventDefault(); void createRealPresence(); }} noValidate>
               <p className={styles.kicker}>已验证的创建</p><h1 id={titleId}>TA 是谁？</h1><p id="flow-description">只有已确认的服务器会话才可以创建资料。可选素材会在资料创建后按所属关系上传。</p>
               <div className={styles.fieldGrid}><MemoryInput label="TA 的名字" value={name} onChange={(event: ChangeEvent<HTMLInputElement>) => setName(event.currentTarget.value)} autoFocus error={error || undefined} /><MemoryInput label="与你的关系" value={relationship} onChange={(event: ChangeEvent<HTMLInputElement>) => setRelationship(event.currentTarget.value)} /></div>
-              <label className={styles.fileField}>可选图片或音频素材 <span>{selectedFile?.name || "未选择；不会在登录前上传"}</span><input type="file" accept="image/*,audio/*" onChange={chooseFile} /></label>
+              <MemoryInput label="你如何称呼 TA（可选）" value={preferredAddress} onChange={(event: ChangeEvent<HTMLInputElement>) => setPreferredAddress(event.currentTarget.value)} />
+              <MemoryInput multiline label="TA 常说的话（可选）" value={catchPhrases} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setCatchPhrases(event.currentTarget.value)} />
+              <MemoryInput multiline label="TA 的说话习惯（可选）" value={speechStyle} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setSpeechStyle(event.currentTarget.value)} />
+              <MemoryInput multiline label="一段你们共同确认的回忆（可选）" value={sharedMemory} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setSharedMemory(event.currentTarget.value)} />
+              <label className={styles.fileField}>可选 TA 照片 <span>{selectedFile?.name || "未选择；不会在登录前上传"}</span><input type="file" accept="image/*" onChange={chooseFile} /></label>
               <div className={styles.trustNotice}><strong>创建前请确认</strong><span>忆见的回应由 AI 生成，不是现实中的 TA，也不提供医疗或心理治疗建议。只提交你有权使用的资料；上传前会记录素材授权。资料处理方式见 <a href="/privacy">隐私政策</a>，使用边界见 <a href="/terms">用户协议</a> 与 <a href="/authorization">AI 内容和素材说明</a>。你可在 <a href="/report">投诉与删除</a> 提交数据删除或退款相关请求。</span></div>
               <label className={styles.trustCheck}><input type="checkbox" checked={trustAccepted} onChange={(event) => setTrustAccepted(event.currentTarget.checked)} /><span>我已年满 18 周岁，理解上述 AI 身份与资料处理说明，并确认我拥有提交内容和素材的合法权利。</span></label>
               <div className={styles.actions}><MemoryButton type="submit" loading={busy}>安全创建 TA</MemoryButton><button className={styles.textButton} type="button" onClick={() => setStage("home")}>稍后再说</button></div>

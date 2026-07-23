@@ -54,6 +54,15 @@ function requirePostgresUrl(environment: NodeJS.ProcessEnv): void {
   }
 }
 
+function requireFormalLLM(environment: NodeJS.ProcessEnv): void {
+  if (environment.LLM_PROVIDER?.trim() !== "openai") {
+    throw new ProductionAuthConfigurationError("LLM_PROVIDER_NOT_CONFIGURED");
+  }
+  if (!(environment.DEEPSEEK_API_KEY?.trim() || environment.OPENAI_API_KEY?.trim())) {
+    throw new ProductionAuthConfigurationError("LLM_PROVIDER_CREDENTIALS_NOT_CONFIGURED");
+  }
+}
+
 /**
  * Prevent a production process from becoming healthy while authentication is
  * unusable. SMS is intentionally capability-scoped so an unavailable SMS
@@ -69,6 +78,7 @@ export function assertProductionAuthConfiguration(
   requireSecret(environment, "SESSION_SECRET");
   requireRefundReviewAccessToken(environment);
   requireHttpsOrigin(environment);
+  requireFormalLLM(environment);
 
   if (environment.AUTH_TRUST_NGINX_PROXY !== "true") {
     throw new ProductionAuthConfigurationError("AUTH_TRUST_NGINX_PROXY_NOT_CONFIGURED");

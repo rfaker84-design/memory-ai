@@ -15,6 +15,8 @@ export interface Memory {
   speechStyle?: string | null;
   catchPhrases?: string | null;
   photoUrl?: string | null;
+  /** Latest uploaded, owned portrait asset. The client resolves it through the signed media route. */
+  photoAssetId?: string | null;
   personalityTags?: string[] | string | null;
   birthYear?: number | null;
   deathYear?: number | null;

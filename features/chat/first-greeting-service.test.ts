@@ -28,9 +28,9 @@ const memory = {
   name: "Saved relative",
   relationship: "parent",
   lifeStory: "Saved life story only",
-  personalityProfile: null,
-  speechStyle: null,
-  catchPhrases: null,
+  personalityProfile: "用户确认称呼 TA 为：妈妈。",
+  speechStyle: "先安慰，再慢慢解释。",
+  catchPhrases: "别着急，慢慢来。",
   valuesBelief: null,
   personalityType: null,
 };
@@ -96,6 +96,9 @@ test("first greeting serializes concurrent claims and replays the one saved assi
       assert.equal(prompt.messages.length, 1);
       assert.equal(prompt.messages[0].role, "system");
       assert.match(prompt.messages[0].content, /Saved life story only/);
+      assert.match(prompt.messages[0].content, /用户确认称呼 TA 为：妈妈/);
+      assert.match(prompt.messages[0].content, /先安慰，再慢慢解释/);
+      assert.match(prompt.messages[0].content, /别着急，慢慢来/);
       assert.doesNotMatch(prompt.messages[0].content, /user message|用户说/);
       await new Promise<void>((resolve) => { releaseProvider = resolve; });
       return { content: "A saved-profile greeting", finishReason: "stop" };

@@ -25,6 +25,7 @@ type MemoryRow = {
   speech_style: string | null;
   catch_phrases: string | null;
   photo_url: string | null;
+  photo_asset_id: string | null;
   personality_tags: string[] | string | null;
   birth_year: number | null;
   death_year: number | null;
@@ -48,6 +49,16 @@ const MEMORY_COLUMNS = `
   m.speech_style,
   m.catch_phrases,
   m.photo_url,
+  (
+    SELECT a.id
+    FROM media_assets a
+    WHERE a.memory_id = m.id
+      AND a.media_type = 'image'
+      AND a.status = 'uploaded'
+      AND a.deleted_at IS NULL
+    ORDER BY a.created_at DESC
+    LIMIT 1
+  ) AS photo_asset_id,
   m.personality_tags,
   m.birth_year,
   m.death_year,
@@ -72,6 +83,7 @@ function toMemory(row: MemoryRow): Memory {
     speechStyle: row.speech_style,
     catchPhrases: row.catch_phrases,
     photoUrl: row.photo_url,
+    photoAssetId: row.photo_asset_id,
     personalityTags: row.personality_tags,
     birthYear: row.birth_year,
     deathYear: row.death_year,

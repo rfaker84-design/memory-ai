@@ -27,3 +27,22 @@ export async function loadOwnedMemory(
   }
   return body as Memory;
 }
+
+export async function loadOwnedMediaUrl(
+  assetId: string,
+  signal?: AbortSignal,
+  request: typeof fetch = fetch
+): Promise<string> {
+  const response = await request(
+    `/api/media/${encodeURIComponent(assetId)}`,
+    { cache: "no-store", credentials: "same-origin", signal }
+  );
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || typeof body.url !== "string") {
+    throw new OwnedMemoryRequestError(
+      response.status || 502,
+      typeof body.error === "string" ? body.error : "MEDIA_READ_FAILED"
+    );
+  }
+  return body.url;
+}

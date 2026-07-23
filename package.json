@@ -13,6 +13,7 @@
     "test:create-flow": "tsx --test src/components/create-memory/createMemoryLogic.test.ts",
     "test:memory-item": "tsx --test app/api/memories/memory-item-route.test.ts app/api/memories/memory-collection-auth.test.ts",
     "test:memory-pages": "tsx --test app/api/memories/chat-session-route.test.ts src/components/memory/ownedMemoryClient.test.ts",
+    "test:real-presence": "tsx --test services/llm/formal-llm-provider.test.ts features/memory-engine/prompt/memory-prompt.test.ts features/chat/first-greeting-service.test.ts app/api/memory-chat/memory-chat-final-real.test.ts src/components/first-presence/confirmedMemoryProfile.test.ts src/components/memory/ownedMemoryClient.test.ts",
     "test:first-greeting": "tsx --test app/api/memories/first-greeting-route.test.ts features/chat/first-greeting-service.test.ts features/chat/first-greeting-persistence.test.ts && node --test database/tests/008-memory-first-greetings.test.cjs",
     "test:media": "tsx --test scripts/ops/test-media-storage.ts",
     "test:collective-analysis": "tsx --test app/api/collective-analysis/route.test.ts",
@@ -24,7 +25,7 @@
     "test:auth": "tsx --test src/server/auth/auth.test.ts src/server/auth/auth-response-cache.test.ts src/server/auth/production-config.test.ts src/server/auth/sms/tencent-sms-verification-provider.test.ts app/login/login-entry.test.ts",
     "test:security-routes": "tsx --test src/server/security/origin.test.ts app/api/api-policy.test.ts app/api/legacy-route-security.test.ts src/components/auth/client-identity-storage.test.ts",
     "test:startup-contract": "node --test scripts/security/production-startup-contract.test.cjs",
-    "test": "npm run test:create-flow && npm run test:memory-item && npm run test:memory-pages && npm run test:media && npm run test:collective-analysis && npm run test:auth && npm run test:payments && npm run test:business-metrics && npm run test:security-routes && npm run test:startup-contract",
+    "test": "npm run test:create-flow && npm run test:memory-item && npm run test:memory-pages && npm run test:real-presence && npm run test:media && npm run test:collective-analysis && npm run test:auth && npm run test:payments && npm run test:business-metrics && npm run test:security-routes && npm run test:startup-contract",
     "start": "next start -H 127.0.0.1 -p 3000",
     "lint": "next lint"
   },

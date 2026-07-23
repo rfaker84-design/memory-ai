@@ -1,6 +1,4 @@
-import { getAIProviderRegistry } from "../../services/ai/global-ai-registry";
-import { AIProviderType } from "../../services/ai/provider-types";
-import type { LLMAIProviderAdapter } from "../../services/llm/llm-ai-provider-adapter";
+import { resolveFormalLLMProvider } from "../../services/llm/formal-llm-provider";
 import type { LLMProvider } from "../../services/llm/llm-provider";
 import type { LLMMessage } from "../../services/llm/types";
 import type { Memory } from "../memory/types";
@@ -38,15 +36,11 @@ export interface FirstGreetingResult {
 }
 
 function resolveProvider(): LLMProvider {
-  const name = process.env.LLM_PROVIDER || "mock";
-  const adapter = getAIProviderRegistry().get<LLMAIProviderAdapter>(
-    AIProviderType.LLM,
-    name
-  );
-  if (!adapter) {
+  try {
+    return resolveFormalLLMProvider();
+  } catch {
     throw new FirstGreetingProviderError("First greeting provider is unavailable");
   }
-  return adapter.llmProvider;
 }
 
 function validateIdempotencyKey(value: string): string {
@@ -83,6 +77,7 @@ export function buildFirstGreetingPrompt(
         "你正在生成一次首次问候，不存在用户消息或既有对话。",
         "只能使用以下已保存的亲人档案；不能编造、补充或猜测档案之外的人生事实、经历或关系细节。",
         "若档案没有足够细节，请保持简短、温和，并承认不知道具体细节。",
+        "档案中已确认的称呼、常用语、说话风格和共同回忆必须被尊重；若适合首次问候，请自然使用，不得用通用固定问候替代。",
         "不要声称用户已经说过、经历过或同意过任何事情。",
         "已保存档案：",
         ...(profile.length > 0 ? profile.map((line) => `- ${line}`) : ["- 无额外资料"]),

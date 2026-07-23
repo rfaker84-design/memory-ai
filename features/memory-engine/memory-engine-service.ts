@@ -2,25 +2,10 @@
 import { PromptBuilder } from "./prompt-builder";
 import type { MemoryEngineInput, MemoryEngineResponse } from "./types";
 import type { LLMProvider } from "../../services/llm/llm-provider";
-import { getAIProviderRegistry } from "../../services/ai/global-ai-registry";
-import { AIProviderType } from "../../services/ai/provider-types";
-import type { LLMAIProviderAdapter } from "../../services/llm/llm-ai-provider-adapter";
+import { resolveFormalLLMProvider } from "../../services/llm/formal-llm-provider";
 
 function resolveLLMProvider(): LLMProvider {
-  const name = process.env.LLM_PROVIDER || "mock";
-  const registry = getAIProviderRegistry();
-  const adapter = registry.get<LLMAIProviderAdapter>(
-    AIProviderType.LLM,
-    name
-  );
-
-  if (!adapter) {
-    throw new Error(
-      "LLM provider not found in AI Registry: " + name
-    );
-  }
-
-  return adapter.llmProvider;
+  return resolveFormalLLMProvider();
 }
 
 export class MemoryEngineService {

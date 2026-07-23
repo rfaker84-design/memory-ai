@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Message as ChatMessage } from "../../../features/chat/types";
 import type { Memory } from "../../../features/memory/types";
 import {
+  loadOwnedMediaUrl,
   loadOwnedMemory,
   OwnedMemoryRequestError,
 } from "../../../src/components/memory/ownedMemoryClient";
@@ -23,6 +24,7 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const [memory, setMemory] = useState<Memory | null>(null);
+  const [portraitUrl, setPortraitUrl] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [fragments, setFragments] = useState<MemoryFragment[]>([]);
   const [question, setQuestion] = useState("");
@@ -53,6 +55,16 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
     void loadOwnedMemory(id, controller.signal)
       .then(async (ownedMemory) => {
         setMemory(ownedMemory);
+        if (ownedMemory.photoAssetId) {
+          try {
+            const url = await loadOwnedMediaUrl(ownedMemory.photoAssetId, controller.signal);
+            if (!controller.signal.aborted) setPortraitUrl(url);
+          } catch {
+            if (!controller.signal.aborted) setPortraitUrl(null);
+          }
+        } else {
+          setPortraitUrl(ownedMemory.photoUrl ?? null);
+        }
         setFragments(
           (ownedMemory.lifeStory ?? "")
             .split(/[。！？.!?]/)
@@ -173,8 +185,8 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
         {showFragments && messages.length === 0 && (
           <div className="py-12 text-center">
             <div className="mx-auto mb-6 h-28 w-28 overflow-hidden rounded-full ring-2 ring-white/10">
-              {memory.photoUrl ? (
-                <img src={memory.photoUrl} alt={memory.name} className="h-full w-full object-cover" />
+              {portraitUrl ? (
+                <img src={portraitUrl} alt={memory.name} className="h-full w-full object-cover" />
               ) : (
                 <div className="flex h-full items-center justify-center bg-[#3D3226]/[0.06] text-4xl text-[#A89888]">{memory.name.charAt(0)}</div>
               )}

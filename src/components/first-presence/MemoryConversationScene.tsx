@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useId, useRef, useState } from "reac
 import { MemoryAvatar, MemoryButton } from "../memory-ui";
 import { MemoryExperienceOffer } from "../payment/MemoryExperienceOffer";
 import { recordBusinessView } from "../business-metrics/businessMetricsClient";
+import { loadOwnedMediaUrl, loadOwnedMemory } from "../memory/ownedMemoryClient";
 import { useReducedMotion } from "../../motion";
 
 import {
@@ -51,6 +52,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   const [draft, setDraft] = useState("");
   const [pendingMessage, setPendingMessage] = useState<PendingMessage | null>(null);
   const [notice, setNotice] = useState("");
+  const [portraitUrl, setPortraitUrl] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const inFlightRef = useRef(false);
@@ -92,6 +94,23 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     void loadOrRequestGreeting(controller.signal);
     return () => controller.abort();
   }, [loadOrRequestGreeting]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadOwnedMemory(memoryId, controller.signal)
+      .then(async (memory) => {
+        if (!memory.photoAssetId) {
+          if (!controller.signal.aborted) setPortraitUrl(memory.photoUrl ?? null);
+          return;
+        }
+        const url = await loadOwnedMediaUrl(memory.photoAssetId, controller.signal);
+        if (!controller.signal.aborted) setPortraitUrl(url);
+      })
+      .catch(() => {
+        // A portrait is optional and must not block the durable conversation.
+      });
+    return () => controller.abort();
+  }, [memoryId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "end" });
@@ -182,7 +201,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     <section className={`${styles.scene} ${reducedMotion ? styles.reduced : ""}`} aria-labelledby={titleId}>
       <div className={styles.presence} aria-label={`${memoryName} 的形象`}>
         <div className={styles.orbit} aria-hidden="true" />
-        <MemoryAvatar initials={memoryName} alt={memoryName} presence={isBusy ? "quiet" : "online"} size={112} />
+        <MemoryAvatar image={portraitUrl} initials={memoryName} alt={memoryName} presence={isBusy ? "quiet" : "online"} size={112} />
         <p>{memoryName}</p>
       </div>
 

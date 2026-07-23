@@ -65,6 +65,9 @@ export function buildMemoryPrompt(input: PromptPipelineInput): PromptLayer {
   return {
     name: "memory",
     role: "system",
-    content: "关于TA的真实资料（只能基于以下资料表达身份，不要编造）：\n" + lines.join("\n"),
+    content:
+      "关于TA的已确认资料（只能基于以下资料表达身份，不要编造）：\n"
+      + lines.join("\n")
+      + "\n称呼、常用语、说话风格和共同回忆属于用户已确认的身份依据；在相关回复中应自然保持这些表达，不得以通用模板替代。",
   };
 }

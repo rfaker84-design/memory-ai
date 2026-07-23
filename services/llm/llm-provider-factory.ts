@@ -5,6 +5,10 @@ import { OpenAILLMProvider } from "./openai-llm-provider";
 export function createLLMProvider(): LLMProvider {
   const provider = process.env.LLM_PROVIDER || "mock";
 
+  if (process.env.NODE_ENV === "production" && provider === "mock") {
+    throw new Error("LLM_PROVIDER_NOT_CONFIGURED");
+  }
+
   if (provider === "mock") {
     return new MockLLMProvider();
   }
