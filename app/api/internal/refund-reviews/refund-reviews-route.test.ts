@@ -64,3 +64,33 @@ test("internal review accepts only strict approve or reject input and never uses
     else process.env.REFUND_REVIEW_ACCESS_TOKEN = previous;
   }
 });
+
+test("operator review rejects session substitutes and malformed bodies without exposing its access token", async () => {
+  const previous = process.env.REFUND_REVIEW_ACCESS_TOKEN;
+  const secret = "review-access-token-must-never-appear-in-output-000001";
+  process.env.REFUND_REVIEW_ACCESS_TOKEN = secret;
+  let calls = 0;
+  const logs: string[] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => { logs.push(args.map(String).join(" ")); };
+  try {
+    const handler = createRefundReviewsHandler(() => ({ reviewManualRefund: async () => { calls += 1; throw new Error(`unexpected ${secret}`); } }));
+    const sessionOnly = await handler(new NextRequest("https://memoryai.test/api/internal/refund-reviews", { method: "POST", headers: { "content-type": "application/json", cookie: "__Host-memoryai_session=forged", authorization: "Bearer forged" }, body: JSON.stringify({ refundId, action: "approve" }) }));
+    assert.equal(sessionOnly.status, 401);
+    assert.doesNotMatch(await sessionOnly.text(), new RegExp(secret));
+    for (const body of [null, [], {}, { refundId: "not-a-uuid", action: "approve" }, { refundId, action: "APPROVE" }, { refundId, action: "approve", userId: "forged" }]) {
+      const response = await handler(new NextRequest("https://memoryai.test/api/internal/refund-reviews", { method: "POST", headers: { "content-type": "application/json", "x-refund-review-access-token": secret }, body: JSON.stringify(body) }));
+      assert.equal(response.status, 400);
+      assert.doesNotMatch(await response.text(), new RegExp(secret));
+    }
+    const unavailable = await handler(new NextRequest("https://memoryai.test/api/internal/refund-reviews", { method: "POST", headers: { "content-type": "application/json", "x-refund-review-access-token": secret }, body: JSON.stringify({ refundId, action: "approve" }) }));
+    assert.equal(unavailable.status, 503);
+    assert.doesNotMatch(await unavailable.text(), new RegExp(secret));
+    assert.equal(calls, 1);
+    assert.ok(logs.every((line) => !line.includes(secret)));
+  } finally {
+    console.error = originalError;
+    if (previous === undefined) delete process.env.REFUND_REVIEW_ACCESS_TOKEN;
+    else process.env.REFUND_REVIEW_ACCESS_TOKEN = previous;
+  }
+});

@@ -7,7 +7,7 @@ import { NextRequest } from "next/server";
 import { createPaymentOrdersHandler } from "@/app/api/payments/orders/_handler";
 import { createWeChatPayCallbackHandler } from "@/app/api/payments/wechat/callback/_handler";
 
-import { PaymentConfigurationError } from "./errors";
+import { PaymentConfigurationError, PaymentValidationError } from "./errors";
 import { loadMemoryExperienceProduct } from "./payment-product";
 import { PaymentService } from "./payment-service";
 import { WeChatPayH5Provider, loadWeChatPayConfig } from "./wechat-pay-provider";
@@ -147,6 +147,17 @@ test("signed WeChat callback is delegated once and duplicate success still ackno
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { code: "SUCCESS", message: "成功" });
   assert.equal(calls, 1);
+});
+
+test("an unverified WeChat refund callback cannot settle an order or revoke an entitlement", async () => {
+  let settlements = 0;
+  const handler = createWeChatPayCallbackHandler(
+    () => ({ applyCallback: async () => { settlements += 1; return { outcome: "refunded" as const, externalUserId: user.externalUserId, memoryId, orderNo: order.orderNo }; } }),
+    () => ({ verifyAndParseCallback: () => { throw new PaymentValidationError("invalid callback signature"); } }),
+  );
+  const response = await handler(new NextRequest("https://memoryai.test/api/payments/wechat/callback", { method: "POST", body: "{}" }));
+  assert.equal(response.status, 401);
+  assert.equal(settlements, 0);
 });
 
 test("WeChat H5 provider signs checkout calls and verifies encrypted callback evidence", async () => {

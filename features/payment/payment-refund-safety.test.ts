@@ -48,7 +48,11 @@ test("manual approval is idempotent and a network retry reuses the same merchant
   const events: string[] = [];
   let state = makeRefund("manual_review", "manual_review", "REQUESTED_SERVICE_FAILURE");
   let providerCalls = 0;
+  const providerRefundNumbers: string[] = [];
+  let callbackSettlements = 0;
+  let entitlementStatus = "active";
   const reviewSource = source(state, events);
+  reviewSource.applyCallback = async () => { callbackSettlements += 1; entitlementStatus = "refunded"; return { outcome: "refunded", externalUserId: owner, memoryId, orderNo }; };
   reviewSource.beginManualRefundApproval = async () => {
     if (state.status !== "manual_review") return { refund: state, shouldCallProvider: false };
     state = { ...state, status: "processing", eligibility: "eligible", decisionCode: null, requestedAt: null };
@@ -69,20 +73,23 @@ test("manual approval is idempotent and a network retry reuses the same merchant
     return state;
   };
   const service = new PaymentService(new PaymentRepository(reviewSource));
-  const approve = { refundId: state.id, action: "approve" as const, provider: { createRefund: async ({ refund }: { refund: RefundRequest }) => { providerCalls += 1; events.push(`provider:${refund.merchantRefundNo}`); return { providerRefundId: "wx-1" }; } } };
+  const approve = { refundId: state.id, action: "approve" as const, provider: { createRefund: async ({ refund }: { refund: RefundRequest }) => { providerCalls += 1; providerRefundNumbers.push(refund.merchantRefundNo); events.push(`provider:${refund.merchantRefundNo}`); return { providerRefundId: "wx-1" }; } } };
   await service.reviewManualRefund(approve);
   await service.reviewManualRefund(approve);
   assert.equal(providerCalls, 1);
   assert.deepEqual(events, [`provider:${state.merchantRefundNo}`, `requested:${state.merchantRefundNo}`]);
 
   state = makeRefund("manual_review", "manual_review", "WECHAT_REFUND_CALL_FAILED");
-  const failed = { refundId: state.id, action: "approve" as const, provider: { createRefund: async ({ refund }: { refund: RefundRequest }) => { providerCalls += 1; events.push(`failed:${refund.merchantRefundNo}`); throw Error("network uncertain"); } } };
+  const failed = { refundId: state.id, action: "approve" as const, provider: { createRefund: async ({ refund }: { refund: RefundRequest }) => { providerCalls += 1; providerRefundNumbers.push(refund.merchantRefundNo); events.push(`failed:${refund.merchantRefundNo}`); throw Error("network uncertain"); } } };
   await service.reviewManualRefund(failed);
   assert.equal(state.status, "manual_review");
-  const retry = { refundId: state.id, action: "approve" as const, provider: { createRefund: async ({ refund }: { refund: RefundRequest }) => { providerCalls += 1; events.push(`retry:${refund.merchantRefundNo}`); return { providerRefundId: "wx-2" }; } } };
+  const retry = { refundId: state.id, action: "approve" as const, provider: { createRefund: async ({ refund }: { refund: RefundRequest }) => { providerCalls += 1; providerRefundNumbers.push(refund.merchantRefundNo); events.push(`retry:${refund.merchantRefundNo}`); return { providerRefundId: "wx-2" }; } } };
   await service.reviewManualRefund(retry);
   assert.equal(providerCalls, 3);
   assert.equal(events.at(-1), `requested:${state.merchantRefundNo}`);
+  assert.deepEqual(providerRefundNumbers, [state.merchantRefundNo, state.merchantRefundNo, state.merchantRefundNo]);
+  assert.equal(callbackSettlements, 0);
+  assert.equal(entitlementStatus, "active");
 
   state = makeRefund("manual_review", "manual_review", "REQUESTED_DUPLICATE_CHARGE");
   const rejected = await service.reviewManualRefund({ refundId: state.id, action: "reject", provider: { createRefund: async () => { throw Error("must not call"); } } });
