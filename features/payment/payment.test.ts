@@ -12,7 +12,7 @@ import { loadMemoryExperienceProduct } from "./payment-product";
 import { PaymentService } from "./payment-service";
 import { WeChatPayH5Provider, loadWeChatPayConfig } from "./wechat-pay-provider";
 import type { PaymentDataSource } from "./payment-datasource";
-import type { PaymentCallback, PaymentOrder } from "./types";
+import type { PaymentCallback, PaymentOrder, RefundRequest } from "./types";
 
 process.env.AUTH_ALLOWED_ORIGIN = "https://memoryai.test";
 process.env.AUTH_TRUST_NGINX_PROXY = "true";
@@ -46,6 +46,7 @@ test("checkout failure marks the pending order failed and never invents a paymen
     markCheckoutFailure: async () => { events.push("failed"); },
     listOrders: async () => [], listEntitlements: async () => [], applyCallback: async () => { throw new Error("unused"); },
     createRefundRequest: async () => { throw new Error("unused"); }, listRefundRequests: async () => [],
+    markRefundRequested: async () => { throw new Error("unused"); }, markRefundManualReview: async () => { throw new Error("unused"); },
     reserveChatQuota: async () => "free", releaseChatQuota: async () => undefined,
   };
   const service = new PaymentService({ ...source } as never);
@@ -54,6 +55,53 @@ test("checkout failure marks the pending order failed and never invents a paymen
     clientIp: "127.0.0.1", provider: { createH5Checkout: async () => { throw new Error("provider unavailable"); } },
   }));
   assert.deepEqual(events, ["failed"]);
+});
+
+test("only a server-qualified unused purchase invokes WeChat; service failures become manual review", async () => {
+  const automatic: RefundRequest = {
+    id: "00000000-0000-4000-8000-000000000014", memoryId, orderNo: order.orderNo, amountFen: order.amountFen,
+    merchantRefundNo: "YR20260723010101ABCDEF012345", status: "processing", eligibility: "eligible",
+    reason: "unused purchase", decisionCode: null, providerRefundId: null,
+    createdAt: "2026-07-23T01:02:01.000Z", requestedAt: null, resolvedAt: null,
+  };
+  let state = automatic;
+  const events: string[] = [];
+  const source: PaymentDataSource = {
+    createOrder: async () => order, attachCheckout: async () => order, markCheckoutFailure: async () => undefined,
+    listOrders: async () => [], listEntitlements: async () => [], applyCallback: async () => { throw new Error("unused"); },
+    createRefundRequest: async () => state, listRefundRequests: async () => [],
+    markRefundRequested: async (merchantRefundNo, result) => {
+      events.push(`requested:${merchantRefundNo}:${result.providerRefundId}`);
+      state = { ...state, status: "requested", providerRefundId: result.providerRefundId, requestedAt: "2026-07-23T01:02:02.000Z" };
+      return state;
+    },
+    markRefundManualReview: async (_merchantRefundNo, code) => {
+      events.push(`manual:${code}`);
+      state = { ...state, status: "manual_review", eligibility: "manual_review", decisionCode: code };
+      return state;
+    },
+    reserveChatQuota: async () => "free", releaseChatQuota: async () => undefined,
+  };
+  const service = new PaymentService(new (await import("./payment-repository")).PaymentRepository(source));
+  await service.createRefundRequest({
+    externalUserId: user.externalUserId, memoryId, orderNo: order.orderNo, reason: "unused purchase", requestKey: "refund-key-000001",
+    provider: { createRefund: async ({ refund: requested }) => { events.push(`provider:${requested.merchantRefundNo}`); return { providerRefundId: "refund-1" }; } },
+  });
+  state = { ...state, status: "manual_review", eligibility: "manual_review", decisionCode: "DUPLICATE_CHARGE" };
+  await service.createRefundRequest({
+    externalUserId: user.externalUserId, memoryId, orderNo: order.orderNo, reason: "duplicate charge", requestKey: "refund-key-000001",
+    provider: { createRefund: async () => { throw new Error("must not call"); } },
+  });
+  state = automatic;
+  await service.createRefundRequest({
+    externalUserId: user.externalUserId, memoryId, orderNo: order.orderNo, reason: "unused purchase", requestKey: "refund-key-000001",
+    provider: { createRefund: async () => { throw new Error("provider unavailable"); } },
+  });
+  assert.deepEqual(events, [
+    `provider:${automatic.merchantRefundNo}`,
+    `requested:${automatic.merchantRefundNo}:refund-1`,
+    "manual:SERVICE_FAILURE",
+  ]);
 });
 
 test("orders API uses only session owner, an idempotency key, and a memory id", async () => {
@@ -134,6 +182,32 @@ test("WeChat H5 provider signs checkout calls and verifies encrypted callback ev
     status: "success", amountFen: order.amountFen,
     payloadHash: (await import("node:crypto")).createHash("sha256").update(rawBody).digest("hex"),
   });
+});
+
+test("WeChat provider sends a full refund with the stable server-issued refund number", async () => {
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const merchantPrivateKey = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const platformCertificate = publicKey.export({ type: "spki", format: "pem" }).toString();
+  const refund: RefundRequest = {
+    id: "00000000-0000-4000-8000-000000000014", memoryId, orderNo: order.orderNo, amountFen: order.amountFen,
+    merchantRefundNo: "YR20260723010101ABCDEF012345", status: "processing", eligibility: "eligible",
+    reason: "unused purchase", decisionCode: null, providerRefundId: null,
+    createdAt: "2026-07-23T01:02:01.000Z", requestedAt: null, resolvedAt: null,
+  };
+  const provider = new WeChatPayH5Provider({
+    loadConfig: () => ({ appId: "wx123", merchantId: "123456", merchantSerialNo: "AABBCCDD", platformSerialNo: "EEFF0011", merchantPrivateKey, platformCertificate, apiV3Key: Buffer.from("01234567890123456789012345678901"), notifyUrl: "https://yijianmemory.cn/api/payments/wechat/callback" }),
+    fetch: async (input, init) => {
+      assert.equal(String(input), "https://api.mch.weixin.qq.com/v3/refund/domestic/refunds");
+      assert.match(new Headers(init?.headers).get("authorization") ?? "", /^WECHATPAY2-SHA256-RSA2048 /);
+      assert.deepEqual(JSON.parse(String(init?.body)), {
+        out_trade_no: refund.orderNo, out_refund_no: refund.merchantRefundNo, reason: "Yijian refund",
+        notify_url: "https://yijianmemory.cn/api/payments/wechat/callback",
+        amount: { refund: refund.amountFen, total: refund.amountFen, currency: "CNY" },
+      });
+      return Response.json({ refund_id: "wechat-refund-1" });
+    },
+  });
+  assert.deepEqual(await provider.createRefund({ refund }), { providerRefundId: "wechat-refund-1" });
 });
 
 test("WeChat configuration never accepts partial merchant credentials", () => {

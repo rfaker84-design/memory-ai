@@ -18,7 +18,7 @@
     "test:collective-analysis": "tsx --test app/api/collective-analysis/route.test.ts",
     "test:auth-migration": "node --test database/tests/006-auth-verification-challenges.test.cjs",
     "test:sms-provider": "tsx --test src/server/auth/sms/tencent-sms-verification-provider.test.ts",
-    "test:payments": "tsx --test features/payment/payment.test.ts && node --test database/tests/010-memory-experience-payments.test.cjs",
+    "test:payments": "tsx --test features/payment/payment.test.ts features/payment/payment-refund-persistence.test.ts app/api/payments/refunds/refunds-route.test.ts && node --test database/tests/010-memory-experience-payments.test.cjs database/tests/012-payment-refund-requests.test.cjs",
     "test:payment-experience": "tsx --test src/components/payment/memoryExperienceClient.test.ts",
     "test:business-metrics": "tsx --test app/api/business-events/business-events-route.test.ts app/api/business-metrics/funnel/funnel-route.test.ts src/components/business-metrics/businessMetricsClient.test.ts && node --test database/tests/011-business-funnel-events.test.cjs",
     "test:auth": "tsx --test src/server/auth/auth.test.ts src/server/auth/auth-response-cache.test.ts src/server/auth/production-config.test.ts src/server/auth/sms/tencent-sms-verification-provider.test.ts app/login/login-entry.test.ts",

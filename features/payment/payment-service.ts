@@ -7,12 +7,14 @@ import type {
   PaymentSettlement,
   RefundRequest,
   CreateRefundRequestInput,
+  WeChatRefund,
   WeChatCheckout,
 } from "./types";
 
 export type CheckoutProvider = {
   createH5Checkout(input: { order: PaymentOrder; clientIp: string }): Promise<WeChatCheckout>;
 };
+export type RefundProvider = { createRefund(input: { refund: RefundRequest }): Promise<WeChatRefund> };
 
 export class PaymentService {
   constructor(private readonly repository: PaymentRepository) {}
@@ -42,8 +44,17 @@ export class PaymentService {
     return this.repository.applyCallback(callback);
   }
 
-  createRefundRequest(input: CreateRefundRequestInput): Promise<RefundRequest> {
-    return this.repository.createRefundRequest(input);
+  async createRefundRequest(input: CreateRefundRequestInput & { provider: RefundProvider }): Promise<RefundRequest> {
+    const refund = await this.repository.createRefundRequest(input);
+    if (refund.status !== "processing") return refund;
+    try {
+      return await this.repository.markRefundRequested(
+        refund.merchantRefundNo,
+        await input.provider.createRefund({ refund }),
+      );
+    } catch {
+      return this.repository.markRefundManualReview(refund.merchantRefundNo, "SERVICE_FAILURE");
+    }
   }
 
   listRefundRequests(externalUserId: string, memoryId: string): Promise<RefundRequest[]> {

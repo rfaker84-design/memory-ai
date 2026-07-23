@@ -54,6 +54,8 @@ export type PaymentCallback = {
   eventId: string;
   kind: "transaction" | "refund";
   orderNo: string;
+  refundRequestNo?: string;
+  refundId?: string;
   transactionId: string;
   status: "success" | "failed" | "cancelled" | "refunded";
   amountFen: number;
@@ -67,19 +69,26 @@ export type PaymentSettlement = {
   orderNo: string;
 };
 
-export type RefundRequestStatus = "processing" | "succeeded" | "rejected";
+export type RefundRequestStatus = "processing" | "requested" | "manual_review" | "succeeded" | "rejected";
+export type RefundEligibility = "eligible" | "manual_review" | "ineligible";
 
 export type RefundRequest = {
   id: string;
   memoryId: string;
   orderNo: string;
+  amountFen: number;
+  merchantRefundNo: string;
   status: RefundRequestStatus;
-  eligibility: "eligible" | "ineligible";
+  eligibility: RefundEligibility;
   reason: string;
-  rejectionReason: string | null;
+  decisionCode: string | null;
+  providerRefundId: string | null;
   createdAt: string;
+  requestedAt: string | null;
   resolvedAt: string | null;
 };
+
+export type WeChatRefund = { providerRefundId: string | null };
 
 export type CreateRefundRequestInput = {
   externalUserId: string;

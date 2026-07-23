@@ -1,8 +1,8 @@
 import { createDecipheriv, createHash, createSign, createVerify, randomBytes } from "node:crypto";
 
 import { PaymentConfigurationError, PaymentValidationError } from "./errors";
-import type { CheckoutProvider } from "./payment-service";
-import type { PaymentCallback, PaymentOrder, WeChatCheckout } from "./types";
+import type { CheckoutProvider, RefundProvider } from "./payment-service";
+import type { PaymentCallback, PaymentOrder, RefundRequest, WeChatCheckout, WeChatRefund } from "./types";
 
 type WeChatPayConfig = {
   appId: string;
@@ -79,7 +79,7 @@ function callbackStatus(value: unknown): PaymentCallback["status"] {
   return "failed";
 }
 
-export class WeChatPayH5Provider implements CheckoutProvider {
+export class WeChatPayH5Provider implements CheckoutProvider, RefundProvider {
   private readonly loadConfig: () => WeChatPayConfig;
   private readonly fetchPort: FetchPort;
   private readonly now: () => Date;
@@ -142,6 +142,31 @@ export class WeChatPayH5Provider implements CheckoutProvider {
     return { paymentUrl: payload.h5_url, prepayId: typeof payload.prepay_id === "string" ? payload.prepay_id : null };
   }
 
+  async createRefund(input: { refund: RefundRequest }): Promise<WeChatRefund> {
+    const config = this.runtime();
+    const path = "/v3/refund/domestic/refunds";
+    const body = JSON.stringify({
+      out_trade_no: input.refund.orderNo,
+      out_refund_no: input.refund.merchantRefundNo,
+      reason: "Yijian refund",
+      notify_url: config.notifyUrl,
+      amount: { refund: input.refund.amountFen, total: input.refund.amountFen, currency: "CNY" },
+    });
+    let response: Response;
+    try {
+      response = await this.fetchPort(`https://api.mch.weixin.qq.com${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: this.authorization(config, "POST", path, body), accept: "application/json" },
+        body,
+      });
+    } catch {
+      throw new PaymentConfigurationError("WECHAT_PAY_UNAVAILABLE");
+    }
+    const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+    if (!response.ok) throw new PaymentConfigurationError("WECHAT_PAY_UNAVAILABLE");
+    return { providerRefundId: typeof payload.refund_id === "string" ? payload.refund_id : null };
+  }
+
   verifyAndParseCallback(headers: Headers, rawBody: string): PaymentCallback {
     const config = this.runtime();
     const timestamp = headers.get("wechatpay-timestamp");
@@ -189,6 +214,10 @@ export class WeChatPayH5Provider implements CheckoutProvider {
       eventId,
       kind: isRefund ? "refund" : "transaction",
       orderNo: stringField(decoded.out_trade_no, "order no"),
+      ...(isRefund ? {
+        refundRequestNo: stringField(decoded.out_refund_no, "refund request no"),
+        refundId: stringField(decoded.refund_id, "refund id"),
+      } : {}),
       transactionId: stringField(decoded.transaction_id, "transaction id"),
       status: isRefund ? (decoded.refund_status === "SUCCESS" ? "refunded" : "failed") : callbackStatus(decoded.trade_state),
       amountFen: integerField(amount?.total, "amount"),

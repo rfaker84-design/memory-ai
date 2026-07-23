@@ -6,8 +6,10 @@ import {
   PaymentRepository,
   PaymentService,
   PaymentValidationError,
+  getWeChatPayProvider,
   type CreateRefundRequestInput,
   type RefundRequest,
+  type RefundProvider,
 } from "@/features/payment";
 import { AuthConfigurationError, requireAllowedOrigin, type AuthSession, verifyRequestSession } from "@/src/server/auth";
 import { DatabaseDependencyError } from "@/src/server/database";
@@ -38,6 +40,7 @@ function failure(error: unknown) {
 export function createPaymentRefundsHandler(
   serviceFactory: () => RefundService = service,
   sessionResolver: SessionResolver = verifyRequestSession,
+  providerFactory: () => RefundProvider = getWeChatPayProvider,
 ) {
   return {
     GET: async (request: NextRequest) => {
@@ -66,9 +69,9 @@ export function createPaymentRefundsHandler(
         const reason = text(input.reason, 500);
         if (!memoryId || !orderNo || !reason) return json({ error: "INVALID_REFUND_REQUEST" }, { status: 400 });
         const refund = await serviceFactory().createRefundRequest({
-          externalUserId: session.externalUserId, memoryId, orderNo, reason, requestKey,
-        } satisfies CreateRefundRequestInput);
-        return json({ refund }, { status: refund.status === "processing" ? 201 : 200 });
+          externalUserId: session.externalUserId, memoryId, orderNo, reason, requestKey, provider: providerFactory(),
+        } satisfies CreateRefundRequestInput & { provider: RefundProvider });
+        return json({ refund }, { status: refund.status === "requested" ? 201 : 200 });
       } catch (error) { return failure(error); }
     },
   };

@@ -6,6 +6,7 @@ import type {
   PaymentSettlement,
   RefundRequest,
   CreateRefundRequestInput,
+  WeChatRefund,
   WeChatCheckout,
 } from "./types";
 
@@ -18,6 +19,8 @@ export interface PaymentDataSource {
   applyCallback(callback: PaymentCallback): Promise<PaymentSettlement>;
   createRefundRequest(input: CreateRefundRequestInput): Promise<RefundRequest>;
   listRefundRequests(externalUserId: string, memoryId: string): Promise<RefundRequest[]>;
+  markRefundRequested(merchantRefundNo: string, refund: WeChatRefund): Promise<RefundRequest>;
+  markRefundManualReview(merchantRefundNo: string, decisionCode: string): Promise<RefundRequest>;
   reserveChatQuota(input: { externalUserId: string; memoryId: string; idempotencyKey: string }): Promise<import("./types").ChatQuotaReservation>;
   releaseChatQuota(input: { externalUserId: string; memoryId: string; idempotencyKey: string }): Promise<void>;
 }
