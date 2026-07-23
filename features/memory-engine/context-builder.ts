@@ -1,15 +1,11 @@
 import type { MemoryEngineContext, MemoryEngineInput } from "./types";
-import {
-  MemoryNotFoundError,
-  MemoryRepository,
-  MemoryService,
-  MemoryPostgresDataSource,
-} from "../memory";
-import {
-  ChatRepository,
-  ChatService,
-  ChatPostgresDataSource,
-} from "../chat";
+import { MemoryNotFoundError } from "../memory/errors";
+import { MemoryPostgresDataSource } from "../memory/memory-postgres-datasource";
+import { MemoryRepository } from "../memory/memory-repository";
+import { MemoryService } from "../memory/memory-service";
+import { ChatPostgresDataSource } from "../chat/chat-postgres-datasource";
+import { ChatRepository } from "../chat/chat-repository";
+import { ChatService } from "../chat/chat-service";
 import { EmotionEngineService } from "../emotion-engine";
 import {
   LongTermMemoryPostgresDataSource,

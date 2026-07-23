@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import {
-  ChatNotFoundError,
-  ChatValidationError,
-  MemoryChatTurnPostgresDataSource,
-  MemoryChatTurnRepository,
-  MemoryChatTurnService,
-  type MemoryChatTurnResult,
-} from "../../../features/chat";
+import { ChatNotFoundError, ChatValidationError } from "../../../features/chat/errors";
+import { MemoryChatTurnPostgresDataSource } from "../../../features/chat/memory-chat-turn-postgres-datasource";
+import { MemoryChatTurnRepository } from "../../../features/chat/memory-chat-turn-repository";
+import { MemoryChatTurnService } from "../../../features/chat/memory-chat-turn-service";
+import type { MemoryChatTurnResult } from "../../../features/chat/memory-chat-turn-types";
 import {
   LongTermMemoryPostgresDataSource,
   LongTermMemoryRepository,
@@ -26,9 +23,6 @@ import {
   verifyRequestSession,
 } from "../../../src/server/auth";
 import { DatabaseDependencyError } from "../../../src/server/database";
-import { calculateAddictionScore, getCompanionMode } from "../../../src/lib/addiction-score";
-import { checkConcurrency } from "../../../src/lib/concurrency-control";
-import { checkRateLimit } from "../../../src/lib/cost-control";
 
 type MemoryChatRequest = { memoryId: string; question: string };
 type MemoryOwnershipService = Pick<MemoryService, "getMemoryForUser">;
@@ -40,6 +34,8 @@ type PersistCompletedTurn = (input: {
   memoryId: string;
   result: MemoryChatTurnResult;
 }) => Promise<boolean>;
+type AdmissionDecision = { rateAllowed: boolean; concurrencyAllowed: boolean };
+type AdmissionControl = (externalUserId: string) => Promise<AdmissionDecision>;
 
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
 
@@ -69,19 +65,33 @@ const persistCompletedTurn: PersistCompletedTurn = ({
     assistantMessage: result.assistantMessage,
   });
 
-function response(result: MemoryChatTurnResult, addictionProfile?: Awaited<ReturnType<typeof calculateAddictionScore>> | null) {
+const checkAdmission: AdmissionControl = async (externalUserId) => {
+  const [{ checkRateLimit }, { checkConcurrency }] = await Promise.all([
+    import("../../../src/lib/cost-control"),
+    import("../../../src/lib/concurrency-control"),
+  ]);
+  return {
+    rateAllowed: checkRateLimit(externalUserId).allowed,
+    concurrencyAllowed: checkConcurrency(externalUserId, "ai").allowed,
+  };
+};
+
+function response(result: MemoryChatTurnResult) {
   const answer = result.assistantMessage.content;
   return NextResponse.json({
     answer,
     reply: answer,
     text: answer,
     sessionId: result.conversation.id,
-    ...(addictionProfile ? {
-      addiction_level: addictionProfile.level,
-      addiction_score: addictionProfile.score,
-      companion_mode: getCompanionMode(addictionProfile.level),
-    } : {}),
   });
+}
+
+function isSafeQuestion(question: string): boolean {
+  return !(
+    /<\s*\/?\s*script\b/i.test(question)
+    || /\bon[a-z]+\s*=/i.test(question)
+    || /javascript\s*:/i.test(question)
+  );
 }
 
 function parseBody(value: unknown): MemoryChatRequest | null {
@@ -94,7 +104,10 @@ function parseBody(value: unknown): MemoryChatRequest | null {
   if (typeof body.memoryId !== "string" || typeof body.question !== "string") return null;
   const memoryId = body.memoryId.trim();
   const question = body.question.trim();
-  return memoryId && question ? { memoryId, question } : null;
+  if (!memoryId || !question || Array.from(question).length > 4_000 || !isSafeQuestion(question)) {
+    return null;
+  }
+  return { memoryId, question };
 }
 
 export function createMemoryChatHandler(
@@ -102,7 +115,8 @@ export function createMemoryChatHandler(
   turnServiceFactory: () => TurnService = createTurnService,
   engineServiceFactory: () => EngineService = createEngineService,
   sessionResolver: SessionResolver = verifyRequestSession,
-  persistTurn: PersistCompletedTurn = persistCompletedTurn
+  persistTurn: PersistCompletedTurn = persistCompletedTurn,
+  admissionControl: AdmissionControl = checkAdmission
 ) {
   return async function POST(request: NextRequest) {
     try {
@@ -147,14 +161,13 @@ export function createMemoryChatHandler(
         return NextResponse.json({ error: "CHAT_TURN_IN_PROGRESS" }, { status: 409 });
       }
 
-      const rateCheck = checkRateLimit(userId);
-      if (!rateCheck.allowed) {
+      const admission = await admissionControl(userId);
+      if (!admission.rateAllowed) {
         await turnService.fail(turnInput);
         const answer = "TA需要休息一下，我们稍后再见。";
         return NextResponse.json({ answer, reply: answer, text: answer });
       }
-      const concurrencyCheck = checkConcurrency(userId, "ai");
-      if (!concurrencyCheck.allowed) {
+      if (!admission.concurrencyAllowed) {
         await turnService.fail(turnInput);
         const answer = "让我缓一缓，马上就好。";
         return NextResponse.json({ answer, reply: answer, text: answer });
@@ -198,13 +211,7 @@ export function createMemoryChatHandler(
         console.warn("[memory-chat] LTM_WRITE_FAILED");
       }
 
-      let addictionProfile = null;
-      try {
-        addictionProfile = await calculateAddictionScore(userId);
-      } catch {
-        addictionProfile = null;
-      }
-      return response(result, addictionProfile);
+      return response(result);
     } catch (error) {
       if (error instanceof MemoryValidationError || error instanceof ChatNotFoundError) {
         return NextResponse.json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });

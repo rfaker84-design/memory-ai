@@ -12,6 +12,11 @@ test("memory-chat accepts only memoryId and question plus an Idempotency-Key", (
   assert.match(source, /keys\.length !== 2/);
   assert.match(source, /key === "memoryId" \|\| key === "question"/);
   assert.match(source, /INVALID_REQUEST/);
+  assert.match(source, /Array\.from\(question\)\.length > 4_000/);
+  assert.match(source, /isSafeQuestion/);
+  assert.match(source, /script/);
+  assert.match(source, /on\[a-z\]\+/);
+  assert.match(source, /javascript/);
   assert.doesNotMatch(source, /history\??:/);
   assert.doesNotMatch(source, /user_phone|memory_id/);
 });
@@ -31,5 +36,6 @@ test("provider failure is explicitly retryable while completion precedes LTM per
   assert.match(source, /await persistTurn/);
   assert.ok(source.indexOf("turnService.complete") < source.indexOf("persistTurn({"));
   assert.match(source, /LTM_WRITE_FAILED/);
+  assert.doesNotMatch(source, /addiction-score/);
   assert.doesNotMatch(source, /supabase/i);
 });
