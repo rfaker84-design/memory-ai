@@ -1,0 +1,15 @@
+.center { margin-top: 1.25rem; padding: 1rem; border: 1px solid rgba(179,139,83,.22); border-radius: 1.1rem; background: rgba(255,255,255,.72); color: #453a30; box-shadow: 0 10px 28px rgba(83,61,35,.06); }
+.eyebrow { margin: 0; color: #a97b42; font-size: .72rem; letter-spacing: .12em; }
+.center h2 { margin: .35rem 0 0; font-size: 1.05rem; font-weight: 600; }
+.intro, .order, .muted, .notice { margin: .65rem 0 0; font-size: .82rem; line-height: 1.65; }
+.intro, .muted { color: #83776b; }
+.selector, .form { display: grid; gap: .5rem; margin-top: .8rem; font-size: .82rem; }
+.selector select, .form textarea { width: 100%; box-sizing: border-box; border: 1px solid rgba(179,139,83,.22); border-radius: .7rem; background: rgba(255,255,255,.82); color: inherit; font: inherit; padding: .65rem .75rem; }
+.form textarea { min-height: 5.5rem; resize: vertical; }
+.status { display: grid; gap: .42rem; margin-top: .8rem; padding: .8rem; border-radius: .8rem; background: rgba(220,181,112,.14); font-size: .82rem; line-height: 1.55; }
+.status strong { font-size: .92rem; }
+.status span { color: #9a6a34; }
+.status p { margin: 0; color: #665a4d; }
+.refresh { min-height: 2.5rem; margin-top: .7rem; border: 0; background: transparent; color: #8c6335; font: inherit; font-size: .82rem; text-decoration: underline; text-underline-offset: .24rem; cursor: pointer; }
+.notice { color: #a7543d; }
+@media (max-width: 680px) { .center { padding: .9rem; } }

@@ -11,6 +11,8 @@ import type {
   PaymentCallback,
   PaymentOrder,
   PaymentSettlement,
+  RefundRequest,
+  CreateRefundRequestInput,
   WeChatCheckout,
 } from "./types";
 
@@ -28,6 +30,11 @@ type OrderRow = {
 type EntitlementRow = {
   id: string; memory_id: string; order_no: string; product_id: string; starts_at: Date | string;
   ends_at: Date | string; chat_quota: number; chat_used: number; status: "active" | "refunded";
+};
+type RefundRequestRow = {
+  id: string; memory_id: string; order_no: string; status: RefundRequest["status"];
+  eligibility: RefundRequest["eligibility"]; reason: string; rejection_reason: string | null;
+  created_at: Date | string; resolved_at: Date | string | null;
 };
 
 const orderColumns = `o.id, o.memory_id, o.order_no, o.product_id, o.amount_fen, o.currency,
@@ -54,6 +61,14 @@ function toEntitlement(row: EntitlementRow): MemoryEntitlement {
     id: row.id, memoryId: row.memory_id, orderNo: row.order_no, productId: row.product_id,
     startsAt: iso(row.starts_at)!, endsAt: iso(row.ends_at)!, chatQuota: row.chat_quota,
     chatUsed: row.chat_used, status: row.status,
+  };
+}
+
+function toRefundRequest(row: RefundRequestRow): RefundRequest {
+  return {
+    id: row.id, memoryId: row.memory_id, orderNo: row.order_no, status: row.status,
+    eligibility: row.eligibility, reason: row.reason, rejectionReason: row.rejection_reason,
+    createdAt: iso(row.created_at)!, resolvedAt: iso(row.resolved_at),
   };
 }
 
@@ -202,6 +217,66 @@ export class PaymentPostgresDataSource implements PaymentDataSource {
     return result.rows.map(toEntitlement);
   }
 
+  async createRefundRequest(input: CreateRefundRequestInput): Promise<RefundRequest> {
+    const externalUserId = required(input.externalUserId, "userId");
+    const memoryId = required(input.memoryId, "memoryId", UUID_PATTERN);
+    const orderNo = required(input.orderNo, "orderNo", ORDER_PATTERN);
+    const requestKey = required(input.requestKey, "Idempotency-Key", KEY_PATTERN);
+    const reason = required(input.reason, "reason");
+    if (reason.length > 500) throw new PaymentValidationError("reason is invalid");
+
+    return withPostgresTransaction(async (client) => {
+      const orderResult = await client.query<OrderRow>(
+        `SELECT ${orderColumns} FROM payment_orders o JOIN users u ON u.id = o.user_id
+         WHERE u.external_id = $1 AND o.memory_id = $2 AND o.order_no = $3 FOR UPDATE`,
+        [externalUserId, memoryId, orderNo],
+      );
+      const order = orderResult.rows[0];
+      if (!order) throw new PaymentNotFoundError("Order was not found");
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
+        `memoryai:refund-request:${order.id}`,
+      ]);
+      const existing = await client.query<RefundRequestRow>(
+        `SELECT r.id, r.memory_id, o.order_no, r.status, r.eligibility, r.reason,
+                r.rejection_reason, r.created_at, r.resolved_at
+         FROM refund_requests r JOIN payment_orders o ON o.id = r.order_id
+         WHERE r.order_id = $1 LIMIT 1`,
+        [order.id],
+      );
+      if (existing.rows[0]) return toRefundRequest(existing.rows[0]);
+
+      const eligible = order.status === "paid";
+      const rejectionReason = eligible ? null : "仅可为已完成付款且尚未退款的订单提交退款申请。";
+      const inserted = await client.query<RefundRequestRow>(
+        `WITH written AS (
+           INSERT INTO refund_requests (
+             user_id, memory_id, order_id, request_key, reason, status, eligibility, rejection_reason, resolved_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $6 = 'rejected' THEN NOW() ELSE NULL END)
+           RETURNING *
+         ) SELECT written.id, written.memory_id, o.order_no, written.status, written.eligibility,
+                  written.reason, written.rejection_reason, written.created_at, written.resolved_at
+           FROM written JOIN payment_orders o ON o.id = written.order_id`,
+        [order.user_id, memoryId, order.id, requestKey, reason, eligible ? "processing" : "rejected", eligible ? "eligible" : "ineligible", rejectionReason],
+      );
+      return toRefundRequest(inserted.rows[0]);
+    });
+  }
+
+  async listRefundRequests(externalUserId: string, memoryId: string): Promise<RefundRequest[]> {
+    const owner = required(externalUserId, "userId");
+    const id = required(memoryId, "memoryId", UUID_PATTERN);
+    const result = await queryPostgres<RefundRequestRow>(
+      `SELECT r.id, r.memory_id, o.order_no, r.status, r.eligibility, r.reason,
+              r.rejection_reason, r.created_at, r.resolved_at
+       FROM refund_requests r
+       JOIN users u ON u.id = r.user_id
+       JOIN payment_orders o ON o.id = r.order_id
+       WHERE u.external_id = $1 AND r.memory_id = $2
+       ORDER BY r.created_at DESC`, [owner, id],
+    );
+    return result.rows.map(toRefundRequest);
+  }
+
   async applyCallback(input: PaymentCallback): Promise<PaymentSettlement> {
     const callback = assertCallback(input);
     return withPostgresTransaction(async (client) => {
@@ -232,6 +307,10 @@ export class PaymentPostgresDataSource implements PaymentDataSource {
         );
         await client.query(
           `UPDATE memory_entitlements SET status = 'refunded', updated_at = NOW() WHERE order_id = $1`, [order.id],
+        );
+        await client.query(
+          `UPDATE refund_requests SET status = 'succeeded', resolved_at = NOW(), updated_at = NOW()
+           WHERE order_id = $1 AND status = 'processing'`, [order.id],
         );
         await client.query(
           `INSERT INTO audit_logs (user_id, memory_id, action, level, message, metadata)

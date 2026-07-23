@@ -17,6 +17,7 @@ const mutationPaths = [
   "/api/consents",
   "/api/business-events",
   "/api/payments/orders",
+  "/api/payments/refunds",
   "/api/media/upload",
   "/api/media/media-id",
 ];

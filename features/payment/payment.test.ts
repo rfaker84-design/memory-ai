@@ -45,6 +45,7 @@ test("checkout failure marks the pending order failed and never invents a paymen
     attachCheckout: async () => { throw new Error("should not attach"); },
     markCheckoutFailure: async () => { events.push("failed"); },
     listOrders: async () => [], listEntitlements: async () => [], applyCallback: async () => { throw new Error("unused"); },
+    createRefundRequest: async () => { throw new Error("unused"); }, listRefundRequests: async () => [],
     reserveChatQuota: async () => "free", releaseChatQuota: async () => undefined,
   };
   const service = new PaymentService({ ...source } as never);

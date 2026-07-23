@@ -18,6 +18,18 @@ export type PaymentSnapshot = {
   entitlements: MemoryEntitlement[];
 };
 
+export type RefundRequest = {
+  id: string;
+  memoryId: string;
+  orderNo: string;
+  status: "processing" | "succeeded" | "rejected";
+  eligibility: "eligible" | "ineligible";
+  reason: string;
+  rejectionReason: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+};
+
 export class PaymentExperienceRequestError extends Error {
   constructor(readonly status: number, readonly code: string) {
     super(code);
@@ -46,6 +58,19 @@ function entitlements(value: unknown): MemoryEntitlement[] {
   return records(value).flatMap((item) => (
     typeof item.endsAt === "string" && typeof item.chatQuota === "number" && typeof item.chatUsed === "number" && (item.status === "active" || item.status === "refunded")
       ? [{ endsAt: item.endsAt, chatQuota: item.chatQuota, chatUsed: item.chatUsed, status: item.status }]
+      : []
+  ));
+}
+
+function refunds(value: unknown): RefundRequest[] {
+  return records(value).flatMap((item) => (
+    typeof item.id === "string" && typeof item.memoryId === "string" && typeof item.orderNo === "string"
+      && (item.status === "processing" || item.status === "succeeded" || item.status === "rejected")
+      && (item.eligibility === "eligible" || item.eligibility === "ineligible")
+      && typeof item.reason === "string" && typeof item.createdAt === "string"
+      ? [{ id: item.id, memoryId: item.memoryId, orderNo: item.orderNo, status: item.status, eligibility: item.eligibility,
+        reason: item.reason, rejectionReason: typeof item.rejectionReason === "string" ? item.rejectionReason : null,
+        createdAt: item.createdAt, resolvedAt: typeof item.resolvedAt === "string" ? item.resolvedAt : null }]
       : []
   ));
 }
@@ -80,11 +105,46 @@ export async function createExperienceCheckout(memoryId: string, idempotencyKey:
   return destination.toString();
 }
 
+export async function loadRefundRequests(memoryId: string, request: typeof fetch = fetch): Promise<RefundRequest[]> {
+  const response = await request(`/api/payments/refunds?memoryId=${encodeURIComponent(memoryId)}`, { credentials: "same-origin", cache: "no-store" });
+  const body = await responseBody(response);
+  if (!response.ok) throw new PaymentExperienceRequestError(response.status, typeof body.error === "string" ? body.error : "REFUND_STATUS_FAILED");
+  return refunds(body.refunds);
+}
+
+export async function createRefundRequest(
+  input: { memoryId: string; orderNo: string; reason: string; idempotencyKey: string },
+  request: typeof fetch = fetch,
+): Promise<RefundRequest> {
+  const response = await request("/api/payments/refunds", {
+    method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": input.idempotencyKey },
+    body: JSON.stringify({ memoryId: input.memoryId, orderNo: input.orderNo, reason: input.reason }),
+  });
+  const body = await responseBody(response);
+  const refund = typeof body.refund === "object" && body.refund !== null ? refunds([body.refund])[0] : undefined;
+  if (!response.ok || !refund) throw new PaymentExperienceRequestError(response.status, typeof body.error === "string" ? body.error : "REFUND_REQUEST_FAILED");
+  return refund;
+}
+
 export function createPaymentIdempotencyKey() {
   const random = typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `payment-${random}`;
+}
+
+export function createRefundIdempotencyKey() {
+  const random = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `refund-${random}`;
+}
+
+export function describeRefundRequest(refund: RefundRequest): { title: string; detail: string } {
+  if (refund.status === "succeeded") return { title: "退款已完成", detail: "支付渠道已确认退款；这份体验权益已结束。" };
+  if (refund.status === "rejected") return { title: "本次不符合受理条件", detail: refund.rejectionReason ?? "当前订单不符合退款申请条件。" };
+  return { title: "退款申请处理中", detail: "系统已记录申请并核验订单；支付渠道确认退款后会在这里更新结果。" };
 }
 
 export type ExperienceStatus = {

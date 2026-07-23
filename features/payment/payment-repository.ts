@@ -5,6 +5,8 @@ import type {
   PaymentCallback,
   PaymentOrder,
   PaymentSettlement,
+  RefundRequest,
+  CreateRefundRequestInput,
   WeChatCheckout,
 } from "./types";
 
@@ -17,6 +19,8 @@ export class PaymentRepository {
   listOrders(externalUserId: string, memoryId: string): Promise<PaymentOrder[]> { return this.dataSource.listOrders(externalUserId, memoryId); }
   listEntitlements(externalUserId: string, memoryId: string): Promise<MemoryEntitlement[]> { return this.dataSource.listEntitlements(externalUserId, memoryId); }
   applyCallback(callback: PaymentCallback): Promise<PaymentSettlement> { return this.dataSource.applyCallback(callback); }
+  createRefundRequest(input: CreateRefundRequestInput): Promise<RefundRequest> { return this.dataSource.createRefundRequest(input); }
+  listRefundRequests(externalUserId: string, memoryId: string): Promise<RefundRequest[]> { return this.dataSource.listRefundRequests(externalUserId, memoryId); }
   reserveChatQuota(input: { externalUserId: string; memoryId: string; idempotencyKey: string }) { return this.dataSource.reserveChatQuota(input); }
   releaseChatQuota(input: { externalUserId: string; memoryId: string; idempotencyKey: string }) { return this.dataSource.releaseChatQuota(input); }
 }

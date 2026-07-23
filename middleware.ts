@@ -16,6 +16,7 @@ const FORMAL_API_PATHS = new Set([
   "/api/business-events",
   "/api/business-metrics/funnel",
   "/api/payments/orders",
+  "/api/payments/refunds",
   "/api/payments/entitlements",
   "/api/payments/wechat/callback",
   "/api/media/upload",

@@ -67,4 +67,26 @@ export type PaymentSettlement = {
   orderNo: string;
 };
 
+export type RefundRequestStatus = "processing" | "succeeded" | "rejected";
+
+export type RefundRequest = {
+  id: string;
+  memoryId: string;
+  orderNo: string;
+  status: RefundRequestStatus;
+  eligibility: "eligible" | "ineligible";
+  reason: string;
+  rejectionReason: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+};
+
+export type CreateRefundRequestInput = {
+  externalUserId: string;
+  memoryId: string;
+  orderNo: string;
+  reason: string;
+  requestKey: string;
+};
+
 export type ChatQuotaReservation = "free" | "reserved" | "unavailable";
