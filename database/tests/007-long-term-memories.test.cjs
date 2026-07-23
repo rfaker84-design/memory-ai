@@ -23,6 +23,11 @@ test("007 long-term-memory catalog is transactional, authoritative, and ordered 
   assert.match(migration, /UNIQUE \(memory_id, source_type, content_hash\)/);
   assert.match(migration, /idx_long_term_memories_memory_importance_created/);
   assert.match(migration, /\(memory_id, importance DESC, created_at DESC\)/);
+  assert.match(migration, /generate_series\(0, i\.indnkeyatts - 1\)/);
+  assert.match(migration, /i\.indoption\[key\.position\]::SMALLINT/);
+  assert.match(migration, /key_count IS DISTINCT FROM 3 OR total_count IS DISTINCT FROM 3/);
+  assert.match(migration, /is_unique OR is_primary OR NOT is_valid OR NOT is_ready OR NOT is_live/);
+  assert.match(migration, /access_method IS DISTINCT FROM 'btree' OR has_predicate OR has_expression/);
   assert.doesNotMatch(migration, /\buser_id\b|\bexternal_user_id\b/i);
   assert.ok(runner.indexOf("006_auth_verification_challenges.sql") < runner.indexOf("007_long_term_memories.sql"));
   assert.ok(runner.indexOf("007_long_term_memories.sql") < runner.indexOf("008_memory_first_greetings.sql"));
@@ -33,6 +38,10 @@ test("007 postflight is read-only and verifies dedupe and recall indexes", () =>
   assert.match(postflight, /^BEGIN READ ONLY;/);
   assert.match(postflight, /content deduplication constraint is invalid/);
   assert.match(postflight, /recall index is invalid/);
+  assert.match(postflight, /generate_series\(0, i\.indnkeyatts - 1\)/);
+  assert.match(postflight, /i\.indoption\[key\.position\]::SMALLINT/);
+  assert.match(postflight, /recall_key_count IS DISTINCT FROM 3 OR recall_total_count IS DISTINCT FROM 3/);
+  assert.match(postflight, /recall_is_unique OR recall_is_primary OR NOT recall_is_valid/);
   assert.match(postflight, /COMMIT;\s*$/);
   assert.doesNotMatch(postflight, /\b(?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP)\b/i);
 });
