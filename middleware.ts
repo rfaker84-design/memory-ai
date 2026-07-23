@@ -15,6 +15,7 @@ const FORMAL_API_PATHS = new Set([
   "/api/consents",
   "/api/business-events",
   "/api/business-metrics/funnel",
+  "/api/internal/refund-reviews",
   "/api/payments/orders",
   "/api/payments/refunds",
   "/api/payments/entitlements",
@@ -47,9 +48,9 @@ export function middleware(request: NextRequest) {
 
   if (!MUTATION_METHODS.has(request.method)) return NextResponse.next();
 
-  // This endpoint is authenticated by WeChat Pay's signed notification, not a
-  // browser Origin. Its Route Handler verifies both signature and encrypted payload.
-  if (request.nextUrl.pathname === "/api/payments/wechat/callback") return NextResponse.next();
+  // These server-to-server endpoints do not use browser authority. Their Route
+  // Handlers enforce their own signed-notification or high-strength token proof.
+  if (request.nextUrl.pathname === "/api/payments/wechat/callback" || request.nextUrl.pathname === "/api/internal/refund-reviews") return NextResponse.next();
 
   const result = checkAllowedOrigin(request);
   if (result.allowed) return NextResponse.next();

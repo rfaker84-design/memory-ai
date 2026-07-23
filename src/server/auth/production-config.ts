@@ -17,6 +17,14 @@ function requireSecret(environment: NodeJS.ProcessEnv, name: "AUTH_VERIFICATION_
   }
 }
 
+function requireRefundReviewAccessToken(environment: NodeJS.ProcessEnv): void {
+  const raw = environment.REFUND_REVIEW_ACCESS_TOKEN;
+  const value = raw?.trim();
+  if (!value || raw !== value || new TextEncoder().encode(value).length < 48) {
+    throw new ProductionAuthConfigurationError("REFUND_REVIEW_ACCESS_TOKEN_NOT_CONFIGURED");
+  }
+}
+
 function requireHttpsOrigin(environment: NodeJS.ProcessEnv): void {
   const value = requireValue(environment, "AUTH_ALLOWED_ORIGIN");
   try {
@@ -59,6 +67,7 @@ export function assertProductionAuthConfiguration(
   requirePostgresUrl(environment);
   requireSecret(environment, "AUTH_VERIFICATION_PEPPER");
   requireSecret(environment, "SESSION_SECRET");
+  requireRefundReviewAccessToken(environment);
   requireHttpsOrigin(environment);
 
   if (environment.AUTH_TRUST_NGINX_PROXY !== "true") {

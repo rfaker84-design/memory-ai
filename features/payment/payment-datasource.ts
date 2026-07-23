@@ -7,6 +7,7 @@ import type {
   RefundRequest,
   CreateRefundRequestInput,
   WeChatRefund,
+  ManualRefundApproval,
   WeChatCheckout,
 } from "./types";
 
@@ -21,6 +22,8 @@ export interface PaymentDataSource {
   listRefundRequests(externalUserId: string, memoryId: string): Promise<RefundRequest[]>;
   markRefundRequested(merchantRefundNo: string, refund: WeChatRefund): Promise<RefundRequest>;
   markRefundManualReview(merchantRefundNo: string, decisionCode: string): Promise<RefundRequest>;
+  beginManualRefundApproval(refundId: string): Promise<ManualRefundApproval>;
+  rejectManualRefund(refundId: string): Promise<RefundRequest>;
   reserveChatQuota(input: { externalUserId: string; memoryId: string; idempotencyKey: string }): Promise<import("./types").ChatQuotaReservation>;
   releaseChatQuota(input: { externalUserId: string; memoryId: string; idempotencyKey: string }): Promise<void>;
 }

@@ -8,6 +8,7 @@ import type {
   RefundRequest,
   CreateRefundRequestInput,
   WeChatRefund,
+  ManualRefundApproval,
   WeChatCheckout,
 } from "./types";
 
@@ -24,6 +25,8 @@ export class PaymentRepository {
   listRefundRequests(externalUserId: string, memoryId: string): Promise<RefundRequest[]> { return this.dataSource.listRefundRequests(externalUserId, memoryId); }
   markRefundRequested(merchantRefundNo: string, refund: WeChatRefund): Promise<RefundRequest> { return this.dataSource.markRefundRequested(merchantRefundNo, refund); }
   markRefundManualReview(merchantRefundNo: string, decisionCode: string): Promise<RefundRequest> { return this.dataSource.markRefundManualReview(merchantRefundNo, decisionCode); }
+  beginManualRefundApproval(refundId: string): Promise<ManualRefundApproval> { return this.dataSource.beginManualRefundApproval(refundId); }
+  rejectManualRefund(refundId: string): Promise<RefundRequest> { return this.dataSource.rejectManualRefund(refundId); }
   reserveChatQuota(input: { externalUserId: string; memoryId: string; idempotencyKey: string }) { return this.dataSource.reserveChatQuota(input); }
   releaseChatQuota(input: { externalUserId: string; memoryId: string; idempotencyKey: string }) { return this.dataSource.releaseChatQuota(input); }
 }

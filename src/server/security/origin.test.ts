@@ -47,10 +47,15 @@ test("every production API mutation is guarded by the shared Origin boundary", a
   }
 });
 
-test("the signed WeChat callback is the sole formal mutation without browser Origin", () => {
+test("the signed WeChat callback is a formal mutation without browser Origin", () => {
   const response = middleware(new NextRequest("https://memoryai.test/api/payments/wechat/callback", {
     method: "POST",
   }));
+  assert.equal(response.headers.get("x-middleware-next"), "1");
+});
+
+test("the internal refund review endpoint is formal and leaves authorization to its token handler", () => {
+  const response = middleware(new NextRequest("https://memoryai.test/api/internal/refund-reviews", { method: "POST" }));
   assert.equal(response.headers.get("x-middleware-next"), "1");
 });
 

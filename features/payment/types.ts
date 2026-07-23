@@ -100,6 +100,10 @@ export type RefundRequest = {
 
 export type WeChatRefund = { providerRefundId: string | null };
 
+export type RefundReviewAction = "approve" | "reject";
+export type ReviewManualRefundInput = { refundId: string; action: RefundReviewAction };
+export type ManualRefundApproval = { refund: RefundRequest; shouldCallProvider: boolean };
+
 export type CreateRefundRequestInput = {
   externalUserId: string;
   memoryId: string;

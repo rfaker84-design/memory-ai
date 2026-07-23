@@ -13,6 +13,7 @@ const productionEnvironment: NodeJS.ProcessEnv = {
   DATABASE_URL: "postgresql://memoryai:password@127.0.0.1:5432/memoryai",
   AUTH_VERIFICATION_PEPPER: "p".repeat(32),
   SESSION_SECRET: "s".repeat(32),
+  REFUND_REVIEW_ACCESS_TOKEN: "r".repeat(48),
   AUTH_ALLOWED_ORIGIN: "https://memoryai.test",
   AUTH_TRUST_NGINX_PROXY: "true",
   AUTH_PROXY_LOOPBACK_ONLY: "true",
@@ -27,6 +28,7 @@ test("production authentication startup configuration fails closed for every req
     ["DATABASE_URL", "DATABASE_URL_NOT_CONFIGURED"],
     ["AUTH_VERIFICATION_PEPPER", "AUTH_VERIFICATION_PEPPER_NOT_CONFIGURED"],
     ["SESSION_SECRET", "SESSION_SECRET_NOT_CONFIGURED"],
+    ["REFUND_REVIEW_ACCESS_TOKEN", "REFUND_REVIEW_ACCESS_TOKEN_NOT_CONFIGURED"],
     ["AUTH_ALLOWED_ORIGIN", "AUTH_ALLOWED_ORIGIN_NOT_CONFIGURED"],
     ["AUTH_TRUST_NGINX_PROXY", "AUTH_TRUST_NGINX_PROXY_NOT_CONFIGURED"],
     ["AUTH_PROXY_LOOPBACK_ONLY", "AUTH_PROXY_LOOPBACK_CONTRACT_NOT_CONFIGURED"],
@@ -46,6 +48,7 @@ test("production authentication startup configuration rejects weak secrets and u
   for (const [name, value, code] of [
     ["AUTH_VERIFICATION_PEPPER", "too-short", "AUTH_VERIFICATION_PEPPER_NOT_CONFIGURED"],
     ["SESSION_SECRET", "too-short", "SESSION_SECRET_NOT_CONFIGURED"],
+    ["REFUND_REVIEW_ACCESS_TOKEN", "too-short", "REFUND_REVIEW_ACCESS_TOKEN_NOT_CONFIGURED"],
     ["DATABASE_URL", "mysql://example.test/auth", "DATABASE_URL_INVALID"],
     ["AUTH_ALLOWED_ORIGIN", "http://memoryai.test", "AUTH_ALLOWED_ORIGIN_INVALID"],
   ] as const) {

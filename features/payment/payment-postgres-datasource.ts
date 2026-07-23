@@ -15,10 +15,11 @@ import type {
   RefundRequestReason,
   CreateRefundRequestInput,
   WeChatRefund,
+  ManualRefundApproval,
   WeChatCheckout,
 } from "./types";
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
 const ORDER_PATTERN = /^YM[0-9]{14}[0-9A-F]{12}$/;
 const REFUND_REASON_PATTERN = /^(unused_purchase|duplicate_charge|entitlement_missing|service_failure)$/;
@@ -360,6 +361,74 @@ export class PaymentPostgresDataSource implements PaymentDataSource {
     );
     if (updated.rows[0]) return toRefundRequest(updated.rows[0]);
     return this.refundRequestByMerchantNo(number);
+  }
+
+  async beginManualRefundApproval(refundId: string): Promise<ManualRefundApproval> {
+    const id = required(refundId, "refundId", UUID_PATTERN);
+    return withPostgresTransaction(async (client) => {
+      const current = await client.query<RefundRequestRow & { user_id: string }>(
+        `SELECT r.id, r.user_id, r.memory_id, o.order_no, o.amount_fen, r.merchant_refund_no,
+                r.status, r.eligibility, r.reason, r.decision_code, r.provider_refund_id,
+                r.created_at, r.requested_at, r.resolved_at
+         FROM refund_requests r JOIN payment_orders o ON o.id = r.order_id
+         WHERE r.id = $1 FOR UPDATE`, [id],
+      );
+      const refund = current.rows[0];
+      if (!refund) throw new PaymentNotFoundError("Refund request was not found");
+      if (refund.status !== "manual_review") {
+        if (["processing", "requested", "succeeded"].includes(refund.status)) {
+          return { refund: toRefundRequest(refund), shouldCallProvider: false };
+        }
+        throw new PaymentStateError("Refund request is not reviewable");
+      }
+      const promoted = await client.query<RefundRequestRow>(
+        `UPDATE refund_requests r SET status = 'processing', eligibility = 'eligible', decision_code = NULL,
+           provider_refund_id = NULL, requested_at = NULL, updated_at = NOW()
+         FROM payment_orders o WHERE r.id = $1 AND r.order_id = o.id AND r.status = 'manual_review'
+         RETURNING r.id, r.memory_id, o.order_no, o.amount_fen, r.merchant_refund_no,
+           r.status, r.eligibility, r.reason, r.decision_code, r.provider_refund_id,
+           r.created_at, r.requested_at, r.resolved_at`, [id],
+      );
+      if (!promoted.rows[0]) throw new PaymentStateError("Refund request is not reviewable");
+      await client.query(
+        `INSERT INTO audit_logs (user_id, memory_id, action, level, message, metadata)
+         VALUES ($1, $2, 'payment.refund_review_approved', 'info', 'Manual refund approved', $3::jsonb)`,
+        [refund.user_id, refund.memory_id, JSON.stringify({ refundId: id })],
+      );
+      return { refund: toRefundRequest(promoted.rows[0]), shouldCallProvider: true };
+    });
+  }
+
+  async rejectManualRefund(refundId: string): Promise<RefundRequest> {
+    const id = required(refundId, "refundId", UUID_PATTERN);
+    return withPostgresTransaction(async (client) => {
+      const current = await client.query<RefundRequestRow & { user_id: string }>(
+        `SELECT r.id, r.user_id, r.memory_id, o.order_no, o.amount_fen, r.merchant_refund_no,
+                r.status, r.eligibility, r.reason, r.decision_code, r.provider_refund_id,
+                r.created_at, r.requested_at, r.resolved_at
+         FROM refund_requests r JOIN payment_orders o ON o.id = r.order_id
+         WHERE r.id = $1 FOR UPDATE`, [id],
+      );
+      const refund = current.rows[0];
+      if (!refund) throw new PaymentNotFoundError("Refund request was not found");
+      if (refund.status === "rejected") return toRefundRequest(refund);
+      if (refund.status !== "manual_review") throw new PaymentStateError("Refund request is not reviewable");
+      const rejected = await client.query<RefundRequestRow>(
+        `UPDATE refund_requests r SET status = 'rejected', eligibility = 'ineligible',
+           decision_code = 'REVIEW_REJECTED', resolved_at = NOW(), updated_at = NOW()
+         FROM payment_orders o WHERE r.id = $1 AND r.order_id = o.id AND r.status = 'manual_review'
+         RETURNING r.id, r.memory_id, o.order_no, o.amount_fen, r.merchant_refund_no,
+           r.status, r.eligibility, r.reason, r.decision_code, r.provider_refund_id,
+           r.created_at, r.requested_at, r.resolved_at`, [id],
+      );
+      if (!rejected.rows[0]) throw new PaymentStateError("Refund request is not reviewable");
+      await client.query(
+        `INSERT INTO audit_logs (user_id, memory_id, action, level, message, metadata)
+         VALUES ($1, $2, 'payment.refund_review_rejected', 'info', 'Manual refund rejected', $3::jsonb)`,
+        [refund.user_id, refund.memory_id, JSON.stringify({ refundId: id, decisionCode: "REVIEW_REJECTED" })],
+      );
+      return toRefundRequest(rejected.rows[0]);
+    });
   }
 
   private async refundRequestByMerchantNo(merchantRefundNo: string): Promise<RefundRequest> {

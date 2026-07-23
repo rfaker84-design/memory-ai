@@ -47,6 +47,7 @@ test("checkout failure marks the pending order failed and never invents a paymen
     listOrders: async () => [], listEntitlements: async () => [], applyCallback: async () => { throw new Error("unused"); },
     createRefundRequest: async () => { throw new Error("unused"); }, listRefundRequests: async () => [],
     markRefundRequested: async () => { throw new Error("unused"); }, markRefundManualReview: async () => { throw new Error("unused"); },
+    beginManualRefundApproval: async () => { throw new Error("unused"); }, rejectManualRefund: async () => { throw new Error("unused"); },
     reserveChatQuota: async () => "free", releaseChatQuota: async () => undefined,
   };
   const service = new PaymentService({ ...source } as never);
@@ -80,6 +81,8 @@ test("only a server-qualified unused purchase invokes WeChat; provider failures 
       state = { ...state, status: "manual_review", eligibility: "manual_review", decisionCode: code };
       return state;
     },
+    beginManualRefundApproval: async () => ({ refund: state, shouldCallProvider: false }),
+    rejectManualRefund: async () => state,
     reserveChatQuota: async () => "free", releaseChatQuota: async () => undefined,
   };
   const service = new PaymentService(new (await import("./payment-repository")).PaymentRepository(source));

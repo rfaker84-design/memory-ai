@@ -21,6 +21,7 @@ const EXACT_FORMAL_PATHS = new Set([
   "/api/consents",
   "/api/business-events",
   "/api/business-metrics/funnel",
+  "/api/internal/refund-reviews",
   "/api/payments/orders",
   "/api/payments/refunds",
   "/api/payments/entitlements",
@@ -112,7 +113,7 @@ test("middleware enforces the formal API allowlist before route execution", asyn
 
 test("every tracked non-formal Route Handler is a route-level 410", async () => {
   const routes = trackedRoutes();
-  assert.equal(routes.length, 94, "the audit must enumerate the complete tracked API surface");
+  assert.equal(routes.length, 95, "the audit must enumerate the complete tracked API surface");
 
   for (const { file, pathname } of routes) {
     const formal = isFormalApiPath(pathname);
@@ -162,6 +163,7 @@ test("formal Session ownership and public health contracts remain explicit", asy
     consents: readFileSync("app/api/consents/route.ts", "utf8"),
     businessEvents: readFileSync("app/api/business-events/_handler.ts", "utf8"),
     businessFunnel: readFileSync("app/api/business-metrics/funnel/_handler.ts", "utf8"),
+    refundReviews: readFileSync("app/api/internal/refund-reviews/route.ts", "utf8"),
     paymentOrders: readFileSync("app/api/payments/orders/route.ts", "utf8"),
     paymentRefunds: readFileSync("app/api/payments/refunds/route.ts", "utf8"),
     paymentEntitlements: readFileSync("app/api/payments/entitlements/route.ts", "utf8"),
@@ -182,6 +184,7 @@ test("formal Session ownership and public health contracts remain explicit", asy
   assert.match(sources.paymentCallback, /createWeChatPayCallbackHandler/);
   assert.match(sources.businessEvents, /verifyRequestSession/);
   assert.match(sources.businessFunnel, /BUSINESS_METRICS_ACCESS_TOKEN/);
+  assert.match(sources.refundReviews, /createRefundReviewsHandler/);
 
   const { GET: aiHealth } = await import("./health/ai/route");
   const response = await aiHealth();

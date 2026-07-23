@@ -28,3 +28,12 @@ test("refund success is callback-bound and atomically revokes the entitlement", 
   assert.match(source, /UPDATE refund_requests SET status = 'succeeded'/);
   assert.match(source, /status IN \('processing', 'requested', 'manual_review'\)/);
 });
+
+test("manual review approval and rejection are locked, auditable, and channel-idempotent", () => {
+  assert.match(source, /WHERE r\.id = \$1 FOR UPDATE/);
+  assert.match(source, /payment\.refund_review_approved/);
+  assert.match(source, /payment\.refund_review_rejected/);
+  assert.match(source, /decision_code = 'REVIEW_REJECTED'/);
+  assert.match(source, /status = 'processing', eligibility = 'eligible'/);
+  assert.match(source, /shouldCallProvider: false/);
+});

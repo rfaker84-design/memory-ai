@@ -8,6 +8,7 @@ import type {
   RefundRequest,
   CreateRefundRequestInput,
   WeChatRefund,
+  ReviewManualRefundInput,
   WeChatCheckout,
 } from "./types";
 
@@ -54,6 +55,20 @@ export class PaymentService {
       );
     } catch {
       return this.repository.markRefundManualReview(refund.merchantRefundNo, "WECHAT_REFUND_CALL_FAILED");
+    }
+  }
+
+  async reviewManualRefund(input: ReviewManualRefundInput & { provider: RefundProvider }): Promise<RefundRequest> {
+    if (input.action === "reject") return this.repository.rejectManualRefund(input.refundId);
+    const approval = await this.repository.beginManualRefundApproval(input.refundId);
+    if (!approval.shouldCallProvider) return approval.refund;
+    try {
+      return await this.repository.markRefundRequested(
+        approval.refund.merchantRefundNo,
+        await input.provider.createRefund({ refund: approval.refund }),
+      );
+    } catch {
+      return this.repository.markRefundManualReview(approval.refund.merchantRefundNo, "WECHAT_REFUND_CALL_FAILED");
     }
   }
 
