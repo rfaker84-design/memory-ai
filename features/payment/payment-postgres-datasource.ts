@@ -12,6 +12,7 @@ import type {
   PaymentOrder,
   PaymentSettlement,
   RefundRequest,
+  RefundRequestReason,
   CreateRefundRequestInput,
   WeChatRefund,
   WeChatCheckout,
@@ -20,6 +21,7 @@ import type {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
 const KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
 const ORDER_PATTERN = /^YM[0-9]{14}[0-9A-F]{12}$/;
+const REFUND_REASON_PATTERN = /^(unused_purchase|duplicate_charge|entitlement_missing|service_failure)$/;
 
 type OrderRow = {
   id: string; memory_id: string; order_no: string; product_id: string; amount_fen: number;
@@ -34,7 +36,7 @@ type EntitlementRow = {
 };
 type RefundRequestRow = {
   id: string; memory_id: string; order_no: string; amount_fen: number; merchant_refund_no: string;
-  status: RefundRequest["status"]; eligibility: RefundRequest["eligibility"]; reason: string;
+  status: RefundRequest["status"]; eligibility: RefundRequest["eligibility"]; reason: RefundRequest["reason"];
   decision_code: string | null; provider_refund_id: string | null; created_at: Date | string;
   requested_at: Date | string | null; resolved_at: Date | string | null;
 };
@@ -232,8 +234,7 @@ export class PaymentPostgresDataSource implements PaymentDataSource {
     const memoryId = required(input.memoryId, "memoryId", UUID_PATTERN);
     const orderNo = required(input.orderNo, "orderNo", ORDER_PATTERN);
     const requestKey = required(input.requestKey, "Idempotency-Key", KEY_PATTERN);
-    const reason = required(input.reason, "reason");
-    if (reason.length > 500) throw new PaymentValidationError("reason is invalid");
+    const reason = required(input.reason, "reason", REFUND_REASON_PATTERN) as RefundRequestReason;
 
     return withPostgresTransaction(async (client) => {
       const orderResult = await client.query<OrderRow>(
@@ -275,10 +276,19 @@ export class PaymentPostgresDataSource implements PaymentDataSource {
       const eligible = order.status === "paid";
       // The applicant's reason is retained for support context only; all
       // automatic-refund qualification is derived from locked server records.
-      const decision = hasDuplicateCharge
-        ? { status: "manual_review" as const, eligibility: "manual_review" as const, code: "DUPLICATE_CHARGE" }
+      const requestedManualReviewCode = reason === "duplicate_charge"
+        ? "REQUESTED_DUPLICATE_CHARGE"
+        : reason === "entitlement_missing"
+          ? "REQUESTED_ENTITLEMENT_MISSING"
+          : reason === "service_failure"
+            ? "REQUESTED_SERVICE_FAILURE"
+            : null;
+      const decision = requestedManualReviewCode
+        ? { status: "manual_review" as const, eligibility: "manual_review" as const, code: requestedManualReviewCode }
+        : hasDuplicateCharge
+        ? { status: "manual_review" as const, eligibility: "manual_review" as const, code: "DUPLICATE_CHARGE_DETECTED" }
         : !entitlement || entitlement.status !== "active"
-          ? { status: "manual_review" as const, eligibility: "manual_review" as const, code: "ENTITLEMENT_MISSING" }
+          ? { status: "manual_review" as const, eligibility: "manual_review" as const, code: "ENTITLEMENT_MISSING_DETECTED" }
           : !eligible
             ? { status: "rejected" as const, eligibility: "ineligible" as const, code: "PAYMENT_NOT_SUCCEEDED" }
             : !withinUnusedPurchaseWindow
@@ -394,7 +404,7 @@ export class PaymentPostgresDataSource implements PaymentDataSource {
         if (callback.status !== "refunded") {
           await client.query(
             `UPDATE refund_requests SET status = 'manual_review', eligibility = 'manual_review',
-             decision_code = 'SERVICE_FAILURE', updated_at = NOW()
+             decision_code = 'WECHAT_REFUND_CALLBACK_FAILED', updated_at = NOW()
              WHERE id = $1 AND status IN ('processing', 'requested')`, [refund.rows[0].id],
           );
           return { outcome: "failed", ...base };

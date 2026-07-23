@@ -53,7 +53,7 @@ export class PaymentService {
         await input.provider.createRefund({ refund }),
       );
     } catch {
-      return this.repository.markRefundManualReview(refund.merchantRefundNo, "SERVICE_FAILURE");
+      return this.repository.markRefundManualReview(refund.merchantRefundNo, "WECHAT_REFUND_CALL_FAILED");
     }
   }
 

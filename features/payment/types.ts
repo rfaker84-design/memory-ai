@@ -71,6 +71,16 @@ export type PaymentSettlement = {
 
 export type RefundRequestStatus = "processing" | "requested" | "manual_review" | "succeeded" | "rejected";
 export type RefundEligibility = "eligible" | "manual_review" | "ineligible";
+export const REFUND_REQUEST_REASONS = [
+  "unused_purchase",
+  "duplicate_charge",
+  "entitlement_missing",
+  "service_failure",
+] as const;
+export type RefundRequestReason = (typeof REFUND_REQUEST_REASONS)[number];
+export function isRefundRequestReason(value: unknown): value is RefundRequestReason {
+  return typeof value === "string" && (REFUND_REQUEST_REASONS as readonly string[]).includes(value);
+}
 
 export type RefundRequest = {
   id: string;
@@ -80,7 +90,7 @@ export type RefundRequest = {
   merchantRefundNo: string;
   status: RefundRequestStatus;
   eligibility: RefundEligibility;
-  reason: string;
+  reason: RefundRequestReason;
   decisionCode: string | null;
   providerRefundId: string | null;
   createdAt: string;
@@ -94,7 +104,7 @@ export type CreateRefundRequestInput = {
   externalUserId: string;
   memoryId: string;
   orderNo: string;
-  reason: string;
+  reason: RefundRequestReason;
   requestKey: string;
 };
 

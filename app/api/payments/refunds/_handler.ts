@@ -10,6 +10,7 @@ import {
   type CreateRefundRequestInput,
   type RefundRequest,
   type RefundProvider,
+  isRefundRequestReason,
 } from "@/features/payment";
 import { AuthConfigurationError, requireAllowedOrigin, type AuthSession, verifyRequestSession } from "@/src/server/auth";
 import { DatabaseDependencyError } from "@/src/server/database";
@@ -66,8 +67,8 @@ export function createPaymentRefundsHandler(
         const input = body as Record<string, unknown>;
         const memoryId = text(input.memoryId, 64);
         const orderNo = text(input.orderNo, 64);
-        const reason = text(input.reason, 500);
-        if (!memoryId || !orderNo || !reason) return json({ error: "INVALID_REFUND_REQUEST" }, { status: 400 });
+        const reason = input.reason;
+        if (!memoryId || !orderNo || !isRefundRequestReason(reason)) return json({ error: "INVALID_REFUND_REQUEST" }, { status: 400 });
         const refund = await serviceFactory().createRefundRequest({
           externalUserId: session.externalUserId, memoryId, orderNo, reason, requestKey, provider: providerFactory(),
         } satisfies CreateRefundRequestInput & { provider: RefundProvider });

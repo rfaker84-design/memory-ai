@@ -57,11 +57,11 @@ test("checkout failure marks the pending order failed and never invents a paymen
   assert.deepEqual(events, ["failed"]);
 });
 
-test("only a server-qualified unused purchase invokes WeChat; service failures become manual review", async () => {
+test("only a server-qualified unused purchase invokes WeChat; provider failures use a distinct review code", async () => {
   const automatic: RefundRequest = {
     id: "00000000-0000-4000-8000-000000000014", memoryId, orderNo: order.orderNo, amountFen: order.amountFen,
     merchantRefundNo: "YR20260723010101ABCDEF012345", status: "processing", eligibility: "eligible",
-    reason: "unused purchase", decisionCode: null, providerRefundId: null,
+    reason: "unused_purchase", decisionCode: null, providerRefundId: null,
     createdAt: "2026-07-23T01:02:01.000Z", requestedAt: null, resolvedAt: null,
   };
   let state = automatic;
@@ -84,23 +84,23 @@ test("only a server-qualified unused purchase invokes WeChat; service failures b
   };
   const service = new PaymentService(new (await import("./payment-repository")).PaymentRepository(source));
   await service.createRefundRequest({
-    externalUserId: user.externalUserId, memoryId, orderNo: order.orderNo, reason: "unused purchase", requestKey: "refund-key-000001",
+    externalUserId: user.externalUserId, memoryId, orderNo: order.orderNo, reason: "unused_purchase", requestKey: "refund-key-000001",
     provider: { createRefund: async ({ refund: requested }) => { events.push(`provider:${requested.merchantRefundNo}`); return { providerRefundId: "refund-1" }; } },
   });
-  state = { ...state, status: "manual_review", eligibility: "manual_review", decisionCode: "DUPLICATE_CHARGE" };
+  state = { ...state, status: "manual_review", eligibility: "manual_review", decisionCode: "REQUESTED_DUPLICATE_CHARGE" };
   await service.createRefundRequest({
-    externalUserId: user.externalUserId, memoryId, orderNo: order.orderNo, reason: "duplicate charge", requestKey: "refund-key-000001",
+    externalUserId: user.externalUserId, memoryId, orderNo: order.orderNo, reason: "duplicate_charge", requestKey: "refund-key-000001",
     provider: { createRefund: async () => { throw new Error("must not call"); } },
   });
   state = automatic;
   await service.createRefundRequest({
-    externalUserId: user.externalUserId, memoryId, orderNo: order.orderNo, reason: "unused purchase", requestKey: "refund-key-000001",
+    externalUserId: user.externalUserId, memoryId, orderNo: order.orderNo, reason: "unused_purchase", requestKey: "refund-key-000001",
     provider: { createRefund: async () => { throw new Error("provider unavailable"); } },
   });
   assert.deepEqual(events, [
     `provider:${automatic.merchantRefundNo}`,
     `requested:${automatic.merchantRefundNo}:refund-1`,
-    "manual:SERVICE_FAILURE",
+    "manual:WECHAT_REFUND_CALL_FAILED",
   ]);
 });
 
@@ -191,7 +191,7 @@ test("WeChat provider sends a full refund with the stable server-issued refund n
   const refund: RefundRequest = {
     id: "00000000-0000-4000-8000-000000000014", memoryId, orderNo: order.orderNo, amountFen: order.amountFen,
     merchantRefundNo: "YR20260723010101ABCDEF012345", status: "processing", eligibility: "eligible",
-    reason: "unused purchase", decisionCode: null, providerRefundId: null,
+    reason: "unused_purchase", decisionCode: null, providerRefundId: null,
     createdAt: "2026-07-23T01:02:01.000Z", requestedAt: null, resolvedAt: null,
   };
   const provider = new WeChatPayH5Provider({

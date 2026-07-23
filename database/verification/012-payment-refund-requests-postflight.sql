@@ -38,6 +38,18 @@ BEGIN
     RAISE EXCEPTION '012 postflight: merchant refund idempotency is invalid';
   END IF;
 
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_constraint c
+    WHERE c.conrelid = target_oid
+      AND c.conname = 'ck_refund_requests_reason'
+      AND pg_catalog.pg_get_constraintdef(c.oid) LIKE '%unused_purchase%'
+      AND pg_catalog.pg_get_constraintdef(c.oid) LIKE '%duplicate_charge%'
+      AND pg_catalog.pg_get_constraintdef(c.oid) LIKE '%entitlement_missing%'
+      AND pg_catalog.pg_get_constraintdef(c.oid) LIKE '%service_failure%'
+  ) THEN
+    RAISE EXCEPTION '012 postflight: refund reason catalog is invalid';
+  END IF;
+
   IF EXISTS (
     SELECT 1 FROM public.refund_requests r JOIN public.payment_orders o ON o.id = r.order_id
     WHERE r.user_id <> o.user_id OR r.memory_id <> o.memory_id

@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS public.refund_requests (
   CONSTRAINT uq_refund_requests_request_key UNIQUE (user_id, memory_id, request_key),
   CONSTRAINT uq_refund_requests_merchant_refund_no UNIQUE (merchant_refund_no),
   CONSTRAINT ck_refund_requests_request_key CHECK (request_key ~ '^[A-Za-z0-9._:-]{16,128}$'),
-  CONSTRAINT ck_refund_requests_reason CHECK (length(reason) BETWEEN 1 AND 500),
+  CONSTRAINT ck_refund_requests_reason CHECK (reason IN ('unused_purchase', 'duplicate_charge', 'entitlement_missing', 'service_failure')),
   CONSTRAINT ck_refund_requests_merchant_refund_no CHECK (merchant_refund_no ~ '^YR[0-9]{14}[0-9A-F]{12}$'),
   CONSTRAINT ck_refund_requests_status CHECK (status IN ('processing', 'requested', 'manual_review', 'succeeded', 'rejected')),
   CONSTRAINT ck_refund_requests_eligibility CHECK (eligibility IN ('eligible', 'manual_review', 'ineligible')),

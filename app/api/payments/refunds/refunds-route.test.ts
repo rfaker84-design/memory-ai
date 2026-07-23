@@ -14,7 +14,7 @@ const provider = () => ({ createRefund: async () => ({ providerRefundId: "refund
 const refund = {
   id: "00000000-0000-4000-8000-000000000002", memoryId, orderNo, amountFen: 29900,
   merchantRefundNo: "YR20260723010101AABBCCDDEEFF", status: "requested" as const,
-  eligibility: "eligible" as const, reason: "unused purchase", decisionCode: null,
+  eligibility: "eligible" as const, reason: "unused_purchase" as const, decisionCode: null,
   providerRefundId: "refund-1", createdAt: "2026-07-23T00:00:00.000Z",
   requestedAt: "2026-07-23T00:00:01.000Z", resolvedAt: null,
 };
@@ -27,31 +27,44 @@ test("refund request is session-bound, strict, and delegates only the server-own
   }), session, provider);
   const response = await handler.POST(new NextRequest("https://memoryai.test/api/payments/refunds", {
     method: "POST", headers: { origin: "https://memoryai.test", "content-type": "application/json", "idempotency-key": "refund-key-000001" },
-    body: JSON.stringify({ memoryId, orderNo, reason: "unused purchase" }),
+    body: JSON.stringify({ memoryId, orderNo, reason: "unused_purchase" }),
   }));
   assert.equal(response.status, 201);
   assert.deepEqual(await response.json(), { refund });
   const { provider: injectedProvider, ...request } = received!;
   assert.equal(typeof injectedProvider, "object");
-  assert.deepEqual(request, { externalUserId: "phone:13800138000", memoryId, orderNo, reason: "unused purchase", requestKey: "refund-key-000001" });
+  assert.deepEqual(request, { externalUserId: "phone:13800138000", memoryId, orderNo, reason: "unused_purchase", requestKey: "refund-key-000001" });
 });
 
-test("manual review and rejection are returned without invoking a client-controlled provider", async () => {
+test("all exceptional enum reasons formally enter manual review without invoking WeChat", async () => {
   let providerCalls = 0;
-  const manual = { ...refund, status: "manual_review" as const, eligibility: "manual_review" as const, decisionCode: "ENTITLEMENT_MISSING" };
-  const service = () => ({ createRefundRequest: async () => manual, listRefundRequests: async () => [] });
+  const received: string[] = [];
+  const service = () => ({
+    createRefundRequest: async (input: { reason: "unused_purchase" | "duplicate_charge" | "entitlement_missing" | "service_failure" }) => {
+      received.push(input.reason);
+      return { ...refund, reason: input.reason, status: "manual_review" as const, eligibility: "manual_review" as const, decisionCode: "REQUESTED_SERVICE_FAILURE" };
+    }, listRefundRequests: async () => [],
+  });
   const handler = createPaymentRefundsHandler(service, session, () => ({ createRefund: async () => { providerCalls += 1; return { providerRefundId: "unused" }; } }));
-  const response = await handler.POST(new NextRequest("https://memoryai.test/api/payments/refunds", {
-    method: "POST", headers: { origin: "https://memoryai.test", "content-type": "application/json", "idempotency-key": "refund-key-000001" },
-    body: JSON.stringify({ memoryId, orderNo, reason: "duplicate charge" }),
-  }));
-  assert.equal(response.status, 200);
+  for (const reason of ["duplicate_charge", "entitlement_missing", "service_failure"] as const) {
+    const response = await handler.POST(new NextRequest("https://memoryai.test/api/payments/refunds", {
+      method: "POST", headers: { origin: "https://memoryai.test", "content-type": "application/json", "idempotency-key": "refund-key-000001" },
+      body: JSON.stringify({ memoryId, orderNo, reason }),
+    }));
+    assert.equal(response.status, 200);
+  }
+  assert.deepEqual(received, ["duplicate_charge", "entitlement_missing", "service_failure"]);
   assert.equal(providerCalls, 0);
   const extra = await handler.POST(new NextRequest("https://memoryai.test/api/payments/refunds", {
     method: "POST", headers: { origin: "https://memoryai.test", "content-type": "application/json", "idempotency-key": "refund-key-000001" },
-    body: JSON.stringify({ memoryId, orderNo, reason: "duplicate charge", userId: "forged" }),
+    body: JSON.stringify({ memoryId, orderNo, reason: "duplicate_charge", userId: "forged" }),
   }));
   assert.equal(extra.status, 400);
+  const invalidReason = await handler.POST(new NextRequest("https://memoryai.test/api/payments/refunds", {
+    method: "POST", headers: { origin: "https://memoryai.test", "content-type": "application/json", "idempotency-key": "refund-key-000001" },
+    body: JSON.stringify({ memoryId, orderNo, reason: "manual approval please" }),
+  }));
+  assert.equal(invalidReason.status, 400);
   const anonymous = createPaymentRefundsHandler(service, async () => null, provider);
   const denied = await anonymous.GET(new NextRequest(`https://memoryai.test/api/payments/refunds?memoryId=${memoryId}`));
   assert.equal(denied.status, 401);

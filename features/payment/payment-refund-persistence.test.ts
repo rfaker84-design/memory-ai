@@ -9,11 +9,16 @@ test("refund qualification is server-derived and retains manual review over unsa
   assert.match(source, /Asia\/Shanghai/);
   assert.match(source, /withinUnusedPurchaseWindow/);
   assert.match(source, /hasDuplicateCharge/);
-  assert.match(source, /DUPLICATE_CHARGE/);
-  assert.match(source, /ENTITLEMENT_MISSING/);
+  assert.match(source, /REQUESTED_DUPLICATE_CHARGE/);
+  assert.match(source, /REQUESTED_ENTITLEMENT_MISSING/);
+  assert.match(source, /REQUESTED_SERVICE_FAILURE/);
+  assert.match(source, /reason === "unused_purchase"/);
+  assert.match(source, /DUPLICATE_CHARGE_DETECTED/);
+  assert.match(source, /ENTITLEMENT_MISSING_DETECTED/);
   assert.match(source, /PAID_REPLY_ALREADY_USED/);
   assert.match(source, /UNUSED_PURCHASE_WINDOW_EXPIRED/);
   assert.match(source, /applicant's reason is retained for support context only/);
+  assert.match(source, /WECHAT_REFUND_CALLBACK_FAILED/);
 });
 
 test("refund success is callback-bound and atomically revokes the entitlement", () => {

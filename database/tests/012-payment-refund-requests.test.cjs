@@ -16,10 +16,12 @@ test("012 refund requests retain one owner-bound application and explicit lifecy
   assert.match(migration, /uq_refund_requests_merchant_refund_no UNIQUE \(merchant_refund_no\)/);
   assert.match(migration, /status IN \('processing', 'requested', 'manual_review', 'succeeded', 'rejected'\)/);
   assert.match(migration, /eligibility IN \('eligible', 'manual_review', 'ineligible'\)/);
+  assert.match(migration, /reason IN \('unused_purchase', 'duplicate_charge', 'entitlement_missing', 'service_failure'\)/);
   assert.match(migration, /Applicant-supplied explanation: it is never used as eligibility evidence/);
   assert.match(postflight, /^BEGIN READ ONLY;/);
   assert.match(postflight, /refund order idempotency is invalid/);
   assert.match(postflight, /merchant refund idempotency is invalid/);
+  assert.match(postflight, /refund reason catalog is invalid/);
   assert.match(postflight, /refund ownership is invalid/);
   assert.match(postflight, /COMMIT;\s*$/);
   assert.doesNotMatch(postflight, /\b(?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP)\b/i);
