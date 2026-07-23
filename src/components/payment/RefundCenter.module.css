@@ -3,6 +3,7 @@
 .center h2 { margin: .35rem 0 0; font-size: 1.05rem; font-weight: 600; }
 .intro, .order, .muted, .notice { margin: .65rem 0 0; font-size: .82rem; line-height: 1.65; }
 .intro, .muted { color: #83776b; }
+.rules { display: grid; gap: .28rem; margin: .55rem 0 0; padding-left: 1.1rem; color: #665a4d; font-size: .82rem; line-height: 1.55; }
 .selector, .form { display: grid; gap: .5rem; margin-top: .8rem; font-size: .82rem; }
 .selector select, .form textarea { width: 100%; box-sizing: border-box; border: 1px solid rgba(179,139,83,.22); border-radius: .7rem; background: rgba(255,255,255,.82); color: inherit; font: inherit; padding: .65rem .75rem; }
 .form textarea { min-height: 5.5rem; resize: vertical; }

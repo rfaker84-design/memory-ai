@@ -142,7 +142,7 @@ export function createRefundIdempotencyKey() {
 }
 
 export function describeRefundRequest(refund: RefundRequest): { title: string; detail: string } {
-  if (refund.status === "succeeded") return { title: "退款已完成", detail: "支付渠道已确认退款；这份体验权益已结束。" };
+  if (refund.status === "succeeded") return { title: "退款已完成", detail: "支付渠道已确认退款。退款成功后，体验权益立即终止。" };
   if (refund.status === "rejected") return { title: "本次不符合受理条件", detail: refund.rejectionReason ?? "当前订单不符合退款申请条件。" };
   return { title: "退款申请处理中", detail: "系统已记录申请并核验订单；支付渠道确认退款后会在这里更新结果。" };
 }

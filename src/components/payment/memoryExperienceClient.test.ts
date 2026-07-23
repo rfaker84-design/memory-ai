@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -9,6 +10,7 @@ import {
   loadRefundRequests,
   loadPaymentSnapshot,
 } from "./memoryExperienceClient";
+import { refundPolicy } from "./refundPolicy";
 
 test("payment snapshot reads only the formal order and entitlement endpoints", async () => {
   const requests: Array<{ url: string; init?: RequestInit }> = [];
@@ -55,6 +57,20 @@ test("refund UI copy distinguishes eligibility, processing, success, and rejecti
   assert.match(describeRefundRequest({ ...base, status: "processing" }).title, /处理中/);
   assert.match(describeRefundRequest({ ...base, status: "succeeded", resolvedAt: "2026-07-24T00:00:00.000Z" }).title, /已完成/);
   assert.equal(describeRefundRequest({ ...base, status: "rejected", eligibility: "ineligible", rejectionReason: "订单已退款" }).detail, "订单已退款");
+  assert.match(describeRefundRequest({ ...base, status: "succeeded", resolvedAt: "2026-07-24T00:00:00.000Z" }).detail, /退款成功后，体验权益立即终止/);
+});
+
+test("frozen refund rules have one shared source for purchase and refund surfaces", () => {
+  assert.equal(refundPolicy.noReason, "无理由退款仅适用于付款成功后 7 天内、AI 回复零消耗（7天+零消耗）的订单。");
+  assert.equal(refundPolicy.afterUse, "使用 AI 回复后，不支持无理由退款。");
+  assert.equal(refundPolicy.manualReview, "支付、权益开通、退款结果三类异常将进入人工审核。");
+  assert.equal(refundPolicy.entitlementEnd, "退款成功后，体验权益立即终止。");
+  const purchaseSurface = readFileSync(new URL("./MemoryExperienceOffer.tsx", import.meta.url), "utf8");
+  const refundSurface = readFileSync(new URL("./RefundCenter.tsx", import.meta.url), "utf8");
+  for (const field of ["noReason", "afterUse", "manualReview", "entitlementEnd"]) {
+    assert.match(purchaseSurface, new RegExp(`refundPolicy\\.${field}`));
+    assert.match(refundSurface, new RegExp(`refundPolicy\\.${field}`));
+  }
 });
 
 test("experience status makes quota, pending, cancellation, failure, and refund explicit", () => {
