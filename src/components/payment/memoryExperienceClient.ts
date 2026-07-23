@@ -22,10 +22,11 @@ export type RefundRequest = {
   id: string;
   memoryId: string;
   orderNo: string;
-  status: "processing" | "succeeded" | "rejected";
-  eligibility: "eligible" | "ineligible";
+  status: "processing" | "requested" | "manual_review" | "succeeded" | "rejected";
+  eligibility: "eligible" | "manual_review" | "ineligible";
   reason: string;
   rejectionReason: string | null;
+  decisionCode: string | null;
   createdAt: string;
   resolvedAt: string | null;
 };
@@ -65,11 +66,12 @@ function entitlements(value: unknown): MemoryEntitlement[] {
 function refunds(value: unknown): RefundRequest[] {
   return records(value).flatMap((item) => (
     typeof item.id === "string" && typeof item.memoryId === "string" && typeof item.orderNo === "string"
-      && (item.status === "processing" || item.status === "succeeded" || item.status === "rejected")
-      && (item.eligibility === "eligible" || item.eligibility === "ineligible")
+      && (item.status === "processing" || item.status === "requested" || item.status === "manual_review" || item.status === "succeeded" || item.status === "rejected")
+      && (item.eligibility === "eligible" || item.eligibility === "manual_review" || item.eligibility === "ineligible")
       && typeof item.reason === "string" && typeof item.createdAt === "string"
       ? [{ id: item.id, memoryId: item.memoryId, orderNo: item.orderNo, status: item.status, eligibility: item.eligibility,
         reason: item.reason, rejectionReason: typeof item.rejectionReason === "string" ? item.rejectionReason : null,
+        decisionCode: typeof item.decisionCode === "string" ? item.decisionCode : null,
         createdAt: item.createdAt, resolvedAt: typeof item.resolvedAt === "string" ? item.resolvedAt : null }]
       : []
   ));
@@ -141,10 +143,39 @@ export function createRefundIdempotencyKey() {
   return `refund-${random}`;
 }
 
+const refundDecisionDescriptions = {
+  REQUESTED_DUPLICATE_CHARGE: "已收到重复扣款申请，正在等待人工审核。",
+  REQUESTED_ENTITLEMENT_MISSING: "已收到权益未到账申请，正在等待人工审核。",
+  REQUESTED_SERVICE_FAILURE: "已收到因忆见平台故障无法正常使用的申请，正在等待人工审核。",
+  DUPLICATE_CHARGE_DETECTED: "系统检测到可能重复扣款，已进入人工审核。",
+  ENTITLEMENT_MISSING_DETECTED: "系统检测到权益未到账，已进入人工审核。",
+  PAYMENT_NOT_SUCCEEDED: "订单未完成付款，不符合退款申请条件。",
+  PAID_REPLY_ALREADY_USED: "已使用 AI 回复，不支持无理由退款。",
+  UNUSED_PURCHASE_WINDOW_EXPIRED: "已超过无理由退款的受理时限。",
+  REVIEW_REJECTED: "人工审核后未通过本次退款申请。",
+  WECHAT_REFUND_CALL_FAILED: "退款通道暂时无法确认，已进入人工审核。",
+  WECHAT_REFUND_CALLBACK_FAILED: "退款通道未确认结果，已进入人工审核。",
+} as const;
+
+export function describeRefundEligibility(eligibility: RefundRequest["eligibility"]): string {
+  if (eligibility === "eligible") return "符合系统受理条件";
+  if (eligibility === "manual_review") return "需要人工审核";
+  return "不符合系统受理条件";
+}
+
+export function describeRefundDecision(decisionCode: string | null): string | null {
+  if (decisionCode === null) return null;
+  return refundDecisionDescriptions[decisionCode as keyof typeof refundDecisionDescriptions]
+    ?? "系统正在核验退款申请；请以最终处理结果为准。";
+}
+
 export function describeRefundRequest(refund: RefundRequest): { title: string; detail: string } {
+  const decision = describeRefundDecision(refund.decisionCode);
   if (refund.status === "succeeded") return { title: "退款已完成", detail: "支付渠道已确认退款。退款成功后，体验权益立即终止。" };
-  if (refund.status === "rejected") return { title: "本次不符合受理条件", detail: refund.rejectionReason ?? "当前订单不符合退款申请条件。" };
-  return { title: "退款申请处理中", detail: "系统已记录申请并核验订单；支付渠道确认退款后会在这里更新结果。" };
+  if (refund.status === "rejected") return { title: "本次不符合受理条件", detail: decision ?? refund.rejectionReason ?? "当前订单不符合退款申请条件。" };
+  if (refund.status === "manual_review") return { title: "退款申请人工审核中", detail: decision ?? "申请已进入人工审核；结果会在这里更新。" };
+  if (refund.status === "requested") return { title: "退款申请已提交", detail: decision ?? "系统已收到申请，正在等待核验。" };
+  return { title: "退款申请处理中", detail: decision ?? "系统正在核验订单与退款资格；结果会在这里更新。" };
 }
 
 export type ExperienceStatus = {

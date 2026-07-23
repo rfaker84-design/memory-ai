@@ -5,6 +5,8 @@ import test from "node:test";
 import {
   createExperienceCheckout,
   createRefundRequest,
+  describeRefundDecision,
+  describeRefundEligibility,
   describeRefundRequest,
   describeExperienceStatus,
   loadRefundRequests,
@@ -39,7 +41,7 @@ test("checkout sends only memoryId and the idempotency header", async () => {
 });
 
 test("refund client uses the formal endpoint, with reason only in the strict body", async () => {
-  const refund = { id: "refund-1", memoryId: "memory-1", orderNo: "order-1", status: "processing", eligibility: "eligible", reason: "误购", rejectionReason: null, createdAt: "2026-07-23T00:00:00.000Z", resolvedAt: null };
+  const refund = { id: "refund-1", memoryId: "memory-1", orderNo: "order-1", status: "requested", eligibility: "manual_review", reason: "误购", rejectionReason: null, decisionCode: "REQUESTED_DUPLICATE_CHARGE", createdAt: "2026-07-23T00:00:00.000Z", resolvedAt: null };
   const requests: Array<{ url: string; init?: RequestInit }> = [];
   const request = async (url: string | URL | Request, init?: RequestInit) => {
     requests.push({ url: String(url), init });
@@ -52,25 +54,66 @@ test("refund client uses the formal endpoint, with reason only in the strict bod
   assert.equal(requests[1].init?.body, JSON.stringify({ memoryId: "memory-1", orderNo: "order-1", reason: "误购" }));
 });
 
-test("refund UI copy distinguishes eligibility, processing, success, and rejection reason", () => {
-  const base = { id: "refund-1", memoryId: "memory-1", orderNo: "order-1", eligibility: "eligible" as const, reason: "误购", rejectionReason: null, createdAt: "2026-07-23T00:00:00.000Z", resolvedAt: null };
+test("refund parser does not filter requested or manual-review records", async () => {
+  const states = ["processing", "requested", "manual_review", "succeeded", "rejected"] as const;
+  const eligibility = ["eligible", "eligible", "manual_review", "eligible", "ineligible"] as const;
+  const expected = states.map((status, index) => ({
+    id: `refund-${status}`, memoryId: "memory-1", orderNo: `order-${status}`, status, eligibility: eligibility[index],
+    reason: "退款原因", rejectionReason: status === "rejected" ? "订单不符合条件" : null,
+    decisionCode: status === "manual_review" ? "WECHAT_REFUND_CALL_FAILED" : null,
+    createdAt: "2026-07-23T00:00:00.000Z", resolvedAt: status === "succeeded" || status === "rejected" ? "2026-07-24T00:00:00.000Z" : null,
+  }));
+  const request = async () => Response.json({ refunds: expected });
+  assert.deepEqual(await loadRefundRequests("memory-1", request as typeof fetch), expected);
+});
+
+test("refund UI preserves every supported state, eligibility, and safe decision explanation", () => {
+  const base = { id: "refund-1", memoryId: "memory-1", orderNo: "order-1", eligibility: "eligible" as const, reason: "误购", rejectionReason: null, decisionCode: null, createdAt: "2026-07-23T00:00:00.000Z", resolvedAt: null };
   assert.match(describeRefundRequest({ ...base, status: "processing" }).title, /处理中/);
+  assert.match(describeRefundRequest({ ...base, status: "requested" }).title, /已提交/);
+  assert.match(describeRefundRequest({ ...base, status: "manual_review", eligibility: "manual_review", decisionCode: "DUPLICATE_CHARGE_DETECTED" }).title, /人工审核/);
   assert.match(describeRefundRequest({ ...base, status: "succeeded", resolvedAt: "2026-07-24T00:00:00.000Z" }).title, /已完成/);
   assert.equal(describeRefundRequest({ ...base, status: "rejected", eligibility: "ineligible", rejectionReason: "订单已退款" }).detail, "订单已退款");
   assert.match(describeRefundRequest({ ...base, status: "succeeded", resolvedAt: "2026-07-24T00:00:00.000Z" }).detail, /退款成功后，体验权益立即终止/);
+  assert.equal(describeRefundEligibility("eligible"), "符合系统受理条件");
+  assert.equal(describeRefundEligibility("manual_review"), "需要人工审核");
+  assert.equal(describeRefundEligibility("ineligible"), "不符合系统受理条件");
+  const formalDecisionCodes = {
+    REQUESTED_DUPLICATE_CHARGE: "已收到重复扣款申请，正在等待人工审核。",
+    REQUESTED_ENTITLEMENT_MISSING: "已收到权益未到账申请，正在等待人工审核。",
+    REQUESTED_SERVICE_FAILURE: "已收到因忆见平台故障无法正常使用的申请，正在等待人工审核。",
+    DUPLICATE_CHARGE_DETECTED: "系统检测到可能重复扣款，已进入人工审核。",
+    ENTITLEMENT_MISSING_DETECTED: "系统检测到权益未到账，已进入人工审核。",
+    PAYMENT_NOT_SUCCEEDED: "订单未完成付款，不符合退款申请条件。",
+    PAID_REPLY_ALREADY_USED: "已使用 AI 回复，不支持无理由退款。",
+    UNUSED_PURCHASE_WINDOW_EXPIRED: "已超过无理由退款的受理时限。",
+    REVIEW_REJECTED: "人工审核后未通过本次退款申请。",
+    WECHAT_REFUND_CALL_FAILED: "退款通道暂时无法确认，已进入人工审核。",
+    WECHAT_REFUND_CALLBACK_FAILED: "退款通道未确认结果，已进入人工审核。",
+  } as const;
+  for (const [decisionCode, description] of Object.entries(formalDecisionCodes)) {
+    assert.equal(describeRefundDecision(decisionCode), description, decisionCode);
+  }
+  assert.equal(describeRefundDecision("untrusted-code"), "系统正在核验退款申请；请以最终处理结果为准。");
+  assert.doesNotMatch(describeRefundDecision("untrusted-code")!, /untrusted-code/);
 });
 
 test("frozen refund rules have one shared source for purchase and refund surfaces", () => {
-  assert.equal(refundPolicy.noReason, "无理由退款仅适用于付款成功后 7 天内、AI 回复零消耗（7天+零消耗）的订单。");
+  assert.equal(refundPolicy.noReason, "付款成功当日计为第1日。无理由退款仅适用于付款成功后 7 天内、AI 回复零消耗（7天+零消耗）的订单。");
   assert.equal(refundPolicy.afterUse, "使用 AI 回复后，不支持无理由退款。");
-  assert.equal(refundPolicy.manualReview, "支付、权益开通、退款结果三类异常将进入人工审核。");
+  assert.equal(refundPolicy.manualReview, "重复扣款、权益未到账、因忆见平台故障无法正常使用三类异常将进入人工审核。");
   assert.equal(refundPolicy.entitlementEnd, "退款成功后，体验权益立即终止。");
   const purchaseSurface = readFileSync(new URL("./MemoryExperienceOffer.tsx", import.meta.url), "utf8");
   const refundSurface = readFileSync(new URL("./RefundCenter.tsx", import.meta.url), "utf8");
+  const termsSurface = readFileSync(new URL("../../../app/terms/page.tsx", import.meta.url), "utf8");
+  const reportSurface = readFileSync(new URL("../../../app/report/page.tsx", import.meta.url), "utf8");
   for (const field of ["noReason", "afterUse", "manualReview", "entitlementEnd"]) {
     assert.match(purchaseSurface, new RegExp(`refundPolicy\\.${field}`));
     assert.match(refundSurface, new RegExp(`refundPolicy\\.${field}`));
+    assert.match(termsSurface, new RegExp(`refundPolicy\\.${field}`));
+    assert.match(reportSurface, new RegExp(`refundPolicy\\.${field}`));
   }
+  for (const surface of [purchaseSurface, refundSurface, termsSurface, reportSurface]) assert.doesNotMatch(surface, /退款结果异常/);
 });
 
 test("experience status makes quota, pending, cancellation, failure, and refund explicit", () => {

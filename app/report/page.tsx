@@ -1,3 +1,5 @@
+import { refundPolicy } from "@/src/components/payment/refundPolicy";
+
 export default function ReportPage() {
   return (
     <main className="min-h-screen bg-[#0b0a08] px-6 py-12 text-[#f6eee2]">
@@ -15,6 +17,12 @@ export default function ReportPage() {
 如需退款，请同时提供订单号或支付时间，便于核验订单状态；退款是否完成及权益状态会以系统确认结果为准。
 
 联系邮箱：support@yijianai.cn
+{"\n\n"}
+退款规则：
+{"\n"}{refundPolicy.noReason}
+{"\n"}{refundPolicy.afterUse}
+{"\n"}{refundPolicy.manualReview}
+{"\n"}{refundPolicy.entitlementEnd}
         </p>
       </div>
     </main>

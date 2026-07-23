@@ -1,3 +1,5 @@
+import { refundPolicy } from "@/src/components/payment/refundPolicy";
+
 export default function TermsPage() {
   return (
     <main className="min-h-screen bg-[#0b0a08] px-6 py-12 text-[#f6eee2]">
@@ -11,6 +13,12 @@ export default function TermsPage() {
 用户不得利用忆见生成违法、侵权、欺诈、迷信、威胁、自伤诱导等内容。
 
 平台有权删除违规内容，并限制违规用户继续使用。
+{"\n\n"}
+退款规则：
+{"\n"}{refundPolicy.noReason}
+{"\n"}{refundPolicy.afterUse}
+{"\n"}{refundPolicy.manualReview}
+{"\n"}{refundPolicy.entitlementEnd}
         </p>
       </div>
     </main>
