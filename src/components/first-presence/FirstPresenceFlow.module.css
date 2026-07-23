@@ -63,6 +63,17 @@
   .footer { align-items: flex-start; flex-direction: column; gap: 5px; }
 }
 
+/* The legacy tab bar is fixed at the viewport edge. Keep every secure-login
+   control above it on short desktop windows without changing the scene. */
+@media (min-width: 601px) and (max-height: 920px) {
+  .frame { padding-bottom: max(82px, calc(64px + env(safe-area-inset-bottom))); }
+  .main { min-height: calc(100dvh - 190px); align-content: start; gap: 16px; }
+  .presenceStage { min-height: min(31vh, 280px); }
+  .controlShell { padding: 24px clamp(24px, 4vw, 36px); }
+  .copyBlock { gap: 12px; }
+  .footer { padding-top: 10px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .figureWrap, .controlShell, .ringOne, .ringTwo, .figureAura, .progressLine span { animation: none; }
   .figureWrap { opacity: 1; transform: none; }

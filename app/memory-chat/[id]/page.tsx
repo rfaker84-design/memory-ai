@@ -8,6 +8,7 @@ import {
   loadOwnedMemory,
   OwnedMemoryRequestError,
 } from "../../../src/components/memory/ownedMemoryClient";
+import { MemoryExperienceOffer } from "../../../src/components/payment/MemoryExperienceOffer";
 
 type MemoryFragment = {
   content: string;
@@ -29,8 +30,6 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
   const [pageStatus, setPageStatus] = useState<"loading" | "ready" | "not-found" | "error">("loading");
   const [chatError, setChatError] = useState("");
   const [ttsLoading, setTtsLoading] = useState(false);
-  const [paymentStatus, setPaymentStatus] = useState("");
-  const [paymentLoading, setPaymentLoading] = useState(false);
   const [, setAudioUrl] = useState("");
   const [showFragments, setShowFragments] = useState(true);
 
@@ -110,38 +109,6 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
     } finally {
       setLoading(false);
       sendingRef.current = false;
-    }
-  };
-
-  const beginExperiencePurchase = async () => {
-    if (!memory || paymentLoading) return;
-    setPaymentLoading(true);
-    setPaymentStatus("");
-    try {
-      const key = typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? `payment-${crypto.randomUUID()}`
-        : `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const response = await fetch("/api/payments/orders", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": key },
-        body: JSON.stringify({ memoryId: memory.id }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      const paymentUrl = payload?.order?.paymentUrl;
-      if (!response.ok || typeof paymentUrl !== "string") {
-        setPaymentStatus(payload?.error === "WECHAT_PAY_NOT_CONFIGURED"
-          ? "支付暂未开放，请稍后再试。"
-          : "暂时无法创建支付订单，请稍后再试。");
-        return;
-      }
-      const destination = new URL(paymentUrl);
-      if (destination.protocol !== "https:") throw new Error("unsafe payment url");
-      window.location.assign(destination.toString());
-    } catch {
-      setPaymentStatus("网络连接暂时中断，尚未创建或确认任何支付权益。");
-    } finally {
-      setPaymentLoading(false);
     }
   };
 
@@ -277,22 +244,7 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
             </div>
           )}
           {chatError && <p role="alert" className="text-center text-sm text-red-300">{chatError}</p>}
-          {messages.some((message) => message.role === "assistant") && (
-            <section className="mx-auto mt-10 max-w-md rounded-2xl bg-[#3D3226]/[0.045] px-5 py-5 text-center">
-              <p className="text-sm leading-relaxed text-[#7A6E62]">想把这份陪伴延续得更久一些？</p>
-              <p className="mt-1 text-xs leading-relaxed text-[#A89888]">购买后获得一个 TA 的限期对话体验；不自动续费。</p>
-              <button
-                type="button"
-                onClick={() => void beginExperiencePurchase()}
-                disabled={paymentLoading}
-                className="mt-4 min-h-11 rounded-xl px-5 text-sm text-[#3D3226] disabled:opacity-40"
-                style={{ background: "rgba(196,168,130,0.20)" }}
-              >
-                {paymentLoading ? "正在准备支付…" : "继续陪伴"}
-              </button>
-              {paymentStatus && <p role="alert" className="mt-3 text-xs text-[#A89888]">{paymentStatus}</p>}
-            </section>
-          )}
+          {messages.some((message) => message.role === "assistant") && <MemoryExperienceOffer memoryId={memory.id} tone="light" />}
           <div ref={bottomRef} />
         </div>
       </div>

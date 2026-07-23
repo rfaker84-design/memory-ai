@@ -19,6 +19,7 @@
     "test:auth-migration": "node --test database/tests/006-auth-verification-challenges.test.cjs",
     "test:sms-provider": "tsx --test src/server/auth/sms/tencent-sms-verification-provider.test.ts",
     "test:payments": "tsx --test features/payment/payment.test.ts && node --test database/tests/010-memory-experience-payments.test.cjs",
+    "test:payment-experience": "tsx --test src/components/payment/memoryExperienceClient.test.ts",
     "test:auth": "tsx --test src/server/auth/auth.test.ts src/server/auth/auth-response-cache.test.ts src/server/auth/production-config.test.ts src/server/auth/sms/tencent-sms-verification-provider.test.ts app/login/login-entry.test.ts",
     "test:security-routes": "tsx --test src/server/security/origin.test.ts app/api/api-policy.test.ts app/api/legacy-route-security.test.ts src/components/auth/client-identity-storage.test.ts",
     "test:startup-contract": "node --test scripts/security/production-startup-contract.test.cjs",

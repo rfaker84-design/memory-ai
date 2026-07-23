@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { MemoryAvatar, MemoryButton } from "../memory-ui";
+import { MemoryExperienceOffer } from "../payment/MemoryExperienceOffer";
 import { useReducedMotion } from "../../motion";
 
 import {
@@ -197,6 +198,8 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
           {pendingMessage && <article className={styles.pendingMessage} aria-label="等待服务端确认的消息"><p>{pendingMessage.content}</p></article>}
           <div ref={bottomRef} />
         </div>
+
+        {messages.some((message) => message.role === "assistant") && <MemoryExperienceOffer memoryId={memoryId} />}
 
         {phase === "error" && !pendingMessage && (
           <div className={styles.recoveryActions}>
