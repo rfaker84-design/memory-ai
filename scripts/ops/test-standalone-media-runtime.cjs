@@ -1,15 +1,17 @@
 const assert = require("node:assert/strict");
 const { createRequire } = require("node:module");
-const { existsSync, cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync } = require("node:fs");
+const { mkdtempSync, rmSync } = require("node:fs");
 const http = require("node:http");
 const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const { packageStandaloneRuntime, readStandaloneManifest } = require("./standalone-runtime-layout.cjs");
 
 const root = path.resolve(__dirname, "../..");
 const standalone = path.join(root, ".next", "standalone");
-const runtime = mkdtempSync(path.join(os.tmpdir(), "memoryai-standalone-"));
+const runtimeParent = mkdtempSync(path.join(os.tmpdir(), "memoryai-standalone-"));
+const runtime = path.join(runtimeParent, "runtime");
 
 function request(port, pathname) {
   return new Promise((resolve, reject) => {
@@ -54,13 +56,16 @@ async function stopChild(child) {
 }
 
 async function main() {
-  assert.ok(existsSync(path.join(standalone, "server.js")), "missing standalone server");
-  cpSync(standalone, runtime, { recursive: true });
-  cpSync(path.join(root, "public"), path.join(runtime, "public"), { recursive: true });
-  mkdirSync(path.join(runtime, ".next"), { recursive: true });
-  cpSync(path.join(root, ".next", "static"), path.join(runtime, ".next", "static"), { recursive: true });
+  const packaged = packageStandaloneRuntime({
+    standaloneDirectory: standalone,
+    outputDirectory: runtime,
+    publicDirectory: path.join(root, "public"),
+    staticDirectory: path.join(root, ".next", "static"),
+  });
+  const manifest = readStandaloneManifest(runtime);
+  assert.equal(manifest.serverEntry, packaged.serverEntry);
 
-  const runtimeRequire = createRequire(path.join(runtime, "server.js"));
+  const runtimeRequire = createRequire(path.join(runtime, manifest.serverEntry));
   const cosEntry = runtimeRequire.resolve("cos-nodejs-sdk-v5");
   assert.ok(cosEntry.startsWith(runtime), "COS resolved outside the standalone runtime");
   assert.equal(runtimeRequire("cos-nodejs-sdk-v5/package.json").version, "3.0.0");
@@ -68,7 +73,7 @@ async function main() {
   assert.throws(() => runtimeRequire.resolve("request"), /Cannot find module/);
 
   const port = await freePort();
-  const child = spawn(process.execPath, ["server.js"], {
+  const child = spawn(process.execPath, ["run-standalone-from-manifest.cjs"], {
     cwd: runtime,
     env: {
       ...process.env,
@@ -102,7 +107,7 @@ async function main() {
 }
 
 main()
-  .finally(() => rmSync(runtime, { recursive: true, force: true }))
+  .finally(() => rmSync(runtimeParent, { recursive: true, force: true }))
   .catch((error) => {
     console.error(error);
     process.exitCode = 1;

@@ -62,6 +62,14 @@ test("every tracked production startup entry is loopback-only", () => {
   assert.match(read("worker/server.py"), /host="127\.0\.0\.1"/);
 });
 
+test("Docker standalone runtime starts only through its packaged manifest", () => {
+  const dockerfile = read("Dockerfile");
+  assert.match(dockerfile, /npm run build && npm run package:standalone-rc/);
+  assert.match(dockerfile, /\.next\/standalone-rc/);
+  assert.match(dockerfile, /CMD \["node", "run-standalone-from-manifest\.cjs"\]/);
+  assert.doesNotMatch(dockerfile, /CMD \["node", "server\.js"\]/);
+});
+
 test("Compose keeps Redis on the internal network only", () => {
   const compose = parseCompose(read("docker-compose.yml"));
   assertRedisIsInternalOnly(compose);

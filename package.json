@@ -19,6 +19,8 @@
     "test:real-presence": "tsx --test services/llm/formal-llm-provider.test.ts services/llm/deepseek-llm-provider.test.ts features/memory-engine/prompt/memory-prompt.test.ts features/chat/first-greeting-service.test.ts app/api/memory-chat/memory-chat-final-real.test.ts src/components/first-presence/confirmedMemoryProfile.test.ts src/components/memory/ownedMemoryClient.test.ts",
     "test:first-greeting": "tsx --test app/api/memories/first-greeting-route.test.ts features/chat/first-greeting-service.test.ts features/chat/first-greeting-persistence.test.ts && node --test database/tests/008-memory-first-greetings.test.cjs",
     "test:media": "tsx --test scripts/ops/test-media-storage.ts src/server/storage/tencent-cos-storage.test.ts",
+    "package:standalone-rc": "node scripts/ops/package-standalone-rc.cjs",
+    "test:standalone-layout": "node --test scripts/ops/standalone-runtime-layout.test.cjs",
     "test:standalone-media": "node scripts/ops/test-standalone-media-runtime.cjs",
     "test:collective-analysis": "tsx --test app/api/collective-analysis/route.test.ts",
     "test:auth-migration": "node --test database/tests/006-auth-verification-challenges.test.cjs",
