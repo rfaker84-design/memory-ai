@@ -13,11 +13,16 @@ interface TencentCosStorageOptions {
   region: string;
 }
 
-export class TencentCosStorage implements MediaStorage {
-  private readonly client: COS;
+type TencentCosClient = Pick<COS, "putObject" | "deleteObject" | "getObjectUrl">;
 
-  constructor(private readonly options: TencentCosStorageOptions) {
-    this.client = new COS({
+export class TencentCosStorage implements MediaStorage {
+  private readonly client: TencentCosClient;
+
+  constructor(
+    private readonly options: TencentCosStorageOptions,
+    client?: TencentCosClient,
+  ) {
+    this.client = client ?? new COS({
       SecretId: options.secretId,
       SecretKey: options.secretKey,
     });
