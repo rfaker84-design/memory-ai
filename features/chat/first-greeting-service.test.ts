@@ -6,6 +6,7 @@ import type { Conversation, Message } from "./types";
 import {
   FirstGreetingInProgressError,
   FirstGreetingProviderError,
+  buildFirstGreetingPrompt,
   FirstGreetingService,
 } from "./first-greeting-service";
 
@@ -123,6 +124,32 @@ test("first greeting serializes concurrent claims and replays the one saved assi
   assert.equal(replay.message.id, created.message.id);
   assert.equal(providerCalls, 1);
   assert.equal(store.completions, 1);
+});
+
+test("first greeting does not carry another TA's verified profile facts", () => {
+  const firstTaPrompt = buildFirstGreetingPrompt({
+    ...memory,
+    id: "memory-first-ta",
+    name: "First TA",
+    lifeStory: "FIRST_TA_LIFE_STORY",
+    personalityProfile: "FIRST_TA_PERSONALITY",
+    speechStyle: "FIRST_TA_STYLE",
+    catchPhrases: "FIRST_TA_CATCHPHRASE",
+  })[0].content;
+  const secondTaPrompt = buildFirstGreetingPrompt({
+    ...memory,
+    id: "memory-second-ta",
+    name: "Second TA",
+    lifeStory: "SECOND_TA_LIFE_STORY",
+    personalityProfile: "SECOND_TA_PERSONALITY",
+    speechStyle: "SECOND_TA_STYLE",
+    catchPhrases: "SECOND_TA_CATCHPHRASE",
+  })[0].content;
+
+  assert.match(firstTaPrompt, /FIRST_TA_(LIFE_STORY|PERSONALITY|STYLE|CATCHPHRASE)/);
+  assert.doesNotMatch(firstTaPrompt, /SECOND_TA_(LIFE_STORY|PERSONALITY|STYLE|CATCHPHRASE)/);
+  assert.match(secondTaPrompt, /SECOND_TA_(LIFE_STORY|PERSONALITY|STYLE|CATCHPHRASE)/);
+  assert.doesNotMatch(secondTaPrompt, /FIRST_TA_(LIFE_STORY|PERSONALITY|STYLE|CATCHPHRASE)/);
 });
 
 test("provider failure leaves no assistant message and allows a later claim", async () => {

@@ -32,3 +32,36 @@ test("memory prompt carries the confirmed address, phrases, speaking habit, and 
   }
   assert.match(prompt.content, /不得以通用模板替代/);
 });
+
+test("continuous chat keeps each TA's personality facts isolated", () => {
+  const promptFor = (memoryId: string, prefix: string) => buildMemoryPrompt({
+    memoryId,
+    userId: "owner-1",
+    sessionId: "session-1",
+    userMessage: "How are you?",
+    memoryName: `${prefix} name`,
+    relationship: "friend",
+    personalityProfile: `${prefix}_PERSONALITY`,
+    catchPhrases: `${prefix}_CATCHPHRASE`,
+    speechStyle: `${prefix}_STYLE`,
+    lifeStory: `${prefix}_LIFE_STORY`,
+    fragments: [],
+    timeline: [],
+    history: [],
+    recentMessages: [],
+    emotion: "neutral",
+    emotionIntensity: "low",
+    suggestedTone: "warm",
+    aiCompanionMode: "guide",
+    aiResponseStyle: "warm",
+    longTermMemories: [],
+  }).content;
+
+  const firstTaPrompt = promptFor("ta-first", "FIRST_TA");
+  const secondTaPrompt = promptFor("ta-second", "SECOND_TA");
+
+  assert.match(firstTaPrompt, /FIRST_TA_(PERSONALITY|CATCHPHRASE|STYLE|LIFE_STORY)/);
+  assert.doesNotMatch(firstTaPrompt, /SECOND_TA_(PERSONALITY|CATCHPHRASE|STYLE|LIFE_STORY)/);
+  assert.match(secondTaPrompt, /SECOND_TA_(PERSONALITY|CATCHPHRASE|STYLE|LIFE_STORY)/);
+  assert.doesNotMatch(secondTaPrompt, /FIRST_TA_(PERSONALITY|CATCHPHRASE|STYLE|LIFE_STORY)/);
+});

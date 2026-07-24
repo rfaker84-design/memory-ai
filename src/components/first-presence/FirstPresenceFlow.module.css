@@ -36,6 +36,8 @@
 .copyBlock h1 { margin: 0; color: var(--ink); font-family: var(--font-noto-serif-sc), serif; font-size: clamp(30px, 7vw, 54px); font-weight: 500; line-height: 1.12; letter-spacing: -.035em; }
 .copyBlock p:not(.kicker) { max-width: 44ch; margin: 0; color: var(--muted); font-size: 15px; line-height: 1.75; }
 .greeting { color: #d4def5 !important; font-family: var(--font-noto-serif-sc), serif; font-size: clamp(18px, 4vw, 22px) !important; }
+.previewReply { display: flex; align-items: flex-start; gap: 10px; }
+.previewReply .greeting { flex: 1; padding-top: 4px; }
 .fieldGrid { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .previewNotice, .inlineStatus { margin: 0 0 16px; color: #d8bfaa; font-size: 13px; line-height: 1.55; }
 .previewNotice { padding: 10px 12px; border: 1px solid rgba(255, 210, 166, .28); border-radius: 12px; background: rgba(214, 168, 110, .1); color: #f0d5bb; }

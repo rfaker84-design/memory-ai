@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
+import { safeMediaAsset } from "../../app/api/media/_lib";
 import type { MediaDataSource } from "../../features/media/datasource";
 import { validateMediaFile, MediaValidationError } from "../../features/media/file-validation";
 import { MediaRepository } from "../../features/media/media-repository";
@@ -48,4 +50,41 @@ test("COS unavailable marks upload failed", async () => { const x=service(); x.s
 test("database rollback compensates by deleting COS object", async () => { const x=service(); x.db.failCommit=true; await assert.rejects(()=>x.value.upload({externalUserId:"u",memoryId:"m",file:{name:"x.jpg",type:"image/jpeg",body:jpeg}})); assert.equal(x.storage.deleted.length,1); });
 test("signed URL TTL is capped", async () => { const x=service(); x.db.asset={...baseAsset({externalUserId:"u",memoryId:"m",mediaType:MediaType.IMAGE,storageKey:"key",mimeType:"image/jpeg",sizeBytes:1,sha256:"a".repeat(64)}),status:"uploaded"}; const result=await x.value.createDownloadUrl("id","u",9999); assert.equal(x.storage.ttl,900); assert.ok(Date.parse(result.expiresAt)>Date.now()); });
 test("cross-user media reads and deletes are rejected", async () => { const x=service(); x.db.asset={...baseAsset({externalUserId:"owner",memoryId:"m",mediaType:MediaType.IMAGE,storageKey:"key",mimeType:"image/jpeg",sizeBytes:1,sha256:"a".repeat(64)}),status:"uploaded"}; await assert.rejects(()=>x.value.createDownloadUrl("id","attacker",300),/MEDIA_NOT_FOUND/); await assert.rejects(()=>x.value.delete("id","attacker"),/MEDIA_NOT_FOUND/); });
+test("portrait selection is TA-bound and signed media responses do not expose ownership or storage keys", () => {
+  const memoryDatasource = readFileSync(
+    new URL("../../features/memory/memory-postgres-datasource.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    memoryDatasource,
+    /FROM media_assets a\s+WHERE a\.memory_id = m\.id\s+AND a\.media_type = 'image'\s+AND a\.status = 'uploaded'\s+AND a\.deleted_at IS NULL/,
+  );
+
+  const hiddenAsset: MediaAsset = {
+    id: "portrait-asset",
+    userId: "owner-a",
+    memoryId: "ta-a",
+    mediaType: MediaType.IMAGE,
+    mimeType: "image/png",
+    sizeBytes: 42,
+    storageKey: "media/owner-a/ta-a/portrait.png",
+    sha256: "a".repeat(64),
+    status: "uploaded",
+    failureCode: null,
+    createdAt: "2026-07-24T00:00:00.000Z",
+    updatedAt: "2026-07-24T00:00:00.000Z",
+    deletedAt: null,
+  };
+  const safeAsset = safeMediaAsset(hiddenAsset);
+
+  assert.deepEqual(safeAsset, {
+    id: "portrait-asset",
+    mediaType: "image",
+    mimeType: "image/png",
+    sizeBytes: 42,
+    status: "uploaded",
+    createdAt: "2026-07-24T00:00:00.000Z",
+  });
+  assert.doesNotMatch(JSON.stringify(safeAsset), /owner-a|ta-a|storageKey|media\//);
+});
 test("upload route rejects unauthenticated access", async () => { const response=await uploadRoute(new NextRequest("http://localhost/api/media/upload",{method:"POST"})); assert.equal(response.status,401); });

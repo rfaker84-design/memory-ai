@@ -18,6 +18,11 @@ test("formal production LLM resolution requires the explicit DeepSeek identity, 
       && error.message === "DEEPSEEK_PROVIDER_REQUIRED"
   );
   assert.throws(
+    () => resolveFormalLLMProvider({ NODE_ENV: "production", LLM_PROVIDER: "unrecognised-provider" }),
+    (error: unknown) => error instanceof FormalLLMConfigurationError
+      && error.message === "DEEPSEEK_PROVIDER_REQUIRED"
+  );
+  assert.throws(
     () => resolveFormalLLMProvider({ NODE_ENV: "production", LLM_PROVIDER: "deepseek" }),
     (error: unknown) => error instanceof FormalLLMConfigurationError
       && error.message === "DEEPSEEK_API_KEY_NOT_CONFIGURED"

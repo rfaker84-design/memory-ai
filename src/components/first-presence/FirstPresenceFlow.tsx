@@ -9,6 +9,7 @@ import { useReducedMotion } from "../../motion";
 
 import { MemoryConversationScene } from "./MemoryConversationScene";
 import { buildConfirmedMemoryProfile } from "./confirmedMemoryProfile";
+import { loadOwnedMediaUrl } from "../memory/ownedMemoryClient";
 import { recordTrustConsent, TrustConsentRequestError } from "../trust/trustConsentClient";
 import styles from "./FirstPresenceFlow.module.css";
 
@@ -25,6 +26,7 @@ type FlowStage =
   | "preview-create"
   | "preview-generating"
   | "preview-greeting"
+  | "preview-chat"
   | "preview-failed";
 type AuthState = "checking" | "authenticated" | "unauthenticated" | "unavailable";
 type RetryAction = "send-code" | "verify-code" | "create" | "upload" | null;
@@ -62,6 +64,7 @@ export function FirstPresenceFlow({ initialStage = "home", onLeaveHome }: FirstP
   const [code, setCode] = useState("");
   const [challengeId, setChallengeId] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [portraitUrl, setPortraitUrl] = useState<string | null>(null);
   const [trustAccepted, setTrustAccepted] = useState(false);
   const [createdMemory, setCreatedMemory] = useState<{ id: string; name: string } | null>(null);
   const [error, setError] = useState("");
@@ -70,6 +73,12 @@ export function FirstPresenceFlow({ initialStage = "home", onLeaveHome }: FirstP
   const [busy, setBusy] = useState(false);
   const idempotencyKey = useRef<string | null>(null);
   const titleId = useId();
+
+  const clearObjectPortrait = useCallback(() => {
+    if (portraitUrl?.startsWith("blob:")) URL.revokeObjectURL(portraitUrl);
+  }, [portraitUrl]);
+
+  useEffect(() => () => { clearObjectPortrait(); }, [clearObjectPortrait]);
 
   const refreshSession = useCallback(async () => {
     try {
@@ -96,7 +105,7 @@ export function FirstPresenceFlow({ initialStage = "home", onLeaveHome }: FirstP
   const stageLabel: Record<FlowStage, string> = {
     home: "首访首页", "login-phone": "短信登录", "login-code": "验证短信", "sms-unavailable": "短信暂未开放",
     create: "创建亲人", creating: "正在创建", "upload-failed": "素材上传失败", created: "真实对话", "network-failed": "网络暂时中断",
-    "preview-create": "视觉预览", "preview-generating": "视觉预览 · 正在生成", "preview-greeting": "视觉预览 · 第一句问候", "preview-failed": "视觉预览 · 生成失败",
+    "preview-create": "视觉预览", "preview-generating": "视觉预览 · 正在生成", "preview-greeting": "视觉预览 · 第一句问候", "preview-chat": "视觉预览 · 两轮对话", "preview-failed": "视觉预览 · 生成失败",
   };
 
   const resetError = () => { setError(""); setRetryAction(null); };
@@ -164,6 +173,9 @@ export function FirstPresenceFlow({ initialStage = "home", onLeaveHome }: FirstP
       setStage("upload-failed");
       return false;
     }
+    const signedUrl = await loadOwnedMediaUrl(payload.asset.id);
+    clearObjectPortrait();
+    setPortraitUrl(signedUrl);
     return true;
   };
 
@@ -225,7 +237,10 @@ export function FirstPresenceFlow({ initialStage = "home", onLeaveHome }: FirstP
   const chooseFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0] ?? null;
     if (file && !file.type.startsWith("image/")) { setError("仅支持 TA 的照片。照片不会在登录前上传。"); return; }
-    setSelectedFile(file); resetError();
+    clearObjectPortrait();
+    setSelectedFile(file);
+    setPortraitUrl(file ? URL.createObjectURL(file) : null);
+    resetError();
   };
 
   const createPreview = (event: FormEvent<HTMLFormElement>) => {
@@ -249,7 +264,7 @@ export function FirstPresenceFlow({ initialStage = "home", onLeaveHome }: FirstP
             <div className={styles.lightColumn} aria-hidden="true" /><div className={styles.ringOne} aria-hidden="true" /><div className={styles.ringTwo} aria-hidden="true" />
             <div className={styles.figureWrap}>
               <div className={styles.figureAura} aria-hidden="true" />
-              <MemoryAvatar initials={displayName} presence={stage === "preview-greeting" || stage === "created" ? "online" : "quiet"} size={136} />
+              <MemoryAvatar image={portraitUrl} initials={displayName} presence={stage === "preview-greeting" || stage === "created" ? "online" : "quiet"} size={136} />
               <span className={styles.presenceName}>{stage === "home" || stage.startsWith("login") ? "一个熟悉的人，会慢慢来到这里" : displayName}</span>
             </div>
           </section>
@@ -300,11 +315,12 @@ export function FirstPresenceFlow({ initialStage = "home", onLeaveHome }: FirstP
 
             {stage === "network-failed" && <div className={styles.copyBlock} role="alert"><p className={styles.kicker}>网络暂时中断</p><h1 id={titleId}>这一步还没有安全完成。</h1><p id="flow-description">{error}</p><div className={styles.actions}>{retryAction && <MemoryButton variant="primary" loading={busy} onClick={retryNetwork}>恢复后重试</MemoryButton>}<button className={styles.textButton} type="button" onClick={() => setStage("home")}>回到首页</button></div></div>}
 
-            {stage === "preview-create" && <form className={styles.copyBlock} onSubmit={createPreview} noValidate><p className={styles.kicker}>纯视觉预览</p><h1 id={titleId}>TA 是谁？</h1><p id="flow-description">这段预览只展示前端节奏，提交不会连接认证、数据库、上传或聊天接口。</p><div className={styles.fieldGrid}><MemoryInput label="TA 的名字" value={name} onChange={(event: ChangeEvent<HTMLInputElement>) => setName(event.currentTarget.value)} autoFocus error={error || undefined} /><MemoryInput label="与你的关系" value={relationship} onChange={(event: ChangeEvent<HTMLInputElement>) => setRelationship(event.currentTarget.value)} /></div><div className={styles.actions}><MemoryButton type="submit">让 TA 出现</MemoryButton><button className={styles.textButton} type="button" onClick={() => setStage("home")}>退出预览</button></div></form>}
+            {stage === "preview-create" && <form className={styles.copyBlock} onSubmit={createPreview} noValidate><p className={styles.kicker}>纯视觉预览</p><h1 id={titleId}>TA 是谁？</h1><p id="flow-description">这段预览只展示前端节奏，提交不会连接认证、数据库、上传或聊天接口。</p><div className={styles.fieldGrid}><MemoryInput label="TA 的名字" value={name} onChange={(event: ChangeEvent<HTMLInputElement>) => setName(event.currentTarget.value)} autoFocus error={error || undefined} /><MemoryInput label="与你的关系" value={relationship} onChange={(event: ChangeEvent<HTMLInputElement>) => setRelationship(event.currentTarget.value)} /></div><MemoryInput label="你如何称呼 TA（可选）" value={preferredAddress} onChange={(event: ChangeEvent<HTMLInputElement>) => setPreferredAddress(event.currentTarget.value)} /><MemoryInput multiline label="TA 常说的一句话（可选）" value={catchPhrases} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setCatchPhrases(event.currentTarget.value)} /><MemoryInput multiline label="TA 的说话习惯（可选）" value={speechStyle} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setSpeechStyle(event.currentTarget.value)} /><MemoryInput multiline label="一段共同回忆（可选）" value={sharedMemory} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setSharedMemory(event.currentTarget.value)} /><label className={styles.fileField}>TA 的照片（仅本次预览） <span>{selectedFile?.name || "未选择；不会上传或保存"}</span><input type="file" accept="image/*" onChange={chooseFile} /></label><div className={styles.actions}><MemoryButton type="submit">让 TA 出现</MemoryButton><button className={styles.textButton} type="button" onClick={() => setStage("home")}>退出预览</button></div></form>}
 
             {stage === "preview-generating" && <div className={styles.copyBlock} role="status" aria-live="polite"><p className={styles.kicker}>正在靠近</p><h1 id={titleId}>{displayName} 正在出现。</h1><p id="flow-description">仅展示视觉节奏；不代表真实资料、媒体或聊天服务已经生成。</p><div className={styles.progressLine} aria-hidden="true"><span /></div><button className={styles.textButton} type="button" onClick={() => { setError("视觉预览中的生成步骤未完成。真实资料与会话均未改变。"); setStage("preview-failed"); }}>查看生成失败状态</button></div>}
 
-            {stage === "preview-greeting" && <div className={styles.copyBlock}><p className={styles.kicker}>视觉预览 · 第一句问候</p><h1 id={titleId}>你好，{displayName}。</h1><p className={styles.greeting} id="flow-description">“{greeting}”</p><div className={styles.actions}><MemoryButton variant="secondary" onClick={() => setStage("preview-create")}>重新预览</MemoryButton><button className={styles.textButton} type="button" onClick={() => setStage("home")}>退出预览</button></div></div>}
+            {stage === "preview-greeting" && <div className={styles.copyBlock}><p className={styles.kicker}>视觉预览 · 第一句问候</p><h1 id={titleId}>你好，{preferredAddress || displayName}。</h1><p className={styles.greeting} id="flow-description">“{catchPhrases || greeting}”</p><div className={styles.actions}><MemoryButton onClick={() => setStage("preview-chat")}>继续聊聊</MemoryButton><button className={styles.textButton} type="button" onClick={() => setStage("preview-create")}>重新预览</button></div></div>}
+            {stage === "preview-chat" && <div className={styles.copyBlock}><p className={styles.kicker}>视觉预览 · 两轮对话</p><h1 id={titleId}>慢慢说，我在听。</h1><p className={styles.greeting}>你：我想起了{sharedMemory || "我们一起走过的那段日子"}。</p><div className={styles.previewReply}><MemoryAvatar image={portraitUrl} initials={displayName} alt={`${displayName} 的照片`} presence="online" size={40} /><p className={styles.greeting}>{displayName}：{speechStyle || "我还是喜欢慢慢听你说。"}</p></div><p className={styles.greeting}>你：下次我们还这样聊，好吗？</p><div className={styles.previewReply}><MemoryAvatar image={portraitUrl} initials={displayName} alt={`${displayName} 的照片`} presence="online" size={40} /><p className={styles.greeting}>{displayName}：好，我会记得你今天说的话。</p></div><div className={styles.trustNotice}><strong>忆见初遇体验</strong><span>49元 · 30天 · 1个 TA · 100次 AI 回复。一次性购买，不自动续费。</span></div><div className={styles.actions}><MemoryButton variant="secondary" onClick={() => setStage("preview-create")}>重新预览</MemoryButton><button className={styles.textButton} type="button" onClick={() => setStage("home")}>退出预览</button></div></div>}
 
             {stage === "preview-failed" && <div className={styles.copyBlock} role="alert"><p className={styles.kicker}>视觉预览 · 生成失败</p><h1 id={titleId}>这次没有顺利出现。</h1><p id="flow-description">{error}</p><div className={styles.actions}>{!previewRetried && <MemoryButton variant="primary" onClick={retryPreviewGeneration}>再试一次</MemoryButton>}<button className={styles.textButton} type="button" onClick={() => setStage("preview-create")}>回到输入</button></div></div>}
           </section>

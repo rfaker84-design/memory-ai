@@ -136,6 +136,53 @@ test("memory-chat replays one completed turn without duplicate messages or provi
   assert.equal(store.assistantMessages.length, 1);
 });
 
+test("memory-chat forwards only the selected TA's verified profile into continuous chat", async () => {
+  const store = createTurnStore();
+  const selectedMemory: Memory = {
+    ...memory,
+    name: "Selected TA",
+    relationship: "mentor",
+    lifeStory: "SELECTED_TA_LIFE_STORY",
+    personalityProfile: "SELECTED_TA_PERSONALITY",
+    speechStyle: "SELECTED_TA_STYLE",
+    catchPhrases: "SELECTED_TA_CATCHPHRASE",
+  };
+  let receivedRouteContext: unknown;
+  const handler = createMemoryChatHandler(
+    () => ({
+      async getMemoryForUser(id, owner) {
+        return id === memoryId && owner === userId ? selectedMemory : null;
+      },
+    }),
+    () => store.service,
+    () => ({
+      async generateReply(input) {
+        receivedRouteContext = input.routeContext;
+        return { content: "Selected TA reply" };
+      },
+    }),
+    async () => ({ userId: "internal-owner", externalUserId: userId, expiresAt: "2026-07-24T00:00:00.000Z" }),
+    async () => false,
+    async () => ({ rateAllowed: true, concurrencyAllowed: true }),
+  );
+
+  const response = await handler(request(
+    { memoryId, question: "Use the selected TA profile." },
+    "memory-chat-selected-ta-profile-key-0001",
+  ));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(receivedRouteContext, {
+    memoryName: "Selected TA",
+    relationship: "mentor",
+    lifeStory: "SELECTED_TA_LIFE_STORY",
+    personalityProfile: "SELECTED_TA_PERSONALITY",
+    speechStyle: "SELECTED_TA_STYLE",
+    catchPhrases: "SELECTED_TA_CATCHPHRASE",
+  });
+  assert.doesNotMatch(JSON.stringify(receivedRouteContext), /OTHER_TA_/);
+});
+
 test("memory-chat provider failure leaves no messages and the same key safely retries", async () => {
   const store = createTurnStore();
   let providerCalls = 0;
