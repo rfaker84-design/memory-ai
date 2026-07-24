@@ -17,8 +17,9 @@ const productionEnvironment: NodeJS.ProcessEnv = {
   AUTH_ALLOWED_ORIGIN: "https://memoryai.test",
   AUTH_TRUST_NGINX_PROXY: "true",
   AUTH_PROXY_LOOPBACK_ONLY: "true",
-  LLM_PROVIDER: "openai",
-  OPENAI_API_KEY: "test-provider-key",
+  LLM_PROVIDER: "deepseek",
+  DEEPSEEK_API_KEY: "test-provider-key",
+  DEEPSEEK_MODEL: "deepseek-chat",
 };
 
 test("production startup accepts core authentication configuration without SMS capability variables", () => {
@@ -34,8 +35,9 @@ test("production authentication startup configuration fails closed for every req
     ["AUTH_ALLOWED_ORIGIN", "AUTH_ALLOWED_ORIGIN_NOT_CONFIGURED"],
     ["AUTH_TRUST_NGINX_PROXY", "AUTH_TRUST_NGINX_PROXY_NOT_CONFIGURED"],
     ["AUTH_PROXY_LOOPBACK_ONLY", "AUTH_PROXY_LOOPBACK_CONTRACT_NOT_CONFIGURED"],
-    ["LLM_PROVIDER", "LLM_PROVIDER_NOT_CONFIGURED"],
-    ["OPENAI_API_KEY", "LLM_PROVIDER_CREDENTIALS_NOT_CONFIGURED"],
+    ["LLM_PROVIDER", "DEEPSEEK_PROVIDER_REQUIRED"],
+    ["DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY_NOT_CONFIGURED"],
+    ["DEEPSEEK_MODEL", "DEEPSEEK_MODEL_NOT_CONFIGURED"],
   ];
 
   for (const [name, code] of cases) {

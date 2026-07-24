@@ -189,6 +189,7 @@ test("formal Session ownership and public health contracts remain explicit", asy
   const { GET: aiHealth } = await import("./health/ai/route");
   const response = await aiHealth();
   const body = await response.json() as Record<string, unknown>;
-  assert.deepEqual(Object.keys(body), ["status"]);
-  assert.doesNotMatch(JSON.stringify(body), /key|provider|registered|secret/i);
+  assert.deepEqual(Object.keys(body).sort(), ["llmProvider", "status"]);
+  assert.equal(body.llmProvider, "mock");
+  assert.doesNotMatch(JSON.stringify(body), /key|registered|secret/i);
 });

@@ -55,11 +55,14 @@ function requirePostgresUrl(environment: NodeJS.ProcessEnv): void {
 }
 
 function requireFormalLLM(environment: NodeJS.ProcessEnv): void {
-  if (environment.LLM_PROVIDER?.trim() !== "openai") {
-    throw new ProductionAuthConfigurationError("LLM_PROVIDER_NOT_CONFIGURED");
+  if (environment.LLM_PROVIDER?.trim() !== "deepseek") {
+    throw new ProductionAuthConfigurationError("DEEPSEEK_PROVIDER_REQUIRED");
   }
-  if (!(environment.DEEPSEEK_API_KEY?.trim() || environment.OPENAI_API_KEY?.trim())) {
-    throw new ProductionAuthConfigurationError("LLM_PROVIDER_CREDENTIALS_NOT_CONFIGURED");
+  if (!environment.DEEPSEEK_API_KEY?.trim()) {
+    throw new ProductionAuthConfigurationError("DEEPSEEK_API_KEY_NOT_CONFIGURED");
+  }
+  if (!environment.DEEPSEEK_MODEL?.trim()) {
+    throw new ProductionAuthConfigurationError("DEEPSEEK_MODEL_NOT_CONFIGURED");
   }
 }
 

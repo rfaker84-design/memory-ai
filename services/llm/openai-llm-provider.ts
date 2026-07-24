@@ -6,18 +6,13 @@ export class OpenAILLMProvider implements LLMProvider {
   private client: OpenAI;
 
   constructor() {
-    const apiKey = process.env.DEEPSEEK_API_KEY || process.env.OPENAI_API_KEY || "";
-    const baseURL = process.env.DEEPSEEK_API_KEY
-      ? "https://api.deepseek.com/v1"
-      : process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+    const apiKey = process.env.OPENAI_API_KEY || "";
+    const baseURL = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
     this.client = new OpenAI({ apiKey, baseURL });
   }
 
   async generate(input: LLMGenerateInput): Promise<LLMGenerateResult> {
-    const isDeepSeek = !!process.env.DEEPSEEK_API_KEY;
-    const model =
-      process.env.AI_MODEL ||
-      (isDeepSeek ? "deepseek-v4-pro" : "gpt-5.5");
+    const model = process.env.OPENAI_MODEL || "gpt-5.5";
 
     const response = await this.client.chat.completions.create({
       model,

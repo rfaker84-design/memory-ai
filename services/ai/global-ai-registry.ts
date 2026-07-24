@@ -1,8 +1,7 @@
 ﻿import { AIProviderRegistry } from "./ai-provider-factory";
-import { AIProviderType } from "./provider-types";
 import { LLMAIProviderAdapter } from "../llm/llm-ai-provider-adapter";
 import { MockLLMProvider } from "../llm/mock-llm-provider";
-import { OpenAILLMProvider } from "../llm/openai-llm-provider";
+import { DeepSeekLLMProvider } from "../llm/deepseek-llm-provider";
 import { TTSAIProviderAdapter } from "../tts/tts-ai-provider-adapter";
 import { MockTTSProvider } from "../tts/mock-tts-provider";
 import { TencentTTSProvider } from "../tts/tencent-tts-provider";
@@ -16,17 +15,33 @@ import { OCRAIProviderAdapter } from "../ocr/ocr-ai-provider-adapter";
 import { MockOCRProvider } from "../ocr/mock-ocr-provider";
 
 let registryInstance: AIProviderRegistry | null = null;
+const llmAdapters = new Map<string, LLMAIProviderAdapter>();
+
+const llmAdapterFactories: Record<string, () => LLMAIProviderAdapter> = {
+  mock: () => new LLMAIProviderAdapter("mock", new MockLLMProvider()),
+  deepseek: () => new LLMAIProviderAdapter("deepseek", new DeepSeekLLMProvider()),
+};
+
+/**
+ * LLM SDK clients are constructed only after their named provider was
+ * selected. Isolated mock tests therefore never instantiate external SDKs.
+ */
+export function getLLMAIProviderAdapter(name: string): LLMAIProviderAdapter | undefined {
+  const existing = llmAdapters.get(name);
+  if (existing) return existing;
+
+  const factory = llmAdapterFactories[name];
+  if (!factory) return undefined;
+
+  const adapter = factory();
+  llmAdapters.set(name, adapter);
+  return adapter;
+}
 
 export function getAIProviderRegistry(): AIProviderRegistry {
   if (!registryInstance) {
     registryInstance = new AIProviderRegistry();
 
-    registryInstance.register(
-      new LLMAIProviderAdapter("mock", new MockLLMProvider())
-    );
-    registryInstance.register(
-      new LLMAIProviderAdapter("openai", new OpenAILLMProvider())
-    );
     registryInstance.register(
       new TTSAIProviderAdapter("mock", new MockTTSProvider())
     );
