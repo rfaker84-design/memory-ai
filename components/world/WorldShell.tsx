@@ -19,13 +19,24 @@ import {
 } from "../../src/core/tab/tab-store";
 import BottomTab from "../ui/BottomTab";
 import HomeV3 from "./HomeV3";
+import homeLoginStyles from "./HomeLogin.module.css";
 
 import {
   loadPersonality, savePersonality, transitionToTab,
   evolvePersonality, pickTabSpeech, TAB_PERSONAS,
   type EntityPersonality,
 } from "../../src/core/personality/entity-personality-core";
-import MemorySoulBody from "../memory/MemorySoulBody";
+import {
+  LOGIN_AGREEMENT_NOTICE,
+  loadWeChatProviderState,
+  resolveWeChatLoginAction,
+  smsSendFailureNotice,
+  type WeChatProviderState,
+} from "../../src/components/auth/loginExperienceClient";
+
+const WECHAT_LOGIN_VISUAL_PREVIEW_AVAILABLE =
+  process.env.NODE_ENV !== "production"
+  && process.env.NEXT_PUBLIC_MEMORYAI_LOGIN_VISUAL_STATE === "wechat-available";
 
 /* ============================================================
    蹇嗚 MemoryAI 鈥?Single Dream Space / Four Tab States
@@ -246,9 +257,6 @@ export function OriginalHomeLogin({ onAuthenticated, onPreview }: { onAuthentica
       >
         <DreamScene entities={[]} onEntityClick={() => undefined} tabMode="home" personalities={{}} />
       </Canvas>
-      <div style={{ position: "absolute", inset: 0, zIndex: 5, pointerEvents: "none" }}>
-        <MemorySoulBody state="empty" />
-      </div>
       <HomeOverlay onLoginSuccess={onAuthenticated} onPreview={onPreview} />
       <div style={{ position: "fixed", bottom: 62, left: 0, right: 0, zIndex: 15, textAlign: "center", pointerEvents: "none" }}>
         <span style={{ fontSize: 9, fontWeight: 300, color: "rgba(255,210,166,0.25)", letterSpacing: "0.04em" }}>
@@ -276,6 +284,19 @@ function CameraDrift({ tabMode }: { tabMode: TabMode }) {
    HOME OVERLAY 鈥?warm memory welcome
    鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲 */
 
+function WeChatMark() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 32 28" width="24" height="22">
+      <path fill="#07C160" d="M12.8 2C5.73 2 0 6.57 0 12.2c0 3.2 1.86 6.05 4.76 7.92l-1.2 3.6 4.17-2.08c1.57.5 3.28.77 5.07.77.54 0 1.07-.03 1.59-.08a8.67 8.67 0 0 1-.53-2.97c0-5.35 4.9-9.72 11.07-9.98C23.38 5.1 18.58 2 12.8 2Z" />
+      <path fill="#07C160" d="M32 19.27c0-4.36-4.5-7.9-10.06-7.9s-10.07 3.54-10.07 7.9 4.51 7.9 10.07 7.9c1.42 0 2.77-.23 4-.64l3.3 1.65-.94-2.88c2.25-1.45 3.7-3.62 3.7-6.03Z" />
+      <circle cx="8.4" cy="10.1" r="1.25" fill="#0B0A08" />
+      <circle cx="16.3" cy="10.1" r="1.25" fill="#0B0A08" />
+      <circle cx="18.4" cy="17.5" r="1.05" fill="#0B0A08" />
+      <circle cx="25.2" cy="17.5" r="1.05" fill="#0B0A08" />
+    </svg>
+  );
+}
+
 function HomeOverlay({ onLoginSuccess, onPreview }: { onLoginSuccess: () => void; onPreview?: () => void }) {
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
@@ -284,6 +305,8 @@ function HomeOverlay({ onLoginSuccess, onPreview }: { onLoginSuccess: () => void
   const [countdown, setCountdown] = useState(0);
   const [challengeId, setChallengeId] = useState("");
   const [notice, setNotice] = useState("");
+  const [agreementAccepted, setAgreementAccepted] = useState(false);
+  const [wechatProviderState, setWechatProviderState] = useState<WeChatProviderState>("checking");
 
   const isChinaMobile = (value: string) => {
     const compact = value.trim().replace(/[\s()-]/g, "");
@@ -299,6 +322,10 @@ function HomeOverlay({ onLoginSuccess, onPreview }: { onLoginSuccess: () => void
 
   const sendCode = async () => {
     if (sending) return;
+    if (!agreementAccepted) {
+      setNotice(LOGIN_AGREEMENT_NOTICE);
+      return;
+    }
     if (!isChinaMobile(phone)) {
       setNotice("请输入有效的中国大陆手机号。");
       return;
@@ -317,12 +344,8 @@ function HomeOverlay({ onLoginSuccess, onPreview }: { onLoginSuccess: () => void
         setChallengeId(data.challengeId);
         setStep('code');
         setCountdown(60);
-      } else if (res.status === 429) {
-        setNotice("请求过于频繁，请稍后再试。");
-      } else if (res.status === 400) {
-        setNotice("请输入有效的中国大陆手机号。");
       } else {
-        setNotice("短信登录暂时不可用，请稍后重试。");
+        setNotice(smsSendFailureNotice(res.status));
       }
     } catch {
       setNotice("网络连接暂时中断，请检查网络后重试。");
@@ -336,6 +359,27 @@ function HomeOverlay({ onLoginSuccess, onPreview }: { onLoginSuccess: () => void
     const t = setInterval(() => setCountdown(c => c - 1), 1000);
     return () => clearInterval(t);
   }, [countdown]);
+
+  useEffect(() => {
+    if (WECHAT_LOGIN_VISUAL_PREVIEW_AVAILABLE) {
+      setWechatProviderState("available");
+      return;
+    }
+    const controller = new AbortController();
+    void loadWeChatProviderState(fetch, controller.signal).then((state) => {
+      if (!controller.signal.aborted) setWechatProviderState(state);
+    });
+    return () => controller.abort();
+  }, []);
+
+  const beginWeChatLogin = () => {
+    const action = resolveWeChatLoginAction(agreementAccepted, wechatProviderState);
+    if (action.type === "notice") {
+      setNotice(action.message);
+      return;
+    }
+    window.location.assign(action.href);
+  };
 
   const verifyCode = async () => {
     if (code.length !== 6 || !challengeId) return;
@@ -363,40 +407,32 @@ function HomeOverlay({ onLoginSuccess, onPreview }: { onLoginSuccess: () => void
   };
 
   return (
-    <div style={{
-      position: "absolute", inset: 0, zIndex: 10,
-      display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "flex-end",
-      padding: "0 32px 140px",
-    }}>
+    <div className={homeLoginStyles.overlay}>
       {/* Welcome text */}
-      <div style={{
-        color: "#FFF3E8", fontSize: 22, fontWeight: 300,
-        letterSpacing: "0.06em", marginBottom: 8,
-        textAlign: "center",
-      }}>
+      <div className={homeLoginStyles.title}>
         你的记忆世界
       </div>
-      <div style={{
-        color: "#8a7060", fontSize: 13, fontWeight: 300,
-        marginBottom: 40, textAlign: "center",
-      }}>
+      <div className={homeLoginStyles.subtitle}>
         每一次回来，都是重逢      </div>
 
       {/* Login card */}
-      <div style={{
-        width: "100%", maxWidth: 320,
-        background: "rgba(11,10,8,0.7)",
-        backdropFilter: "blur(20px)",
-        WebkitBackdropFilter: "blur(20px)",
-        borderRadius: 20,
-        border: "0.5px solid rgba(255,210,166,0.08)",
-        padding: "28px 24px",
-        display: "flex", flexDirection: "column", gap: 16,
-      }}>
-        {notice && <p role="alert" style={{ margin: 0, color: "rgba(255,210,166,0.72)", fontSize: 12, lineHeight: 1.6, textAlign: "center" }}>{notice}</p>}
+      <div className={homeLoginStyles.card}>
+        {notice && <p role="alert" className={homeLoginStyles.notice}>{notice}</p>}
         {step === "phone" ? (
           <>
+            {wechatProviderState === "available" && (
+              <>
+                <button type="button" onClick={beginWeChatLogin} className={homeLoginStyles.wechatButton}>
+                  <WeChatMark />
+                  <span>微信一键登录</span>
+                </button>
+                <div role="separator" className={homeLoginStyles.divider}>
+                  <span className={homeLoginStyles.dividerLine} />
+                  <span>或使用手机号登录</span>
+                  <span className={homeLoginStyles.dividerLine} />
+                </div>
+              </>
+            )}
             <input
               type="tel"
               value={phone}
@@ -406,28 +442,45 @@ function HomeOverlay({ onLoginSuccess, onPreview }: { onLoginSuccess: () => void
               autoComplete="tel"
               maxLength={16}
               autoFocus
-              style={{
-                height: 48, padding: "0 18px", borderRadius: 14,
-                border: "0.5px solid rgba(255,210,166,0.12)",
-                background: "rgba(255,210,166,0.04)",
-                color: "#FFD2A6", fontSize: 15, outline: "none",
-                fontWeight: 300, letterSpacing: "0.04em",
-              }}
+              className={homeLoginStyles.phoneInput}
             />
-            <button type="button" onClick={sendCode} disabled={!phone || sending} style={{
-              height: 48, borderRadius: 14, border: "none",
-              background: phone ? "rgba(214,168,110,0.2)" : "rgba(255,255,255,0.03)",
-              color: phone ? "#FFD2A6" : "rgba(255,255,255,0.2)",
-              fontSize: 15, fontWeight: 400, cursor: phone ? "pointer" : "default",
-              letterSpacing: "0.06em",
-              transition: "all 0.3s ease",
-            }}>
+            <button
+              type="button"
+              onClick={sendCode}
+              disabled={!phone || sending}
+              data-active={Boolean(phone && !sending)}
+              className={homeLoginStyles.smsButton}
+            >
               {sending ? "发送中..." : "获取验证码"}
             </button>
-            {onPreview && <button type="button" onClick={onPreview} style={{
-              alignSelf: "center", background: "none", border: "none", color: "rgba(255,210,166,0.44)",
-              fontSize: 11, letterSpacing: "0.04em", cursor: "pointer", padding: "4px 8px",
-            }}>开发视觉预览</button>}
+            <div className={homeLoginStyles.agreementRow}>
+              <span className={homeLoginStyles.checkControl}>
+                <input
+                  id="login-agreement"
+                  type="checkbox"
+                  checked={agreementAccepted}
+                  onChange={(event) => {
+                    setAgreementAccepted(event.currentTarget.checked);
+                    if (event.currentTarget.checked && notice === LOGIN_AGREEMENT_NOTICE) setNotice("");
+                  }}
+                  aria-describedby="login-account-note"
+                  className={homeLoginStyles.checkboxInput}
+                />
+                <span className={homeLoginStyles.checkboxVisual} aria-hidden="true" />
+              </span>
+              <span>
+                <label htmlFor="login-agreement" className={homeLoginStyles.agreementLabel}>我已阅读并同意</label>
+                <a href="/terms" className={homeLoginStyles.legalLink}>《用户协议》</a>
+                和
+                <a href="/privacy" className={homeLoginStyles.legalLink}>《隐私政策》</a>
+              </span>
+            </div>
+            <p id="login-account-note" className={homeLoginStyles.accountNote}>
+              未注册的手机号验证后将自动创建忆见账号
+            </p>
+            {process.env.NODE_ENV !== "production" && onPreview && (
+              <button type="button" onClick={onPreview} className={homeLoginStyles.previewButton}>开发视觉预览</button>
+            )}
           </>
         ) : (
           <>
@@ -804,16 +857,7 @@ export default function WorldShell() {
       </Canvas>
 
       {currentMode === "home" && !loggedIn && (
-        <>
-          {/* ═══ 记忆灵魂体 — 登录界面 empty 状态背景 ═══ */}
-          <div style={{
-            position: "absolute", inset: 0, zIndex: 5,
-            pointerEvents: "none",
-          }}>
-            <MemorySoulBody state="empty" />
-          </div>
-          <HomeOverlay onLoginSuccess={() => setLoggedIn(true)} />
-        </>
+        <HomeOverlay onLoginSuccess={() => setLoggedIn(true)} />
       )}
       {loggedIn && currentMode === "home" && (
         <HomeV3 />

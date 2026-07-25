@@ -1,6 +1,7 @@
 ﻿import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  devIndicators: false,
   // Standalone output for PM2 deployment
   output: "standalone",
   // Increase serverless function timeout for AI/TTS calls

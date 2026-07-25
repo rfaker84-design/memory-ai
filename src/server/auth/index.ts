@@ -8,3 +8,8 @@ export * from "./session";
 export * from "../security/auth-cache";
 export * from "./sms/sms-verification-provider";
 export { getSmsVerificationProvider } from "./sms/tencent-sms-verification-provider";
+export * from "./wechat/wechat-auth-config";
+export * from "./wechat/wechat-auth-error";
+export * from "./wechat/wechat-auth-provider";
+export * from "./wechat/wechat-auth-repository";
+export * from "./wechat/wechat-auth-service";

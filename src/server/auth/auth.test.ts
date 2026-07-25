@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { SignJWT } from "jose";
+import { decodeJwt, SignJWT } from "jose";
 import { NextRequest } from "next/server";
 
 import { createSendCodeHandler } from "@/app/api/auth/send-code/_handler";
@@ -305,7 +305,12 @@ test("session rejects bad signatures and expired tokens", async () => {
     externalUserId: "phone:test-hash",
   });
   assert.ok(await verifySessionToken(valid));
-  assert.equal(await verifySessionToken(`${valid.slice(0, -1)}x`), null);
+  const [header, payload, signature] = valid.split(".");
+  const tamperedSignature = `${signature[0] === "A" ? "B" : "A"}${signature.slice(1)}`;
+  assert.equal(
+    await verifySessionToken(`${header}.${payload}.${tamperedSignature}`),
+    null,
+  );
 
   const expired = await issueSession({
     userId: "00000000-0000-4000-8000-000000000001",
@@ -313,6 +318,41 @@ test("session rejects bad signatures and expired tokens", async () => {
     now: new Date("2000-01-01T00:00:00.000Z"),
   });
   assert.equal(await verifySessionToken(expired), null);
+});
+
+test("same-user Sessions issued in the same second rotate with unpredictable jti values", async () => {
+  const input = {
+    userId: "00000000-0000-4000-8000-000000000001",
+    externalUserId: "phone:test-hash",
+    now: new Date("2026-07-25T00:00:00.000Z"),
+  };
+  const first = await issueSession(input);
+  const second = await issueSession(input);
+  assert.notEqual(first, second);
+  const firstJti = decodeJwt(first).jti;
+  const secondJti = decodeJwt(second).jti;
+  assert.match(
+    firstJti ?? "",
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+  );
+  assert.match(
+    secondJti ?? "",
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+  );
+  assert.notEqual(firstJti, secondJti);
+  assert.ok(await verifySessionToken(first));
+  assert.ok(await verifySessionToken(second));
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const stillValidLegacySession = await signSessionClaims({
+    sub: input.userId,
+    externalUserId: input.externalUserId,
+    iss: "memoryai",
+    aud: "memoryai-web",
+    iat: nowSeconds,
+    exp: nowSeconds + AUTH_POLICY.sessionTtlSeconds,
+  });
+  assert.ok(await verifySessionToken(stillValidLegacySession));
 });
 
 async function signSessionClaims(claims: Record<string, unknown>): Promise<string> {

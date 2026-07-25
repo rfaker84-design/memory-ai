@@ -4,9 +4,20 @@ import { DatabaseDependencyError, safeDatabaseErrorLog } from "@/src/server/data
 
 import { AuthConfigurationError } from "./crypto";
 import { SmsProviderError } from "./sms/sms-verification-provider";
+import { WeChatAuthError } from "./wechat/wechat-auth-error";
 import { authJson } from "../security/auth-cache";
 
 export function authRouteError(error: unknown): NextResponse {
+  if (error instanceof WeChatAuthError) {
+    const status = error.code === "WECHAT_AUTH_UNAVAILABLE"
+      ? 503
+      : error.code === "WECHAT_AUTH_ACCOUNT_CONFLICT"
+        ? 409
+        : error.code === "WECHAT_AUTH_FAILED"
+          ? 502
+          : 400;
+    return authJson({ error: error.code }, { status });
+  }
   if (error instanceof AuthConfigurationError) {
     if (error.code === "ORIGIN_NOT_ALLOWED") {
       return authJson({ error: "ORIGIN_NOT_ALLOWED" }, { status: 403 });

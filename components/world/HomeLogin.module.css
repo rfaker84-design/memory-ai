@@ -1,0 +1,328 @@
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 42px 20px 82px;
+  isolation: isolate;
+}
+
+.overlay::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  width: min(520px, 108vw);
+  height: min(650px, 82vh);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0.64) 0%,
+    rgba(4, 3, 2, 0.42) 48%,
+    rgba(4, 3, 2, 0) 76%
+  );
+  filter: blur(14px);
+  pointer-events: none;
+}
+
+.title {
+  margin: 0 0 8px;
+  color: #fff3e8;
+  font-size: 24px;
+  font-weight: 300;
+  letter-spacing: 0.06em;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.subtitle {
+  margin: 0 0 24px;
+  color: rgba(218, 190, 166, 0.62);
+  font-size: 13px;
+  font-weight: 300;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.card {
+  display: flex;
+  width: 100%;
+  max-width: 350px;
+  flex-direction: column;
+  gap: 13px;
+  padding: 22px 22px;
+  border: 1px solid rgba(255, 210, 166, 0.1);
+  border-radius: 22px;
+  background: rgba(11, 10, 8, 0.76);
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 243, 232, 0.025);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.notice {
+  margin: 0;
+  color: rgba(255, 218, 181, 0.86);
+  font-size: 13px;
+  line-height: 1.65;
+  text-align: center;
+}
+
+.wechatButton,
+.smsButton {
+  width: 100%;
+  height: 50px;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+.wechatButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid rgba(255, 210, 166, 0.14);
+  background: rgba(255, 243, 232, 0.045);
+  color: #fff3e8;
+  cursor: pointer;
+}
+
+.wechatButton:hover {
+  border-color: rgba(255, 210, 166, 0.24);
+  background: rgba(255, 243, 232, 0.075);
+}
+
+.wechatButton:active,
+.smsButton:not(:disabled):active {
+  transform: scale(0.99);
+}
+
+.wechatButton:focus-visible,
+.smsButton:focus-visible,
+.phoneInput:focus-visible,
+.checkboxInput:focus-visible + .checkboxVisual,
+.legalLink:focus-visible {
+  outline: 2px solid rgba(255, 210, 166, 0.66);
+  outline-offset: 2px;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: rgba(229, 200, 175, 0.56);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.dividerLine {
+  height: 1px;
+  flex: 1;
+  background: rgba(255, 210, 166, 0.1);
+}
+
+.phoneInput {
+  width: 100%;
+  height: 50px;
+  padding: 0 18px;
+  border: 1px solid rgba(255, 210, 166, 0.16);
+  border-radius: 14px;
+  outline: none;
+  background: rgba(255, 243, 232, 0.045);
+  color: #ffd2a6;
+  font-size: 16px;
+  font-weight: 300;
+  letter-spacing: 0.035em;
+}
+
+.phoneInput::placeholder {
+  color: rgba(225, 198, 175, 0.5);
+}
+
+.smsButton {
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.smsButton[data-active="true"] {
+  border-color: rgba(214, 168, 110, 0.08);
+  background: rgba(214, 168, 110, 0.2);
+  color: #ffd2a6;
+  cursor: pointer;
+}
+
+.agreementRow {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  align-items: start;
+  gap: 9px;
+  color: rgba(239, 215, 194, 0.76);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.checkControl {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+}
+
+.checkboxInput {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.checkboxVisual {
+  position: absolute;
+  inset: 1px;
+  border: 1px solid rgba(255, 210, 166, 0.48);
+  border-radius: 5px;
+  background: rgba(255, 243, 232, 0.035);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.checkboxInput:checked + .checkboxVisual {
+  border-color: #d6a86e;
+  background: #d6a86e;
+  box-shadow: 0 0 18px rgba(214, 168, 110, 0.18);
+}
+
+.checkboxInput:checked + .checkboxVisual::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 5px;
+  height: 9px;
+  border: solid #17110c;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.agreementLabel {
+  cursor: pointer;
+}
+
+.legalLink {
+  border-radius: 2px;
+  color: #e2b77f;
+  text-decoration: underline;
+  text-decoration-color: rgba(226, 183, 127, 0.56);
+  text-underline-offset: 3px;
+}
+
+.accountNote {
+  margin: 0;
+  color: rgba(225, 202, 183, 0.58);
+  font-size: 12px;
+  line-height: 1.65;
+  text-align: center;
+}
+
+.previewButton {
+  align-self: center;
+  padding: 4px 8px;
+  border: none;
+  background: none;
+  color: rgba(255, 210, 166, 0.46);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+@media (min-width: 900px) {
+  .overlay {
+    padding: 64px 32px 96px;
+  }
+
+  .overlay::before {
+    width: 760px;
+    height: 720px;
+    background: radial-gradient(
+      ellipse at center,
+      rgba(0, 0, 0, 0.66) 0%,
+      rgba(4, 3, 2, 0.4) 50%,
+      rgba(4, 3, 2, 0) 78%
+    );
+  }
+
+  .title {
+    margin-bottom: 10px;
+    font-size: 34px;
+    letter-spacing: 0.055em;
+  }
+
+  .subtitle {
+    margin-bottom: 30px;
+    font-size: 16px;
+  }
+
+  .card {
+    max-width: 440px;
+    gap: 15px;
+    padding: 32px 34px;
+    border-radius: 26px;
+  }
+
+  .wechatButton,
+  .smsButton,
+  .phoneInput {
+    height: 56px;
+    border-radius: 16px;
+    font-size: 17px;
+  }
+
+  .divider {
+    font-size: 13px;
+  }
+
+  .notice,
+  .agreementRow,
+  .accountNote {
+    font-size: 13.5px;
+  }
+}
+
+@media (max-height: 720px) and (max-width: 899px) {
+  .overlay {
+    justify-content: flex-start;
+    padding-top: 28px;
+    padding-bottom: 70px;
+  }
+
+  .title {
+    font-size: 22px;
+  }
+
+  .subtitle {
+    margin-bottom: 16px;
+  }
+
+  .card {
+    gap: 10px;
+    padding-top: 18px;
+    padding-bottom: 18px;
+  }
+}

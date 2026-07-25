@@ -14,14 +14,14 @@ export const viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
-  themeColor: "#F6F1E8",
+  themeColor: "#0B0A08",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="zh-CN" style={{ colorScheme: "light" }}>
       <body className="antialiased"
-        style={{ background: "var(--bg-warm, #F6F1E8)", margin: 0, padding: 0 }}>
+        style={{ background: "#0B0A08", margin: 0, padding: 0 }}>
         <MobileAppShell>{children}</MobileAppShell>
       </body>
     </html>

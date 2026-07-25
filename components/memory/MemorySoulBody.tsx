@@ -1,15 +1,15 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 /* ============================================================
    忆见 MemoryAI — MemorySoulBody
    记忆灵魂体 — 从模糊轮廓到亲人形象的生成动画
-   4 状态：empty / collecting / forming / ready
+   3 状态：collecting / forming / ready
    纯 CSS + SVG，无 Three.js
    ============================================================ */
 
-export type SoulState = "empty" | "collecting" | "forming" | "ready";
+export type SoulState = "collecting" | "forming" | "ready";
 
 interface Props {
   state: SoulState;
@@ -129,16 +129,6 @@ export default function MemorySoulBody({
     >
       {/* ═══ 全局 CSS ═══ */}
       <style>{`
-        @keyframes soulEmptyBreath {
-          0%, 100% { opacity: 0.4; filter: drop-shadow(0 0 30px rgba(180,200,255,0.3)) blur(3px); transform: scale(0.98); }
-          50% { opacity: 0.75; filter: drop-shadow(0 0 50px rgba(200,220,255,0.45)) blur(1.5px); transform: scale(1.02); }
-        }
-        @keyframes soulFlicker {
-          0%, 100% { opacity: 0.5; }
-          30% { opacity: 0.82; }
-          55% { opacity: 0.4; }
-          80% { opacity: 0.78; }
-        }
         @keyframes soulCollectingPulse {
           0%, 100% { opacity: 0.35; filter: drop-shadow(0 0 40px rgba(200,210,255,0.3)) blur(2px); }
           50% { opacity: 0.9; filter: drop-shadow(0 0 70px rgba(220,230,255,0.5)) blur(0.5px); }
@@ -182,9 +172,7 @@ export default function MemorySoulBody({
           style={{
             width: "100%",
             height: "100%",
-            animation: state === "empty"
-              ? "soulEmptyBreath 4s ease-in-out infinite, soulFlicker 5.5s ease-in-out infinite"
-              : state === "collecting"
+            animation: state === "collecting"
               ? "soulCollectingPulse 2.5s ease-in-out infinite"
               : state === "forming"
               ? "soulForming 2s ease-in-out forwards"
@@ -263,7 +251,6 @@ export default function MemorySoulBody({
         textAlign: "center",
         transition: "color 1s ease",
       }}>
-        {state === "empty" && "等待一段记忆被唤醒"}
         {state === "collecting" && "记忆正在靠近"}
         {state === "forming" && "Ta的轮廓正在浮现"}
         {state === "ready" && (

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { jwtVerify, SignJWT } from "jose";
 import type { NextRequest, NextResponse } from "next/server";
 
@@ -29,6 +31,7 @@ export async function issueSession(input: {
     .setAudience(AUTH_SESSION_AUDIENCE)
     .setIssuedAt(Math.floor(now.getTime() / 1000))
     .setExpirationTime(Math.floor(now.getTime() / 1000) + AUTH_POLICY.sessionTtlSeconds)
+    .setJti(randomUUID())
     .sign(sessionSecret());
 }
 

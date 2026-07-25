@@ -16,6 +16,11 @@ const EXACT_FORMAL_PATHS = new Set([
   "/api/auth/verify-code",
   "/api/auth/session",
   "/api/auth/logout",
+  "/api/auth/wechat/status",
+  "/api/auth/wechat/start",
+  "/api/auth/wechat/callback",
+  "/api/auth/wechat/cancel",
+  "/api/auth/wechat/failure",
   "/api/memories",
   "/api/memory-chat",
   "/api/consents",
@@ -113,7 +118,7 @@ test("middleware enforces the formal API allowlist before route execution", asyn
 
 test("every tracked non-formal Route Handler is a route-level 410", async () => {
   const routes = trackedRoutes();
-  assert.equal(routes.length, 95, "the audit must enumerate the complete tracked API surface");
+  assert.equal(routes.length, 100, "the audit must enumerate the complete tracked API surface");
 
   for (const { file, pathname } of routes) {
     const formal = isFormalApiPath(pathname);
@@ -155,6 +160,7 @@ test("formal Session ownership and public health contracts remain explicit", asy
     verifyCode: readFileSync("app/api/auth/verify-code/route.ts", "utf8"),
     session: readFileSync("app/api/auth/session/route.ts", "utf8"),
     logout: readFileSync("app/api/auth/logout/route.ts", "utf8"),
+    wechat: readFileSync("app/api/auth/wechat/_handlers.ts", "utf8"),
     memories: readFileSync("app/api/memories/route.ts", "utf8"),
     memoryItem: readFileSync("app/api/memories/[id]/_handlers.ts", "utf8"),
     chatSession: readFileSync("app/api/memories/[id]/chat-session/_handler.ts", "utf8"),
@@ -177,6 +183,12 @@ test("formal Session ownership and public health contracts remain explicit", asy
   for (const source of [sources.memoryChat, sources.media]) assert.match(source, /verifyRequestSession/);
   assert.match(sources.consents, /createConsentsHandler/);
   assert.match(sources.logout, /clearSessionCookie/);
+  assert.doesNotMatch(
+    sources.wechat,
+    /verifyRequestSession|getSession|linkUserId|currentUserId/,
+  );
+  assert.match(sources.wechat, /setSessionCookie/);
+  assert.doesNotMatch(sources.wechat, /openid|unionid|appSecret/i);
   assert.match(sources.memories, /resolveSessionOwner/);
   assert.match(sources.paymentOrders, /createPaymentOrdersHandler/);
   assert.match(sources.paymentRefunds, /createPaymentRefundsHandler/);

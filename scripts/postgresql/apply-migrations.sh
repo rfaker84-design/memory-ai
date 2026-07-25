@@ -16,7 +16,8 @@ for migration in \
   "$project_root/database/migrations/009_memory_chat_turn_idempotency.sql" \
   "$project_root/database/migrations/010_memory_experience_payments.sql" \
   "$project_root/database/migrations/011_business_funnel_events.sql" \
-  "$project_root/database/migrations/012_payment_refund_requests.sql"
+  "$project_root/database/migrations/012_payment_refund_requests.sql" \
+  "$project_root/database/migrations/013_wechat_auth_identities.sql"
 do
   test -f "$migration"
   sudo -n -u postgres psql -v ON_ERROR_STOP=1 --dbname="$database" --file="$migration" >/dev/null
