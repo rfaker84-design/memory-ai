@@ -10,6 +10,30 @@ export type ConversationSnapshot = {
   messages: ConversationMessage[];
 };
 
+/** Counts only user messages that have a later persisted assistant reply. */
+export function completedConversationRounds(messages: ConversationMessage[]): number {
+  let greetingSeen = false;
+  let waitingForReply = false;
+  let completed = 0;
+
+  for (const message of messages) {
+    if (message.role === "user") {
+      if (greetingSeen) waitingForReply = true;
+      continue;
+    }
+    if (message.role !== "assistant") continue;
+    if (!greetingSeen) {
+      greetingSeen = true;
+      continue;
+    }
+    if (waitingForReply) {
+      completed += 1;
+      waitingForReply = false;
+    }
+  }
+  return completed;
+}
+
 export class ConversationRequestError extends Error {
   constructor(
     message: string,

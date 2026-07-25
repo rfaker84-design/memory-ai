@@ -2,10 +2,25 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  completedConversationRounds,
   loadConversation,
   requestFirstGreeting,
   sendConversationMessage,
 } from "./memoryConversationAdapter";
+
+test("purchase eligibility counts only two persisted user and assistant exchanges after greeting", () => {
+  const greeting = { id: "g", role: "assistant" as const, content: "问候" };
+  const firstUser = { id: "u1", role: "user" as const, content: "第一句" };
+  const firstReply = { id: "a1", role: "assistant" as const, content: "第一句回应" };
+  const secondUser = { id: "u2", role: "user" as const, content: "第二句" };
+  const secondReply = { id: "a2", role: "assistant" as const, content: "第二句回应" };
+
+  assert.equal(completedConversationRounds([greeting]), 0);
+  assert.equal(completedConversationRounds([greeting, firstUser]), 0);
+  assert.equal(completedConversationRounds([greeting, firstUser, firstReply]), 1);
+  assert.equal(completedConversationRounds([greeting, firstUser, firstReply, secondUser]), 1);
+  assert.equal(completedConversationRounds([greeting, firstUser, firstReply, secondUser, secondReply]), 2);
+});
 
 function withFetch(response: Response, verify: (input: RequestInfo | URL, init?: RequestInit) => void) {
   const originalFetch = globalThis.fetch;

@@ -33,7 +33,7 @@ export default function HomePage() {
       {stage === "checking" && <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 9999, background: "#0B0A08" }} />}
       {stage === "launch" && <StaticBrandLaunch onComplete={completeLaunch} />}
       {stage === "presence" && <FirstPresenceFlow initialStage="create" onLeaveHome={() => setStage("home")} />}
-      {stage === "preview" && <FirstPresenceFlow onLeaveHome={() => setStage("home")} />}
+      {stage === "preview" && <FirstPresenceFlow initialStage="preview-create" onLeaveHome={() => setStage("home")} />}
     </MotionProvider>
   );
 }

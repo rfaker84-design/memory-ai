@@ -11,6 +11,7 @@ import { useReducedMotion } from "../../motion";
 import {
   ConversationMessage,
   ConversationRequestError,
+  completedConversationRounds,
   loadConversation,
   requestFirstGreeting,
   sendConversationMessage,
@@ -24,6 +25,7 @@ type Props = {
   memoryId: string;
   memoryName: string;
   firstGreetingKey: string;
+  initialPortraitUrl?: string | null;
   onLeave: () => void;
 };
 
@@ -45,14 +47,14 @@ function readableFailure(error: unknown) {
   return "连接暂时中断。我们会先恢复服务端对话，再决定下一步。";
 }
 
-export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey, onLeave }: Props) {
+export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey, initialPortraitUrl = null, onLeave }: Props) {
   const reducedMotion = useReducedMotion();
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [phase, setPhase] = useState<ConversationPhase>("loading");
   const [draft, setDraft] = useState("");
   const [pendingMessage, setPendingMessage] = useState<PendingMessage | null>(null);
   const [notice, setNotice] = useState("");
-  const [portraitUrl, setPortraitUrl] = useState<string | null>(null);
+  const [portraitUrl, setPortraitUrl] = useState<string | null>(initialPortraitUrl);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const inFlightRef = useRef(false);
@@ -195,6 +197,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   };
 
   const isBusy = phase === "loading" || phase === "greeting" || phase === "sending" || phase === "replying" || phase === "recovering";
+  const completedRounds = completedConversationRounds(messages);
   const status = phase === "sending" ? "正在送出这句话…" : phase === "replying" ? `${memoryName} 正在回应…` : phase === "greeting" ? "正在等待服务端的第一声问候…" : phase === "recovering" ? "正在从服务端恢复对话…" : "";
 
   return (
@@ -206,7 +209,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
       </div>
 
       <div className={styles.conversation}>
-        <p className={styles.eyebrow}>真实长期记忆对话</p>
+        <p className={styles.eyebrow}>真实长期记忆对话 · 已完成 {completedRounds} / 2 轮情绪体验</p>
         <h1 id={titleId}>第一句之后，慢慢说。</h1>
         <p className={styles.intro}>这里仅显示服务端已持久化的问候与对话。刷新页面会从同一段对话恢复。</p>
 
@@ -227,7 +230,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
           <div ref={bottomRef} />
         </div>
 
-        {messages.some((message) => message.role === "assistant") && <MemoryExperienceOffer memoryId={memoryId} />}
+        {completedRounds >= 2 && <MemoryExperienceOffer memoryId={memoryId} />}
 
         {phase === "error" && !pendingMessage && (
           <div className={styles.recoveryActions}>
