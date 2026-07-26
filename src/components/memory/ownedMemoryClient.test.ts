@@ -46,16 +46,26 @@ test("formal Memory 404 remains a controlled page state", async () => {
 });
 
 test("portrait retrieval uses the owned signed-media endpoint", async () => {
-  const url = await loadOwnedMediaUrl(
-    "portrait-asset",
-    undefined,
-    async (input, init) => {
+  const urls: string[] = [];
+  const request = async (input: string | URL | Request, init?: RequestInit) => {
+      urls.push(String(input));
       assert.equal(input, "/api/media/portrait-asset");
       assert.equal(init?.credentials, "same-origin");
       return Response.json({ url: "https://signed.example.test/portrait" });
-    }
+    };
+  const first = await loadOwnedMediaUrl(
+    "portrait-asset",
+    undefined,
+    request as typeof fetch,
   );
-  assert.equal(url, "https://signed.example.test/portrait");
+  const refreshed = await loadOwnedMediaUrl(
+    "portrait-asset",
+    undefined,
+    request as typeof fetch,
+  );
+  assert.equal(first, "https://signed.example.test/portrait");
+  assert.equal(refreshed, "https://signed.example.test/portrait");
+  assert.deepEqual(urls, ["/api/media/portrait-asset", "/api/media/portrait-asset"]);
 });
 
 test("detail, chat, and create success paths contain no legacy data requests", () => {
@@ -73,6 +83,14 @@ test("detail, chat, and create success paths contain no legacy data requests", (
     new URL("../../../app/memory-chat/[id]/page.tsx", import.meta.url),
     "utf8"
   );
+  const conversation = readFileSync(
+    new URL("../first-presence/MemoryConversationScene.tsx", import.meta.url),
+    "utf8"
+  );
+  const conversationAdapter = readFileSync(
+    new URL("../first-presence/memoryConversationAdapter.ts", import.meta.url),
+    "utf8"
+  );
   const create = readFileSync(
     new URL("../create-memory/CreateMemoryExperience.tsx", import.meta.url),
     "utf8"
@@ -85,15 +103,16 @@ test("detail, chat, and create success paths contain no legacy data requests", (
     assert.doesNotMatch(source.toLowerCase(), /supabase|memories-mvp/, name);
     assert.match(source, /loadOwnedMemory/, name);
   }
-  assert.match(chat, /\/chat-session/);
+  assert.match(conversationAdapter, /\/chat-session/);
   assert.match(paymentClient, /\/api\/payments\/orders/);
-  assert.match(chat, /MemoryExperienceOffer/);
-  assert.match(chat, /Idempotency-Key/);
-  assert.doesNotMatch(chat, /history:\s*messages/);
-  assert.doesNotMatch(chat, /fragments:\s*fragments/);
+  assert.match(conversation, /MemoryExperienceOffer/);
+  assert.match(conversationAdapter, /Idempotency-Key/);
+  assert.doesNotMatch(conversationAdapter, /history:\s*messages/);
+  assert.doesNotMatch(conversationAdapter, /fragments:\s*fragments/);
+  assert.match(chat, /firstGreetingKey\(state\.memory\.id\)/);
   assert.match(create, /`\/memory\/\$\{created\.id\}`/);
   assert.match(create, /`\/memory-chat\/\$\{created\.id\}`/);
-  for (const source of [detail, chat, create]) {
+  for (const source of [detail, chat, conversation, conversationAdapter, create]) {
     assert.doesNotMatch(source, forbiddenClientAuth);
   }
 });

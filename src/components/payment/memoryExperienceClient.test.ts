@@ -116,6 +116,12 @@ test("frozen refund rules have one shared source for purchase and refund surface
   for (const surface of [purchaseSurface, refundSurface, termsSurface, reportSurface]) assert.doesNotMatch(surface, /退款结果异常/);
 });
 
+test("the purchase surface uses the frozen emotional handoff title", () => {
+  const purchaseSurface = readFileSync(new URL("./MemoryExperienceOffer.tsx", import.meta.url), "utf8");
+  assert.match(purchaseSurface, /想继续和TA说说话/);
+  assert.match(purchaseSurface, /49元 · 30天 · 1个 TA · 100次 AI 回复/);
+});
+
 test("experience status makes quota, pending, cancellation, failure, and refund explicit", () => {
   assert.match(describeExperienceStatus({ orders: [], entitlements: [] }).detail, /49元 · 30天 · 1个 TA · 100次 AI 回复。一次性购买，不自动续费/);
   assert.match(describeExperienceStatus({ orders: [], entitlements: [{ status: "active", endsAt: "2030-01-30T00:00:00.000Z", chatQuota: 100, chatUsed: 32 }] }).detail, /68/);

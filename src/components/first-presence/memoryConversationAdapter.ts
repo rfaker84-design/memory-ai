@@ -1,7 +1,11 @@
+import { hasPersistedFirstGreeting } from "../memory/conversationExperience";
+
 export type ConversationMessage = {
   id: string;
+  sessionId: string | null;
   role: "user" | "assistant" | "system";
   content: string;
+  metadata: Record<string, unknown> | null;
   createdAt?: string;
 };
 
@@ -9,30 +13,6 @@ export type ConversationSnapshot = {
   sessionId: string;
   messages: ConversationMessage[];
 };
-
-/** Counts only user messages that have a later persisted assistant reply. */
-export function completedConversationRounds(messages: ConversationMessage[]): number {
-  let greetingSeen = false;
-  let waitingForReply = false;
-  let completed = 0;
-
-  for (const message of messages) {
-    if (message.role === "user") {
-      if (greetingSeen) waitingForReply = true;
-      continue;
-    }
-    if (message.role !== "assistant") continue;
-    if (!greetingSeen) {
-      greetingSeen = true;
-      continue;
-    }
-    if (waitingForReply) {
-      completed += 1;
-      waitingForReply = false;
-    }
-  }
-  return completed;
-}
 
 export class ConversationRequestError extends Error {
   constructor(
@@ -61,8 +41,10 @@ function normalizeMessage(value: unknown, index: number): ConversationMessage | 
   if ((role !== "user" && role !== "assistant" && role !== "system") || typeof content !== "string") return null;
   return {
     id: typeof message.id === "string" ? message.id : `server-${index}`,
+    sessionId: typeof message.sessionId === "string" ? message.sessionId : null,
     role,
     content,
+    metadata: asRecord(message.metadata),
     createdAt: typeof message.createdAt === "string" ? message.createdAt : undefined,
   };
 }
@@ -116,6 +98,17 @@ export async function requestFirstGreeting(
     throw new ConversationRequestError("FIRST_GREETING_INVALID", 502);
   }
   return greeting;
+}
+
+export async function restoreConversationWithFirstGreeting(
+  memoryId: string,
+  idempotencyKey: string,
+  signal?: AbortSignal,
+): Promise<ConversationSnapshot> {
+  const restored = await loadConversation(memoryId, signal);
+  if (hasPersistedFirstGreeting(restored.messages)) return restored;
+  await requestFirstGreeting(memoryId, idempotencyKey, signal);
+  return loadConversation(memoryId, signal);
 }
 
 export async function sendConversationMessage(

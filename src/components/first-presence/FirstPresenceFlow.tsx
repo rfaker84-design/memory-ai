@@ -9,13 +9,13 @@ import {
   useRef,
   useState,
 } from "react";
+import { useRouter } from "next/navigation";
 
 import { createMemoryRequestHeaders } from "../create-memory/createMemoryLogic";
 import { MemoryAvatar, MemoryButton, MemoryInput, MemorySurface } from "../memory-ui";
 import { MemoryMotion } from "../../design";
 import { useReducedMotion } from "../../motion";
 
-import { MemoryConversationScene } from "./MemoryConversationScene";
 import { buildConfirmedMemoryProfile } from "./confirmedMemoryProfile";
 import { loadOwnedMediaUrl } from "../memory/ownedMemoryClient";
 import { recordTrustConsent, TrustConsentRequestError } from "../trust/trustConsentClient";
@@ -29,8 +29,6 @@ type FlowStage =
   | "sms-unavailable"
   | "creating"
   | "upload-failed"
-  | "reveal"
-  | "conversation"
   | "network-failed"
   | "auth-required"
   | "preview-forming"
@@ -78,11 +76,13 @@ function PresencePortrait({
   name,
   formation,
   revealed,
+  fragments,
 }: {
   image: string | null;
   name: string;
   formation: number;
   revealed: boolean;
+  fragments: string[];
 }) {
   return (
     <div
@@ -100,8 +100,51 @@ function PresencePortrait({
         )}
         <div className={styles.portraitShade} aria-hidden="true" />
       </div>
+      <div className={styles.memoryFragments} aria-hidden="true">
+        {fragments.slice(-4).map((fragment, index) => (
+          <span
+            className={styles.memoryFragment}
+            key={`${fragment}-${index}`}
+            style={{ "--fragment-index": index } as React.CSSProperties}
+          >
+            {fragment}
+          </span>
+        ))}
+      </div>
       <div className={styles.memoryMotes} aria-hidden="true"><i /><i /><i /><i /></div>
     </div>
+  );
+}
+
+function SceneField({
+  label,
+  value,
+  onChange,
+  multiline = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  multiline?: boolean;
+}) {
+  return (
+    <label className={styles.sceneField}>
+      <span>{label}</span>
+      {multiline ? (
+        <textarea
+          value={value}
+          onChange={(event) => onChange(event.currentTarget.value)}
+          autoFocus
+          rows={3}
+        />
+      ) : (
+        <input
+          value={value}
+          onChange={(event) => onChange(event.currentTarget.value)}
+          autoFocus
+        />
+      )}
+    </label>
   );
 }
 
@@ -121,8 +164,7 @@ function PreviewConversation({
   rounds: 1 | 2;
 }) {
   return (
-    <div className={styles.previewConversation} aria-label={`两轮对话视觉预览，当前 ${rounds} 轮`}>
-      <p className={styles.previewCaption}>对话示例 · 不调用聊天接口</p>
+    <div className={styles.previewConversation} aria-label="与 TA 的对话">
       <article className={styles.previewAssistant}>
         <MemoryAvatar image={portraitUrl} initials={name} alt={`${name} 的照片`} presence="online" size={38} />
         <p>{catchPhrase}</p>
@@ -150,6 +192,7 @@ export function FirstPresenceFlow({
   onLeaveHome,
 }: FirstPresenceFlowProps) {
   const reducedMotion = useReducedMotion();
+  const router = useRouter();
   const previewMode = initialStage === "preview-create";
   const directLogin = initialStage === "login-phone";
   const [stage, setStage] = useState<FlowStage>(directLogin ? "login-phone" : "questions");
@@ -220,17 +263,21 @@ export function FirstPresenceFlow({
   }, [reducedMotion, stage]);
 
   const displayName = name.trim() || "TA";
-  const formation = stage === "reveal"
-    || stage === "conversation"
-    || stage.startsWith("preview-") && stage !== "preview-forming"
+  const formation = stage.startsWith("preview-") && stage !== "preview-forming"
     ? 1
-    : Math.max(0.12, (questionIndex + 1) / QUESTION_COUNT);
-  const revealed = stage === "reveal"
-    || stage === "conversation"
-    || stage === "preview-reveal"
+    : Math.max(0.1, (questionIndex + 1) / QUESTION_COUNT);
+  const revealed = stage === "preview-reveal"
     || stage === "preview-greeting"
     || stage === "preview-chat-one"
     || stage === "preview-chat-two";
+  const memoryFragments = [
+    questionIndex > 0 && name.trim(),
+    questionIndex > 1 && relationship.trim(),
+    questionIndex > 2 && preferredAddress.trim() ? `“${preferredAddress.trim()}”` : "",
+    questionIndex > 3 && catchPhrases.trim() ? `“${catchPhrases.trim()}”` : "",
+    questionIndex > 4 && speechStyle.trim(),
+    questionIndex > 5 && sharedMemory.trim(),
+  ].filter((fragment): fragment is string => Boolean(fragment));
 
   const noteDraftRevision = () => {
     setError("");
@@ -447,7 +494,7 @@ export function FirstPresenceFlow({
         return;
       }
       if (!response.ok || !payload.id) {
-        setError("TA 的资料尚未得到服务器确认。已保留全部回答，不会自动重试。");
+        setError("TA 的资料还没有确认保存好。全部回答都在这里，不会自动重试。");
         setStage("network-failed");
         return;
       }
@@ -456,7 +503,7 @@ export function FirstPresenceFlow({
       setCreatedMemory(memory);
       try {
         await uploadPendingMedia(memory);
-        setStage("reveal");
+        router.replace(`/memory-chat/${encodeURIComponent(memory.id)}`);
       } catch (cause) {
         setError(cause instanceof Error && cause.message === "AUTH_EXPIRED"
           ? "登录状态已失效；素材尚未继续上传。重新登录后可明确重试。"
@@ -465,8 +512,8 @@ export function FirstPresenceFlow({
       }
     } catch (cause) {
       setError(cause instanceof TrustConsentRequestError
-        ? "必要确认尚未安全记录，TA 资料与素材均未继续写入。已保留全部回答。"
-        : "网络连接中断，无法确认 TA 是否已经创建。已保留全部回答与原幂等键，不会自动重发。");
+        ? "刚才的确认还没有保存好。你的回答都还在这里。"
+        : "连接在最后一步中断了。你的回答和这次创建仍被保留，不会替你重复提交。");
       setStage("network-failed");
     } finally {
       setBusy(false);
@@ -479,7 +526,7 @@ export function FirstPresenceFlow({
     setError("");
     try {
       await uploadPendingMedia(createdMemory);
-      setStage("reveal");
+      router.replace(`/memory-chat/${encodeURIComponent(createdMemory.id)}`);
     } catch {
       setError("素材仍未安全上传。文件和已创建的 TA 资料都保持不变，请稍后明确重试。");
     } finally {
@@ -494,7 +541,9 @@ export function FirstPresenceFlow({
       setPortraitUrl(null);
     }
     setError("");
-    setStage("reveal");
+    if (createdMemory) {
+      router.replace(`/memory-chat/${encodeURIComponent(createdMemory.id)}`);
+    }
   };
 
   const submitQuestion = (event: FormEvent<HTMLFormElement>) => {
@@ -526,83 +575,69 @@ export function FirstPresenceFlow({
   };
 
   const previewGreeting = `${preferredAddress}，${catchPhrases}`;
-  const stageLabel = stage === "questions"
-    ? `第 ${questionIndex + 1} / ${QUESTION_COUNT} 次回应`
-    : stage === "creating"
-      ? "等待服务器确认"
-      : stage === "reveal" || stage === "preview-reveal"
-        ? "人物出现"
-      : stage === "conversation"
-          ? "持续对话"
-          : stage === "login-phone" || stage === "login-code" || stage === "sms-unavailable"
-            ? "安全短信登录"
-          : previewMode
-            ? "视觉预览"
-            : "安全恢复";
-
   const question = (() => {
     switch (questionIndex) {
       case 0:
         return {
           kicker: "身份",
           title: "你想再次遇见谁？",
-          description: "先写下 TA 的名字。每次只回答一个问题，你随时可以返回修改。",
-          control: <MemoryInput label="TA 的名字" value={name} onChange={(event: ChangeEvent<HTMLInputElement>) => reviseText(setName, event.currentTarget.value)} autoFocus error={error || undefined} />,
+          description: "先写下 TA 的名字。你随时可以返回修改。",
+          control: <SceneField label="TA 的名字" value={name} onChange={(value) => reviseText(setName, value)} />,
         };
       case 1:
         return {
           kicker: "身份",
           title: `${displayName}，与你是什么关系？`,
-          description: "只写你确认真实的关系。我们不会替你补全没有说过的身份。",
-          control: <MemoryInput label="TA 与我的关系" value={relationship} onChange={(event: ChangeEvent<HTMLInputElement>) => reviseText(setRelationship, event.currentTarget.value)} autoFocus error={error || undefined} />,
+          description: "只写你确认真实的关系。这里不会替你补全没有说过的身份。",
+          control: <SceneField label="TA 与我的关系" value={relationship} onChange={(value) => reviseText(setRelationship, value)} />,
         };
       case 2:
         return {
           kicker: "你们之间",
           title: `${displayName}平时如何称呼你？`,
-          description: "例如“小雨”“闺女”或你们之间独有的称呼。这会进入正式 Memory 契约。",
-          control: <MemoryInput label="TA 如何称呼我" value={preferredAddress} onChange={(event: ChangeEvent<HTMLInputElement>) => reviseText(setPreferredAddress, event.currentTarget.value)} autoFocus error={error || undefined} />,
+          description: "例如“小雨”“闺女”，或只属于你们之间的称呼。",
+          control: <SceneField label="TA 如何称呼我" value={preferredAddress} onChange={(value) => reviseText(setPreferredAddress, value)} />,
         };
       case 3:
         return {
           kicker: "一句熟悉的话",
           title: `${displayName}最常说哪句话？`,
-          description: "写下真实说过的话。正式第一句问候只会使用服务器保存并确认的资料。",
-          control: <MemoryInput multiline label="TA 常说的一句话" value={catchPhrases} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => reviseText(setCatchPhrases, event.currentTarget.value)} autoFocus error={error || undefined} />,
+          description: "写下真实说过的话。它会让第一句问候更接近你熟悉的语气。",
+          control: <SceneField multiline label="TA 常说的一句话" value={catchPhrases} onChange={(value) => reviseText(setCatchPhrases, value)} />,
         };
       case 4:
         return {
           kicker: "说话的样子",
           title: `${displayName}说话时，有什么习惯？`,
           description: "比如语速、语气、常用停顿。不要写你不确定的性格或经历。",
-          control: <MemoryInput multiline label="TA 的说话习惯" value={speechStyle} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => reviseText(setSpeechStyle, event.currentTarget.value)} autoFocus error={error || undefined} />,
+          control: <SceneField multiline label="TA 的说话习惯" value={speechStyle} onChange={(value) => reviseText(setSpeechStyle, value)} />,
         };
       case 5:
         return {
           kicker: "共同回忆",
           title: "哪一段记忆，你想先告诉 TA？",
-          description: "写下一件你确认真实发生过的事。它会成为服务端首次问候与后续对话的背景。",
-          control: <MemoryInput multiline label="一段共同回忆" value={sharedMemory} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => reviseText(setSharedMemory, event.currentTarget.value)} autoFocus error={error || undefined} />,
+          description: "写下一件你确认真实发生过的事。它会留在第一句问候和今后的对话里。",
+          control: <SceneField multiline label="一段共同回忆" value={sharedMemory} onChange={(value) => reviseText(setSharedMemory, value)} />,
         };
       case 6:
         return {
           kicker: "一张照片",
           title: `让${displayName}先被看见。`,
-          description: "照片只用于人物出现、首次问候和聊天头像。正式流程会在 TA 创建后上传并绑定同一 Memory；没有照片时才使用文字形象。",
-          control: <label className={styles.mediaChoice}>选择 TA 的照片<span>{photoFile?.name || "JPG、PNG 等，最大 20MB；可暂不上传"}</span><input aria-label="选择 TA 的照片" type="file" accept="image/*" onChange={(event) => chooseMedia("photo", event)} /></label>,
+          description: "照片只用于人物出现、第一句问候和聊天头像。没有照片时，会保留文字形象。",
+          control: <label className={styles.mediaChoice}><strong>{photoFile ? "重新选择照片" : "选择一张照片"}</strong><span>{photoFile?.name || "JPG、PNG 等，最大 20MB；可以稍后再上传"}</span><input className={styles.fileInput} aria-label="选择 TA 的照片" type="file" accept="image/*" onChange={(event) => chooseMedia("photo", event)} /></label>,
         };
       case 7:
         return {
           kicker: "一段声音 · 可选",
           title: "你有一段真实声音吗？",
-          description: "本版本只保存你有权使用的原始声音素材，不克隆声音、不生成口型。没有声音仍可继续创建。",
-          control: <label className={styles.mediaChoice}>选择真实声音<span>{voiceFile?.name || "常见音频格式，最大 20MB；不上传也可继续"}</span><input aria-label="选择真实声音" type="file" accept="audio/*" onChange={(event) => chooseMedia("voice", event)} /></label>,
+          description: "这里只保存你有权使用的原始声音素材，不会改变或模仿它。没有声音也可以继续。",
+          control: <label className={styles.mediaChoice}><strong>{voiceFile ? "重新选择声音" : "选择一段声音"}</strong><span>{voiceFile?.name || "常见音频格式，最大 20MB；不上传也可继续"}</span><input className={styles.fileInput} aria-label="选择真实声音" type="file" accept="audio/*" onChange={(event) => chooseMedia("voice", event)} /></label>,
         };
       default:
         return {
           kicker: "最后一次确认",
           title: `这些真实资料，可以交给忆见吗？`,
-          description: "忆见展示的是 AI 生成内容，不是现实中的 TA，也不是数字人或医疗服务。",
+          description: "忆见会根据这些资料生成 AI 内容，但不会把它当作现实中的 TA 或医疗建议。",
           control: (
             <div className={styles.consentBlock}>
               <p>照片和声音只在正式创建后上传，并绑定你拥有的同一 TA。请阅读 <a href="/privacy">隐私政策</a>、<a href="/terms">用户协议</a> 与 <a href="/authorization">AI 内容和素材说明</a>。数据删除入口位于 <a href="/report">投诉与删除</a>。</p>
@@ -623,47 +658,53 @@ export function FirstPresenceFlow({
       style={{
         "--motion-duration": `${reducedMotion ? 0 : MemoryMotion.duration.enter}ms`,
         "--formation": formation,
+        "--formation-light-opacity": 0.16 + formation * 0.54,
+        "--formation-ring-alpha": 0.08 + formation * 0.13,
+        "--formation-ring-scale": 0.9 + formation * 0.1,
+        "--formation-offset": `${(1 - formation) * 1.8}rem`,
+        "--formation-scale": 0.84 + formation * 0.16,
+        "--formation-glow-opacity": 0.12 + formation * 0.34,
+        "--formation-shade-alpha": (1 - formation) * 0.52,
+        "--formation-photo-saturation": 0.72 + formation * 0.22,
+        "--formation-photo-contrast": 0.92 + formation * 0.08,
+        "--formation-photo-opacity": 0.24 + formation * 0.76,
+        "--formation-photo-scale": 1.08 - formation * 0.08,
+        "--formation-initials-alpha": 0.35 + formation * 0.44,
+        "--formation-motes-opacity": 0.15 + formation * 0.55,
       } as React.CSSProperties}
     >
       <div className={styles.starField} aria-hidden="true" />
       <div className={styles.frame}>
         <header className={styles.header}>
           <button className={styles.wordmark} type="button" onClick={leaveFlow} aria-label="回到忆见登录页">忆见 <span>memoryai</span></button>
-          <span className={styles.step} aria-live="polite">{stageLabel}</span>
+          {stage === "questions" && (
+            <div className={styles.memoryProgress} aria-label="创建进度">
+              {Array.from({ length: QUESTION_COUNT }, (_, index) => (
+                <span
+                  key={index}
+                  className={index < questionIndex ? styles.progressDone : index === questionIndex ? styles.progressCurrent : ""}
+                />
+              ))}
+            </div>
+          )}
+          {previewMode && <span className={styles.previewNotice}>开发预览 · 内容不保存</span>}
         </header>
 
-        {stage === "conversation" && createdMemory && idempotencyKey.current ? (
-          <main className={styles.conversationMain}>
-            <MemoryConversationScene
-              memoryId={createdMemory.id}
-              memoryName={createdMemory.name}
-              firstGreetingKey={idempotencyKey.current}
-              initialPortraitUrl={portraitUrl}
-              onLeave={() => {
-                idempotencyKey.current = null;
-                setCreatedMemory(null);
-                onLeaveHome?.();
-              }}
-            />
-          </main>
-        ) : (
-          <main className={styles.main} aria-labelledby={titleId}>
-            <section className={styles.presenceStage} aria-label="TA 正在同一记忆空间中逐渐形成">
-              <div className={styles.lightColumn} aria-hidden="true" />
-              <div className={styles.memoryRing} aria-hidden="true" />
-              <PresencePortrait image={portraitUrl} name={displayName} formation={formation} revealed={revealed} />
-              <p className={styles.presenceName}>{revealed ? displayName : questionIndex < 1 ? "一个熟悉的轮廓" : displayName}</p>
-              {stage === "questions" && <p className={styles.formationNote}>已回应 {questionIndex} 段真实资料 · 画面只随你的输入变化</p>}
-            </section>
+        <main className={styles.main} aria-labelledby={titleId}>
+          <section className={styles.presenceStage} aria-label="TA 正在同一记忆空间中逐渐形成">
+            <div className={styles.lightColumn} aria-hidden="true" />
+            <div className={styles.memoryRing} aria-hidden="true" />
+            <PresencePortrait image={portraitUrl} name={displayName} formation={formation} revealed={revealed} fragments={memoryFragments} />
+            <p className={styles.presenceName}>{revealed ? displayName : questionIndex < 1 ? "一个熟悉的轮廓" : displayName}</p>
+          </section>
 
-            <section className={`${styles.controlShell} ${revealed ? styles.controlAfterReveal : ""}`} aria-describedby="flow-description">
-              {previewMode && <p className={styles.previewNotice}>视觉预览 · 零网络写入 · 不代表真实生成、真实聊天或数字人</p>}
+          <section className={`${styles.controlShell} ${revealed ? styles.controlAfterReveal : ""}`} aria-describedby="flow-description">
 
               {stage === "login-phone" && (
                 <form className={styles.copyBlock} onSubmit={(event) => { event.preventDefault(); void sendCode(); }} noValidate>
-                  <p className={styles.kicker}>真实短信登录</p>
+                  <p className={styles.kicker}>短信登录</p>
                   <h1 id={titleId}>先确认，是你。</h1>
-                  <p id="flow-description">验证码只由服务器验证并设置 HttpOnly 会话。登录成功后仍停留在同一记忆空间。</p>
+                  <p id="flow-description">验证成功后，你会继续留在这片记忆空间。</p>
                   <MemoryInput label="手机号" type="tel" inputMode="numeric" autoComplete="tel" value={phone} onChange={(event: ChangeEvent<HTMLInputElement>) => setPhone(event.currentTarget.value)} autoFocus error={error || undefined} />
                   <div className={styles.actions}><button className={styles.backButton} type="button" onClick={leaveFlow}>返回</button><MemoryButton type="submit" loading={busy}>发送验证码</MemoryButton></div>
                 </form>
@@ -673,7 +714,7 @@ export function FirstPresenceFlow({
                 <form className={styles.copyBlock} onSubmit={(event) => { event.preventDefault(); void verifyCode(); }} noValidate>
                   <p className={styles.kicker}>验证短信</p>
                   <h1 id={titleId}>输入 6 位验证码。</h1>
-                  <p id="flow-description">服务端确认会话以后，才会进入 TA 的第一道问题。</p>
+                  <p id="flow-description">确认是你以后，再继续写下关于 TA 的记忆。</p>
                   <MemoryInput label="短信验证码" type="text" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(event: ChangeEvent<HTMLInputElement>) => setCode(event.currentTarget.value)} autoFocus error={error || undefined} />
                   <div className={styles.actions}><button className={styles.backButton} type="button" onClick={() => setStage("login-phone")}>更换号码</button><MemoryButton type="submit" loading={busy}>验证并继续</MemoryButton></div>
                 </form>
@@ -689,25 +730,25 @@ export function FirstPresenceFlow({
               )}
 
               {stage === "questions" && (
-                <form className={styles.copyBlock} onSubmit={submitQuestion} noValidate>
+                <form className={styles.copyBlock} key={questionIndex} onSubmit={submitQuestion} noValidate>
                   <p className={styles.kicker}>{question.kicker}</p>
                   <h1 id={titleId}>{question.title}</h1>
                   <p id="flow-description">{question.description}</p>
                   <div className={styles.singleQuestion} key={questionIndex}>{question.control}</div>
                   {error && <p className={styles.error} role="alert">{error}</p>}
-                  {authState === "checking" && !previewMode && <p className={styles.inlineStatus} role="status">正在确认登录保护；你的回答仍只保留在当前页面。</p>}
+                  {authState === "checking" && !previewMode && <p className={styles.inlineStatus} role="status">正在确认登录状态，你写下的内容仍会留在这里。</p>}
                   <div className={styles.actions}>
                     <button className={styles.backButton} type="button" onClick={goBack}>返回</button>
-                    <MemoryButton type="submit">{questionIndex === QUESTION_COUNT - 1 ? (previewMode ? "进入视觉预览" : "确认并创建 TA") : "继续"}</MemoryButton>
+                    <MemoryButton type="submit">{questionIndex === QUESTION_COUNT - 1 ? "让 TA 来到这里" : "继续"}</MemoryButton>
                   </div>
                 </form>
               )}
 
               {stage === "creating" && (
                 <div className={styles.copyBlock} role="status" aria-live="polite">
-                  <p className={styles.kicker}>等待服务器确认</p>
-                  <h1 id={titleId}>正在保存你刚刚确认的资料。</h1>
-                  <p id="flow-description">这里不显示虚假百分比。只有 Memory 和素材接口真实确认后，人物才会出现。</p>
+                  <p className={styles.kicker}>记忆正在靠近</p>
+                  <h1 id={titleId}>正在收好你刚刚写下的一切。</h1>
+                  <p id="flow-description">资料和素材保存好以后，人物才会真正出现。</p>
                   <div className={styles.waitingPulse} aria-hidden="true"><i /><i /><i /></div>
                 </div>
               )}
@@ -718,7 +759,7 @@ export function FirstPresenceFlow({
                   <h1 id={titleId}>TA 已创建，照片或声音尚未完整上传。</h1>
                   <p id="flow-description">{error}</p>
                   <div className={styles.actions}>
-                    <MemoryButton loading={busy} onClick={() => void retryUpload()}>明确重试素材上传</MemoryButton>
+                    <MemoryButton loading={busy} onClick={() => void retryUpload()}>再试一次</MemoryButton>
                     <button className={styles.backButton} type="button" onClick={continueWithoutPendingMedia}>暂时不用这些素材</button>
                   </div>
                 </div>
@@ -727,10 +768,10 @@ export function FirstPresenceFlow({
               {stage === "network-failed" && (
                 <div className={styles.copyBlock} role="alert">
                   <p className={styles.kicker}>连接暂时中断</p>
-                  <h1 id={titleId}>没有替你重复这一步。</h1>
+                  <h1 id={titleId}>刚才那一步没有被重复。</h1>
                   <p id="flow-description">{error}</p>
                   <div className={styles.actions}>
-                    <MemoryButton loading={busy} onClick={() => void createRealPresence()}>使用原幂等键重试</MemoryButton>
+                    <MemoryButton loading={busy} onClick={() => void createRealPresence()}>再试一次</MemoryButton>
                     <button className={styles.backButton} type="button" onClick={() => { setError(""); setQuestionIndex(8); setStage("questions"); }}>返回检查回答</button>
                   </div>
                 </div>
@@ -740,76 +781,65 @@ export function FirstPresenceFlow({
                 <div className={styles.copyBlock} role="alert">
                   <p className={styles.kicker}>登录保护</p>
                   <h1 id={titleId}>需要重新确认登录。</h1>
-                  <p id="flow-description">没有写入 Memory、素材、问候、聊天或支付数据。已填写内容仍保留在当前页面。</p>
+                  <p id="flow-description">这次还没有继续保存任何资料；已经写下的内容仍留在当前页面。</p>
                   <div className={styles.actions}><MemoryButton onClick={leaveFlow}>回到登录页</MemoryButton></div>
-                </div>
-              )}
-
-              {stage === "reveal" && (
-                <div className={`${styles.copyBlock} ${styles.revealCopy}`}>
-                  <p className={styles.kicker}>人物出现</p>
-                  <h1 id={titleId}>{displayName}，来到这里了。</h1>
-                  <p id="flow-description">{portraitUrl ? "这里呈现的是你上传并由服务端签名返回的真实照片，不是数字人或生成口型。" : "你没有上传照片，因此这里使用文字形象；不会伪造一张脸。"}</p>
-                  <div className={styles.revealActions}><MemoryButton onClick={() => setStage("conversation")}>听听第一句问候</MemoryButton></div>
                 </div>
               )}
 
               {stage === "preview-forming" && (
                 <div className={styles.copyBlock} role="status" aria-live="polite">
-                  <p className={styles.kicker}>同一场景正在靠近</p>
+                  <p className={styles.kicker}>记忆正在靠近</p>
                   <h1 id={titleId}>你确认的资料，正在汇到一个画面。</h1>
-                  <p id="flow-description">这是本地视觉过渡，不是生成进度；没有调用认证、Memory、上传、问候、聊天或支付接口。</p>
+                  <p id="flow-description">再等一会儿，让这些熟悉的片段慢慢聚在一起。</p>
                   <div className={styles.waitingPulse} aria-hidden="true"><i /><i /><i /></div>
                 </div>
               )}
 
               {stage === "preview-reveal" && (
                 <div className={`${styles.copyBlock} ${styles.revealCopy}`}>
-                  <p className={styles.kicker}>人物出现 · 视觉预览</p>
+                  <p className={styles.kicker}>人物出现</p>
                   <h1 id={titleId}>{displayName}，先被你看见。</h1>
-                  <p id="flow-description">{portraitUrl ? "照片仍是本地选择的预览文件，没有上传；这不是数字人或真实生成。" : "未选择照片，因此仅显示文字形象。"}</p>
-                  <div className={styles.revealActions}><MemoryButton onClick={() => setStage("preview-greeting")}>查看问候示例</MemoryButton></div>
+                  <p id="flow-description">{portraitUrl ? "你选择的照片，已经从轮廓里慢慢显现。" : "没有照片时，这里会安静地保留文字形象。"}</p>
+                  <div className={styles.revealActions}><MemoryButton onClick={() => setStage("preview-greeting")}>听听 TA 的第一句话</MemoryButton></div>
                 </div>
               )}
 
               {stage === "preview-greeting" && (
                 <div className={styles.copyBlock}>
-                  <p className={styles.kicker}>首次问候示例 · 不调用接口</p>
+                  <p className={styles.kicker}>第一句问候</p>
                   <h1 id={titleId}>{previewGreeting}</h1>
-                  <p id="flow-description">这句只用于验证称呼、口头禅、说话方式和共同回忆的视觉呈现。正式问候必须由现有 first-greeting 接口返回。</p>
+                  <p id="flow-description">这句问候来自你刚刚写下的称呼、习惯和共同回忆。</p>
                   <div className={styles.previewGreetingAvatar}><MemoryAvatar image={portraitUrl} initials={displayName} alt={`${displayName} 的照片`} presence="online" size={46} /><span>{speechStyle}</span></div>
-                  <div className={styles.actions}><MemoryButton onClick={() => setStage("preview-chat-one")}>继续第一轮对话</MemoryButton></div>
+                  <div className={styles.actions}><MemoryButton onClick={() => setStage("preview-chat-one")}>继续说说话</MemoryButton></div>
                 </div>
               )}
 
               {stage === "preview-chat-one" && (
                 <div className={styles.copyBlock}>
-                  <p className={styles.kicker}>情绪体验 · 第 1 / 2 轮</p>
+                  <p className={styles.kicker}>再说一会儿</p>
                   <h1 id={titleId}>慢慢说，我在听。</h1>
                   <PreviewConversation name={displayName} portraitUrl={portraitUrl} catchPhrase={catchPhrases} speechStyle={speechStyle} sharedMemory={sharedMemory} rounds={1} />
-                  <div className={styles.actions}><MemoryButton onClick={() => setStage("preview-chat-two")}>继续第二轮对话</MemoryButton></div>
+                  <div className={styles.actions}><MemoryButton onClick={() => setStage("preview-chat-two")}>再说一句</MemoryButton></div>
                 </div>
               )}
 
               {stage === "preview-chat-two" && (
                 <div className={styles.copyBlock}>
-                  <p className={styles.kicker}>情绪体验 · 已完成两轮</p>
+                  <p className={styles.kicker}>这段回应之后</p>
                   <h1 id={titleId}>回应之后，再决定要不要继续。</h1>
                   <PreviewConversation name={displayName} portraitUrl={portraitUrl} catchPhrase={catchPhrases} speechStyle={speechStyle} sharedMemory={sharedMemory} rounds={2} />
-                  <div className={styles.previewOffer} aria-label="49元购买入口视觉预览">
-                    <span>购买入口视觉预览 · 不创建订单</span>
-                    <strong>忆见初遇体验</strong>
+                  <div className={styles.previewOffer} aria-label="忆见初遇体验">
+                    <strong>想继续和TA说说话</strong>
                     <p>49元 · 30天 · 1个 TA · 100次 AI 回复</p>
-                    <small>一次性购买，不自动续费。正式流程会继续展示退款条件与必要确认。</small>
+                    <small>一次性购买，不自动续费。</small>
                   </div>
-                  <div className={styles.actions}><button className={styles.backButton} type="button" onClick={leaveFlow}>结束视觉预览</button></div>
+                  <div className={styles.actions}><button className={styles.backButton} type="button" onClick={leaveFlow}>回到首页</button></div>
                 </div>
               )}
-            </section>
-          </main>
-        )}
+          </section>
+        </main>
 
-        <footer className={styles.footer}><span>人物先出现，操作随后到来。</span><span>支持返回、键盘与减少动态效果</span></footer>
+        <footer className={styles.footer}><span>你随时可以返回。</span><span>刚写下的内容会留在这里。</span></footer>
       </div>
     </MemorySurface>
   );

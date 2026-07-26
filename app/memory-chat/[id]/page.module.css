@@ -1,0 +1,53 @@
+.page,
+.loading {
+  position: relative;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background:
+    radial-gradient(circle at 50% 26%, rgba(137, 98, 54, 0.09), transparent 42%),
+    #0b0907;
+  color: #f3eadf;
+}
+
+.stars {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.48;
+  background-image:
+    radial-gradient(circle at 18% 26%, rgba(255, 244, 220, 0.42) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 72% 16%, rgba(255, 236, 200, 0.34) 0 1px, transparent 1.4px),
+    radial-gradient(circle at 84% 58%, rgba(255, 244, 220, 0.25) 0 1px, transparent 1.4px),
+    radial-gradient(circle at 31% 76%, rgba(255, 230, 190, 0.2) 0 1px, transparent 1.5px);
+  background-size: 211px 193px, 287px 241px, 337px 293px, 263px 319px;
+}
+
+.loading {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 1rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.loading p {
+  position: relative;
+  margin: 0;
+  color: rgba(243, 234, 223, 0.72);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.loading button {
+  position: relative;
+  min-height: 2.75rem;
+  border: 0;
+  background: transparent;
+  color: #d4b176;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.3rem;
+  cursor: pointer;
+}

@@ -2,25 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  completedConversationRounds,
   loadConversation,
   requestFirstGreeting,
+  restoreConversationWithFirstGreeting,
   sendConversationMessage,
 } from "./memoryConversationAdapter";
-
-test("purchase eligibility counts only two persisted user and assistant exchanges after greeting", () => {
-  const greeting = { id: "g", role: "assistant" as const, content: "问候" };
-  const firstUser = { id: "u1", role: "user" as const, content: "第一句" };
-  const firstReply = { id: "a1", role: "assistant" as const, content: "第一句回应" };
-  const secondUser = { id: "u2", role: "user" as const, content: "第二句" };
-  const secondReply = { id: "a2", role: "assistant" as const, content: "第二句回应" };
-
-  assert.equal(completedConversationRounds([greeting]), 0);
-  assert.equal(completedConversationRounds([greeting, firstUser]), 0);
-  assert.equal(completedConversationRounds([greeting, firstUser, firstReply]), 1);
-  assert.equal(completedConversationRounds([greeting, firstUser, firstReply, secondUser]), 1);
-  assert.equal(completedConversationRounds([greeting, firstUser, firstReply, secondUser, secondReply]), 2);
-});
+import { completedConversationRounds } from "../memory/conversationExperience";
 
 function withFetch(response: Response, verify: (input: RequestInfo | URL, init?: RequestInit) => void) {
   const originalFetch = globalThis.fetch;
@@ -60,7 +47,14 @@ test("first greeting uses the formal route and the original idempotency key", as
   );
   try {
     const greeting = await requestFirstGreeting("memory-1", "presence-create-1");
-    assert.deepEqual(greeting, { id: "greeting-1", role: "assistant", content: "服务端问候", createdAt: undefined });
+    assert.deepEqual(greeting, {
+      id: "greeting-1",
+      sessionId: null,
+      role: "assistant",
+      content: "服务端问候",
+      metadata: {},
+      createdAt: undefined,
+    });
   } finally { restore(); }
 });
 
@@ -72,6 +66,120 @@ test("first greeting does not accept a message alias", async () => {
       (error: unknown) => error instanceof Error && error.message === "FIRST_GREETING_INVALID"
     );
   } finally { restore(); }
+});
+
+test("refresh restores the same persisted greeting without requesting it again", async () => {
+  const greeting = {
+    id: "greeting-1",
+    sessionId: "session-1",
+    role: "assistant",
+    content: "小雨，你回来了。",
+    metadata: { kind: "first_greeting", idempotencyKey: "first-greeting-memory-1" },
+  };
+  const responses = [
+    Response.json({ session: { id: "session-1" }, messages: [] }),
+    Response.json({ greeting }),
+    Response.json({ session: { id: "session-1" }, messages: [greeting] }),
+    Response.json({ session: { id: "session-1" }, messages: [greeting] }),
+  ];
+  const calls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    calls.push(String(input));
+    const response = responses.shift();
+    assert.ok(response, "unexpected request");
+    return response;
+  };
+
+  try {
+    const firstVisit = await restoreConversationWithFirstGreeting(
+      "memory-1",
+      "first-greeting-memory-1",
+    );
+    const refreshed = await restoreConversationWithFirstGreeting(
+      "memory-1",
+      "first-greeting-memory-1",
+    );
+    assert.equal(firstVisit.messages[0]?.id, "greeting-1");
+    assert.equal(refreshed.messages[0]?.id, "greeting-1");
+    assert.equal(calls.filter((url) => url.endsWith("/first-greeting")).length, 1);
+    assert.equal(calls.filter((url) => url.endsWith("/chat-session")).length, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("refresh preserves the same two completed persisted rounds", async () => {
+  const messages = [
+    {
+      id: "greeting-1",
+      sessionId: "session-1",
+      role: "assistant",
+      content: "小雨，你回来了。",
+      metadata: { kind: "first_greeting", idempotencyKey: "first-greeting-memory-1" },
+    },
+    {
+      id: "user-1",
+      sessionId: "session-1",
+      role: "user",
+      content: "今天想起我们以前散步的地方。",
+      metadata: { kind: "memory_chat_turn", idempotencyKey: "message-1" },
+    },
+    {
+      id: "assistant-1",
+      sessionId: "session-1",
+      role: "assistant",
+      content: "我也记得，风吹过来的时候很安静。",
+      metadata: { kind: "memory_chat_turn", idempotencyKey: "message-1" },
+    },
+    {
+      id: "user-2",
+      sessionId: "session-1",
+      role: "user",
+      content: "下次还想和你说说。",
+      metadata: { kind: "memory_chat_turn", idempotencyKey: "message-2" },
+    },
+    {
+      id: "assistant-2",
+      sessionId: "session-1",
+      role: "assistant",
+      content: "好，我会在这里听你慢慢说。",
+      metadata: { kind: "memory_chat_turn", idempotencyKey: "message-2" },
+    },
+  ];
+  const responses = [
+    Response.json({ session: { id: "session-1" }, messages }),
+    Response.json({ session: { id: "session-1" }, messages }),
+  ];
+  const calls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    calls.push(String(input));
+    const response = responses.shift();
+    assert.ok(response, "unexpected request");
+    return response;
+  };
+
+  try {
+    const firstVisit = await restoreConversationWithFirstGreeting(
+      "memory-1",
+      "first-greeting-memory-1",
+    );
+    const refreshed = await restoreConversationWithFirstGreeting(
+      "memory-1",
+      "first-greeting-memory-1",
+    );
+    assert.deepEqual(
+      refreshed.messages.map((message) => message.id),
+      firstVisit.messages.map((message) => message.id),
+    );
+    assert.equal(completedConversationRounds(firstVisit.messages), 2);
+    assert.equal(completedConversationRounds(refreshed.messages), 2);
+    assert.equal(calls.filter((url) => url.endsWith("/first-greeting")).length, 0);
+    assert.equal(calls.filter((url) => url.endsWith("/chat-session")).length, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("subsequent messages send only the formal body and put their idempotency key in the header", async () => {

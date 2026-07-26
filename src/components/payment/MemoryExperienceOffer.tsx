@@ -84,7 +84,7 @@ export function MemoryExperienceOffer({ memoryId, tone = "dark" }: Props) {
   return (
     <section className={`${styles.offer} ${tone === "light" ? styles.light : ""}`} aria-label="忆见初遇体验">
       <p className={styles.eyebrow}>在这句回应之后</p>
-      <h2 className={styles.title}>{status.title}</h2>
+      <h2 className={styles.title}>{status.canPurchase ? "想继续和TA说说话" : status.title}</h2>
       <p className={styles.product}>49元 · 30天 · 1个 TA · 100次 AI 回复</p>
       <p className={styles.detail}>{loading ? "正在确认已有体验与支付状态…" : status.detail}</p>
       {status.canPurchase && <div className={styles.trust}><p>一次性购买，不自动续费。付款成功后才开通；取消、失败或过期不会获得权益。</p><p>退款申请条件：仅限已完成付款且尚未退款的订单；未支付、已取消、失败、过期或已退款订单不符合系统受理条件。</p><p>{refundPolicy.noReason}</p><p>{refundPolicy.afterUse}</p><p>{refundPolicy.manualReview}</p><p>{refundPolicy.entitlementEnd}申请后的资格结果、处理中、成功或拒绝原因可在“我的”查看。</p><p>购买前请阅读 <a href="/terms">用户协议</a>、<a href="/privacy">隐私政策</a> 与 <a href="/authorization">AI 内容说明</a>；退款申请和数据删除入口在 <a href="/report">投诉与删除</a>。</p><label><input type="checkbox" checked={purchaseAccepted} onChange={(event) => setPurchaseAccepted(event.currentTarget.checked)} /><span>我已年满 18 周岁，理解这是 AI 服务，并确认价格、期限、额度、一次性收费及退款后权益终止。</span></label></div>}

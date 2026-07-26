@@ -5,8 +5,11 @@ import test from "node:test";
 const flow = readFileSync("src/components/first-presence/FirstPresenceFlow.tsx", "utf8");
 const styles = readFileSync("src/components/first-presence/FirstPresenceFlow.module.css", "utf8");
 const page = readFileSync("app/page.tsx", "utf8");
+const chatPage = readFileSync("app/memory-chat/[id]/page.tsx", "utf8");
+const conversation = readFileSync("src/components/first-presence/MemoryConversationScene.tsx", "utf8");
+const conversationAdapter = readFileSync("src/components/first-presence/memoryConversationAdapter.ts", "utf8");
 
-test("immersive creation asks one frozen question at a time and keeps optional media truthful", () => {
+test("immersive creation asks one question at a time and uses custom media entry points", () => {
   for (const copy of [
     "你想再次遇见谁？",
     "TA 与我的关系",
@@ -20,15 +23,19 @@ test("immersive creation asks one frozen question at a time and keeps optional m
     assert.match(flow, new RegExp(copy));
   }
   assert.match(flow, /switch \(questionIndex\)/);
-  assert.match(flow, /没有声音仍可继续创建/);
-  assert.match(flow, /没有照片时才使用文字形象/);
-  assert.match(flow, /不克隆声音、不生成口型/);
+  assert.match(flow, /没有声音也可以继续/);
+  assert.match(flow, /没有照片时，会保留文字形象/);
+  assert.match(flow, /className=\{styles\.fileInput\}/);
+  assert.match(styles, /\.fileInput[\s\S]*clip-path: inset\(50%\)/);
+  assert.match(styles, /\.memoryFragment/);
+  assert.match(styles, /questionEnter/);
 });
 
-test("preview is explicit, starts directly in the immersive flow, and has no preview write branch", () => {
+test("preview is explicit, zero-write, and production-gated", () => {
   assert.match(flow, /process\.env\.NODE_ENV !== "production"/);
   assert.match(flow, /NEXT_PUBLIC_MEMORYAI_ENABLE_PRESENCE_PREVIEW === "true"/);
   assert.match(page, /initialStage="preview-create"/);
+  assert.match(flow, /开发预览 · 内容不保存/);
   assert.match(flow, /if \(previewMode\) return;[\s\S]*?fetch\("\/api\/auth\/session"/);
   assert.match(
     flow,
@@ -38,7 +45,18 @@ test("preview is explicit, starts directly in the immersive flow, and has no pre
   assert.doesNotMatch(previewRendering, /fetch\(|recordTrustConsent|MemoryExperienceOffer/);
 });
 
-test("portrait stays consistent through reveal, greeting, two exchanges, and the delayed offer", () => {
+test("formal creation leaves React memory state for the stable owned chat URL", () => {
+  assert.match(flow, /router\.replace\(`\/memory-chat\/\$\{encodeURIComponent\(memory\.id\)\}`\)/);
+  assert.match(chatPage, /loadOwnedMemory\(id/);
+  assert.match(chatPage, /loadOwnedMediaUrl\(memory\.photoAssetId/);
+  assert.match(chatPage, /firstGreetingKey\(state\.memory\.id\)/);
+  assert.match(chatPage, /MemoryConversationScene/);
+  assert.doesNotMatch(chatPage, /preferredAddress|catchPhrases|sharedMemory|userId/);
+  assert.match(conversation, /restoreConversationWithFirstGreeting/);
+  assert.match(conversationAdapter, /hasPersistedFirstGreeting\(restored\.messages\)/);
+});
+
+test("portrait remains consistent and the offer appears only after the second exchange", () => {
   assert.match(flow, /setPortraitUrl\(url\)/);
   assert.match(flow, /URL\.revokeObjectURL\(localPortraitUrl\.current\)/);
   assert.match(flow, /stage === "preview-reveal"/);
@@ -47,6 +65,7 @@ test("portrait stays consistent through reveal, greeting, two exchanges, and the
   assert.match(flow, /stage === "preview-chat-two"/);
   assert.match(flow, /MemoryAvatar image=\{portraitUrl\}/);
   const secondRound = flow.slice(flow.indexOf('stage === "preview-chat-two"'));
+  assert.match(secondRound, /想继续和TA说说话/);
   assert.match(secondRound, /49元 · 30天 · 1个 TA · 100次 AI 回复/);
   const firstRound = flow.slice(
     flow.indexOf('stage === "preview-chat-one"'),
@@ -55,9 +74,25 @@ test("portrait stays consistent through reveal, greeting, two exchanges, and the
   assert.doesNotMatch(firstRound, /49元/);
 });
 
-test("failure, back navigation, and reduced motion preserve the in-memory draft", () => {
-  assert.match(flow, /已保留全部回答与原幂等键，不会自动重发/);
-  assert.match(flow, /使用原幂等键重试/);
+test("formal screens contain no development panel copy", () => {
+  for (const forbidden of [
+    "第 1 / 9 次回应",
+    "已回应",
+    "零网络写入",
+    "不调用接口",
+    "查看问候示例",
+    "结束视觉预览",
+    "购买入口视觉预览",
+    "真实聊天或数字人",
+  ]) {
+    assert.doesNotMatch(flow, new RegExp(forbidden));
+    assert.doesNotMatch(conversation, new RegExp(forbidden));
+  }
+});
+
+test("failure, back navigation, and reduced motion preserve the current draft", () => {
+  assert.match(flow, /不会替你重复提交/);
+  assert.match(flow, /router\.replace\(`\/memory-chat\//);
   assert.match(flow, /返回检查回答/);
   assert.match(flow, /setQuestionIndex\(\(current\) => current - 1\)/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
