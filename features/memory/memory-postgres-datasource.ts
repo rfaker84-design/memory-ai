@@ -12,6 +12,7 @@ import {
   MemoryNotFoundError,
   MemoryValidationError,
 } from "./errors";
+import { isMemoryCreationIdempotencyKey } from "./memory-idempotency";
 import type { CreateMemoryInput, Memory, UpdateMemoryInput } from "./types";
 import type { UpdateOwnedMemoryInput } from "./types";
 
@@ -37,7 +38,6 @@ type MemoryRow = {
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
 
 const MEMORY_COLUMNS = `
   m.id,
@@ -142,7 +142,10 @@ function validateCreateInput(memory: CreateMemoryInput): CreateMemoryInput {
   validateYear(memory.birthYear, "birthYear");
   validateYear(memory.deathYear, "deathYear");
   normalizedFragments(memory);
-  if (memory.idempotencyKey && !IDEMPOTENCY_KEY_PATTERN.test(memory.idempotencyKey)) {
+  if (
+    memory.idempotencyKey
+    && !isMemoryCreationIdempotencyKey(memory.idempotencyKey)
+  ) {
     throw new MemoryValidationError("Idempotency-Key is invalid");
   }
 
@@ -364,6 +367,30 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
         LIMIT 1
       `,
       [memoryId, externalId]
+    );
+
+    return result.rows[0] ? toMemory(result.rows[0]) : null;
+  }
+
+  async findByCreationIdempotencyKeyForUser(
+    userId: string,
+    idempotencyKey: string
+  ): Promise<Memory | null> {
+    const externalId = requiredText(userId, "userId", 255);
+    if (!isMemoryCreationIdempotencyKey(idempotencyKey)) {
+      throw new MemoryValidationError("Idempotency-Key is invalid");
+    }
+
+    const result = await queryPostgres<MemoryRow>(
+      `
+        SELECT ${MEMORY_COLUMNS}
+        FROM memories m
+        JOIN users u ON u.id = m.user_id
+        WHERE u.external_id = $1
+          AND m.creation_idempotency_key = $2
+        LIMIT 1
+      `,
+      [externalId, idempotencyKey]
     );
 
     return result.rows[0] ? toMemory(result.rows[0]) : null;

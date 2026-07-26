@@ -18,6 +18,16 @@ export class MemoryService {
     return this.memoryRepository.getMemoryForUser(id, userId);
   }
 
+  recoverCreatedMemory(
+    userId: string,
+    idempotencyKey: string
+  ): Promise<Memory | null> {
+    return this.memoryRepository.getMemoryByCreationKeyForUser(
+      userId,
+      idempotencyKey
+    );
+  }
+
   updateMemory(id: string, memory: UpdateMemoryInput): Promise<Memory> {
     return this.memoryRepository.updateMemory(id, memory);
   }

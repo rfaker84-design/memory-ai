@@ -22,6 +22,7 @@ const EXACT_FORMAL_PATHS = new Set([
   "/api/auth/wechat/cancel",
   "/api/auth/wechat/failure",
   "/api/memories",
+  "/api/memories/recovery",
   "/api/memory-chat",
   "/api/consents",
   "/api/business-events",
@@ -118,7 +119,7 @@ test("middleware enforces the formal API allowlist before route execution", asyn
 
 test("every tracked non-formal Route Handler is a route-level 410", async () => {
   const routes = trackedRoutes();
-  assert.equal(routes.length, 100, "the audit must enumerate the complete tracked API surface");
+  assert.equal(routes.length, 101, "the audit must enumerate the complete tracked API surface");
 
   for (const { file, pathname } of routes) {
     const formal = isFormalApiPath(pathname);
@@ -162,6 +163,7 @@ test("formal Session ownership and public health contracts remain explicit", asy
     logout: readFileSync("app/api/auth/logout/route.ts", "utf8"),
     wechat: readFileSync("app/api/auth/wechat/_handlers.ts", "utf8"),
     memories: readFileSync("app/api/memories/route.ts", "utf8"),
+    memoryRecovery: readFileSync("app/api/memories/recovery/_handler.ts", "utf8"),
     memoryItem: readFileSync("app/api/memories/[id]/_handlers.ts", "utf8"),
     chatSession: readFileSync("app/api/memories/[id]/chat-session/_handler.ts", "utf8"),
     firstGreeting: readFileSync("app/api/memories/[id]/first-greeting/_handler.ts", "utf8"),
@@ -190,6 +192,12 @@ test("formal Session ownership and public health contracts remain explicit", asy
   assert.match(sources.wechat, /setSessionCookie/);
   assert.doesNotMatch(sources.wechat, /openid|unionid|appSecret/i);
   assert.match(sources.memories, /resolveSessionOwner/);
+  assert.match(sources.memoryRecovery, /resolveSessionOwner/);
+  assert.match(sources.memoryRecovery, /MemoryPostgresDataSource/);
+  assert.doesNotMatch(
+    sources.memoryRecovery,
+    /supabase|creation_idempotency_key|storage_key/i,
+  );
   assert.match(sources.paymentOrders, /createPaymentOrdersHandler/);
   assert.match(sources.paymentRefunds, /createPaymentRefundsHandler/);
   assert.match(sources.paymentEntitlements, /verifyRequestSession/);

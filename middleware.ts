@@ -16,6 +16,7 @@ const FORMAL_API_PATHS = new Set([
   "/api/auth/wechat/cancel",
   "/api/auth/wechat/failure",
   "/api/memories",
+  "/api/memories/recovery",
   "/api/memory-chat",
   "/api/consents",
   "/api/business-events",

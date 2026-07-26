@@ -10,6 +10,7 @@ process.env.AUTH_ALLOWED_ORIGIN = "https://memoryai.test";
 const mutationPaths = [
   "/api/auth/send-code",
   "/api/memories",
+  "/api/memories/recovery",
   "/api/memories/memory-id",
   "/api/memories/memory-id/chat-session",
   "/api/memories/memory-id/first-greeting",

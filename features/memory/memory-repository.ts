@@ -21,6 +21,21 @@ export class MemoryRepository {
     return this.dataSource.findByIdForUser(id, userId);
   }
 
+  getMemoryByCreationKeyForUser(
+    userId: string,
+    idempotencyKey: string
+  ): Promise<Memory | null> {
+    if (!this.dataSource.findByCreationIdempotencyKeyForUser) {
+      throw new Error(
+        "Memory creation recovery requires the formal PostgreSQL datasource"
+      );
+    }
+    return this.dataSource.findByCreationIdempotencyKeyForUser(
+      userId,
+      idempotencyKey
+    );
+  }
+
   updateMemory(id: string, memory: UpdateMemoryInput): Promise<Memory> {
     return this.dataSource.update(id, memory);
   }

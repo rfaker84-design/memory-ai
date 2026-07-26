@@ -6,6 +6,10 @@ export interface MemoryDataSource {
   create(memory: CreateMemoryInput): Promise<Memory>;
   findById(id: string): Promise<Memory | null>;
   findByIdForUser?(id: string, userId: string): Promise<Memory | null>;
+  findByCreationIdempotencyKeyForUser?(
+    userId: string,
+    idempotencyKey: string
+  ): Promise<Memory | null>;
   update(id: string, memory: UpdateMemoryInput): Promise<Memory>;
   updateForUser?(
     id: string,
