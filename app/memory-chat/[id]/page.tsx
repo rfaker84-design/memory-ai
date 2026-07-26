@@ -4,7 +4,11 @@ import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type { Memory } from "../../../features/memory/types";
-import { MemoryConversationScene } from "../../../src/components/first-presence/MemoryConversationScene";
+import { CreationMediaRecoveryGate } from "../../../src/components/first-presence/CreationMediaRecoveryGate";
+import {
+  clearCreationRecovery,
+  readCreationRecovery,
+} from "../../../src/components/first-presence/creationRecoveryClient";
 import {
   loadOwnedMediaUrl,
   loadOwnedMemory,
@@ -47,8 +51,13 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
       .catch((error) => {
         if (controller.signal.aborted) return;
         if (error instanceof OwnedMemoryRequestError && error.status === 401) {
+          clearCreationRecovery();
           setState({ status: "unauthenticated" });
+          router.replace("/login");
         } else if (error instanceof OwnedMemoryRequestError && error.status === 404) {
+          if (readCreationRecovery()?.memoryId === id) {
+            clearCreationRecovery();
+          }
           setState({ status: "not-found" });
         } else {
           setState({ status: "error" });
@@ -56,7 +65,7 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
       });
 
     return () => controller.abort();
-  }, [id]);
+  }, [id, router]);
 
   if (state.status !== "ready") {
     const copy = state.status === "unauthenticated"
@@ -80,9 +89,8 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
   return (
     <main className={styles.page}>
       <div className={styles.stars} aria-hidden="true" />
-      <MemoryConversationScene
-        memoryId={state.memory.id}
-        memoryName={state.memory.name}
+      <CreationMediaRecoveryGate
+        memory={state.memory}
         firstGreetingKey={firstGreetingKey(state.memory.id)}
         initialPortraitUrl={state.portraitUrl}
         onLeave={() => router.replace("/")}

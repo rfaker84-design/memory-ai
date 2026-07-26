@@ -8,6 +8,8 @@ const page = readFileSync("app/page.tsx", "utf8");
 const chatPage = readFileSync("app/memory-chat/[id]/page.tsx", "utf8");
 const conversation = readFileSync("src/components/first-presence/MemoryConversationScene.tsx", "utf8");
 const conversationAdapter = readFileSync("src/components/first-presence/memoryConversationAdapter.ts", "utf8");
+const recoveryClient = readFileSync("src/components/first-presence/creationRecoveryClient.ts", "utf8");
+const mediaRecoveryGate = readFileSync("src/components/first-presence/CreationMediaRecoveryGate.tsx", "utf8");
 
 test("immersive creation asks one question at a time and uses custom media entry points", () => {
   for (const copy of [
@@ -46,11 +48,14 @@ test("preview is explicit, zero-write, and production-gated", () => {
 });
 
 test("formal creation leaves React memory state for the stable owned chat URL", () => {
-  assert.match(flow, /router\.replace\(`\/memory-chat\/\$\{encodeURIComponent\(memory\.id\)\}`\)/);
+  assert.match(flow, /router\.replace\(`\/memory-chat\/\$\{encodeURIComponent\(payload\.id\)\}`\)/);
   assert.match(chatPage, /loadOwnedMemory\(id/);
   assert.match(chatPage, /loadOwnedMediaUrl\(memory\.photoAssetId/);
+  assert.match(chatPage, /clearCreationRecovery\(\)/);
+  assert.match(chatPage, /router\.replace\("\/login"\)/);
   assert.match(chatPage, /firstGreetingKey\(state\.memory\.id\)/);
-  assert.match(chatPage, /MemoryConversationScene/);
+  assert.match(chatPage, /CreationMediaRecoveryGate/);
+  assert.match(mediaRecoveryGate, /MemoryConversationScene/);
   assert.doesNotMatch(chatPage, /completedConversationRounds/);
   assert.doesNotMatch(chatPage, /preferredAddress|catchPhrases|sharedMemory|userId/);
   assert.match(conversation, /restoreConversationWithFirstGreeting/);
@@ -60,6 +65,23 @@ test("formal creation leaves React memory state for the stable owned chat URL", 
   );
   assert.match(conversation, /setActiveSessionId\(restored\.sessionId\)/);
   assert.match(conversationAdapter, /hasPersistedFirstGreeting\(restored\.messages\)/);
+});
+
+test("formal creation persists only a minimal recovery record and establishes the stable URL before media upload", () => {
+  assert.match(flow, /writeCreationRecovery\(\{\s*idempotencyKey: idempotencyKey\.current,\s*phase: "creating"/);
+  assert.match(flow, /recoverPendingCreation\(\)/);
+  assert.match(recoveryClient, /request\("\/api\/memories\/recovery"/);
+  assert.match(recoveryClient, /body: JSON\.stringify\(\{\}\)/);
+  assert.doesNotMatch(flow, /\/api\/media\/upload/);
+  assert.match(mediaRecoveryGate, /uploadCreationMedia\(memory\.id, file\)/);
+  assert.match(mediaRecoveryGate, /人物资料已经保存。照片或声音尚未完成，你可以重新选择，或稍后补充。/);
+  assert.match(
+    mediaRecoveryGate,
+    /if \(phase === "conversation"\) \{[\s\S]*?<MemoryConversationScene/,
+  );
+  assert.match(mediaRecoveryGate, /remainingMediaKinds\(record\.phase, Boolean\(memory\.photoAssetId\)\)/);
+  assert.match(mediaRecoveryGate, /markTransientCreationMediaUploaded\(memory\.id, kind\)/);
+  assert.match(mediaRecoveryGate, /clearCreationRecovery\(\)/);
 });
 
 test("portrait remains consistent and the offer appears only after the second exchange", () => {
@@ -97,7 +119,7 @@ test("formal screens contain no development panel copy", () => {
 });
 
 test("failure, back navigation, and reduced motion preserve the current draft", () => {
-  assert.match(flow, /不会替你重复提交/);
+  assert.match(flow, /系统不会重复创建 TA/);
   assert.match(flow, /router\.replace\(`\/memory-chat\//);
   assert.match(flow, /返回检查回答/);
   assert.match(flow, /setQuestionIndex\(\(current\) => current - 1\)/);

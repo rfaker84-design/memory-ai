@@ -17,8 +17,15 @@ import { MemoryMotion } from "../../design";
 import { useReducedMotion } from "../../motion";
 
 import { buildConfirmedMemoryProfile } from "./confirmedMemoryProfile";
-import { loadOwnedMediaUrl } from "../memory/ownedMemoryClient";
 import { recordTrustConsent, TrustConsentRequestError } from "../trust/trustConsentClient";
+import {
+  clearCreationRecovery,
+  mediaPhase,
+  readCreationRecovery,
+  recoverPendingCreation,
+  stageTransientCreationMedia,
+  writeCreationRecovery,
+} from "./creationRecoveryClient";
 import styles from "./FirstPresenceFlow.module.css";
 
 type EntryStage = "create" | "login-phone" | "preview-create";
@@ -28,7 +35,6 @@ type FlowStage =
   | "login-code"
   | "sms-unavailable"
   | "creating"
-  | "upload-failed"
   | "network-failed"
   | "auth-required"
   | "preview-forming"
@@ -37,14 +43,12 @@ type FlowStage =
   | "preview-chat-one"
   | "preview-chat-two";
 type AuthState = "checking" | "authenticated" | "unauthenticated" | "unavailable" | "preview";
-type PendingUpload = { kind: "photo" | "voice"; file: File };
 type ApiPayload = {
   error?: string;
   authenticated?: boolean;
   challengeId?: string;
   id?: string;
   name?: string;
-  asset?: { id?: string; mediaType?: string };
 };
 type FirstPresenceFlowProps = {
   initialStage?: EntryStage;
@@ -211,14 +215,11 @@ export function FirstPresenceFlow({
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [challengeId, setChallengeId] = useState("");
-  const [createdMemory, setCreatedMemory] = useState<{ id: string; name: string } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const idempotencyKey = useRef<string | null>(null);
-  const creationAttempted = useRef(false);
+  const recoveryCheckStarted = useRef(false);
   const localPortraitUrl = useRef<string | null>(null);
-  const uploadQueue = useRef<PendingUpload[]>([]);
-  const uploadedPhotoAssetId = useRef<string | null>(null);
   const titleId = useId();
 
   const releaseLocalPortrait = useCallback(() => {
@@ -281,12 +282,6 @@ export function FirstPresenceFlow({
 
   const noteDraftRevision = () => {
     setError("");
-    if (!creationAttempted.current) return;
-    creationAttempted.current = false;
-    idempotencyKey.current = null;
-    uploadQueue.current = [];
-    uploadedPhotoAssetId.current = null;
-    setCreatedMemory(null);
   };
 
   const leaveFlow = () => {
@@ -413,40 +408,63 @@ export function FirstPresenceFlow({
     return "";
   };
 
-  const uploadPendingMedia = async (memory: { id: string; name: string }) => {
-    if (!uploadQueue.current.length && !uploadedPhotoAssetId.current) return;
-    await recordTrustConsent("media_asset", memory.id);
+  const continueRecoveredCreation = useCallback(async (unknownAfterRefresh = false) => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    setStage("creating");
+    try {
+      const result = await recoverPendingCreation();
+      if (result.status === "none") {
+        setError("刚才的创建记录已经不在当前页面中。请返回确认后再继续。");
+        setQuestionIndex(8);
+        setStage("questions");
+        return;
+      }
+      if (result.status === "unauthenticated") {
+        setAuthState("unauthenticated");
+        router.replace("/login");
+        return;
+      }
+      if (result.status === "not-found") {
+        idempotencyKey.current = result.record.idempotencyKey;
+        setError("暂时还不能确认 TA 是否已经保存。系统不会改用新的创建标识，也不会重复创建；请稍后由你再次确认。");
+        setStage("network-failed");
+        return;
+      }
+      if (result.status === "known") {
+        idempotencyKey.current = result.record.idempotencyKey;
+        router.replace(`/memory-chat/${encodeURIComponent(result.memoryId)}`);
+        return;
+      }
 
-    if (uploadedPhotoAssetId.current && !portraitUrl?.startsWith("http")) {
-      const signedUrl = await loadOwnedMediaUrl(uploadedPhotoAssetId.current);
-      releaseLocalPortrait();
-      setPortraitUrl(signedUrl);
-    }
-
-    while (uploadQueue.current.length) {
-      const pending = uploadQueue.current[0];
-      const form = new FormData();
-      form.append("file", pending.file);
-      form.append("memoryId", memory.id);
-      const response = await fetch("/api/media/upload", {
-        method: "POST",
-        credentials: "same-origin",
-        body: form,
+      const nextPhase = mediaPhase(
+        Boolean(photoFile),
+        Boolean(voiceFile),
+        unknownAfterRefresh && !photoFile && !voiceFile,
+      );
+      idempotencyKey.current = result.record.idempotencyKey;
+      stageTransientCreationMedia(result.memory.id, {
+        ...(photoFile ? { photo: photoFile } : {}),
+        ...(voiceFile ? { voice: voiceFile } : {}),
       });
-      const payload = await responsePayload(response);
-      if (!response.ok || !payload.asset?.id) {
-        throw new Error(response.status === 401 ? "AUTH_EXPIRED" : "MEDIA_UPLOAD_FAILED");
+      if (!writeCreationRecovery({
+        idempotencyKey: result.record.idempotencyKey,
+        memoryId: result.memory.id,
+        phase: nextPhase,
+      })) {
+        setError("TA 已经保存，但当前页面暂时无法保留后续素材状态。请不要关闭页面，稍后再次确认。");
+        setStage("network-failed");
+        return;
       }
-      uploadQueue.current.shift();
-      if (pending.kind === "photo") {
-        uploadedPhotoAssetId.current = payload.asset.id;
-        releaseLocalPortrait();
-        setPortraitUrl(null);
-        const signedUrl = await loadOwnedMediaUrl(payload.asset.id);
-        setPortraitUrl(signedUrl);
-      }
+      router.replace(`/memory-chat/${encodeURIComponent(result.memory.id)}`);
+    } catch {
+      setError("连接仍未恢复。系统不会重复创建 TA；请稍后由你再次确认。");
+      setStage("network-failed");
+    } finally {
+      setBusy(false);
     }
-  };
+  }, [busy, photoFile, router, voiceFile]);
 
   const createRealPresence = async () => {
     if (authState === "checking") {
@@ -458,20 +476,28 @@ export function FirstPresenceFlow({
       return;
     }
 
+    const pendingRecovery = readCreationRecovery();
+    if (pendingRecovery) {
+      idempotencyKey.current = pendingRecovery.idempotencyKey;
+      await continueRecoveredCreation();
+      return;
+    }
+
     setBusy(true);
     setError("");
     setStage("creating");
-    creationAttempted.current = true;
-    if (!uploadQueue.current.length && !createdMemory) {
-      uploadQueue.current = [
-        ...(photoFile ? [{ kind: "photo" as const, file: photoFile }] : []),
-        ...(voiceFile ? [{ kind: "voice" as const, file: voiceFile }] : []),
-      ];
-    }
 
     try {
       await recordTrustConsent("memory_profile");
       idempotencyKey.current ||= clientIdempotencyKey();
+      if (!writeCreationRecovery({
+        idempotencyKey: idempotencyKey.current,
+        phase: "creating",
+      })) {
+        setError("当前浏览器无法安全保留这次创建状态，因此尚未提交。请保持页面打开并稍后重试。");
+        setStage("network-failed");
+        return;
+      }
       const response = await fetch("/api/memories", {
         method: "POST",
         credentials: "same-origin",
@@ -489,62 +515,52 @@ export function FirstPresenceFlow({
       });
       const payload = await responsePayload(response);
       if (response.status === 401) {
+        clearCreationRecovery();
         setAuthState("unauthenticated");
-        setStage("auth-required");
+        router.replace("/login");
         return;
       }
       if (!response.ok || !payload.id) {
-        setError("TA 的资料还没有确认保存好。全部回答都在这里，不会自动重试。");
-        setStage("network-failed");
+        await continueRecoveredCreation();
         return;
       }
 
-      const memory = { id: payload.id, name: payload.name || name.trim() };
-      setCreatedMemory(memory);
-      try {
-        await uploadPendingMedia(memory);
-        router.replace(`/memory-chat/${encodeURIComponent(memory.id)}`);
-      } catch (cause) {
-        setError(cause instanceof Error && cause.message === "AUTH_EXPIRED"
-          ? "登录状态已失效；素材尚未继续上传。重新登录后可明确重试。"
-          : "TA 的资料已经创建，但仍有素材未安全上传。已保留文件与回答，不会自动重试。");
-        setStage("upload-failed");
-      }
+      const nextPhase = mediaPhase(Boolean(photoFile), Boolean(voiceFile));
+      stageTransientCreationMedia(payload.id, {
+        ...(photoFile ? { photo: photoFile } : {}),
+        ...(voiceFile ? { voice: voiceFile } : {}),
+      });
+      writeCreationRecovery({
+        idempotencyKey: idempotencyKey.current,
+        memoryId: payload.id,
+        phase: nextPhase,
+      });
+      router.replace(`/memory-chat/${encodeURIComponent(payload.id)}`);
     } catch (cause) {
-      setError(cause instanceof TrustConsentRequestError
-        ? "刚才的确认还没有保存好。你的回答都还在这里。"
-        : "连接在最后一步中断了。你的回答和这次创建仍被保留，不会替你重复提交。");
-      setStage("network-failed");
+      if (cause instanceof TrustConsentRequestError) {
+        setError("刚才的确认还没有保存好。你的回答都还在这里。");
+        setQuestionIndex(8);
+        setStage("questions");
+      } else {
+        await continueRecoveredCreation();
+      }
     } finally {
       setBusy(false);
     }
   };
 
-  const retryUpload = async () => {
-    if (!createdMemory || busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      await uploadPendingMedia(createdMemory);
-      router.replace(`/memory-chat/${encodeURIComponent(createdMemory.id)}`);
-    } catch {
-      setError("素材仍未安全上传。文件和已创建的 TA 资料都保持不变，请稍后明确重试。");
-    } finally {
-      setBusy(false);
+  useEffect(() => {
+    if (
+      previewMode
+      || authState !== "authenticated"
+      || recoveryCheckStarted.current
+      || !readCreationRecovery()
+    ) {
+      return;
     }
-  };
-
-  const continueWithoutPendingMedia = () => {
-    uploadQueue.current = [];
-    if (!uploadedPhotoAssetId.current) {
-      releaseLocalPortrait();
-      setPortraitUrl(null);
-    }
-    setError("");
-    if (createdMemory) {
-      router.replace(`/memory-chat/${encodeURIComponent(createdMemory.id)}`);
-    }
-  };
+    recoveryCheckStarted.current = true;
+    void continueRecoveredCreation(true);
+  }, [authState, continueRecoveredCreation, previewMode]);
 
   const submitQuestion = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -753,25 +769,13 @@ export function FirstPresenceFlow({
                 </div>
               )}
 
-              {stage === "upload-failed" && (
-                <div className={styles.copyBlock} role="alert">
-                  <p className={styles.kicker}>素材仍在原地</p>
-                  <h1 id={titleId}>TA 已创建，照片或声音尚未完整上传。</h1>
-                  <p id="flow-description">{error}</p>
-                  <div className={styles.actions}>
-                    <MemoryButton loading={busy} onClick={() => void retryUpload()}>再试一次</MemoryButton>
-                    <button className={styles.backButton} type="button" onClick={continueWithoutPendingMedia}>暂时不用这些素材</button>
-                  </div>
-                </div>
-              )}
-
               {stage === "network-failed" && (
                 <div className={styles.copyBlock} role="alert">
                   <p className={styles.kicker}>连接暂时中断</p>
                   <h1 id={titleId}>刚才那一步没有被重复。</h1>
                   <p id="flow-description">{error}</p>
                   <div className={styles.actions}>
-                    <MemoryButton loading={busy} onClick={() => void createRealPresence()}>再试一次</MemoryButton>
+                    <MemoryButton loading={busy} onClick={() => void continueRecoveredCreation()}>确认刚才的创建</MemoryButton>
                     <button className={styles.backButton} type="button" onClick={() => { setError(""); setQuestionIndex(8); setStage("questions"); }}>返回检查回答</button>
                   </div>
                 </div>

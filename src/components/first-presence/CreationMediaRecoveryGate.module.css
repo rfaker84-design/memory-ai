@@ -1,0 +1,206 @@
+.recovery {
+  position: relative;
+  z-index: 1;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: minmax(15rem, 0.9fr) minmax(19rem, 1.1fr);
+  align-items: center;
+  gap: clamp(2rem, 7vw, 7rem);
+  width: min(72rem, 100%);
+  margin: 0 auto;
+  padding: clamp(2rem, 6vw, 5rem);
+}
+
+.presence {
+  display: grid;
+  justify-items: center;
+  gap: 0.9rem;
+  color: rgba(243, 234, 223, 0.82);
+}
+
+.presence p {
+  margin: 0;
+  font-size: 1rem;
+  letter-spacing: 0.12em;
+}
+
+.orbit {
+  position: absolute;
+  width: min(38vw, 25rem);
+  aspect-ratio: 1;
+  border: 1px solid rgba(211, 171, 111, 0.12);
+  border-radius: 50%;
+  box-shadow: 0 0 5rem rgba(165, 116, 61, 0.08);
+}
+
+.portrait {
+  position: relative;
+  width: min(48vw, 18rem);
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border-radius: 46% 46% 42% 42% / 38% 38% 32% 32%;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(211, 171, 111, 0.2), transparent 56%),
+    rgba(34, 28, 22, 0.78);
+  box-shadow: 0 2rem 5rem rgba(0, 0, 0, 0.4);
+}
+
+.portrait div {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-size: cover;
+}
+
+.portrait span {
+  color: #dfc08d;
+  font-family: var(--font-serif, serif);
+  font-size: clamp(2.4rem, 8vw, 4.5rem);
+}
+
+.copy {
+  max-width: 34rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.75rem;
+  color: #c89c5f;
+  font-size: 0.78rem;
+  letter-spacing: 0.18em;
+}
+
+.copy h1 {
+  margin: 0;
+  color: #f3eadf;
+  font-family: var(--font-serif, serif);
+  font-size: clamp(2rem, 4vw, 3.4rem);
+  font-weight: 400;
+  line-height: 1.18;
+}
+
+.copy > p:not(.eyebrow, .status, .notice) {
+  margin: 1.1rem 0 0;
+  color: rgba(243, 234, 223, 0.7);
+  font-size: 1rem;
+  line-height: 1.8;
+}
+
+.status,
+.notice {
+  margin: 1rem 0 0;
+  color: rgba(224, 198, 155, 0.78);
+  font-size: 0.94rem;
+  line-height: 1.65;
+}
+
+.notice {
+  color: #e1bd86;
+}
+
+.choices {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.mediaChoice {
+  position: relative;
+  display: grid;
+  gap: 0.2rem;
+  min-height: 4.5rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(210, 171, 112, 0.22);
+  border-radius: 1rem;
+  background: rgba(17, 14, 11, 0.66);
+  cursor: pointer;
+}
+
+.mediaChoice strong {
+  color: #e7d4b7;
+  font-size: 0.96rem;
+  font-weight: 500;
+}
+
+.mediaChoice span {
+  overflow: hidden;
+  color: rgba(243, 234, 223, 0.58);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.actions > button:not(:first-child) {
+  min-height: 2.75rem;
+  border: 0;
+  background: transparent;
+  color: rgba(224, 198, 155, 0.78);
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (max-width: 700px) {
+  .recovery {
+    grid-template-columns: 1fr;
+    align-content: center;
+    gap: 1.5rem;
+    padding: 1.5rem 1.25rem 2rem;
+  }
+
+  .portrait {
+    width: min(44vw, 10.5rem);
+  }
+
+  .orbit {
+    width: min(58vw, 14rem);
+  }
+
+  .copy {
+    text-align: center;
+  }
+
+  .copy h1 {
+    font-size: clamp(1.8rem, 8vw, 2.5rem);
+  }
+
+  .copy > p:not(.eyebrow, .status, .notice) {
+    font-size: 0.95rem;
+    line-height: 1.7;
+  }
+
+  .mediaChoice {
+    text-align: left;
+  }
+
+  .actions {
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recovery *,
+  .recovery *::before,
+  .recovery *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
