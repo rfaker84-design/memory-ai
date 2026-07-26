@@ -173,8 +173,14 @@ test("refresh preserves the same two completed persisted rounds", async () => {
       refreshed.messages.map((message) => message.id),
       firstVisit.messages.map((message) => message.id),
     );
-    assert.equal(completedConversationRounds(firstVisit.messages), 2);
-    assert.equal(completedConversationRounds(refreshed.messages), 2);
+    assert.equal(
+      completedConversationRounds(firstVisit.messages, firstVisit.sessionId),
+      2,
+    );
+    assert.equal(
+      completedConversationRounds(refreshed.messages, refreshed.sessionId),
+      2,
+    );
     assert.equal(calls.filter((url) => url.endsWith("/first-greeting")).length, 0);
     assert.equal(calls.filter((url) => url.endsWith("/chat-session")).length, 2);
   } finally {

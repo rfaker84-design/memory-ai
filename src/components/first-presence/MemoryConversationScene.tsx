@@ -52,6 +52,7 @@ function readableFailure(error: unknown) {
 export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey, initialPortraitUrl = null, onLeave }: Props) {
   const reducedMotion = useReducedMotion();
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [phase, setPhase] = useState<ConversationPhase>("loading");
   const [draft, setDraft] = useState("");
   const [pendingMessage, setPendingMessage] = useState<PendingMessage | null>(null);
@@ -67,6 +68,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
 
   const restore = useCallback(async (signal?: AbortSignal) => {
     const snapshot = await loadConversation(memoryId, signal);
+    setActiveSessionId(snapshot.sessionId);
     setMessages(snapshot.messages);
     return snapshot.messages;
   }, [memoryId]);
@@ -81,6 +83,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
         firstGreetingKey,
         signal,
       );
+      setActiveSessionId(restored.sessionId);
       setMessages(restored.messages);
       setPhase("ready");
     } catch (error) {
@@ -186,7 +189,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   };
 
   const isBusy = phase === "loading" || phase === "greeting" || phase === "sending" || phase === "replying" || phase === "recovering";
-  const completedRounds = completedConversationRounds(messages);
+  const completedRounds = completedConversationRounds(messages, activeSessionId);
   const status = phase === "sending" ? "正在送出这句话…" : phase === "replying" ? `${memoryName} 正在回应…` : phase === "greeting" ? "第一句话正在慢慢靠近…" : phase === "recovering" ? "正在找回刚才的对话…" : "";
 
   return (

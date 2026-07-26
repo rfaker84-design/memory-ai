@@ -29,14 +29,15 @@ const userOne = message("user-1", "user", "第一句话", "memory_chat_turn", "t
 const replyOne = message("reply-1", "assistant", "第一句回应", "memory_chat_turn", "turn-1");
 const userTwo = message("user-2", "user", "第二句话", "memory_chat_turn", "turn-2");
 const replyTwo = message("reply-2", "assistant", "第二句回应", "memory_chat_turn", "turn-2");
+const activeSessionId = "session-1";
 
 test("first greeting and incomplete turns do not unlock the experience", () => {
   assert.equal(hasPersistedFirstGreeting([greeting]), true);
-  assert.equal(completedConversationRounds([greeting]), 0);
-  assert.equal(completedConversationRounds([greeting, userOne]), 0);
-  assert.equal(completedConversationRounds([greeting, userOne, replyOne]), 1);
-  assert.equal(completedConversationRounds([greeting, userOne, replyOne, userTwo]), 1);
-  assert.equal(completedConversationRounds([greeting, userOne, replyOne, userTwo, replyTwo]), 2);
+  assert.equal(completedConversationRounds([greeting], activeSessionId), 0);
+  assert.equal(completedConversationRounds([greeting, userOne], activeSessionId), 0);
+  assert.equal(completedConversationRounds([greeting, userOne, replyOne], activeSessionId), 1);
+  assert.equal(completedConversationRounds([greeting, userOne, replyOne, userTwo], activeSessionId), 1);
+  assert.equal(completedConversationRounds([greeting, userOne, replyOne, userTwo, replyTwo], activeSessionId), 2);
 });
 
 test("blank, failed-shape and preview messages never count", () => {
@@ -53,9 +54,9 @@ test("blank, failed-shape and preview messages never count", () => {
     metadata: { kind: "error", idempotencyKey: "turn-1" },
   };
 
-  assert.equal(completedConversationRounds([greeting, userOne, blankReply]), 0);
-  assert.equal(completedConversationRounds([greeting, userOne, previewReply]), 0);
-  assert.equal(completedConversationRounds([greeting, userOne, errorReply]), 0);
+  assert.equal(completedConversationRounds([greeting, userOne, blankReply], activeSessionId), 0);
+  assert.equal(completedConversationRounds([greeting, userOne, previewReply], activeSessionId), 0);
+  assert.equal(completedConversationRounds([greeting, userOne, errorReply], activeSessionId), 0);
 });
 
 test("a reply must follow its user message in the same persisted session and turn", () => {
@@ -75,7 +76,63 @@ test("a reply must follow its user message in the same persisted session and tur
     "turn-other",
   );
 
-  assert.equal(completedConversationRounds([greeting, replyOne, userOne]), 0);
-  assert.equal(completedConversationRounds([greeting, userOne, wrongSessionReply]), 0);
-  assert.equal(completedConversationRounds([greeting, userOne, wrongTurnReply]), 0);
+  assert.equal(completedConversationRounds([greeting, replyOne, userOne], activeSessionId), 0);
+  assert.equal(completedConversationRounds([greeting, userOne, wrongSessionReply], activeSessionId), 0);
+  assert.equal(completedConversationRounds([greeting, userOne, wrongTurnReply], activeSessionId), 0);
+});
+
+test("only complete turns from the active chat session count", () => {
+  const otherUser = message(
+    "other-user",
+    "user",
+    "其他会话用户消息",
+    "memory_chat_turn",
+    "other-turn",
+    "session-2",
+  );
+  const otherReply = message(
+    "other-reply",
+    "assistant",
+    "其他会话回复",
+    "memory_chat_turn",
+    "other-turn",
+    "session-2",
+  );
+
+  assert.equal(
+    completedConversationRounds(
+      [userOne, replyOne, otherUser, otherReply],
+      activeSessionId,
+    ),
+    1,
+  );
+  assert.equal(
+    completedConversationRounds([otherUser, otherReply], activeSessionId),
+    0,
+  );
+  assert.equal(
+    completedConversationRounds(
+      [otherUser, userOne, otherReply, replyOne, userTwo, replyTwo, otherUser],
+      activeSessionId,
+    ),
+    2,
+  );
+});
+
+test("a missing active session fails closed", () => {
+  const completeRound = [userOne, replyOne];
+  assert.equal(completedConversationRounds(completeRound, undefined), 0);
+  assert.equal(completedConversationRounds(completeRound, null), 0);
+  assert.equal(completedConversationRounds(completeRound, ""), 0);
+  assert.equal(completedConversationRounds(completeRound, "   "), 0);
+});
+
+test("duplicate replay does not increase completed rounds", () => {
+  assert.equal(
+    completedConversationRounds(
+      [userOne, replyOne, userOne, replyOne],
+      activeSessionId,
+    ),
+    1,
+  );
 });

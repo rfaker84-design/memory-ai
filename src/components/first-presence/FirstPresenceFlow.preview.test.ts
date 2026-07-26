@@ -51,8 +51,14 @@ test("formal creation leaves React memory state for the stable owned chat URL", 
   assert.match(chatPage, /loadOwnedMediaUrl\(memory\.photoAssetId/);
   assert.match(chatPage, /firstGreetingKey\(state\.memory\.id\)/);
   assert.match(chatPage, /MemoryConversationScene/);
+  assert.doesNotMatch(chatPage, /completedConversationRounds/);
   assert.doesNotMatch(chatPage, /preferredAddress|catchPhrases|sharedMemory|userId/);
   assert.match(conversation, /restoreConversationWithFirstGreeting/);
+  assert.match(
+    conversation,
+    /completedConversationRounds\(messages, activeSessionId\)/,
+  );
+  assert.match(conversation, /setActiveSessionId\(restored\.sessionId\)/);
   assert.match(conversationAdapter, /hasPersistedFirstGreeting\(restored\.messages\)/);
 });
 
