@@ -10,7 +10,10 @@ import {
   DatabaseDependencyError,
   safeDatabaseErrorLog,
 } from "../../../src/server/database";
-import { MemoryValidationError } from "../../../features/memory/errors";
+import {
+  MemoryLimitError,
+  MemoryValidationError,
+} from "../../../features/memory/errors";
 import {
   AuthConfigurationError,
   requireAllowedOrigin,
@@ -29,6 +32,13 @@ const createAuditService = () =>
   new AuditService(new AuditRepository(new AuditPostgresDataSource()));
 
 function databaseErrorResponse(error: unknown) {
+  if (error instanceof MemoryLimitError) {
+    return NextResponse.json(
+      { error: "MEMORY_LIMIT_REACHED", maxMemories: 3 },
+      { status: 409 }
+    );
+  }
+
   if (error instanceof MemoryValidationError) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }

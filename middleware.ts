@@ -26,6 +26,14 @@ const FORMAL_API_PATHS = new Set([
   "/api/payments/refunds",
   "/api/payments/entitlements",
   "/api/payments/wechat/callback",
+  "/api/commerce/catalog",
+  "/api/commerce/credits",
+  "/api/commerce/orders",
+  "/api/commerce/refunds",
+  "/api/commerce/referrals/code",
+  "/api/commerce/referrals/qualifications",
+  "/api/commerce/testing/callbacks",
+  "/api/internal/commerce-reconciliation",
   "/api/media/upload",
   "/api/health",
   "/api/health/database",
@@ -56,7 +64,11 @@ export function middleware(request: NextRequest) {
 
   // These server-to-server endpoints do not use browser authority. Their Route
   // Handlers enforce their own signed-notification or high-strength token proof.
-  if (request.nextUrl.pathname === "/api/payments/wechat/callback" || request.nextUrl.pathname === "/api/internal/refund-reviews") return NextResponse.next();
+  if (
+    request.nextUrl.pathname === "/api/payments/wechat/callback"
+    || request.nextUrl.pathname === "/api/commerce/testing/callbacks"
+    || request.nextUrl.pathname === "/api/internal/refund-reviews"
+  ) return NextResponse.next();
 
   const result = checkAllowedOrigin(request);
   if (result.allowed) return NextResponse.next();

@@ -3,3 +3,5 @@
 export class MemoryValidationError extends Error {}
 
 export class MemoryMediaConflictError extends Error {}
+
+export class MemoryLimitError extends Error {}

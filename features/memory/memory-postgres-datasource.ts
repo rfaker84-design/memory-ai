@@ -9,6 +9,7 @@ import {
 import type { MemoryDataSource } from "./datasource";
 import {
   MemoryMediaConflictError,
+  MemoryLimitError,
   MemoryNotFoundError,
   MemoryValidationError,
 } from "./errors";
@@ -236,6 +237,10 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
 
     const row = await withPostgresTransaction(async (client) => {
       const userId = await ensureUser(client, memory.userId);
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        [`memoryai:memory-create-limit:${userId}`]
+      );
       const findExisting = () => client.query<MemoryRow>(
         `
           SELECT ${MEMORY_COLUMNS}
@@ -251,6 +256,14 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
 
       const existing = await findExisting();
       if (existing.rows[0]) return { row: existing.rows[0], created: false };
+
+      const count = await client.query<{ count: string }>(
+        "SELECT COUNT(*)::text AS count FROM memories WHERE user_id = $1",
+        [userId]
+      );
+      if (Number(count.rows[0]?.count ?? 0) >= 3) {
+        throw new MemoryLimitError("A user can create at most three memories");
+      }
 
       try {
         const result = await client.query<MemoryRow>(

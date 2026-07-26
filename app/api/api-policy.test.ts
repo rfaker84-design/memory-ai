@@ -32,6 +32,14 @@ const EXACT_FORMAL_PATHS = new Set([
   "/api/payments/refunds",
   "/api/payments/entitlements",
   "/api/payments/wechat/callback",
+  "/api/commerce/catalog",
+  "/api/commerce/credits",
+  "/api/commerce/orders",
+  "/api/commerce/refunds",
+  "/api/commerce/referrals/code",
+  "/api/commerce/referrals/qualifications",
+  "/api/commerce/testing/callbacks",
+  "/api/internal/commerce-reconciliation",
   "/api/media/upload",
   "/api/health",
   "/api/health/database",
@@ -119,7 +127,7 @@ test("middleware enforces the formal API allowlist before route execution", asyn
 
 test("every tracked non-formal Route Handler is a route-level 410", async () => {
   const routes = trackedRoutes();
-  assert.equal(routes.length, 101, "the audit must enumerate the complete tracked API surface");
+  assert.equal(routes.length, 109, "the audit must enumerate the complete tracked API surface");
 
   for (const { file, pathname } of routes) {
     const formal = isFormalApiPath(pathname);
@@ -176,6 +184,13 @@ test("formal Session ownership and public health contracts remain explicit", asy
     paymentRefunds: readFileSync("app/api/payments/refunds/route.ts", "utf8"),
     paymentEntitlements: readFileSync("app/api/payments/entitlements/route.ts", "utf8"),
     paymentCallback: readFileSync("app/api/payments/wechat/callback/route.ts", "utf8"),
+    commerceOrders: readFileSync("app/api/commerce/orders/route.ts", "utf8"),
+    commerceCredits: readFileSync("app/api/commerce/credits/route.ts", "utf8"),
+    commerceRefunds: readFileSync("app/api/commerce/refunds/route.ts", "utf8"),
+    commerceReferralCode: readFileSync("app/api/commerce/referrals/code/route.ts", "utf8"),
+    commerceReferralQualifications: readFileSync("app/api/commerce/referrals/qualifications/route.ts", "utf8"),
+    commerceTestCallback: readFileSync("app/api/commerce/testing/callbacks/route.ts", "utf8"),
+    commerceReconciliation: readFileSync("app/api/internal/commerce-reconciliation/route.ts", "utf8"),
     media: readFileSync("app/api/media/_lib.ts", "utf8"),
   };
   assert.match(sources.sendCode, /createSendCodeHandler/);
@@ -202,6 +217,13 @@ test("formal Session ownership and public health contracts remain explicit", asy
   assert.match(sources.paymentRefunds, /createPaymentRefundsHandler/);
   assert.match(sources.paymentEntitlements, /verifyRequestSession/);
   assert.match(sources.paymentCallback, /createWeChatPayCallbackHandler/);
+  assert.match(sources.commerceOrders, /createCommerceOrdersHandler/);
+  assert.match(sources.commerceCredits, /verifyRequestSession/);
+  assert.match(sources.commerceRefunds, /verifyRequestSession/);
+  assert.match(sources.commerceReferralCode, /createReferralCodeHandler/);
+  assert.match(sources.commerceReferralQualifications, /createReferralQualificationHandler/);
+  assert.match(sources.commerceTestCallback, /createCommerceTestCallbackHandler/);
+  assert.match(sources.commerceReconciliation, /COMMERCE_RECONCILIATION_ACCESS_TOKEN/);
   assert.match(sources.businessEvents, /verifyRequestSession/);
   assert.match(sources.businessFunnel, /BUSINESS_METRICS_ACCESS_TOKEN/);
   assert.match(sources.refundReviews, /createRefundReviewsHandler/);
