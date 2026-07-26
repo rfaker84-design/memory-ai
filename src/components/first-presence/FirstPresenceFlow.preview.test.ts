@@ -5,6 +5,7 @@ import test from "node:test";
 const flow = readFileSync("src/components/first-presence/FirstPresenceFlow.tsx", "utf8");
 const styles = readFileSync("src/components/first-presence/FirstPresenceFlow.module.css", "utf8");
 const page = readFileSync("app/page.tsx", "utf8");
+const publicPreview = readFileSync("src/components/memorial-preview/MemorialPreviewExperience.tsx", "utf8");
 const chatPage = readFileSync("app/memory-chat/[id]/page.tsx", "utf8");
 const conversation = readFileSync("src/components/first-presence/MemoryConversationScene.tsx", "utf8");
 const conversationAdapter = readFileSync("src/components/first-presence/memoryConversationAdapter.ts", "utf8");
@@ -33,10 +34,14 @@ test("immersive creation asks one question at a time and uses custom media entry
   assert.match(styles, /questionEnter/);
 });
 
-test("preview is explicit, zero-write, and production-gated", () => {
+test("public preview is explicit and zero-write while the legacy preview remains production-gated", () => {
   assert.match(flow, /process\.env\.NODE_ENV !== "production"/);
   assert.match(flow, /NEXT_PUBLIC_MEMORYAI_ENABLE_PRESENCE_PREVIEW === "true"/);
-  assert.match(page, /initialStage="preview-create"/);
+  assert.match(page, /MemorialPreviewExperience/);
+  assert.match(page, /onPreview=\{\(\) => setStage\("preview"\)\}/);
+  assert.match(publicPreview, /免费预览/);
+  assert.match(publicPreview, /照片只在当前设备完成本次预览/);
+  assert.doesNotMatch(publicPreview, /fetch\(|localStorage|sessionStorage|recordTrustConsent/);
   assert.match(flow, /开发预览 · 内容不保存/);
   assert.match(flow, /if \(previewMode\) return;[\s\S]*?fetch\("\/api\/auth\/session"/);
   assert.match(
