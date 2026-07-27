@@ -62,6 +62,24 @@ async function requestJson(
   return parsed;
 }
 
+function isNonNegativeInteger(value: unknown) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isCommerceCreditBalance(value: unknown): value is CommerceCreditBalance {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const balance = value as Record<string, unknown>;
+  return [
+    "paidAvailable",
+    "referralAvailable",
+    "freePreviewAvailable",
+    "photoRemedyAvailable",
+    "totalAvailable",
+  ].every((key) => isNonNegativeInteger(balance[key]))
+    && balance.paidCreditsNeverExpire === true
+    && typeof balance.canSaveFirstPreview === "boolean";
+}
+
 export async function loadCommerceVideoProducts(request: typeof fetch = fetch) {
   const parsed = await requestJson("/api/commerce/catalog", undefined, request);
   if (!Array.isArray(parsed.products)) throw new CommerceVideoEntryError("INVALID_COMMERCE_CATALOG");
@@ -70,10 +88,10 @@ export async function loadCommerceVideoProducts(request: typeof fetch = fetch) {
 
 export async function loadCommerceCreditBalance(request: typeof fetch = fetch) {
   const parsed = await requestJson("/api/commerce/credits", undefined, request);
-  if (typeof parsed.balance !== "object" || parsed.balance === null || Array.isArray(parsed.balance)) {
+  if (!isCommerceCreditBalance(parsed.balance)) {
     throw new CommerceVideoEntryError("INVALID_COMMERCE_BALANCE");
   }
-  return parsed.balance as CommerceCreditBalance;
+  return parsed.balance;
 }
 
 export async function loadReferralStatus(request: typeof fetch = fetch) {

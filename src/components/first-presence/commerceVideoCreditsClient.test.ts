@@ -80,6 +80,23 @@ test("iOS remains explicitly reserved for StoreKit and other platforms stay dist
   assert.equal(commercePlatform("Mozilla/5.0 (Windows NT 10.0)"), "web");
 });
 
+test("an invalid balance payload is unavailable instead of becoming zero credits", async () => {
+  await assert.rejects(
+    loadCommerceCreditBalance((async () => response({
+      balance: {
+        paidAvailable: 0,
+        referralAvailable: 0,
+        freePreviewAvailable: 0,
+        photoRemedyAvailable: 0,
+        totalAvailable: "0",
+        paidCreditsNeverExpire: true,
+        canSaveFirstPreview: false,
+      },
+    })) as typeof fetch),
+    /INVALID_COMMERCE_BALANCE/,
+  );
+});
+
 test("the visible package labels come from the immutable new Commerce catalog", () => {
   assert.deepEqual(
     listCommerceProducts().map((product) => product.priceFen / 100 + "元 / " + product.generationCredits + "次"),
