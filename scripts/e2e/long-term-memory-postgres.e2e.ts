@@ -33,6 +33,8 @@ const MIGRATIONS = [
   "011_business_funnel_events.sql",
   "012_payment_refund_requests.sql",
   "013_wechat_auth_identities.sql",
+  "014_commerce_credits_referrals.sql",
+  "015_chat_default_session_atomicity.sql",
 ] as const;
 
 const externalUserId = "isolated-ltm-e2e-user";
