@@ -13,7 +13,6 @@ export default function Sprint21CoreExperiencePage() {
       <MemorialPreviewExperience
         acceptanceMode
         onClose={() => router.replace("/")}
-        onRequestAccount={() => router.replace("/login")}
       />
     </MotionProvider>
   );

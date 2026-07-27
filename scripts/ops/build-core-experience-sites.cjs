@@ -91,7 +91,12 @@ async function main() {
     },
   );
 
-  if (!response.ok || !(await response.text()).includes("从一张你最熟悉的照片开始")) {
+  const stagedHtml = await response.text();
+  if (
+    !response.ok ||
+    !stagedHtml.includes("先验证，再生成") ||
+    !stagedHtml.includes("先确认是你，再开始这一段影像。")
+  ) {
     throw new Error("The staged acceptance route did not render the expected experience.");
   }
 

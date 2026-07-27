@@ -480,7 +480,7 @@ function HomeOverlay({ onLoginSuccess, onPreview }: { onLoginSuccess: () => void
             </p>
             {onPreview && (
               <button type="button" onClick={onPreview} className={homeLoginStyles.previewButton}>
-                先生成一次 10 秒预览
+                手机号验证后，生成 10 秒预览
               </button>
             )}
           </>

@@ -35,7 +35,6 @@ export default function HomePage() {
       {stage === "preview" && (
         <MemorialPreviewExperience
           onClose={() => setStage("home")}
-          onRequestAccount={() => setStage("home")}
         />
       )}
     </MotionProvider>
