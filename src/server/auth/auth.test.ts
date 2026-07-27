@@ -20,7 +20,10 @@ import { AUTH_POLICY, AUTH_SESSION_COOKIE } from "./config";
 import { generateVerificationCode, sessionSecret, verificationDigestsEqual } from "./crypto";
 import { issueSession, verifySessionToken } from "./session";
 import { FakeSmsVerificationProvider } from "./sms/fake-sms-verification-provider";
-import { TencentSmsVerificationProvider } from "./sms/tencent-sms-verification-provider";
+import {
+  getSmsVerificationProvider,
+  TencentSmsVerificationProvider,
+} from "./sms/tencent-sms-verification-provider";
 
 process.env.AUTH_VERIFICATION_PEPPER = "test-only-pepper-value-with-at-least-32-bytes";
 process.env.SESSION_SECRET = "test-only-session-value-with-at-least-32-bytes";
@@ -148,6 +151,60 @@ test("send code uses fake provider and never exposes the verification code", asy
   assert.equal(provider.sent.length, 1);
   assert.match(provider.sent[0].code, /^\d{6}$/);
   assert.equal(repository.providerRequestId, "fake-request-id");
+});
+
+test("an explicitly enabled non-production fixed provider completes the formal login route", async () => {
+  const names = [
+    "NODE_ENV",
+    "AUTH_SMS_PROVIDER",
+    "AUTH_FIXED_SMS_CODE",
+    "AUTH_FIXED_SMS_ALLOWED_PHONES",
+  ] as const;
+  const previous = new Map(names.map((name) => [name, process.env[name]]));
+  try {
+    process.env.NODE_ENV = "test";
+    process.env.AUTH_SMS_PROVIDER = "fixed";
+    process.env.AUTH_FIXED_SMS_CODE = "246810";
+    process.env.AUTH_FIXED_SMS_ALLOWED_PHONES = "+8618800000001,+8618800000002";
+    const repository = new InMemoryAuthRepository();
+    const service = new AuthService(repository, getSmsVerificationProvider());
+    const send = createSendCodeHandler(() => service);
+    const verify = createVerifyCodeHandler(() => service);
+    const headers = {
+      "content-type": "application/json",
+      origin: "https://memoryai.test",
+      "x-real-ip": "127.0.0.1",
+    };
+
+    const sent = await send(new NextRequest("https://memoryai.test/api/auth/send-code", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ phone: "18800000001" }),
+    }));
+    assert.equal(sent.status, 202);
+    const sentBody = await sent.json() as { challengeId: string };
+    assert.ok(sentBody.challengeId);
+
+    const verified = await verify(new NextRequest("https://memoryai.test/api/auth/verify-code", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        phone: "18800000001",
+        code: "246810",
+        challengeId: sentBody.challengeId,
+      }),
+    }));
+    assert.equal(verified.status, 200);
+    const verifiedBody = await verified.json() as { authenticated?: boolean };
+    assert.equal(verifiedBody.authenticated, true);
+    assert.match(verified.headers.get("set-cookie") ?? "", /HttpOnly/i);
+  } finally {
+    for (const name of names) {
+      const value = previous.get(name);
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
 });
 
 test("formal SMS endpoints reject extra client-controlled fields before service calls", async () => {

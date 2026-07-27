@@ -4,6 +4,8 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 
+import { loadFixedCodeSmsConfig } from "./sms/fixed-code-sms-config";
+
 export class AuthConfigurationError extends Error {
   constructor(public readonly code: string) {
     super(code);
@@ -47,7 +49,12 @@ export function verificationDigestsEqual(stored: string, candidate: string): boo
     && timingSafeEqual(storedBuffer, candidateBuffer);
 }
 
-export function generateVerificationCode(): string {
+export function generateVerificationCode(
+  environment: NodeJS.ProcessEnv = process.env
+): string {
+  if (environment.AUTH_SMS_PROVIDER?.trim() === "fixed") {
+    return loadFixedCodeSmsConfig(environment).code;
+  }
   return randomInt(0, 1_000_000).toString().padStart(6, "0");
 }
 

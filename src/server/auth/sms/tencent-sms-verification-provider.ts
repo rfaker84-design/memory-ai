@@ -4,6 +4,8 @@ import type {
   SendSmsResponse,
 } from "tencentcloud-sdk-nodejs-sms/tencentcloud/services/sms/v20210111/sms_models";
 
+import { loadFixedCodeSmsConfig } from "./fixed-code-sms-config";
+import { FixedCodeSmsVerificationProvider } from "./fixed-code-sms-verification-provider";
 import {
   SmsProviderError,
   type SmsVerificationProvider,
@@ -153,8 +155,27 @@ export class TencentSmsVerificationProvider
 }
 
 let productionProvider: SmsVerificationProvider | undefined;
+let fixedCodeProvider: SmsVerificationProvider | undefined;
 
-export function getSmsVerificationProvider(): SmsVerificationProvider {
+export function getSmsVerificationProvider(
+  environment: NodeJS.ProcessEnv = process.env
+): SmsVerificationProvider {
+  const provider = environment.AUTH_SMS_PROVIDER?.trim() || "tencent";
+  if (provider === "fixed") {
+    if (environment.NODE_ENV === "production") {
+      throw new SmsProviderError("SMS_PROVIDER_CONFIGURATION_INVALID");
+    }
+    if (environment !== process.env) {
+      return new FixedCodeSmsVerificationProvider({
+        loadConfig: () => loadFixedCodeSmsConfig(environment),
+      });
+    }
+    fixedCodeProvider ??= new FixedCodeSmsVerificationProvider();
+    return fixedCodeProvider;
+  }
+  if (provider !== "tencent") {
+    throw new SmsProviderError("SMS_PROVIDER_CONFIGURATION_INVALID");
+  }
   productionProvider ??= new TencentSmsVerificationProvider();
   return productionProvider;
 }

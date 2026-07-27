@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { randomInt } from "node:crypto";
 import test from "node:test";
 
+import { generateVerificationCode } from "../crypto";
 import { SmsProviderError } from "./sms-verification-provider";
 import {
+  getSmsVerificationProvider,
   loadTencentSmsConfig,
   TencentSmsVerificationProvider,
 } from "./tencent-sms-verification-provider";
@@ -71,6 +73,17 @@ test("Tencent SMS capability configuration is all-or-nothing and does not initia
   });
   provider.assertConfigured();
   assert.equal(clientCreates, 0);
+});
+
+test("SMS provider selection remains Tencent unless fixed is explicitly selected", () => {
+  assert.ok(
+    getSmsVerificationProvider({ NODE_ENV: "test" }) instanceof TencentSmsVerificationProvider,
+  );
+  assert.throws(
+    () => getSmsVerificationProvider({ NODE_ENV: "test", AUTH_SMS_PROVIDER: "unknown" }),
+    (error: unknown) => error instanceof SmsProviderError
+      && error.code === "SMS_PROVIDER_CONFIGURATION_INVALID",
+  );
 });
 
 test("Tencent provider initializes only on first runtime send", async () => {
@@ -153,4 +166,59 @@ test("Tencent provider maps SDK and send status failures to controlled codes", a
       (error: unknown) => error instanceof SmsProviderError && error.code === "SMS_UNAVAILABLE" && !error.message.includes("private detail"),
     );
   });
+});
+
+test("fixed SMS provider is restricted to non-production and two synthetic phones", async () => {
+  const fixedEnvironment: NodeJS.ProcessEnv = {
+    NODE_ENV: "test",
+    AUTH_SMS_PROVIDER: "fixed",
+    AUTH_FIXED_SMS_CODE: "246810",
+    AUTH_FIXED_SMS_ALLOWED_PHONES: "+8618800000001,+8618800000002",
+  };
+  const provider = getSmsVerificationProvider(fixedEnvironment);
+  provider.assertConfigured?.();
+  assert.equal(generateVerificationCode(fixedEnvironment), "246810");
+  assert.deepEqual(
+    await provider.sendVerificationCode({
+      phoneE164: "+8618800000001",
+      code: "246810",
+      expiresInMinutes: 5,
+    }),
+    { providerRequestId: "fixed-code-local-test" },
+  );
+  await assert.rejects(
+    provider.sendVerificationCode({
+      phoneE164: "+8618800000003",
+      code: "246810",
+      expiresInMinutes: 5,
+    }),
+    (error: unknown) => error instanceof SmsProviderError && error.code === "SMS_REJECTED",
+  );
+  await assert.rejects(
+    provider.sendVerificationCode({
+      phoneE164: "+8618800000001",
+      code: "000000",
+      expiresInMinutes: 5,
+    }),
+    (error: unknown) => error instanceof SmsProviderError && error.code === "SMS_REJECTED",
+  );
+});
+
+test("fixed SMS provider cannot be enabled in production", () => {
+  const productionEnvironment: NodeJS.ProcessEnv = {
+    NODE_ENV: "production",
+    AUTH_SMS_PROVIDER: "fixed",
+    AUTH_FIXED_SMS_CODE: "246810",
+    AUTH_FIXED_SMS_ALLOWED_PHONES: "+8618800000001,+8618800000002",
+  };
+  assert.throws(
+    () => getSmsVerificationProvider(productionEnvironment),
+    (error: unknown) => error instanceof SmsProviderError
+      && error.code === "SMS_PROVIDER_CONFIGURATION_INVALID",
+  );
+  assert.throws(
+    () => generateVerificationCode(productionEnvironment),
+    (error: unknown) => error instanceof SmsProviderError
+      && error.code === "SMS_PROVIDER_CONFIGURATION_INVALID",
+  );
 });
