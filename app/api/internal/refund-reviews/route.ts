@@ -1,3 +1,3 @@
-import { createRefundReviewsHandler } from "./_handler";
+import { legacyMutationUnavailable } from "@/app/api/_legacy-unavailable";
 
-export const POST = createRefundReviewsHandler();
+export const POST = legacyMutationUnavailable;

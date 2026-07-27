@@ -601,30 +601,6 @@
   line-height: 1.55;
 }
 
-.previewOffer {
-  display: grid;
-  gap: 0.45rem;
-  margin-top: 1.15rem;
-  border-top: 1px solid rgba(218, 180, 118, 0.24);
-  padding-top: 1.1rem;
-  font-family: ui-sans-serif, system-ui, sans-serif;
-}
-
-.previewOffer strong {
-  color: #f5eadc;
-  font-family: "Noto Serif SC", "Songti SC", serif;
-  font-size: 1.08rem;
-  font-weight: 550;
-}
-
-.previewOffer p,
-.previewOffer small {
-  margin: 0;
-  color: rgba(240, 224, 201, 0.72);
-  font-size: 0.82rem;
-  line-height: 1.6;
-}
-
 .footer {
   position: relative;
   z-index: 5;

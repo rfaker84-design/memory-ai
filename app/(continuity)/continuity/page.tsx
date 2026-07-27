@@ -2,7 +2,6 @@
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { MemoryTheme as T, WarmMotion as M } from "../../../src/lib/design-system/memory-theme";
-import { RefundCenter } from "../../../src/components/payment/RefundCenter";
 
 const FEATURES = [{label:"记忆系统",status:"已接入",done:true},{label:"对话系统",status:"稳定运行",done:true},{label:"声音系统",status:"待接入",done:false},{label:"形象系统",status:"待接入",done:false}];
 function clearCache(){try{Object.keys(localStorage).filter(k=>k.startsWith("yj_")||k.startsWith("yijian_")).forEach(k=>localStorage.removeItem(k));alert("已清理");}catch{}}
@@ -13,7 +12,6 @@ export default function ContinuityPage() {
     <motion.div {...M.enter} style={{minHeight:"calc(100dvh - var(--nav-height,64px) - env(safe-area-inset-bottom,0px) - 16px)",padding:"clamp(20px,5vw,32px) clamp(16px,4vw,24px) calc(96px + env(safe-area-inset-bottom,0px))",background:T.colors.bg}}>
       <h2 style={{fontSize:"clamp(20px,5vw,26px)",fontWeight:700,color:T.colors.text,margin:"0 0 4px"}}>我的</h2>
       <p style={{fontSize:11,color:T.colors.textFaint,letterSpacing:"0.06em",marginBottom:26}}>记忆不会消失，只是换了方式存在</p>
-      <RefundCenter />
       <div style={{borderRadius:T.radius.lg,border:`0.5px solid ${T.colors.border}`,background:T.colors.card,boxShadow:T.shadow.card,padding:16,marginBottom:20}}>
         <p style={{fontSize:12,color:T.colors.textFaint,letterSpacing:"0.06em",margin:"0 0 14px"}}>情绪延续</p>
         <p style={{fontSize:15,color:T.colors.text,lineHeight:1.7,margin:0,fontStyle:"italic"}}>&quot;他仍然在你的记忆中延续——每一次对话，都在让这份连接变得更深。&quot;</p>

@@ -27,11 +27,9 @@ const EXACT_FORMAL_PATHS = new Set([
   "/api/consents",
   "/api/business-events",
   "/api/business-metrics/funnel",
-  "/api/internal/refund-reviews",
   "/api/payments/orders",
   "/api/payments/refunds",
   "/api/payments/entitlements",
-  "/api/payments/wechat/callback",
   "/api/commerce/catalog",
   "/api/commerce/credits",
   "/api/commerce/orders",
@@ -179,11 +177,9 @@ test("formal Session ownership and public health contracts remain explicit", asy
     consents: readFileSync("app/api/consents/route.ts", "utf8"),
     businessEvents: readFileSync("app/api/business-events/_handler.ts", "utf8"),
     businessFunnel: readFileSync("app/api/business-metrics/funnel/_handler.ts", "utf8"),
-    refundReviews: readFileSync("app/api/internal/refund-reviews/route.ts", "utf8"),
     paymentOrders: readFileSync("app/api/payments/orders/route.ts", "utf8"),
     paymentRefunds: readFileSync("app/api/payments/refunds/route.ts", "utf8"),
     paymentEntitlements: readFileSync("app/api/payments/entitlements/route.ts", "utf8"),
-    paymentCallback: readFileSync("app/api/payments/wechat/callback/route.ts", "utf8"),
     commerceOrders: readFileSync("app/api/commerce/orders/route.ts", "utf8"),
     commerceCredits: readFileSync("app/api/commerce/credits/route.ts", "utf8"),
     commerceRefunds: readFileSync("app/api/commerce/refunds/route.ts", "utf8"),
@@ -215,8 +211,7 @@ test("formal Session ownership and public health contracts remain explicit", asy
   );
   assert.match(sources.paymentOrders, /createPaymentOrdersHandler/);
   assert.match(sources.paymentRefunds, /createPaymentRefundsHandler/);
-  assert.match(sources.paymentEntitlements, /verifyRequestSession/);
-  assert.match(sources.paymentCallback, /createWeChatPayCallbackHandler/);
+  assert.match(sources.paymentEntitlements, /isLegacyChatCommerceTestAccount/);
   assert.match(sources.commerceOrders, /createCommerceOrdersHandler/);
   assert.match(sources.commerceCredits, /verifyRequestSession/);
   assert.match(sources.commerceRefunds, /verifyRequestSession/);
@@ -226,7 +221,6 @@ test("formal Session ownership and public health contracts remain explicit", asy
   assert.match(sources.commerceReconciliation, /COMMERCE_RECONCILIATION_ACCESS_TOKEN/);
   assert.match(sources.businessEvents, /verifyRequestSession/);
   assert.match(sources.businessFunnel, /BUSINESS_METRICS_ACCESS_TOKEN/);
-  assert.match(sources.refundReviews, /createRefundReviewsHandler/);
 
   const { GET: aiHealth } = await import("./health/ai/route");
   const response = await aiHealth();

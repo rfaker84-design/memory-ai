@@ -3,7 +3,6 @@
 import { FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { MemoryAvatar, MemoryButton } from "../memory-ui";
-import { MemoryExperienceOffer } from "../payment/MemoryExperienceOffer";
 import { recordBusinessView } from "../business-metrics/businessMetricsClient";
 import {
   completedConversationRounds,
@@ -232,8 +231,6 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
           {pendingMessage && <article className={styles.pendingMessage} aria-label="正在确认的消息"><p>{pendingMessage.content}</p></article>}
           <div ref={bottomRef} />
         </div>
-
-        {controlsVisible && completedRounds >= 2 && <MemoryExperienceOffer memoryId={memoryId} />}
 
         {phase === "error" && !pendingMessage && (
           <div className={styles.recoveryActions}>

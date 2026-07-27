@@ -117,6 +117,7 @@ test("orders API uses only session owner, an idempotency key, and a memory id", 
     async () => user,
     () => ({ assertConfigured: () => undefined, createH5Checkout: async () => ({ prepayId: null, paymentUrl: "https://pay.example.test/h5" }) }),
     () => product,
+    () => true,
   );
   const response = await handler.POST(new NextRequest("https://memoryai.test/api/payments/orders", {
     method: "POST", headers: {

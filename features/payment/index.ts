@@ -1,4 +1,5 @@
 export * from "./errors";
+export * from "./legacy-chat-commerce-gate";
 export * from "./payment-datasource";
 export * from "./payment-postgres-datasource";
 export * from "./payment-product";

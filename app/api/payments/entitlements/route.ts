@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { PaymentPostgresDataSource, PaymentRepository, PaymentService } from "@/features/payment";
+import {
+  PaymentPostgresDataSource,
+  PaymentRepository,
+  PaymentService,
+  isLegacyChatCommerceTestAccount,
+} from "@/features/payment";
 import { AuthConfigurationError, verifyRequestSession } from "@/src/server/auth";
 import { DatabaseDependencyError } from "@/src/server/database";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
@@ -10,7 +15,9 @@ const json = (body: Record<string, unknown>, init?: ResponseInit) => applyAuthNo
 export async function GET(request: NextRequest) {
   try {
     const session = await verifyRequestSession(request);
-    if (!session) return json({ error: "UNAUTHENTICATED" }, { status: 401 });
+    if (!session || !isLegacyChatCommerceTestAccount(session.externalUserId)) {
+      return json({ error: "LEGACY_CHAT_COMMERCE_UNAVAILABLE" }, { status: 404 });
+    }
     const keys = [...request.nextUrl.searchParams.keys()];
     const memoryId = request.nextUrl.searchParams.get("memoryId")?.trim();
     if (!memoryId || keys.length !== 1 || keys[0] !== "memoryId") {

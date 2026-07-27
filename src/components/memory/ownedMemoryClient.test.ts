@@ -95,17 +95,12 @@ test("detail, chat, and create success paths contain no legacy data requests", (
     new URL("../create-memory/CreateMemoryExperience.tsx", import.meta.url),
     "utf8"
   );
-  const paymentClient = readFileSync(
-    new URL("../payment/memoryExperienceClient.ts", import.meta.url),
-    "utf8"
-  );
   for (const [name, source] of [["detail", detail], ["chat", chat]]) {
     assert.doesNotMatch(source.toLowerCase(), /supabase|memories-mvp/, name);
     assert.match(source, /loadOwnedMemory/, name);
   }
   assert.match(conversationAdapter, /\/chat-session/);
-  assert.match(paymentClient, /\/api\/payments\/orders/);
-  assert.match(conversation, /MemoryExperienceOffer/);
+  assert.doesNotMatch(conversation, /MemoryExperienceOffer|\/api\/payments\//);
   assert.match(conversationAdapter, /Idempotency-Key/);
   assert.doesNotMatch(conversationAdapter, /history:\s*messages/);
   assert.doesNotMatch(conversationAdapter, /fragments:\s*fragments/);

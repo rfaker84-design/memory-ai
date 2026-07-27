@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { checkAllowedOrigin } from "@/src/server/security/origin";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
+import { isLegacyChatCommerceTestEnvironment } from "@/features/payment/legacy-chat-commerce-gate";
 
 const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -21,11 +22,9 @@ const FORMAL_API_PATHS = new Set([
   "/api/consents",
   "/api/business-events",
   "/api/business-metrics/funnel",
-  "/api/internal/refund-reviews",
   "/api/payments/orders",
   "/api/payments/refunds",
   "/api/payments/entitlements",
-  "/api/payments/wechat/callback",
   "/api/commerce/catalog",
   "/api/commerce/credits",
   "/api/commerce/orders",
@@ -47,12 +46,28 @@ const FORMAL_DYNAMIC_API_PATHS = [
   /^\/api\/media\/[^/]+$/,
 ];
 
+const LEGACY_CHAT_COMMERCE_API_PATHS = new Set([
+  "/api/payments/orders",
+  "/api/payments/refunds",
+  "/api/payments/entitlements",
+]);
+
 export function isFormalApiPath(pathname: string): boolean {
   return FORMAL_API_PATHS.has(pathname)
     || FORMAL_DYNAMIC_API_PATHS.some((pattern) => pattern.test(pathname));
 }
 
 export function middleware(request: NextRequest) {
+  if (
+    LEGACY_CHAT_COMMERCE_API_PATHS.has(request.nextUrl.pathname)
+    && !isLegacyChatCommerceTestEnvironment()
+  ) {
+    return applyAuthNoStore(NextResponse.json(
+      { error: "LEGACY_ROUTE_UNAVAILABLE" },
+      { status: 410 },
+    ));
+  }
+
   if (!isFormalApiPath(request.nextUrl.pathname)) {
     return applyAuthNoStore(NextResponse.json(
       { error: "LEGACY_ROUTE_UNAVAILABLE" },
@@ -62,13 +77,8 @@ export function middleware(request: NextRequest) {
 
   if (!MUTATION_METHODS.has(request.method)) return NextResponse.next();
 
-  // These server-to-server endpoints do not use browser authority. Their Route
-  // Handlers enforce their own signed-notification or high-strength token proof.
-  if (
-    request.nextUrl.pathname === "/api/payments/wechat/callback"
-    || request.nextUrl.pathname === "/api/commerce/testing/callbacks"
-    || request.nextUrl.pathname === "/api/internal/refund-reviews"
-  ) return NextResponse.next();
+  // This non-production commerce testing callback verifies its own signature.
+  if (request.nextUrl.pathname === "/api/commerce/testing/callbacks") return NextResponse.next();
 
   const result = checkAllowedOrigin(request);
   if (result.allowed) return NextResponse.next();

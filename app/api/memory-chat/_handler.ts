@@ -16,7 +16,12 @@ import { MemoryValidationError } from "../../../features/memory/errors";
 import { MemoryPostgresDataSource } from "../../../features/memory/memory-postgres-datasource";
 import { MemoryRepository } from "../../../features/memory/memory-repository";
 import { MemoryService } from "../../../features/memory/memory-service";
-import { PaymentPostgresDataSource, PaymentRepository, PaymentService } from "../../../features/payment";
+import {
+  PaymentPostgresDataSource,
+  PaymentRepository,
+  PaymentService,
+  isLegacyChatCommerceTestAccount,
+} from "../../../features/payment";
 import {
   AuthConfigurationError,
   requireAllowedOrigin,
@@ -87,8 +92,22 @@ const freeQuotaService: QuotaService = {
   releaseChatQuota: async () => undefined,
 };
 
-export const createPaymentQuotaService = (): QuotaService =>
-  new PaymentService(new PaymentRepository(new PaymentPostgresDataSource()));
+export const createPaymentQuotaService = (): QuotaService => {
+  let legacyService: PaymentService | undefined;
+  const service = () => legacyService ??= new PaymentService(
+    new PaymentRepository(new PaymentPostgresDataSource()),
+  );
+  return {
+    reserveChatQuota: (input) =>
+      isLegacyChatCommerceTestAccount(input.externalUserId)
+        ? service().reserveChatQuota(input)
+        : Promise.resolve("free"),
+    releaseChatQuota: (input) =>
+      isLegacyChatCommerceTestAccount(input.externalUserId)
+        ? service().releaseChatQuota(input)
+        : Promise.resolve(),
+  };
+};
 
 function response(result: MemoryChatTurnResult) {
   const answer = result.assistantMessage.content;

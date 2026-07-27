@@ -1,5 +1,3 @@
-import { refundPolicy } from "@/src/components/payment/refundPolicy";
-
 export default function TermsPage() {
   return (
     <main className="min-h-screen bg-[#0b0a08] px-6 py-12 text-[#f6eee2]">
@@ -15,10 +13,7 @@ export default function TermsPage() {
 平台有权删除违规内容，并限制违规用户继续使用。
 {"\n\n"}
 退款规则：
-{"\n"}{refundPolicy.noReason}
-{"\n"}{refundPolicy.afterUse}
-{"\n"}{refundPolicy.manualReview}
-{"\n"}{refundPolicy.entitlementEnd}
+{"\n"}历史订单请通过 support@yijianai.cn 联系人工核验；当前公开版本不提供旧聊天购买卡。
         </p>
       </div>
     </main>

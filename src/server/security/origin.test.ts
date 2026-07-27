@@ -17,8 +17,6 @@ const mutationPaths = [
   "/api/memory-chat",
   "/api/consents",
   "/api/business-events",
-  "/api/payments/orders",
-  "/api/payments/refunds",
   "/api/commerce/orders",
   "/api/commerce/refunds",
   "/api/commerce/referrals/code",
@@ -28,6 +26,11 @@ const mutationPaths = [
 ];
 
 const legacyMutationPaths = [
+  "/api/payments/orders",
+  "/api/payments/refunds",
+  "/api/payments/entitlements",
+  "/api/payments/wechat/callback",
+  "/api/internal/refund-reviews",
   "/api/chat-sessions",
   "/api/chat-sessions/session-id/messages",
   "/api/chat-mvp",
@@ -52,22 +55,10 @@ test("every production API mutation is guarded by the shared Origin boundary", a
   }
 });
 
-test("the signed WeChat callback is a formal mutation without browser Origin", () => {
-  const response = middleware(new NextRequest("https://memoryai.test/api/payments/wechat/callback", {
-    method: "POST",
-  }));
-  assert.equal(response.headers.get("x-middleware-next"), "1");
-});
-
 test("the signed test-commerce callback is non-production server-to-server", () => {
   const response = middleware(new NextRequest("https://memoryai.test/api/commerce/testing/callbacks", {
     method: "POST",
   }));
-  assert.equal(response.headers.get("x-middleware-next"), "1");
-});
-
-test("the internal refund review endpoint is formal and leaves authorization to its token handler", () => {
-  const response = middleware(new NextRequest("https://memoryai.test/api/internal/refund-reviews", { method: "POST" }));
   assert.equal(response.headers.get("x-middleware-next"), "1");
 });
 

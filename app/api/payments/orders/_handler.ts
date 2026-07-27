@@ -9,6 +9,7 @@ import {
   PaymentStateError,
   PaymentValidationError,
   getWeChatPayProvider,
+  isLegacyChatCommerceTestAccount,
   loadMemoryExperienceProduct,
   type CheckoutProvider,
 } from "@/features/payment";
@@ -26,10 +27,12 @@ type OrderService = Pick<PaymentService, "createCheckout" | "listOrders">;
 type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
 type ProductLoader = typeof loadMemoryExperienceProduct;
 type Provider = CheckoutProvider & { assertConfigured?: () => void };
+type LegacyAccountAccess = (externalUserId: string) => boolean;
 
 const KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
 const service = (): OrderService => new PaymentService(new PaymentRepository(new PaymentPostgresDataSource()));
 const json = (body: Record<string, unknown>, init?: ResponseInit) => applyAuthNoStore(NextResponse.json(body, init));
+const unavailable = () => json({ error: "LEGACY_CHAT_COMMERCE_UNAVAILABLE" }, { status: 404 });
 
 function memoryId(value: unknown): string | null {
   if (typeof value !== "string" || !value.trim()) return null;
@@ -54,12 +57,13 @@ export function createPaymentOrdersHandler(
   sessionResolver: SessionResolver = verifyRequestSession,
   providerFactory: () => Provider = getWeChatPayProvider,
   productLoader: ProductLoader = loadMemoryExperienceProduct,
+  legacyAccountAccess: LegacyAccountAccess = isLegacyChatCommerceTestAccount,
 ) {
   return {
     GET: async (request: NextRequest) => {
       try {
         const session = await sessionResolver(request);
-        if (!session) return json({ error: "UNAUTHENTICATED" }, { status: 401 });
+        if (!session || !legacyAccountAccess(session.externalUserId)) return unavailable();
         const id = memoryId(request.nextUrl.searchParams.get("memoryId"));
         if (!id || [...request.nextUrl.searchParams.keys()].some((key) => key !== "memoryId")) {
           return json({ error: "INVALID_PAYMENT_REQUEST" }, { status: 400 });
@@ -70,7 +74,7 @@ export function createPaymentOrdersHandler(
     POST: async (request: NextRequest) => {
       try {
         const session = await sessionResolver(request);
-        if (!session) return json({ error: "UNAUTHENTICATED" }, { status: 401 });
+        if (!session || !legacyAccountAccess(session.externalUserId)) return unavailable();
         requireAllowedOrigin(request);
         const requestKey = request.headers.get("idempotency-key");
         if (!requestKey || !KEY_PATTERN.test(requestKey)) return json({ error: "INVALID_IDEMPOTENCY_KEY" }, { status: 400 });

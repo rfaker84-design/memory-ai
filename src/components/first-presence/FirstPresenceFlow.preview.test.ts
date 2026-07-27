@@ -84,22 +84,15 @@ test("formal creation persists only a minimal recovery record and establishes th
   assert.match(mediaRecoveryGate, /clearCreationRecovery\(\)/);
 });
 
-test("portrait remains consistent and the offer appears only after the second exchange", () => {
+test("portrait remains consistent and the retired purchase card cannot render", () => {
   assert.match(flow, /setPortraitUrl\(url\)/);
   assert.match(flow, /URL\.revokeObjectURL\(localPortraitUrl\.current\)/);
   assert.match(flow, /stage === "preview-reveal"/);
   assert.match(flow, /stage === "preview-greeting"/);
   assert.match(flow, /stage === "preview-chat-one"/);
-  assert.match(flow, /stage === "preview-chat-two"/);
   assert.match(flow, /MemoryAvatar image=\{portraitUrl\}/);
-  const secondRound = flow.slice(flow.indexOf('stage === "preview-chat-two"'));
-  assert.match(secondRound, /想继续和TA说说话/);
-  assert.match(secondRound, /49元 · 30天 · 1个 TA · 100次 AI 回复/);
-  const firstRound = flow.slice(
-    flow.indexOf('stage === "preview-chat-one"'),
-    flow.indexOf('stage === "preview-chat-two"'),
-  );
-  assert.doesNotMatch(firstRound, /49元/);
+  assert.match(flow, /MemoryButton onClick=\{leaveFlow\}/);
+  assert.doesNotMatch(flow, /preview-chat-two|49元|previewOffer/);
 });
 
 test("formal screens contain no development panel copy", () => {

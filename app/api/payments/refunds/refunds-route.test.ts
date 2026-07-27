@@ -24,7 +24,7 @@ test("refund request is session-bound, strict, and delegates only the server-own
   const handler = createPaymentRefundsHandler(() => ({
     createRefundRequest: async (input) => { received = input; return refund; },
     listRefundRequests: async () => [],
-  }), session, provider);
+  }), session, provider, () => true);
   const response = await handler.POST(new NextRequest("https://memoryai.test/api/payments/refunds", {
     method: "POST", headers: { origin: "https://memoryai.test", "content-type": "application/json", "idempotency-key": "refund-key-000001" },
     body: JSON.stringify({ memoryId, orderNo, reason: "unused_purchase" }),
@@ -45,7 +45,7 @@ test("all exceptional enum reasons formally enter manual review without invoking
       return { ...refund, reason: input.reason, status: "manual_review" as const, eligibility: "manual_review" as const, decisionCode: "REQUESTED_SERVICE_FAILURE" };
     }, listRefundRequests: async () => [],
   });
-  const handler = createPaymentRefundsHandler(service, session, () => ({ createRefund: async () => { providerCalls += 1; return { providerRefundId: "unused" }; } }));
+  const handler = createPaymentRefundsHandler(service, session, () => ({ createRefund: async () => { providerCalls += 1; return { providerRefundId: "unused" }; } }), () => true);
   for (const reason of ["duplicate_charge", "entitlement_missing", "service_failure"] as const) {
     const response = await handler.POST(new NextRequest("https://memoryai.test/api/payments/refunds", {
       method: "POST", headers: { origin: "https://memoryai.test", "content-type": "application/json", "idempotency-key": "refund-key-000001" },
@@ -65,7 +65,7 @@ test("all exceptional enum reasons formally enter manual review without invoking
     body: JSON.stringify({ memoryId, orderNo, reason: "manual approval please" }),
   }));
   assert.equal(invalidReason.status, 400);
-  const anonymous = createPaymentRefundsHandler(service, async () => null, provider);
+  const anonymous = createPaymentRefundsHandler(service, async () => null, provider, () => true);
   const denied = await anonymous.GET(new NextRequest(`https://memoryai.test/api/payments/refunds?memoryId=${memoryId}`));
-  assert.equal(denied.status, 401);
+  assert.equal(denied.status, 404);
 });

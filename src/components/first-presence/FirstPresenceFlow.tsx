@@ -40,8 +40,7 @@ type FlowStage =
   | "preview-forming"
   | "preview-reveal"
   | "preview-greeting"
-  | "preview-chat-one"
-  | "preview-chat-two";
+  | "preview-chat-one";
 type AuthState = "checking" | "authenticated" | "unauthenticated" | "unavailable" | "preview";
 type ApiPayload = {
   error?: string;
@@ -269,8 +268,7 @@ export function FirstPresenceFlow({
     : Math.max(0.1, (questionIndex + 1) / QUESTION_COUNT);
   const revealed = stage === "preview-reveal"
     || stage === "preview-greeting"
-    || stage === "preview-chat-one"
-    || stage === "preview-chat-two";
+    || stage === "preview-chat-one";
   const memoryFragments = [
     questionIndex > 0 && name.trim(),
     questionIndex > 1 && relationship.trim(),
@@ -823,23 +821,10 @@ export function FirstPresenceFlow({
                   <p className={styles.kicker}>再说一会儿</p>
                   <h1 id={titleId}>慢慢说，我在听。</h1>
                   <PreviewConversation name={displayName} portraitUrl={portraitUrl} catchPhrase={catchPhrases} speechStyle={speechStyle} sharedMemory={sharedMemory} rounds={1} />
-                  <div className={styles.actions}><MemoryButton onClick={() => setStage("preview-chat-two")}>再说一句</MemoryButton></div>
+                  <div className={styles.actions}><MemoryButton onClick={leaveFlow}>再说一句</MemoryButton></div>
                 </div>
               )}
 
-              {stage === "preview-chat-two" && (
-                <div className={styles.copyBlock}>
-                  <p className={styles.kicker}>这段回应之后</p>
-                  <h1 id={titleId}>回应之后，再决定要不要继续。</h1>
-                  <PreviewConversation name={displayName} portraitUrl={portraitUrl} catchPhrase={catchPhrases} speechStyle={speechStyle} sharedMemory={sharedMemory} rounds={2} />
-                  <div className={styles.previewOffer} aria-label="忆见初遇体验">
-                    <strong>想继续和TA说说话</strong>
-                    <p>49元 · 30天 · 1个 TA · 100次 AI 回复</p>
-                    <small>一次性购买，不自动续费。</small>
-                  </div>
-                  <div className={styles.actions}><button className={styles.backButton} type="button" onClick={leaveFlow}>回到首页</button></div>
-                </div>
-              )}
           </section>
         </main>
 
