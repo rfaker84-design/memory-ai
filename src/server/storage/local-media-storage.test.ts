@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -52,6 +52,16 @@ test("local media storage rejects traversal and relative roots", async () => {
     () => new LocalMediaStorage({ root: join(tmpdir(), "..", "outside-local-media") }),
     /MEDIA_LOCAL_ROOT/,
   );
+});
+
+test("local media storage accepts a Windows long temporary path when tmpdir uses its short alias", async (t) => {
+  if (process.platform !== "win32") {
+    t.skip("Windows-specific temporary path canonicalization");
+    return;
+  }
+  const root = await mkdtemp(join(await realpath(tmpdir()), "memoryai-local-media-windows-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  assert.doesNotThrow(() => new LocalMediaStorage({ root }));
 });
 
 test("local media storage cannot be selected in production", () => {

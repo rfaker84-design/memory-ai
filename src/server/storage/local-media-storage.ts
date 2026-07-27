@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { extname, isAbsolute, join, normalize, relative, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, normalize, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 import type { MediaStorage, StoredMediaObject, StoreMediaInput } from "./media-storage";
@@ -8,6 +9,16 @@ import type { MediaStorage, StoredMediaObject, StoreMediaInput } from "./media-s
 type LocalMediaStorageConfig = {
   root: string;
 };
+
+function resolvePhysicalPath(path: string): string {
+  const resolvedPath = resolve(path);
+  try {
+    return resolve(realpathSync.native(resolvedPath));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return resolve(realpathSync.native(dirname(resolvedPath)), basename(resolvedPath));
+  }
+}
 
 function mediaTypeForPath(path: string): string {
   switch (extname(path).toLowerCase()) {
@@ -38,8 +49,8 @@ export class LocalMediaStorage implements MediaStorage {
     if (!isAbsolute(config.root)) {
       throw new Error("STORAGE_CONFIGURATION_MISSING:MEDIA_LOCAL_ROOT");
     }
-    this.root = resolve(config.root);
-    const temporaryRoot = resolve(tmpdir());
+    this.root = resolvePhysicalPath(config.root);
+    const temporaryRoot = resolvePhysicalPath(tmpdir());
     const child = relative(temporaryRoot, this.root);
     if (
       !child
