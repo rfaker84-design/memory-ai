@@ -161,11 +161,12 @@ test("an explicitly enabled non-production fixed provider completes the formal l
     "AUTH_FIXED_SMS_ALLOWED_PHONES",
   ] as const;
   const previous = new Map(names.map((name) => [name, process.env[name]]));
+  const environmentVariables = process.env as Record<string, string | undefined>;
   try {
-    process.env.NODE_ENV = "test";
-    process.env.AUTH_SMS_PROVIDER = "fixed";
-    process.env.AUTH_FIXED_SMS_CODE = "246810";
-    process.env.AUTH_FIXED_SMS_ALLOWED_PHONES = "+8618800000001,+8618800000002";
+    environmentVariables.NODE_ENV = "test";
+    environmentVariables.AUTH_SMS_PROVIDER = "fixed";
+    environmentVariables.AUTH_FIXED_SMS_CODE = "246810";
+    environmentVariables.AUTH_FIXED_SMS_ALLOWED_PHONES = "+8618800000001,+8618800000002";
     const repository = new InMemoryAuthRepository();
     const service = new AuthService(repository, getSmsVerificationProvider());
     const send = createSendCodeHandler(() => service);
@@ -201,8 +202,8 @@ test("an explicitly enabled non-production fixed provider completes the formal l
   } finally {
     for (const name of names) {
       const value = previous.get(name);
-      if (value === undefined) delete process.env[name];
-      else process.env[name] = value;
+      if (value === undefined) delete environmentVariables[name];
+      else environmentVariables[name] = value;
     }
   }
 });

@@ -87,7 +87,7 @@ function request(
 ): NextRequest {
   const form = new FormData();
   form.set("memoryId", memoryId);
-  form.set("file", new File([body], name, { type }));
+  form.set("file", new File([Uint8Array.from(body)], name, { type }));
   return new NextRequest("http://localhost/api/media/upload", {
     method: "POST",
     headers: {
@@ -116,12 +116,13 @@ test(
       AUTH_ALLOWED_ORIGIN: process.env.AUTH_ALLOWED_ORIGIN,
       SESSION_SECRET: process.env.SESSION_SECRET,
     };
-    process.env.DATABASE_URL = url;
-    process.env.NODE_ENV = "test";
-    process.env.MEDIA_STORAGE_PROVIDER = "local";
-    process.env.MEDIA_LOCAL_ROOT = root;
-    process.env.AUTH_ALLOWED_ORIGIN = "http://localhost";
-    process.env.SESSION_SECRET = "media-local-gate-session-secret-with-at-least-32-bytes";
+    const environmentVariables = process.env as Record<string, string | undefined>;
+    environmentVariables.DATABASE_URL = url;
+    environmentVariables.NODE_ENV = "test";
+    environmentVariables.MEDIA_STORAGE_PROVIDER = "local";
+    environmentVariables.MEDIA_LOCAL_ROOT = root;
+    environmentVariables.AUTH_ALLOWED_ORIGIN = "http://localhost";
+    environmentVariables.SESSION_SECRET = "media-local-gate-session-secret-with-at-least-32-bytes";
     await closePostgresPool();
 
     try {
@@ -193,8 +194,8 @@ test(
       await closePostgresPool();
       await rm(root, { recursive: true, force: true });
       for (const [name, value] of Object.entries(environment)) {
-        if (value === undefined) delete process.env[name];
-        else process.env[name] = value;
+        if (value === undefined) delete environmentVariables[name];
+        else environmentVariables[name] = value;
       }
     }
   },
