@@ -103,6 +103,16 @@ test(
     assert.ok(adminUrlValue);
     const adminUrl = new URL(adminUrlValue);
     assertIsolatedTarget(adminUrl);
+    const versionClient = new Client({ connectionString: adminUrl.toString() });
+    await versionClient.connect();
+    try {
+      const version = await versionClient.query<{ server_version: string }>(
+        "SELECT current_setting('server_version') AS server_version",
+      );
+      assert.match(version.rows[0].server_version, /^14\.23(?:\s|$)/);
+    } finally {
+      await versionClient.end();
+    }
 
     await t.test("24 concurrent calls share one canonical session and one first greeting", async () => {
       const url = await resetDatabase(adminUrl);

@@ -30,6 +30,10 @@ test("015 creates one owner-memory default-session invariant and preserves depen
   assert.match(postflight, /chat turn conversation ownership mismatch/);
   assert.doesNotMatch(postflight, /\b(?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP)\b/i);
 
+  const integration = read("../features/chat/chat-session-atomicity.integration.test.ts");
+  assert.match(integration, /current_setting\('server_version'\)/);
+  assert.match(integration, /\^14\\\.23/);
+
   assert.ok(
     runner.indexOf("014_commerce_credits_referrals.sql") === -1,
     "015 remains an approval-gated isolated migration alongside 014",
