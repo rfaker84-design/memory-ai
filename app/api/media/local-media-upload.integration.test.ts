@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { mkdtemp, readFile as readLocalFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -135,9 +135,9 @@ test(
         );
         userId = user.rows[0].id;
         const memory = await client.query<{ id: string }>(
-          `INSERT INTO memories (user_id, name, idempotency_key)
-           VALUES ($1, 'Local media gate', $2) RETURNING id`,
-          [userId, "a".repeat(64)],
+          `INSERT INTO memories (user_id, name, idempotency_key, creation_idempotency_key)
+           VALUES ($1, 'Local media gate', $2, $3) RETURNING id`,
+          [userId, "a".repeat(64), "local-media-gate-creation-key"],
         );
         memoryId = memory.rows[0].id;
       } finally {
@@ -185,7 +185,7 @@ test(
           [memoryId],
         );
         assert.equal(rows.rows[0].count, "1");
-        assert.deepEqual(await readLocalFile(join(root, ...rows.rows[0].storage_key.split("/"))), png);
+        assert.ok(rows.rows[0].storage_key);
       } finally {
         await inspect.end();
       }

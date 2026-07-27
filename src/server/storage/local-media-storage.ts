@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, isAbsolute, join, normalize, relative, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, win32 } from "node:path";
 import { tmpdir } from "node:os";
 
 import type { MediaStorage, StoredMediaObject, StoreMediaInput } from "./media-storage";
@@ -20,8 +20,23 @@ function resolvePhysicalPath(path: string): string {
   }
 }
 
-function mediaTypeForPath(path: string): string {
-  switch (extname(path).toLowerCase()) {
+function hasInvalidUnicode(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      if (index + 1 >= value.length || value.charCodeAt(index + 1) < 0xdc00 || value.charCodeAt(index + 1) > 0xdfff) {
+        return true;
+      }
+      index += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function mediaTypeForKey(key: string): string {
+  switch (extname(key).toLowerCase()) {
     case ".jpg":
     case ".jpeg":
       return "image/jpeg";
@@ -66,17 +81,22 @@ export class LocalMediaStorage implements MediaStorage {
   private pathForKey(key: string): string {
     if (
       !key
-      || !/^[A-Za-z0-9._/-]+$/.test(key)
-      || key.split("/").some((segment) => segment === ".." || !segment)
+      || key.includes("\0")
+      || hasInvalidUnicode(key)
+      || key.includes("\\")
+      || isAbsolute(key)
+      || win32.isAbsolute(key)
+      || key.split("/").some((segment) => segment === "." || segment === ".." || !segment)
     ) {
       throw new Error("STORAGE_INVALID_KEY");
     }
-    const normalizedKey = normalize(key.replaceAll("\\", "/"));
-    const target = resolve(join(this.root, normalizedKey));
+    const target = resolve(join(
+      this.root,
+      ...key.split("/").map((segment) => Buffer.from(segment, "utf8").toString("base64url")),
+    ));
     const childPath = relative(this.root, target);
     if (
-      normalizedKey.startsWith("/")
-      || childPath.startsWith("..")
+      childPath.startsWith("..")
       || isAbsolute(childPath)
     ) {
       throw new Error("STORAGE_INVALID_KEY");
@@ -111,6 +131,6 @@ export class LocalMediaStorage implements MediaStorage {
   ): Promise<string> {
     const path = this.pathForKey(key);
     const body = await readFile(path);
-    return `data:${mediaTypeForPath(path)};base64,${body.toString("base64")}`;
+    return `data:${mediaTypeForKey(key)};base64,${body.toString("base64")}`;
   }
 }

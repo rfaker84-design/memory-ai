@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -8,13 +8,16 @@ import test from "node:test";
 import { createMediaStorage } from "./index";
 import { LocalMediaStorage } from "./local-media-storage";
 
-test("local media storage persists, serves, and deletes isolated files", async (t) => {
+test("local media storage stably stores, serves, and deletes production object keys", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "memoryai-local-media-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const storage = new LocalMediaStorage({ root });
   const body = Buffer.from(`local-media-${randomUUID()}`);
+  const alternateBody = Buffer.from(`local-media-${randomUUID()}`);
   const sha256 = createHash("sha256").update(body).digest("hex");
-  const key = "media/test-user/test-memory/image/example.png";
+  const alternateSha256 = createHash("sha256").update(alternateBody).digest("hex");
+  const key = "media/phone:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/test-memory/image/照片.png";
+  const alternateKey = "media/phone:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/test-memory/image/声音.wav";
 
   assert.deepEqual(await storage.put({
     key,
@@ -23,13 +26,31 @@ test("local media storage persists, serves, and deletes isolated files", async (
     contentLength: body.byteLength,
     sha256,
   }), { key, etag: sha256 });
-  assert.deepEqual(await readFile(join(root, ...key.split("/"))), body);
   assert.equal(
     await storage.createSignedDownloadUrl(key, 60),
     `data:image/png;base64,${body.toString("base64")}`,
   );
+  await assert.rejects(
+    storage.put({ key, body, contentType: "image/png", contentLength: body.byteLength, sha256 }),
+    { code: "EEXIST" },
+  );
+  await storage.put({
+    key: alternateKey,
+    body: alternateBody,
+    contentType: "audio/wav",
+    contentLength: alternateBody.byteLength,
+    sha256: alternateSha256,
+  });
+  assert.equal(
+    await storage.createSignedDownloadUrl(alternateKey, 60),
+    `data:audio/wav;base64,${alternateBody.toString("base64")}`,
+  );
   await storage.delete(key);
-  await assert.rejects(readFile(join(root, ...key.split("/"))), { code: "ENOENT" });
+  await assert.rejects(storage.createSignedDownloadUrl(key, 60), { code: "ENOENT" });
+  assert.equal(
+    await storage.createSignedDownloadUrl(alternateKey, 60),
+    `data:audio/wav;base64,${alternateBody.toString("base64")}`,
+  );
 });
 
 test("local media storage rejects traversal and relative roots", async () => {
@@ -38,16 +59,18 @@ test("local media storage rejects traversal and relative roots", async () => {
     /MEDIA_LOCAL_ROOT/,
   );
   const storage = new LocalMediaStorage({ root: join(tmpdir(), "memoryai-local-media-safe") });
-  await assert.rejects(
-    storage.put({
-      key: "../../outside.png",
-      body: Buffer.from("x"),
-      contentType: "image/png",
-      contentLength: 1,
-      sha256: createHash("sha256").update("x").digest("hex"),
-    }),
-    /STORAGE_INVALID_KEY/,
-  );
+  for (const key of ["../../outside.png", "/absolute.png", "C:\\absolute.png", "C:/absolute.png", "media\\..\\outside.png", "media/./outside.png", "media//outside.png", "media/\ud800.png"]) {
+    await assert.rejects(
+      storage.put({
+        key,
+        body: Buffer.from("x"),
+        contentType: "image/png",
+        contentLength: 1,
+        sha256: createHash("sha256").update("x").digest("hex"),
+      }),
+      /STORAGE_INVALID_KEY/,
+    );
+  }
   assert.throws(
     () => new LocalMediaStorage({ root: join(tmpdir(), "..", "outside-local-media") }),
     /MEDIA_LOCAL_ROOT/,
