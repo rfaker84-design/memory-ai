@@ -24,7 +24,28 @@
 6. 用户可以删除内容；删除后不再被召回。
 7. API 与 SQL 查询都以 Session 所有者和 `memoryId` 双重约束，客户端不传用户 ID。
 
-## 真实数据库 E2E
+## PostgreSQL 14.23 门禁（主证据）
+
+命令：
+
+```text
+scripts/e2e/run-long-term-memory-postgres14-gate.ps1 -PostgresBin <PostgreSQL-14.23-bin>
+```
+
+该 runner 只接受 `postgres --version` 为 `PostgreSQL 14.23` 的二进制，在一次性数据目录中初始化 cluster，仅绑定 `127.0.0.1` 随机端口，并严格按顺序执行 `001` 至 `013`。它将同一条数据库 URL 同时传给 `MEMORYAI_TEST_DATABASE_URL` 和产品数据库层的 `DATABASE_URL`。
+
+通过的产品断言：
+
+1. 未开启长期记忆访问时，聊天仍写入 2 条消息，但不写入长期记忆。
+2. 两个并发、不同幂等键的可记忆聊天请求均成功；消息总数为 6，基于内容哈希的长期记忆去重后为 1 条。
+3. 真实 `LongTermMemoryService` 召回该记忆；非所有者召回为空，API 列表也为空。
+4. 真实 API handler 查看、PATCH 纠正并再次召回纠正内容。
+5. DELETE 后召回为空，长期记忆记录为 0，聊天消息仍保留为 6。
+6. 未提供 internal-beta 环境时，feature flag 明确失败关闭。
+
+本机门禁结果：`POSTGRES14_MEMORY_PASS version=postgres (PostgreSQL) 14.23 migrations=13`。该实例使用合成数据，测试结束后停止，不连接生产或共享数据库。
+
+## PGlite 辅助 E2E（非 PostgreSQL 14 替代）
 
 命令：
 
