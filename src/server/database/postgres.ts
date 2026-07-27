@@ -93,7 +93,8 @@ export async function queryPostgres<Row extends QueryResultRow = QueryResultRow>
 }
 
 export async function withPostgresTransaction<T>(
-  work: (client: PoolClient) => Promise<T>
+  work: (client: PoolClient) => Promise<T>,
+  options?: { preserveError?: (error: unknown) => boolean }
 ): Promise<T> {
   let client: PoolClient | undefined;
 
@@ -115,6 +116,7 @@ export async function withPostgresTransaction<T>(
       }
     }
 
+    if (options?.preserveError?.(error)) throw error;
     throw classifyDatabaseError(error);
   } finally {
     client?.release();

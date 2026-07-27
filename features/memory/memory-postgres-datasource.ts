@@ -347,6 +347,8 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
         if (!conflicted.rows[0]) throw error;
         return { row: conflicted.rows[0], created: false };
       }
+    }, {
+      preserveError: (error) => error instanceof MemoryLimitError,
     });
 
     return toMemory(row.row);
