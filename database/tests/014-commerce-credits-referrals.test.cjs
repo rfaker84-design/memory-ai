@@ -40,6 +40,20 @@ test("orders, callbacks, refunds, reservations, and referrals have database idem
   assert.match(migration, /uq_commerce_referral_rewards_cohort/);
 });
 
+test("cross-user ownership is enforced by composite foreign keys", () => {
+  assert.match(migration, /ux_memories_id_user/);
+  assert.match(migration, /uq_commerce_orders_id_user/);
+  assert.match(migration, /uq_commerce_credit_lots_id_user/);
+  assert.match(migration, /uq_commerce_generation_reservations_id_user/);
+  assert.match(migration, /fk_commerce_refund_requests_order_user/);
+  assert.match(migration, /fk_commerce_generation_reservations_memory_user/);
+  assert.match(migration, /fk_commerce_generation_reservations_lot_user/);
+  assert.match(migration, /fk_commerce_save_rights_order_user/);
+  assert.match(migration, /fk_commerce_save_rights_reservation_user/);
+  assert.match(migration, /fk_commerce_photo_remedies_memory_user/);
+  assert.match(migration, /fk_commerce_photo_remedies_lot_user/);
+});
+
 test("paid credits are permanent and non-paid credits cannot save", () => {
   assert.match(migration, /ck_commerce_credit_lots_permanent[\s\S]*expires_at IS NULL/);
   assert.match(migration, /source_kind = 'paid_package' AND save_allowed/);

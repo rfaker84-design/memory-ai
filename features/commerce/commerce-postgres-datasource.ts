@@ -67,6 +67,7 @@ type OrderRow = {
 type RefundRow = {
   id: string;
   order_no: string;
+  request_key: string;
   request_no: string;
   reason: CommerceRefundRequest["reason"];
   status: CommerceRefundRequest["status"];
@@ -515,14 +516,22 @@ export class CommercePostgresDataSource implements CommerceDataSource {
         [`memoryai:commerce-refund:${current.id}`],
       );
       const existing = await client.query<RefundRow>(
-        `SELECT r.id, o.order_no, r.request_no, r.reason, r.status,
+        `SELECT r.id, o.order_no, r.request_key, r.request_no, r.reason, r.status,
                 r.created_at, r.resolved_at
          FROM public.commerce_refund_requests r
          JOIN public.commerce_orders o ON o.id = r.order_id
          WHERE r.order_id = $1 FOR UPDATE`,
         [current.id],
       );
-      if (existing.rows[0]) return refund(existing.rows[0]);
+      if (existing.rows[0]) {
+        if (
+          existing.rows[0].request_key !== requestKey
+          || existing.rows[0].reason !== input.reason
+        ) {
+          throw new CommerceStateError("Idempotency-Key payload conflict");
+        }
+        return refund(existing.rows[0]);
+      }
       if (current.status !== "paid") {
         throw new CommerceStateError("Order is not refundable");
       }
@@ -533,8 +542,9 @@ export class CommercePostgresDataSource implements CommerceDataSource {
            ) VALUES ($1, $2, $3, $4, $5)
            RETURNING *
          )
-         SELECT written.id, o.order_no, written.request_no, written.reason,
-                written.status, written.created_at, written.resolved_at
+         SELECT written.id, o.order_no, written.request_key,
+                written.request_no, written.reason, written.status,
+                written.created_at, written.resolved_at
          FROM written JOIN public.commerce_orders o ON o.id = written.order_id`,
         [
           user.id,

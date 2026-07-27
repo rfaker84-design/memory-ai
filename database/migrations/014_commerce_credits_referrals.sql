@@ -1,4 +1,5 @@
--- APPROVAL REQUIRED: do not execute this migration until Window 1 approves it.
+-- ISOLATED VALIDATION ONLY: this migration is not approved for production.
+-- Production execution or automatic-runner inclusion requires separate Window 1 approval.
 -- This migration creates the server-side source of truth for Sprint21 commerce.
 
 BEGIN;
@@ -15,6 +16,11 @@ BEGIN
   END IF;
 END;
 $$;
+
+-- Composite ownership keys let child ledgers prove that their user_id belongs
+-- to the referenced TA/order/credit lot instead of trusting application code.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_memories_id_user
+  ON public.memories (id, user_id);
 
 CREATE TABLE IF NOT EXISTS public.commerce_orders (
   id UUID NOT NULL DEFAULT pg_catalog.gen_random_uuid(),
@@ -39,6 +45,7 @@ CREATE TABLE IF NOT EXISTS public.commerce_orders (
   CONSTRAINT pk_commerce_orders PRIMARY KEY (id),
   CONSTRAINT fk_commerce_orders_user
     FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE,
+  CONSTRAINT uq_commerce_orders_id_user UNIQUE (id, user_id),
   CONSTRAINT uq_commerce_orders_order_no UNIQUE (order_no),
   CONSTRAINT uq_commerce_orders_user_request UNIQUE (user_id, request_key),
   CONSTRAINT ck_commerce_orders_order_no
@@ -117,8 +124,9 @@ CREATE TABLE IF NOT EXISTS public.commerce_refund_requests (
   CONSTRAINT pk_commerce_refund_requests PRIMARY KEY (id),
   CONSTRAINT fk_commerce_refund_requests_user
     FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE,
-  CONSTRAINT fk_commerce_refund_requests_order
-    FOREIGN KEY (order_id) REFERENCES public.commerce_orders(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_commerce_refund_requests_order_user
+    FOREIGN KEY (order_id, user_id)
+    REFERENCES public.commerce_orders(id, user_id) ON DELETE RESTRICT,
   CONSTRAINT uq_commerce_refund_requests_order UNIQUE (order_id),
   CONSTRAINT uq_commerce_refund_requests_user_request UNIQUE (user_id, request_key),
   CONSTRAINT uq_commerce_refund_requests_no UNIQUE (request_no),
@@ -148,6 +156,7 @@ CREATE TABLE IF NOT EXISTS public.commerce_credit_lots (
   CONSTRAINT pk_commerce_credit_lots PRIMARY KEY (id),
   CONSTRAINT fk_commerce_credit_lots_user
     FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE,
+  CONSTRAINT uq_commerce_credit_lots_id_user UNIQUE (id, user_id),
   CONSTRAINT uq_commerce_credit_lots_source UNIQUE (source_kind, source_key),
   CONSTRAINT ck_commerce_credit_lots_source
     CHECK (source_kind IN (
@@ -187,10 +196,13 @@ CREATE TABLE IF NOT EXISTS public.commerce_generation_reservations (
   CONSTRAINT pk_commerce_generation_reservations PRIMARY KEY (id),
   CONSTRAINT fk_commerce_generation_reservations_user
     FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE,
-  CONSTRAINT fk_commerce_generation_reservations_memory
-    FOREIGN KEY (memory_id) REFERENCES public.memories(id) ON DELETE CASCADE,
-  CONSTRAINT fk_commerce_generation_reservations_lot
-    FOREIGN KEY (credit_lot_id) REFERENCES public.commerce_credit_lots(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_commerce_generation_reservations_memory_user
+    FOREIGN KEY (memory_id, user_id)
+    REFERENCES public.memories(id, user_id) ON DELETE CASCADE,
+  CONSTRAINT fk_commerce_generation_reservations_lot_user
+    FOREIGN KEY (credit_lot_id, user_id)
+    REFERENCES public.commerce_credit_lots(id, user_id) ON DELETE RESTRICT,
+  CONSTRAINT uq_commerce_generation_reservations_id_user UNIQUE (id, user_id),
   CONSTRAINT uq_commerce_generation_reservations_request
     UNIQUE (user_id, request_key),
   CONSTRAINT uq_commerce_generation_reservations_generation
@@ -222,6 +234,10 @@ CREATE TABLE IF NOT EXISTS public.commerce_generation_reservations (
 
 CREATE INDEX IF NOT EXISTS ix_commerce_generation_reservations_user_created
   ON public.commerce_generation_reservations (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_commerce_generation_reservations_memory_user
+  ON public.commerce_generation_reservations (memory_id, user_id);
+CREATE INDEX IF NOT EXISTS ix_commerce_generation_reservations_lot_user
+  ON public.commerce_generation_reservations (credit_lot_id, user_id);
 
 CREATE TABLE IF NOT EXISTS public.commerce_save_rights (
   id UUID NOT NULL DEFAULT pg_catalog.gen_random_uuid(),
@@ -233,14 +249,22 @@ CREATE TABLE IF NOT EXISTS public.commerce_save_rights (
   CONSTRAINT pk_commerce_save_rights PRIMARY KEY (id),
   CONSTRAINT fk_commerce_save_rights_user
     FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE,
-  CONSTRAINT fk_commerce_save_rights_order
-    FOREIGN KEY (source_order_id) REFERENCES public.commerce_orders(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_commerce_save_rights_order_user
+    FOREIGN KEY (source_order_id, user_id)
+    REFERENCES public.commerce_orders(id, user_id) ON DELETE RESTRICT,
   CONSTRAINT fk_commerce_save_rights_reservation
     FOREIGN KEY (reservation_id)
     REFERENCES public.commerce_generation_reservations(id) ON DELETE SET NULL,
+  CONSTRAINT fk_commerce_save_rights_reservation_user
+    FOREIGN KEY (reservation_id, user_id)
+    REFERENCES public.commerce_generation_reservations(id, user_id),
   CONSTRAINT uq_commerce_save_rights_user UNIQUE (user_id),
   CONSTRAINT uq_commerce_save_rights_order UNIQUE (source_order_id)
 );
+
+CREATE INDEX IF NOT EXISTS ix_commerce_save_rights_reservation_user
+  ON public.commerce_save_rights (reservation_id, user_id)
+  WHERE reservation_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS public.commerce_photo_remedies (
   id UUID NOT NULL DEFAULT pg_catalog.gen_random_uuid(),
@@ -255,10 +279,12 @@ CREATE TABLE IF NOT EXISTS public.commerce_photo_remedies (
   CONSTRAINT pk_commerce_photo_remedies PRIMARY KEY (id),
   CONSTRAINT fk_commerce_photo_remedies_user
     FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE,
-  CONSTRAINT fk_commerce_photo_remedies_memory
-    FOREIGN KEY (memory_id) REFERENCES public.memories(id) ON DELETE CASCADE,
-  CONSTRAINT fk_commerce_photo_remedies_lot
-    FOREIGN KEY (credit_lot_id) REFERENCES public.commerce_credit_lots(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_commerce_photo_remedies_memory_user
+    FOREIGN KEY (memory_id, user_id)
+    REFERENCES public.memories(id, user_id) ON DELETE CASCADE,
+  CONSTRAINT fk_commerce_photo_remedies_lot_user
+    FOREIGN KEY (credit_lot_id, user_id)
+    REFERENCES public.commerce_credit_lots(id, user_id) ON DELETE RESTRICT,
   CONSTRAINT uq_commerce_photo_remedies_memory UNIQUE (user_id, memory_id),
   CONSTRAINT uq_commerce_photo_remedies_request UNIQUE (user_id, request_key),
   CONSTRAINT ck_commerce_photo_remedies_request_key
@@ -268,6 +294,11 @@ CREATE TABLE IF NOT EXISTS public.commerce_photo_remedies (
   CONSTRAINT ck_commerce_photo_remedies_digest
     CHECK (replacement_photo_digest ~ '^[0-9a-f]{64}$')
 );
+
+CREATE INDEX IF NOT EXISTS ix_commerce_photo_remedies_memory_user
+  ON public.commerce_photo_remedies (memory_id, user_id);
+CREATE INDEX IF NOT EXISTS ix_commerce_photo_remedies_lot_user
+  ON public.commerce_photo_remedies (credit_lot_id, user_id);
 
 CREATE TABLE IF NOT EXISTS public.commerce_referral_codes (
   id UUID NOT NULL DEFAULT pg_catalog.gen_random_uuid(),

@@ -1,6 +1,7 @@
 # Sprint21 Commerce Credits and Referral Contract
 
-Status: test-environment implementation; production payment disabled.
+Status: test-environment implementation; Migration 014 validated only in an
+isolated PostgreSQL gate; production migration and payment remain disabled.
 
 ## Product catalog
 
@@ -111,12 +112,45 @@ The endpoint never repairs data automatically.
 
 `database/migrations/014_commerce_credits_referrals.sql` is required before the
 new APIs can use PostgreSQL. It is intentionally absent from
-`scripts/postgresql/apply-migrations.sh` and must not be executed until Window 1
-separately approves:
+`scripts/postgresql/apply-migrations.sh`. The isolated gate does not authorize
+adding it to that runner or applying it to production.
+
+The gate creates disposable databases only when all three controls are set:
+
+- the admin URL host is loopback;
+- the database name starts with `commerce_gate_`;
+- `COMMERCE_POSTGRES_GATE_ALLOW_DROP=YES`.
+
+It verifies:
 
 - ten new `commerce_*` tables;
 - their foreign keys, unique idempotency constraints, checks, and indexes;
+- composite ownership foreign keys across user, TA, order, reservation, and
+  credit-lot boundaries;
 - updated-at triggers;
-- the read-only `014` postflight.
+- the read-only `014` postflight;
+- 001-014 from empty, 014 replay, injected-failure rollback, and concurrent
+  ledger behavior.
 
-No migration was executed as part of this change.
+### Ten-table necessity audit
+
+| Table | Verdict | Why it remains separate |
+|---|---|---|
+| `commerce_orders` | Required | Financial state and immutable product snapshot. |
+| `commerce_order_events` | Required | Immutable provider-event deduplication and audit. |
+| `commerce_refund_requests` | Required | User request and manual-review lifecycle differ from provider events. |
+| `commerce_credit_lots` | Required | Permanent, source-typed account credit ledger. |
+| `commerce_generation_reservations` | Required | Two-phase reserve/consume/release and network recovery. |
+| `commerce_save_rights` | Required | Explicit, revocable first-preview entitlement and refund transfer. |
+| `commerce_photo_remedies` | Required | One-use TA-scoped grant evidence and replacement-photo digest. |
+| `commerce_referral_codes` | Required | Stable inviter/code ownership and retry identity. |
+| `commerce_referral_qualifications` | Required | Phone/device anti-fraud uniqueness and qualification audit. |
+| `commerce_referral_rewards` | Merge candidate | Its row overlaps the referral credit lot, but currently supplies a typed `(inviter, cohort)` uniqueness boundary and a countable audit record. |
+
+`commerce_referral_rewards` is the first simplification target if table count
+must be reduced before production. It can be merged only after
+`commerce_credit_lots` gains typed inviter/cohort columns; folding it into the
+current free-form `source_key` would weaken constraints and reconciliation.
+The other apparent merge candidates (`save_rights` and `photo_remedies`) would
+likewise replace typed ownership/evidence with derivation or JSON metadata, so
+the gate does not recommend removing them.
