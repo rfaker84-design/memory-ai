@@ -86,15 +86,32 @@ async function seedMemory(
       [externalId],
     );
     const memory = await client.query<{ id: string }>(
-      `INSERT INTO memories (user_id, name, idempotency_key)
-       VALUES ($1, $2, $3) RETURNING id`,
-      [user.rows[0].id, `Atomic ${suffix}`, suffix.padEnd(64, "a").slice(0, 64)],
+      `INSERT INTO memories (user_id, name, idempotency_key, creation_idempotency_key)
+       VALUES ($1, $2, $3, $4) RETURNING id`,
+      [
+        user.rows[0].id,
+        `Atomic ${suffix}`,
+        `fixture-${suffix}`.padEnd(64, "a").slice(0, 64),
+        `creation-${suffix}`,
+      ],
     );
     return { userId: user.rows[0].id, memoryId: memory.rows[0].id };
   } finally {
     await client.end();
   }
 }
+
+test("chat-session atomicity fixture satisfies every Memory idempotency contract", async () => {
+  const source = await readFile(new URL("./chat-session-atomicity.integration.test.ts", import.meta.url), "utf8");
+  const memoryInserts = source.match(/INSERT INTO memories \([\s\S]*?RETURNING id/g) ?? [];
+  assert.equal(memoryInserts.length, 1);
+  assert.ok(memoryInserts.every((insert) =>
+    /idempotency_key, creation_idempotency_key/.test(insert)
+    && /VALUES \(\$1, \$2, \$3, \$4\)/.test(insert)
+  ));
+  assert.match(source, /`fixture-\$\{suffix\}`\.padEnd\(64, "a"\)\.slice\(0, 64\)/);
+  assert.match(source, /`creation-\$\{suffix\}`/);
+});
 
 test(
   "015 isolated PostgreSQL 14 gate: atomic default session, greeting replay, recovery, and legacy duplicate consolidation",
