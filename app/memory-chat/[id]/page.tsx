@@ -14,6 +14,7 @@ import {
   loadOwnedMemory,
   OwnedMemoryRequestError,
 } from "../../../src/components/memory/ownedMemoryClient";
+import { MotionProvider } from "../../../src/motion";
 import styles from "./page.module.css";
 
 type PageState =
@@ -89,12 +90,14 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
   return (
     <main className={styles.page}>
       <div className={styles.stars} aria-hidden="true" />
-      <CreationMediaRecoveryGate
-        memory={state.memory}
-        firstGreetingKey={firstGreetingKey(state.memory.id)}
-        initialPortraitUrl={state.portraitUrl}
-        onLeave={() => router.replace("/")}
-      />
+      <MotionProvider>
+        <CreationMediaRecoveryGate
+          memory={state.memory}
+          firstGreetingKey={firstGreetingKey(state.memory.id)}
+          initialPortraitUrl={state.portraitUrl}
+          onLeave={() => router.replace("/")}
+        />
+      </MotionProvider>
     </main>
   );
 }
