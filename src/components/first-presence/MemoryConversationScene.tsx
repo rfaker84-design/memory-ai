@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useId, useRef, useState } from "reac
 
 import { MemoryAvatar, MemoryButton } from "../memory-ui";
 import { recordBusinessView } from "../business-metrics/businessMetricsClient";
+import { CommerceVideoCreditsEntry } from "./CommerceVideoCreditsEntry";
 import {
   completedConversationRounds,
   hasPersistedFirstGreeting,
@@ -267,6 +268,10 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
             </div>
             <p>网络不稳定时，这句话不会被自动重复发送。</p>
           </form>
+        )}
+
+        {completedRounds >= 2 && activeSessionId && (
+          <CommerceVideoCreditsEntry memoryId={memoryId} />
         )}
 
         <button type="button" className={styles.leave} onClick={onLeave}>回到首页</button>
