@@ -84,7 +84,9 @@ function createHandler(turnService: {
     () => ({ async generateReply() { return generateReply(); } }),
     sessionResolver,
     async () => true,
-    allowAdmission
+    allowAdmission,
+    undefined,
+    () => true
   );
 }
 
@@ -102,7 +104,9 @@ test("memory-chat handler completes a fully injected turn without Supabase, data
     () => ({ async generateReply() { providerCalls += 1; return { content: assistantMessage.content }; } }),
     sessionResolver,
     async () => { persistedCalls += 1; return true; },
-    allowAdmission
+    allowAdmission,
+    undefined,
+    () => true
   );
 
   const response = await handler(request({ memoryId, question: "Hello" }));
@@ -131,7 +135,9 @@ test("memory-chat replay does not call the provider or persist a duplicate long-
     () => ({ async generateReply() { providerCalls += 1; return { content: "unexpected" }; } }),
     sessionResolver,
     async () => { persistedCalls += 1; return true; },
-    allowAdmission
+    allowAdmission,
+    undefined,
+    () => true
   );
 
   const response = await handler(request({ memoryId, question: "Hello" }));
@@ -185,7 +191,9 @@ test("memory-chat validates Unicode length and dangerous question content before
     () => ({ async generateReply() { throw new Error("provider should not run"); } }),
     sessionResolver,
     async () => true,
-    allowAdmission
+    allowAdmission,
+    undefined,
+    () => true
   );
   const invalidBodies = [
     { memoryId, question: "   " },

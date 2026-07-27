@@ -34,3 +34,22 @@ export interface RecallMemoryResult {
   memories: LongTermMemory[];
   query: string;
 }
+
+export interface ListLongTermMemoriesInput {
+  externalUserId: string;
+  memoryId: string;
+  limit?: number;
+}
+
+export interface UpdateLongTermMemoryInput {
+  externalUserId: string;
+  memoryId: string;
+  longTermMemoryId: string;
+  content: string;
+}
+
+export interface DeleteLongTermMemoryInput {
+  externalUserId: string;
+  memoryId: string;
+  longTermMemoryId: string;
+}

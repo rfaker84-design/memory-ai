@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 
 import { supabase } from "../../src/lib/supabase";
-import type { LongTermMemoryDataSource } from "./datasource";
 import type {
   CreateLongTermMemoryInput,
   LongTermMemory,
@@ -44,9 +43,7 @@ function toEntity(row: LongTermMemoryRow): LongTermMemory {
   };
 }
 
-export class LongTermMemorySupabaseDataSource
-  implements LongTermMemoryDataSource
-{
+export class LongTermMemorySupabaseDataSource {
   async create(input: CreateLongTermMemoryInput): Promise<LongTermMemory> {
     const content = input.content.trim();
     const { data, error } = await supabase

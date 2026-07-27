@@ -1,0 +1,167 @@
+.page {
+  min-height: 100dvh;
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 24px)
+    clamp(18px, 5vw, 28px)
+    calc(env(safe-area-inset-bottom, 0px) + 40px);
+  background:
+    radial-gradient(circle at 82% 0%, rgba(116, 82, 43, 0.16), transparent 34%),
+    #0d0c0b;
+  color: #f2e8d8;
+}
+
+.header {
+  width: min(100%, 680px);
+  margin: 0 auto 24px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.header h1 {
+  margin: 5px 0 0;
+  font-size: clamp(24px, 7vw, 34px);
+  line-height: 1.22;
+  font-weight: 600;
+}
+
+.eyebrow {
+  margin: 0;
+  color: rgba(224, 194, 148, 0.6);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+}
+
+.back,
+.actions button {
+  min-height: 44px;
+  border: 1px solid rgba(216, 190, 146, 0.16);
+  border-radius: 999px;
+  background: rgba(35, 31, 27, 0.78);
+  color: rgba(244, 232, 210, 0.78);
+  padding: 0 16px;
+  cursor: pointer;
+}
+
+.notice,
+.list,
+.empty,
+.state,
+.message {
+  width: min(100%, 680px);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.notice {
+  padding: 17px 18px;
+  border-radius: 18px;
+  background: rgba(43, 37, 30, 0.56);
+  color: rgba(238, 225, 205, 0.66);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.notice p {
+  margin: 0;
+}
+
+.notice p + p {
+  margin-top: 5px;
+}
+
+.message {
+  margin-top: 16px;
+  color: rgba(224, 194, 148, 0.76);
+  font-size: 13px;
+}
+
+.list {
+  margin-top: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.item {
+  padding: 18px;
+  border-radius: 20px;
+  background: rgba(28, 25, 22, 0.82);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.2);
+}
+
+.meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  color: rgba(221, 204, 178, 0.44);
+  font-size: 11px;
+}
+
+.content {
+  margin: 14px 0 18px;
+  color: rgba(247, 237, 220, 0.9);
+  font-size: 15px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+.editor {
+  width: 100%;
+  min-height: 132px;
+  margin: 14px 0 18px;
+  padding: 13px 14px;
+  resize: vertical;
+  border: 1px solid rgba(216, 190, 146, 0.24);
+  border-radius: 14px;
+  outline: none;
+  background: rgba(10, 9, 8, 0.64);
+  color: #f5ead8;
+  font: inherit;
+  line-height: 1.65;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.actions button {
+  min-width: 84px;
+}
+
+.actions button:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.actions .delete {
+  color: rgba(239, 174, 159, 0.72);
+}
+
+.empty,
+.state {
+  padding-top: 60px;
+  text-align: center;
+  color: rgba(238, 225, 205, 0.52);
+}
+
+.empty h2 {
+  margin: 0 0 8px;
+  color: rgba(247, 237, 220, 0.82);
+  font-size: 18px;
+}
+
+.empty p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .back,
+  .actions button {
+    transition: none;
+  }
+}

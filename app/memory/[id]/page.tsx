@@ -11,6 +11,7 @@ import {
 import type { Emotion } from "../../../src/lib/volc";
 import { getEmotionState, updateEmotion, EMOTION_UI } from "../../../src/lib/emotionEngine";
 import type { Memory } from "../../../features/memory/types";
+import { LongTermMemoryBetaEntry } from "../../../src/components/long-term-memory/LongTermMemoryBetaEntry";
 
 export default function MemoryRoomPage({
   params,
@@ -135,6 +136,7 @@ export default function MemoryRoomPage({
       className="fixed inset-0 overflow-hidden flex flex-col items-center justify-center"
       style={{ background: "#0b0b0f", paddingBottom: "calc(64px + env(safe-area-inset-bottom, 0px))" }}
     >
+      <LongTermMemoryBetaEntry memoryId={id} />
       {/* Emotion-reactive background — intensity driven */}
       <motion.div
         className="absolute inset-0 pointer-events-none"

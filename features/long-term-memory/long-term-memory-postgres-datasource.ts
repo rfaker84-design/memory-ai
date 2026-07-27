@@ -5,14 +5,18 @@ import type { PoolClient } from "pg";
 import { queryPostgres, withPostgresTransaction } from "../../src/server/database";
 import type { LongTermMemoryDataSource } from "./datasource";
 import {
+  LongTermMemoryConflictError,
   LongTermMemoryNotFoundError,
   LongTermMemoryValidationError,
 } from "./errors";
 import type {
   CreateLongTermMemoryInput,
+  DeleteLongTermMemoryInput,
+  ListLongTermMemoriesInput,
   LongTermMemory,
   RecallMemoryInput,
   RecallMemoryResult,
+  UpdateLongTermMemoryInput,
 } from "./types";
 
 type LongTermMemoryRow = {
@@ -71,6 +75,13 @@ function validateMemoryId(value: string): string {
   return value;
 }
 
+function validateLongTermMemoryId(value: string): string {
+  if (!UUID_PATTERN.test(value)) {
+    throw new LongTermMemoryValidationError("longTermMemoryId is invalid");
+  }
+  return value;
+}
+
 function normalizeTags(tags: string[] | undefined): string[] {
   if (!tags) return [];
   return [...new Set(tags.map((tag) => requiredText(tag, "tag", 64)))];
@@ -89,6 +100,37 @@ function topK(value: number | undefined): number {
     throw new LongTermMemoryValidationError("topK is invalid");
   }
   return resolved;
+}
+
+function listLimit(value: number | undefined): number {
+  const resolved = value ?? 100;
+  if (!Number.isInteger(resolved) || resolved < 1 || resolved > 100) {
+    throw new LongTermMemoryValidationError("limit is invalid");
+  }
+  return resolved;
+}
+
+function recallKeywords(query: string): string[] {
+  const words = query.trim().toLocaleLowerCase().match(/[\p{L}\p{N}]{2,}/gu) ?? [];
+  const keywords = new Set<string>();
+  for (const word of words) {
+    if (/^\p{Script=Han}+$/u.test(word)) {
+      for (let index = 0; index < word.length - 1; index += 1) {
+        keywords.add(word.slice(index, index + 2));
+        if (keywords.size >= 12) return [...keywords];
+      }
+    } else {
+      keywords.add(word.slice(0, 64));
+    }
+    if (keywords.size >= 12) break;
+  }
+  return [...keywords];
+}
+
+function qualifiedColumns(alias: string): string {
+  return COLUMNS.split(",")
+    .map((column) => `${alias}.${column.trim()}`)
+    .join(", ");
 }
 
 async function requireOwnedMemory(
@@ -164,17 +206,93 @@ export class LongTermMemoryPostgresDataSource
   async recall(input: RecallMemoryInput): Promise<RecallMemoryResult> {
     const externalUserId = requiredText(input.externalUserId, "externalUserId", 255);
     const memoryId = validateMemoryId(input.memoryId);
-    const result = await queryPostgres<LongTermMemoryRow>(
+    const query = requiredText(input.query, "query", 4_000);
+    const keywords = recallKeywords(query);
+    const result = await queryPostgres<LongTermMemoryRow & { relevance_score: string }>(
       `SELECT l.id, l.memory_id, l.content, l.content_hash, l.source_type,
-         l.source_id, l.importance, l.tags, l.metadata, l.created_at, l.updated_at
+         l.source_id, l.importance, l.tags, l.metadata, l.created_at, l.updated_at,
+         COALESCE((
+           SELECT COUNT(*)
+           FROM unnest($3::text[]) AS keyword
+           WHERE LOWER(l.content) LIKE ('%' || keyword || '%')
+         ), 0) AS relevance_score
        FROM long_term_memories l
        JOIN memories m ON m.id = l.memory_id
        JOIN users u ON u.id = m.user_id
        WHERE l.memory_id = $1 AND u.external_id = $2
-       ORDER BY l.importance DESC, l.created_at DESC
-       LIMIT $3`,
-      [memoryId, externalUserId, topK(input.topK)]
+       ORDER BY relevance_score DESC, l.importance DESC, l.created_at DESC
+       LIMIT $4`,
+      [memoryId, externalUserId, keywords, topK(input.topK)]
     );
-    return { memories: result.rows.map(toEntity), query: input.query };
+    return { memories: result.rows.map(toEntity), query };
+  }
+
+  async list(input: ListLongTermMemoriesInput): Promise<LongTermMemory[]> {
+    const externalUserId = requiredText(input.externalUserId, "externalUserId", 255);
+    const memoryId = validateMemoryId(input.memoryId);
+    const result = await queryPostgres<LongTermMemoryRow>(
+      `SELECT ${qualifiedColumns("l")}
+       FROM long_term_memories l
+       JOIN memories m ON m.id = l.memory_id
+       JOIN users u ON u.id = m.user_id
+       WHERE l.memory_id = $1 AND u.external_id = $2
+       ORDER BY l.updated_at DESC, l.created_at DESC
+       LIMIT $3`,
+      [memoryId, externalUserId, listLimit(input.limit)]
+    );
+    return result.rows.map(toEntity);
+  }
+
+  async update(input: UpdateLongTermMemoryInput): Promise<LongTermMemory> {
+    const externalUserId = requiredText(input.externalUserId, "externalUserId", 255);
+    const memoryId = validateMemoryId(input.memoryId);
+    const longTermMemoryId = validateLongTermMemoryId(input.longTermMemoryId);
+    const content = requiredText(input.content, "content", 8_000);
+    const contentHash = createHash("sha256").update(content).digest("hex");
+
+    try {
+      const result = await queryPostgres<LongTermMemoryRow>(
+        `UPDATE long_term_memories l
+         SET content = $4, content_hash = $5, updated_at = NOW(),
+             metadata = l.metadata || '{"userCorrected":true}'::jsonb
+         FROM memories m
+         JOIN users u ON u.id = m.user_id
+         WHERE l.id = $1 AND l.memory_id = $2 AND m.id = l.memory_id
+           AND u.external_id = $3
+         RETURNING ${qualifiedColumns("l")}`,
+        [longTermMemoryId, memoryId, externalUserId, content, contentHash]
+      );
+      if (!result.rows[0]) {
+        throw new LongTermMemoryNotFoundError("Long-term memory not found");
+      }
+      return toEntity(result.rows[0]);
+    } catch (error) {
+      if (
+        typeof error === "object"
+        && error !== null
+        && "code" in error
+        && error.code === "23505"
+      ) {
+        throw new LongTermMemoryConflictError("The corrected memory already exists");
+      }
+      throw error;
+    }
+  }
+
+  async delete(input: DeleteLongTermMemoryInput): Promise<void> {
+    const externalUserId = requiredText(input.externalUserId, "externalUserId", 255);
+    const memoryId = validateMemoryId(input.memoryId);
+    const longTermMemoryId = validateLongTermMemoryId(input.longTermMemoryId);
+    const result = await queryPostgres<{ id: string }>(
+      `DELETE FROM long_term_memories l
+       USING memories m, users u
+       WHERE l.id = $1 AND l.memory_id = $2 AND m.id = l.memory_id
+         AND u.id = m.user_id AND u.external_id = $3
+       RETURNING l.id`,
+      [longTermMemoryId, memoryId, externalUserId]
+    );
+    if (!result.rows[0]) {
+      throw new LongTermMemoryNotFoundError("Long-term memory not found");
+    }
   }
 }

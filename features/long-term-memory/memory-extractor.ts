@@ -32,10 +32,10 @@ const TRIGGER_KEYWORDS = [
 
 export class MemoryExtractor {
   extract(input: ExtractInput): ExtractResult {
-    const combined =
-      (input.userMessage ?? "") + " " + (input.assistantMessage ?? "");
-
-    const matched = TRIGGER_KEYWORDS.filter((kw) => combined.includes(kw));
+    const userMessage = (input.userMessage ?? "").trim();
+    const matched = TRIGGER_KEYWORDS.filter((keyword) =>
+      userMessage.includes(keyword)
+    );
 
     if (matched.length === 0) {
       return {
@@ -47,7 +47,7 @@ export class MemoryExtractor {
 
     return {
       shouldRemember: true,
-      content: "用户提到：" + input.userMessage,
+      content: "用户在对话中提到：" + userMessage,
       importance: 60,
       tags: ["chat"],
     };

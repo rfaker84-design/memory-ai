@@ -21,10 +21,23 @@ test("PostgreSQL LTM deduplicates by memory, source type, and content hash", () 
   assert.match(source, /WHERE memory_id = \$1 AND source_type = \$2 AND content_hash = \$3/);
 });
 
-test("PostgreSQL LTM recall is owner-isolated and ranks by importance then time", () => {
+test("PostgreSQL LTM recall is owner-isolated and ranks relevance before importance and time", () => {
   const recall = source.slice(source.indexOf("async recall"));
   assert.match(recall, /JOIN memories m ON m\.id = l\.memory_id/);
   assert.match(recall, /WHERE l\.memory_id = \$1 AND u\.external_id = \$2/);
-  assert.match(recall, /ORDER BY l\.importance DESC, l\.created_at DESC/);
-  assert.match(recall, /LIMIT \$3/);
+  assert.match(recall, /FROM unnest\(\$3::text\[\]\) AS keyword/);
+  assert.match(recall, /ORDER BY relevance_score DESC, l\.importance DESC, l\.created_at DESC/);
+  assert.match(recall, /LIMIT \$4/);
+});
+
+test("PostgreSQL LTM view, correction, and deletion remain owner and memory scoped", () => {
+  const list = source.slice(source.indexOf("async list"), source.indexOf("async update"));
+  const update = source.slice(source.indexOf("async update"), source.indexOf("async delete"));
+  const deletion = source.slice(source.indexOf("async delete"));
+  assert.match(list, /u\.external_id = \$2/);
+  assert.match(update, /l\.id = \$1 AND l\.memory_id = \$2/);
+  assert.match(update, /u\.external_id = \$3/);
+  assert.match(update, /userCorrected/);
+  assert.match(deletion, /DELETE FROM long_term_memories l/);
+  assert.match(deletion, /u\.external_id = \$3/);
 });

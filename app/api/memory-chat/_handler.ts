@@ -29,6 +29,7 @@ import {
   verifyRequestSession,
 } from "../../../src/server/auth";
 import { DatabaseDependencyError } from "../../../src/server/database";
+import { canAccessInternalBeta } from "../../../src/server/beta-access";
 
 type MemoryChatRequest = { memoryId: string; question: string };
 type MemoryOwnershipService = Pick<MemoryService, "getMemoryForUser">;
@@ -47,6 +48,7 @@ type QuotaService = {
   reserveChatQuota(input: { externalUserId: string; memoryId: string; idempotencyKey: string }): Promise<QuotaReservation>;
   releaseChatQuota(input: { externalUserId: string; memoryId: string; idempotencyKey: string }): Promise<void>;
 };
+type LongTermMemoryAccess = (externalUserId: string) => boolean;
 
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
 
@@ -151,6 +153,8 @@ export function createMemoryChatHandler(
   persistTurn: PersistCompletedTurn = persistCompletedTurn,
   admissionControl: AdmissionControl = checkAdmission,
   quotaServiceFactory: () => QuotaService = () => freeQuotaService,
+  longTermMemoryAccess: LongTermMemoryAccess = (externalUserId) =>
+    canAccessInternalBeta("long-term-memory", externalUserId),
 ) {
   return async function POST(request: NextRequest) {
     try {
@@ -262,10 +266,12 @@ export function createMemoryChatHandler(
         conversationId: claim.conversation.id,
         answer,
       });
-      try {
-        await persistTurn({ externalUserId: userId, memoryId: parsed.memoryId, result });
-      } catch {
-        console.warn("[memory-chat] LTM_WRITE_FAILED");
+      if (longTermMemoryAccess(userId)) {
+        try {
+          await persistTurn({ externalUserId: userId, memoryId: parsed.memoryId, result });
+        } catch {
+          console.warn("[memory-chat] LTM_WRITE_FAILED");
+        }
       }
 
       return response(result);

@@ -12,6 +12,7 @@ import {
   LongTermMemoryRepository,
   LongTermMemoryService,
 } from "../long-term-memory";
+import { canAccessInternalBeta } from "../../src/server/beta-access";
 
 const createMemoryService = (): MemoryService => {
   const dataSource = new MemoryPostgresDataSource();
@@ -83,16 +84,18 @@ export class MemoryContextBuilder {
     }
 
     let longTermMemories: string[] = [];
-    try {
-      const recallResult = await this.ltmService.recallMemory({
-        externalUserId: input.userId,
-        memoryId: input.memoryId,
-        query: input.userMessage,
-        topK: 5,
-      });
-      longTermMemories = recallResult.memories.map((item) => item.content);
-    } catch {
-      // Chat remains available when recall is unavailable; it never falls back.
+    if (canAccessInternalBeta("long-term-memory", input.userId)) {
+      try {
+        const recallResult = await this.ltmService.recallMemory({
+          externalUserId: input.userId,
+          memoryId: input.memoryId,
+          query: input.userMessage,
+          topK: 5,
+        });
+        longTermMemories = recallResult.memories.map((item) => item.content);
+      } catch {
+        // Chat remains available when recall is unavailable; it never falls back.
+      }
     }
 
     return {

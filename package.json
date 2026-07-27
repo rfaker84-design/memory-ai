@@ -17,6 +17,8 @@
     "test:memory-item": "tsx --test app/api/memories/memory-item-route.test.ts app/api/memories/memory-collection-auth.test.ts app/api/memories/recovery/memory-recovery-route.test.ts",
     "test:memory-pages": "tsx --test app/api/memories/chat-session-route.test.ts src/components/memory/ownedMemoryClient.test.ts src/components/first-presence/creationRecoveryClient.test.ts",
     "test:real-presence": "tsx --test services/llm/formal-llm-provider.test.ts services/llm/deepseek-llm-provider.test.ts features/memory-engine/prompt/memory-prompt.test.ts features/chat/first-greeting-service.test.ts app/api/memory-chat/memory-chat-final-real.test.ts src/components/first-presence/confirmedMemoryProfile.test.ts src/components/memory/ownedMemoryClient.test.ts",
+    "test:long-term-memory-postgres-e2e": "tsx --test scripts/e2e/long-term-memory-postgres.e2e.ts",
+    "test:long-term-memory-beta": "tsx --test src/server/beta-access.test.ts features/long-term-memory/long-term-memory-postgres-datasource.test.ts features/long-term-memory/chat-turn-persistence.test.ts app/api/memory-chat-ltm.test.ts app/api/memories/long-term-memory-beta-route.test.ts src/components/long-term-memory/longTermMemoryBetaClient.test.ts && npm run test:long-term-memory-postgres-e2e",
     "test:first-greeting": "tsx --test app/api/memories/first-greeting-route.test.ts features/chat/first-greeting-service.test.ts features/chat/first-greeting-persistence.test.ts && node --test database/tests/008-memory-first-greetings.test.cjs",
     "test:media": "tsx --test scripts/ops/test-media-storage.ts src/server/storage/tencent-cos-storage.test.ts",
     "package:standalone-rc": "node scripts/ops/package-standalone-rc.cjs",
@@ -32,7 +34,7 @@
     "test:auth": "tsx --test src/server/auth/auth.test.ts src/server/auth/auth-response-cache.test.ts src/server/auth/production-config.test.ts src/server/auth/sms/tencent-sms-verification-provider.test.ts src/server/auth/wechat/wechat-auth.test.ts app/api/auth/wechat/wechat-auth-route.test.ts app/login/login-entry.test.ts && npm run test:auth-migration",
     "test:security-routes": "tsx --test src/server/security/origin.test.ts app/api/api-policy.test.ts app/api/legacy-route-security.test.ts app/api/legacy-chat-commerce-quarantine.test.ts src/components/auth/client-identity-storage.test.ts",
     "test:startup-contract": "node --test scripts/security/production-startup-contract.test.cjs",
-    "test": "npm run test:create-flow && npm run test:memory-item && npm run test:memory-pages && npm run test:real-presence && npm run test:media && npm run test:collective-analysis && npm run test:auth && npm run test:payments && npm run test:commerce && npm run test:business-metrics && npm run test:security-routes && npm run test:startup-contract",
+    "test": "npm run test:create-flow && npm run test:memory-item && npm run test:memory-pages && npm run test:real-presence && npm run test:long-term-memory-beta && npm run test:media && npm run test:collective-analysis && npm run test:auth && npm run test:payments && npm run test:commerce && npm run test:business-metrics && npm run test:security-routes && npm run test:startup-contract",
     "start": "next start -H 127.0.0.1 -p 3000",
     "lint": "next lint"
   },
@@ -58,6 +60,8 @@
     "three": "^0.184.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.4",
+    "@electric-sql/pglite-socket": "^0.2.7",
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
