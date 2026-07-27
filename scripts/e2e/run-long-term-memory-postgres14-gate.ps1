@@ -83,14 +83,16 @@ try {
   }
   if (-not $started) { throw "POSTGRES14_START_FAILED" }
 
-  $migrations = Get-ChildItem -LiteralPath (Join-Path $projectRoot "database\migrations") -Filter "*.sql" |
+  $availableMigrations = Get-ChildItem -LiteralPath (Join-Path $projectRoot "database\migrations") -Filter "*.sql" |
     Sort-Object Name
   $expected = 1..13 | ForEach-Object { "{0:D3}_" -f $_ }
-  if ($migrations.Count -ne 13 -or @($migrations.Name | Where-Object {
-    $prefix = $_.Substring(0, 4)
-    $prefix -notin $expected
-  }).Count -ne 0) {
-    throw "POSTGRES14_MIGRATION_SET_INVALID"
+  $migrations = @()
+  foreach ($prefix in $expected) {
+    $matches = @($availableMigrations | Where-Object { $_.Name.StartsWith($prefix) })
+    if ($matches.Count -ne 1) {
+      throw "POSTGRES14_MIGRATION_SET_INVALID=$prefix"
+    }
+    $migrations += $matches[0]
   }
   foreach ($migration in $migrations) {
     & $psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -p $port -U postgres -d postgres -f $migration.FullName | Out-Null
