@@ -18,6 +18,10 @@ export interface ChatDataSource {
     userId: string,
     memoryId: string
   ): Promise<Conversation | null>;
+  getOrCreateDefaultConversation(
+    userId: string,
+    memoryId: string
+  ): Promise<Conversation>;
   createMessage(input: CreateMessageInput): Promise<Message>;
   listMessages(conversationId: string): Promise<Message[]>;
   claimFirstGreeting?(input: ClaimFirstGreetingInput): Promise<FirstGreetingClaim>;

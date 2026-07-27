@@ -139,22 +139,11 @@ async function getOrCreateConversation(
   internalUserId: string,
   memoryId: string
 ): Promise<Conversation> {
-  const existing = await client.query<ConversationRow>(
-    `SELECT ${conversationColumns}
-     FROM conversations c
-     JOIN users u ON u.id = c.user_id
-     WHERE c.user_id = $1 AND c.memory_id = $2
-     ORDER BY c.created_at ASC
-     LIMIT 1
-     FOR UPDATE OF c`,
-    [internalUserId, memoryId]
-  );
-  if (existing.rows[0]) return toConversation(existing.rows[0]);
-
   const created = await client.query<ConversationRow>(
     `WITH written AS (
-       INSERT INTO conversations (user_id, memory_id, title)
-       VALUES ($1, $2, '默认会话')
+       INSERT INTO conversations (user_id, memory_id, title, is_default)
+       VALUES ($1, $2, '默认会话', TRUE)
+       ON CONFLICT (user_id, memory_id) WHERE is_default DO NOTHING
        RETURNING *
      )
      SELECT written.id, written.memory_id, u.external_id, written.title,
@@ -163,7 +152,20 @@ async function getOrCreateConversation(
      JOIN users u ON u.id = written.user_id`,
     [internalUserId, memoryId]
   );
-  return toConversation(created.rows[0]);
+  if (created.rows[0]) return toConversation(created.rows[0]);
+
+  const existing = await client.query<ConversationRow>(
+    `SELECT ${conversationColumns}
+     FROM conversations c
+     JOIN users u ON u.id = c.user_id
+     WHERE c.user_id = $1 AND c.memory_id = $2 AND c.is_default
+     LIMIT 1
+     FOR UPDATE OF c`,
+    [internalUserId, memoryId]
+  );
+  if (existing.rows[0]) return toConversation(existing.rows[0]);
+
+  throw new ChatValidationError("Default conversation was not available");
 }
 
 async function getMessage(

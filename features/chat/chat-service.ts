@@ -54,17 +54,6 @@ export class ChatService {
     userId: string,
     memoryId: string
   ): Promise<Conversation> {
-    const existing =
-      await this.chatRepository.findConversationByMemory(userId, memoryId);
-
-    if (existing) {
-      return existing;
-    }
-
-    return this.chatRepository.createConversation({
-      userId,
-      memoryId,
-      title: "默认会话",
-    });
+    return this.chatRepository.getOrCreateDefaultConversation(userId, memoryId);
   }
 }

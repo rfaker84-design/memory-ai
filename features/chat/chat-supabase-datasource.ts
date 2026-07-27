@@ -154,6 +154,13 @@ export class ChatSupabaseDataSource implements ChatDataSource {
     });
   }
 
+  async getOrCreateDefaultConversation(
+    userId: string,
+    memoryId: string
+  ): Promise<Conversation> {
+    return this.getOrCreateConversationByMemory(userId, memoryId);
+  }
+
   async createMessage(input: CreateMessageInput): Promise<Message> {
     const { data, error } = await supabase
       .from("chat_messages")

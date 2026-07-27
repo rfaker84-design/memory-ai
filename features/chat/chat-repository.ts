@@ -34,6 +34,13 @@ export class ChatRepository {
     return this.dataSource.findConversationByMemory(userId, memoryId);
   }
 
+  getOrCreateDefaultConversation(
+    userId: string,
+    memoryId: string
+  ): Promise<Conversation> {
+    return this.dataSource.getOrCreateDefaultConversation(userId, memoryId);
+  }
+
   createMessage(input: CreateMessageInput): Promise<Message> {
     return this.dataSource.createMessage(input);
   }

@@ -99,27 +99,16 @@ async function lockFirstGreetingScope(
   );
 }
 
-async function getOrCreateGreetingConversation(
+async function getOrCreateDefaultConversation(
   client: PoolClient,
   userId: string,
   memoryId: string
 ): Promise<Conversation> {
-  const existing = await client.query<ConversationRow>(
-    `SELECT ${conversationColumns}
-     FROM conversations c
-     JOIN users u ON u.id = c.user_id
-     WHERE c.user_id = $1 AND c.memory_id = $2
-     ORDER BY c.created_at ASC
-     LIMIT 1
-     FOR UPDATE OF c`,
-    [userId, memoryId]
-  );
-  if (existing.rows[0]) return toConversation(existing.rows[0]);
-
   const created = await client.query<ConversationRow>(
     `WITH written AS (
-       INSERT INTO conversations (user_id, memory_id, title)
-       VALUES ($1, $2, $3)
+       INSERT INTO conversations (user_id, memory_id, title, is_default)
+       VALUES ($1, $2, $3, TRUE)
+       ON CONFLICT (user_id, memory_id) WHERE is_default DO NOTHING
        RETURNING *
      )
      SELECT written.id, written.memory_id, u.external_id, written.title,
@@ -128,7 +117,23 @@ async function getOrCreateGreetingConversation(
      JOIN users u ON u.id = written.user_id`,
     [userId, memoryId, "默认会话"]
   );
-  return toConversation(created.rows[0]);
+  if (created.rows[0]) return toConversation(created.rows[0]);
+
+  // A concurrent INSERT can win the partial unique index after this
+  // transaction's first statement snapshot. A separate statement observes
+  // that committed winner and locks it before returning it to the caller.
+  const existing = await client.query<ConversationRow>(
+    `SELECT ${conversationColumns}
+     FROM conversations c
+     JOIN users u ON u.id = c.user_id
+     WHERE c.user_id = $1 AND c.memory_id = $2 AND c.is_default
+     LIMIT 1
+     FOR UPDATE OF c`,
+    [userId, memoryId]
+  );
+  if (existing.rows[0]) return toConversation(existing.rows[0]);
+
+  throw new ChatValidationError("Default conversation was not available");
 }
 
 async function getGreetingMessage(
@@ -192,11 +197,22 @@ export class ChatPostgresDataSource implements ChatDataSource {
   async findConversationByMemory(userId: string, memoryId: string): Promise<Conversation | null> {
     const result = await queryPostgres<ConversationRow>(
       `SELECT ${conversationColumns} FROM conversations c JOIN users u ON u.id = c.user_id
-       WHERE u.external_id = $1 AND c.memory_id = $2
-       ORDER BY c.created_at DESC LIMIT 1`,
+       WHERE u.external_id = $1 AND c.memory_id = $2 AND c.is_default
+       LIMIT 1`,
       [required(userId, "userId"), uuid(memoryId, "memoryId")]
     );
     return result.rows[0] ? toConversation(result.rows[0]) : null;
+  }
+
+  async getOrCreateDefaultConversation(
+    externalUserId: string,
+    inputMemoryId: string
+  ): Promise<Conversation> {
+    const memoryId = uuid(inputMemoryId, "memoryId");
+    return withPostgresTransaction(async (client) => {
+      const userId = await ensureUser(client, externalUserId);
+      return getOrCreateDefaultConversation(client, userId, memoryId);
+    });
   }
 
   async createMessage(input: CreateMessageInput): Promise<Message> {
@@ -252,7 +268,7 @@ export class ChatPostgresDataSource implements ChatDataSource {
 
       if (existing.rows[0]) {
         const state = existing.rows[0];
-        const conversation = await getOrCreateGreetingConversation(
+        const conversation = await getOrCreateDefaultConversation(
           client,
           userId,
           memoryId
@@ -289,7 +305,7 @@ export class ChatPostgresDataSource implements ChatDataSource {
         return { status: "claimed", conversation };
       }
 
-      const conversation = await getOrCreateGreetingConversation(client, userId, memoryId);
+      const conversation = await getOrCreateDefaultConversation(client, userId, memoryId);
       await client.query(
         `INSERT INTO memory_first_greetings (
            user_id, memory_id, conversation_id, idempotency_key, status
