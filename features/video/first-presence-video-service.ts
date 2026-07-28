@@ -2,7 +2,6 @@ import {
   evaluateFirstPresenceQuality,
   type FirstPresenceMediaProbe,
   type FirstPresenceQualityDecision,
-  type FirstPresenceVisualCheck,
 } from "./first-presence-quality-gate";
 import type {
   ViduFirstPresencePoll,
@@ -15,10 +14,18 @@ export type FirstPresenceVideoStatus =
   | "submitting"
   | "submitted"
   | "running"
+  | "manual_review_required"
   | "succeeded"
   | "rejected"
   | "failed"
   | "submission_uncertain";
+
+export type FirstPresenceManualReview = {
+  reviewerAccount: string;
+  reviewedAt: string;
+  action: "approve" | "reject";
+  reason: string;
+};
 
 export type FirstPresenceVideoJob = {
   id: string;
@@ -33,6 +40,7 @@ export type FirstPresenceVideoJob = {
   actualCredits: number | null;
   artifactKey: string | null;
   quality: FirstPresenceQualityDecision | null;
+  manualReview: FirstPresenceManualReview | null;
   errorCode: string | null;
   createdAt: string;
   updatedAt: string;
@@ -76,6 +84,13 @@ export type FirstPresenceVideoRepository = {
     actualCredits: number | null;
     errorCode: string;
   }): Promise<FirstPresenceVideoJob>;
+  markManualReviewRequired(input: {
+    id: string;
+    providerState: string;
+    actualCredits: number | null;
+    artifactKey: string;
+    quality: FirstPresenceQualityDecision;
+  }): Promise<FirstPresenceVideoJob>;
   markRejected(input: {
     id: string;
     providerState: string | null;
@@ -83,6 +98,7 @@ export type FirstPresenceVideoRepository = {
     artifactKey: string | null;
     quality: FirstPresenceQualityDecision | null;
     errorCode: string;
+    manualReview?: FirstPresenceManualReview;
   }): Promise<FirstPresenceVideoJob>;
   markSucceeded(input: {
     id: string;
@@ -90,6 +106,7 @@ export type FirstPresenceVideoRepository = {
     actualCredits: number | null;
     artifactKey: string;
     quality: FirstPresenceQualityDecision;
+    manualReview: FirstPresenceManualReview;
   }): Promise<FirstPresenceVideoJob>;
 };
 
@@ -119,11 +136,11 @@ export type FirstPresenceArtifactStore = {
 };
 
 export type FirstPresenceMediaProbePort = {
-  probe(input: { artifactKey: string; body: Buffer }): Promise<FirstPresenceMediaProbe>;
+  inspect(input: { artifactKey: string; body: Buffer }): Promise<FirstPresenceMediaProbe>;
 };
 
-export type FirstPresenceVisualAnalyzer = {
-  analyze(input: { artifactKey: string; body: Buffer }): Promise<FirstPresenceVisualCheck>;
+export type FirstPresenceReviewPolicy = {
+  assertCanReview(input: { reviewerAccount: string }): void;
 };
 
 const TERMINAL_STATUSES = new Set<FirstPresenceVideoStatus>([
@@ -133,14 +150,26 @@ const TERMINAL_STATUSES = new Set<FirstPresenceVideoStatus>([
   "submission_uncertain",
 ]);
 
+export class EnvironmentFirstPresenceReviewPolicy implements FirstPresenceReviewPolicy {
+  constructor(private readonly environment: Record<string, string | undefined> = process.env) {}
+
+  assertCanReview(input: { reviewerAccount: string }): void {
+    const enabled = this.environment.YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED === "true";
+    const expected = this.environment.YIJIAN_VIDEO_REVIEW_ACCOUNT;
+    if (!enabled || !expected || input.reviewerAccount !== expected) {
+      throw new Error("FIRST_PRESENCE_REVIEW_UNAUTHORIZED");
+    }
+  }
+}
+
 export class FirstPresenceVideoService {
   constructor(
     private readonly repository: FirstPresenceVideoRepository,
     private readonly provider: Pick<ViduFirstPresenceProvider, "submit" | "poll">,
     private readonly entitlements: FirstPresenceEntitlementPort,
     private readonly artifacts: FirstPresenceArtifactStore,
-    private readonly mediaProbe: FirstPresenceMediaProbePort,
-    private readonly visualAnalyzer: FirstPresenceVisualAnalyzer
+    private readonly mediaInspector: FirstPresenceMediaProbePort,
+    private readonly reviewPolicy: FirstPresenceReviewPolicy = new EnvironmentFirstPresenceReviewPolicy()
   ) {}
 
   async submit(input: CreateFirstPresenceVideoInput): Promise<FirstPresenceVideoJob> {
@@ -203,6 +232,53 @@ export class FirstPresenceVideoService {
     return this.pollAndFinalize(job);
   }
 
+  async review(input: {
+    jobId: string;
+    reviewerAccount: string;
+    action: "approve" | "reject";
+    reason: string;
+    now?: Date;
+  }): Promise<FirstPresenceVideoJob> {
+    this.reviewPolicy.assertCanReview({ reviewerAccount: input.reviewerAccount });
+    if (!input.reason.trim()) throw new Error("FIRST_PRESENCE_REVIEW_REASON_REQUIRED");
+    const job = await this.repository.findById(input.jobId);
+    if (!job) throw new Error("FIRST_PRESENCE_VIDEO_JOB_NOT_FOUND");
+    if (job.status !== "manual_review_required" || !job.quality || !job.artifactKey) {
+      throw new Error("FIRST_PRESENCE_VIDEO_NOT_REVIEWABLE");
+    }
+    const manualReview: FirstPresenceManualReview = {
+      reviewerAccount: input.reviewerAccount,
+      reviewedAt: (input.now ?? new Date()).toISOString(),
+      action: input.action,
+      reason: input.reason.trim(),
+    };
+    if (input.action === "reject") {
+      await this.releaseUserEntitlement(job);
+      return this.repository.markRejected({
+        id: job.id,
+        providerState: job.providerState,
+        actualCredits: job.actualCredits,
+        artifactKey: job.artifactKey,
+        quality: job.quality,
+        errorCode: "MANUAL_REVIEW_REJECTED",
+        manualReview,
+      });
+    }
+    await this.entitlements.commit({
+      externalUserId: job.externalUserId,
+      memoryId: job.memoryId,
+      idempotencyKey: job.idempotencyKey,
+    });
+    return this.repository.markSucceeded({
+      id: job.id,
+      providerState: job.providerState ?? "success",
+      actualCredits: job.actualCredits,
+      artifactKey: job.artifactKey,
+      quality: job.quality,
+      manualReview,
+    });
+  }
+
   private async pollAndFinalize(job: FirstPresenceVideoJob): Promise<FirstPresenceVideoJob> {
     const poll = await this.provider.poll(job.providerTaskId!);
     if (poll.state === "running") {
@@ -228,14 +304,36 @@ export class FirstPresenceVideoService {
     job: FirstPresenceVideoJob,
     poll: Extract<ViduFirstPresencePoll, { state: "succeeded" }>
   ): Promise<FirstPresenceVideoJob> {
-    const artifact = await this.artifacts.download({
-      url: poll.outputUrl,
-      jobId: job.id,
-    });
-    const quality = evaluateFirstPresenceQuality({
-      media: await this.mediaProbe.probe(artifact),
-      visual: await this.visualAnalyzer.analyze(artifact),
-    });
+    let artifact: Awaited<ReturnType<FirstPresenceArtifactStore["download"]>>;
+    try {
+      artifact = await this.artifacts.download({
+        url: poll.outputUrl,
+        jobId: job.id,
+      });
+    } catch {
+      await this.releaseUserEntitlement(job);
+      return this.repository.markFailed({
+        id: job.id,
+        providerState: poll.providerState,
+        actualCredits: poll.credits,
+        errorCode: "ARTIFACT_DOWNLOAD_FAILED",
+      });
+    }
+
+    let quality: FirstPresenceQualityDecision;
+    try {
+      quality = evaluateFirstPresenceQuality({
+        media: await this.mediaInspector.inspect(artifact),
+      });
+    } catch {
+      await this.releaseUserEntitlement(job);
+      return this.repository.markFailed({
+        id: job.id,
+        providerState: poll.providerState,
+        actualCredits: poll.credits,
+        errorCode: "MEDIA_INSPECTION_FAILED",
+      });
+    }
 
     if (quality.status === "reject") {
       await this.releaseUserEntitlement(job);
@@ -249,12 +347,7 @@ export class FirstPresenceVideoService {
       });
     }
 
-    await this.entitlements.commit({
-      externalUserId: job.externalUserId,
-      memoryId: job.memoryId,
-      idempotencyKey: job.idempotencyKey,
-    });
-    return this.repository.markSucceeded({
+    return this.repository.markManualReviewRequired({
       id: job.id,
       providerState: poll.providerState,
       actualCredits: poll.credits,

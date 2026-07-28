@@ -1,44 +1,52 @@
+export type FirstPresenceFrameEvidence = {
+  firstFramePath: string;
+  actionFramePath: string;
+  finalFramePath: string;
+};
+
 export type FirstPresenceMediaProbe = {
   durationSeconds: number;
   width: number;
   height: number;
   codec: string;
+  sizeBytes: number;
   hasAudio: boolean;
-};
-
-export type FirstPresenceVisualCheck = {
-  personPresent: boolean;
-  finalFramePersonPresent: boolean;
-  personLeftFrame: boolean;
-  bodyOrHandAbnormal: boolean;
-  notes?: string[];
+  decodable: boolean;
+  evidence: FirstPresenceFrameEvidence;
 };
 
 export type FirstPresenceQualityDecision =
   | {
-      status: "pass";
+      status: "manual_review_required";
       reasons: [];
       media: FirstPresenceMediaProbe;
-      visual: FirstPresenceVisualCheck;
+      manualReviewReasons: string[];
     }
   | {
       status: "reject";
       reasons: string[];
       media: FirstPresenceMediaProbe;
-      visual: FirstPresenceVisualCheck;
+      manualReviewReasons: string[];
     };
 
 const TARGET_DURATION_SECONDS = 8;
 const DURATION_TOLERANCE_SECONDS = 0.5;
 const TARGET_WIDTH = 1080;
 const TARGET_HEIGHT = 1920;
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+
+export const FIRST_PRESENCE_MANUAL_REVIEW_REASONS = [
+  "IDENTITY_STABILITY_UNVERIFIED",
+  "PERSON_LEAVING_FRAME_UNVERIFIED",
+  "FINAL_FRAME_PERSON_PRESENCE_UNVERIFIED",
+  "BODY_OR_HAND_ABNORMALITY_UNVERIFIED",
+] as const;
 
 export function evaluateFirstPresenceQuality(input: {
   media: FirstPresenceMediaProbe;
-  visual: FirstPresenceVisualCheck;
 }): FirstPresenceQualityDecision {
   const reasons: string[] = [];
-  const { media, visual } = input;
+  const { media } = input;
 
   if (
     !Number.isFinite(media.durationSeconds) ||
@@ -50,26 +58,26 @@ export function evaluateFirstPresenceQuality(input: {
   if (media.width !== TARGET_WIDTH || media.height !== TARGET_HEIGHT) {
     reasons.push("MEDIA_RESOLUTION_INVALID");
   }
+  if (media.sizeBytes <= 0 || media.sizeBytes > MAX_VIDEO_BYTES) {
+    reasons.push("MEDIA_SIZE_INVALID");
+  }
   if (media.hasAudio) {
     reasons.push("MEDIA_AUDIO_PRESENT");
   }
   if (!media.codec) {
     reasons.push("MEDIA_CODEC_MISSING");
   }
-  if (!visual.personPresent) {
-    reasons.push("PERSON_MISSING");
-  }
-  if (visual.personLeftFrame) {
-    reasons.push("PERSON_LEFT_FRAME");
-  }
-  if (!visual.finalFramePersonPresent) {
-    reasons.push("FINAL_FRAME_PERSON_MISSING");
-  }
-  if (visual.bodyOrHandAbnormal) {
-    reasons.push("BODY_OR_HAND_ABNORMAL");
+  if (!media.decodable) {
+    reasons.push("MEDIA_NOT_DECODABLE");
   }
 
+  const manualReviewReasons = [...FIRST_PRESENCE_MANUAL_REVIEW_REASONS];
   return reasons.length === 0
-    ? { status: "pass", reasons: [], media, visual }
-    : { status: "reject", reasons, media, visual };
+    ? {
+        status: "manual_review_required",
+        reasons: [],
+        media,
+        manualReviewReasons,
+      }
+    : { status: "reject", reasons, media, manualReviewReasons };
 }

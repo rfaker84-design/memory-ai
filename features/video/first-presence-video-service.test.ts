@@ -1,9 +1,20 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { access, mkdtemp, readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 
+import { NextRequest } from "next/server";
+
+import { createVideoReviewsHandler } from "@/app/api/internal/video-reviews/_handler";
 import {
   evaluateFirstPresenceQuality,
+  FfmpegFirstPresenceMediaInspector,
   FirstPresenceVideoService,
+  SecureVideoDownloader,
+  VideoDownloadSecurityError,
   ViduFirstPresenceNetworkError,
   ViduFirstPresenceProvider,
   VIDU_CN_API_BASE_URL,
@@ -12,18 +23,20 @@ import {
   VIDU_FIRST_PRESENCE_NEGATIVE_PROMPT,
   VIDU_FIRST_PRESENCE_PROMPT,
   VIDU_FIRST_PRESENCE_RESOLUTION,
-  type FirstPresenceArtifactStore,
-  type FirstPresenceEntitlementPort,
-  type FirstPresenceMediaProbe,
+  type FirstPresenceQualityDecision,
   type FirstPresenceVideoJob,
   type FirstPresenceVideoRepository,
-  type FirstPresenceVisualCheck,
 } from "./index";
 
+const execFileAsync = promisify(execFile);
 const owner = "phone:owner";
 const memoryId = "00000000-0000-4000-8000-000000000021";
 const image = "data:image/png;base64,YWJj";
 const sha = "a".repeat(64);
+const sampleA =
+  "C:/Users/Administrator/Documents/Codex/2026-07-27/sprint21-memorial-video-bakeoff-and-pipeline/work/vidu-first-presence-8s-confirmation/videos/A.mp4";
+const sampleB =
+  "C:/Users/Administrator/Documents/Codex/2026-07-27/sprint21-memorial-video-bakeoff-and-pipeline/work/vidu-first-presence-8s-confirmation/videos/B.mp4";
 
 class MemoryFirstPresenceRepository implements FirstPresenceVideoRepository {
   readonly jobs = new Map<string, FirstPresenceVideoJob>();
@@ -68,6 +81,7 @@ class MemoryFirstPresenceRepository implements FirstPresenceVideoRepository {
       actualCredits: null,
       artifactKey: null,
       quality: null,
+      manualReview: null,
       errorCode: null,
       createdAt: now,
       updatedAt: now,
@@ -127,6 +141,16 @@ class MemoryFirstPresenceRepository implements FirstPresenceVideoRepository {
     });
   }
 
+  async markManualReviewRequired(input: Parameters<FirstPresenceVideoRepository["markManualReviewRequired"]>[0]) {
+    return this.patch(input.id, {
+      status: "manual_review_required",
+      providerState: input.providerState,
+      actualCredits: input.actualCredits,
+      artifactKey: input.artifactKey,
+      quality: input.quality,
+    });
+  }
+
   async markRejected(input: Parameters<FirstPresenceVideoRepository["markRejected"]>[0]) {
     return this.patch(input.id, {
       status: "rejected",
@@ -134,6 +158,7 @@ class MemoryFirstPresenceRepository implements FirstPresenceVideoRepository {
       actualCredits: input.actualCredits,
       artifactKey: input.artifactKey,
       quality: input.quality,
+      manualReview: input.manualReview ?? null,
       errorCode: input.errorCode,
     });
   }
@@ -145,6 +170,7 @@ class MemoryFirstPresenceRepository implements FirstPresenceVideoRepository {
       actualCredits: input.actualCredits,
       artifactKey: input.artifactKey,
       quality: input.quality,
+      manualReview: input.manualReview,
     });
   }
 
@@ -161,7 +187,7 @@ class MemoryFirstPresenceRepository implements FirstPresenceVideoRepository {
   }
 }
 
-class FakeEntitlements implements FirstPresenceEntitlementPort {
+class FakeEntitlements {
   reserves = 0;
   commits = 0;
   releases = 0;
@@ -180,19 +206,29 @@ class FakeEntitlements implements FirstPresenceEntitlementPort {
   }
 }
 
+function validProbe(evidenceRoot: string) {
+  return {
+    durationSeconds: 8.083,
+    width: 1080,
+    height: 1920,
+    codec: "h264",
+    sizeBytes: 1024,
+    hasAudio: false,
+    decodable: true,
+    evidence: {
+      firstFramePath: path.join(evidenceRoot, "first.jpg"),
+      actionFramePath: path.join(evidenceRoot, "action.jpg"),
+      finalFramePath: path.join(evidenceRoot, "final.jpg"),
+    },
+  };
+}
+
 function serviceWith(input: {
   provider?: ConstructorParameters<typeof FirstPresenceVideoService>[1];
-  media?: FirstPresenceMediaProbe;
-  visual?: FirstPresenceVisualCheck;
-}) {
+  quality?: FirstPresenceQualityDecision;
+} = {}) {
   const repository = new MemoryFirstPresenceRepository();
   const entitlements = new FakeEntitlements();
-  const artifacts: FirstPresenceArtifactStore = {
-    download: async () => ({
-      artifactKey: "first-presence/video.mp4",
-      body: Buffer.from("mp4"),
-    }),
-  };
   const provider =
     input.provider ??
     ({
@@ -212,25 +248,22 @@ function serviceWith(input: {
     repository,
     provider,
     entitlements,
-    artifacts,
     {
-      probe: async () =>
-        input.media ?? {
-          durationSeconds: 8.083,
-          width: 1080,
-          height: 1920,
-          codec: "h264",
-          hasAudio: false,
-        },
+      download: async () => ({
+        artifactKey: "first-presence/video.mp4",
+        body: Buffer.from("mp4"),
+      }),
     },
     {
-      analyze: async () =>
-        input.visual ?? {
-          personPresent: true,
-          finalFramePersonPresent: true,
-          personLeftFrame: false,
-          bodyOrHandAbnormal: false,
-        },
+      inspect: async () =>
+        input.quality?.media ?? validProbe(path.join(os.tmpdir(), "first-presence-evidence")),
+    },
+    {
+      assertCanReview: ({ reviewerAccount }) => {
+        if (reviewerAccount !== "internal-reviewer@yijian.test") {
+          throw new Error("FIRST_PRESENCE_REVIEW_UNAUTHORIZED");
+        }
+      },
     }
   );
   return { service, repository, entitlements };
@@ -293,9 +326,129 @@ test("Vidu first-presence provider freezes the China Q2 Pro Fast 8s silent 1080p
   assert.equal(requests[0].body.negative_prompt, VIDU_FIRST_PRESENCE_NEGATIVE_PROMPT);
 });
 
-test("idempotent product submission reuses the existing job and does not reserve or submit twice", async () => {
+test("secure downloader rejects client supplied unsafe URLs, private redirects, and oversized files", async () => {
+  const downloader = new SecureVideoDownloader({
+    resolveHost: async (hostname) =>
+      hostname === "safe.example.test" ? ["203.0.113.10"] : ["127.0.0.1"],
+    fetchImpl: (async () => Response.json({}, { status: 200 })) as typeof fetch,
+  });
+  await assert.rejects(
+    downloader.download({ url: "http://safe.example.test/video.mp4", jobId: "job-1" }),
+    (error) => error instanceof VideoDownloadSecurityError && error.code === "VIDEO_URL_NOT_HTTPS"
+  );
+  await assert.rejects(
+    downloader.download({ url: "https://127.0.0.1/video.mp4", jobId: "job-1" }),
+    (error) => error instanceof VideoDownloadSecurityError && error.code === "VIDEO_URL_PRIVATE_ADDRESS"
+  );
+
+  const redirected = new SecureVideoDownloader({
+    resolveHost: async (hostname) =>
+      hostname === "safe.example.test" ? ["203.0.113.10"] : ["127.0.0.1"],
+    fetchImpl: (async () =>
+      new Response(null, {
+        status: 302,
+        headers: { location: "https://private.example.test/video.mp4" },
+      })) as typeof fetch,
+  });
+  await assert.rejects(
+    redirected.download({ url: "https://safe.example.test/video.mp4", jobId: "job-1" }),
+    (error) => error instanceof VideoDownloadSecurityError && error.code === "VIDEO_URL_PRIVATE_ADDRESS"
+  );
+
+  const oversized = new SecureVideoDownloader({
+    maxBytes: 8,
+    resolveHost: async () => ["203.0.113.10"],
+    fetchImpl: (async () =>
+      new Response(Buffer.alloc(9), {
+        status: 200,
+        headers: { "content-length": "9", "content-type": "video/mp4" },
+      })) as typeof fetch,
+  });
+  await assert.rejects(
+    oversized.download({ url: "https://safe.example.test/video.mp4", jobId: "job-1" }),
+    (error) => error instanceof VideoDownloadSecurityError && error.code === "VIDEO_TOO_LARGE"
+  );
+});
+
+test("real ffprobe and ffmpeg inspection accepts the current A/B smoke videos as manual review evidence", async () => {
+  await access(sampleA);
+  await access(sampleB);
+  const evidenceRoot = await mkdtemp(path.join(os.tmpdir(), "first-presence-evidence-"));
+  const inspector = new FfmpegFirstPresenceMediaInspector({ evidenceRoot });
+  for (const [name, file] of [["A", sampleA], ["B", sampleB]] as const) {
+    const probe = await inspector.inspect({
+      artifactKey: `sample-${name}.mp4`,
+      body: await readFile(file),
+    });
+    const decision = evaluateFirstPresenceQuality({ media: probe });
+    assert.equal(probe.codec, "h264");
+    assert.equal(probe.width, 1080);
+    assert.equal(probe.height, 1920);
+    assert.equal(Math.abs(probe.durationSeconds - 8) <= 0.5, true);
+    assert.equal(probe.hasAudio, false);
+    assert.equal(probe.decodable, true);
+    await access(probe.evidence.firstFramePath);
+    await access(probe.evidence.actionFramePath);
+    await access(probe.evidence.finalFramePath);
+    assert.equal(decision.status, "manual_review_required");
+    assert.deepEqual(decision.manualReviewReasons, [
+      "IDENTITY_STABILITY_UNVERIFIED",
+      "PERSON_LEAVING_FRAME_UNVERIFIED",
+      "FINAL_FRAME_PERSON_PRESENCE_UNVERIFIED",
+      "BODY_OR_HAND_ABNORMALITY_UNVERIFIED",
+    ]);
+  }
+});
+
+test("real ffprobe and ffmpeg inspection rejects a fault video without charging user entitlement", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "first-presence-fault-"));
+  const fault = path.join(temp, "fault.mp4");
+  await execFileAsync("ffmpeg", [
+    "-y",
+    "-f",
+    "lavfi",
+    "-i",
+    "color=c=black:s=320x240:d=2",
+    "-f",
+    "lavfi",
+    "-i",
+    "anullsrc=channel_layout=mono:sample_rate=44100",
+    "-shortest",
+    fault,
+  ]);
+  const inspector = new FfmpegFirstPresenceMediaInspector({
+    evidenceRoot: path.join(temp, "evidence"),
+  });
+  const decision = evaluateFirstPresenceQuality({
+    media: await inspector.inspect({
+      artifactKey: "fault.mp4",
+      body: await readFile(fault),
+    }),
+  });
+  assert.equal(decision.status, "reject");
+  assert.deepEqual(decision.reasons, [
+    "MEDIA_DURATION_INVALID",
+    "MEDIA_RESOLUTION_INVALID",
+    "MEDIA_AUDIO_PRESENT",
+  ]);
+
+  const rejected = serviceWith({ quality: decision });
+  const job = await rejected.service.submit({
+    externalUserId: owner,
+    memoryId,
+    idempotencyKey: "video-request-fault",
+    imageDataUrl: image,
+    imageSha256: sha,
+  });
+  const result = await rejected.service.recover(job.id);
+  assert.equal(result.status, "rejected");
+  assert.equal(rejected.entitlements.releases, 1);
+  assert.equal(rejected.entitlements.commits, 0);
+});
+
+test("idempotent submission and lost response recovery protection never submit or reserve twice", async () => {
   let submits = 0;
-  const { service, entitlements } = serviceWith({
+  const idempotent = serviceWith({
     provider: {
       submit: async () => {
         submits += 1;
@@ -313,18 +466,11 @@ test("idempotent product submission reuses the existing job and does not reserve
     imageDataUrl: image,
     imageSha256: sha,
   };
-
-  const first = await service.submit(input);
-  const duplicate = await service.submit(input);
-
-  assert.equal(first.id, duplicate.id);
+  assert.equal((await idempotent.service.submit(input)).id, (await idempotent.service.submit(input)).id);
   assert.equal(submits, 1);
-  assert.equal(entitlements.reserves, 1);
-});
+  assert.equal(idempotent.entitlements.reserves, 1);
 
-test("network loss during submit is recorded as uncertain and is not retried by idempotent replay", async () => {
-  let submits = 0;
-  const { service, entitlements } = serviceWith({
+  const uncertain = serviceWith({
     provider: {
       submit: async () => {
         submits += 1;
@@ -335,25 +481,15 @@ test("network loss during submit is recorded as uncertain and is not retried by 
       },
     },
   });
-  const input = {
-    externalUserId: owner,
-    memoryId,
-    idempotencyKey: "video-request-2",
-    imageDataUrl: image,
-    imageSha256: sha,
-  };
-
-  const first = await service.submit(input);
-  const replay = await service.submit(input);
-
+  const first = await uncertain.service.submit({ ...input, idempotencyKey: "video-request-2" });
+  const replay = await uncertain.service.submit({ ...input, idempotencyKey: "video-request-2" });
   assert.equal(first.status, "submission_uncertain");
   assert.equal(replay.id, first.id);
-  assert.equal(submits, 1);
-  assert.equal(entitlements.commits, 0);
+  assert.equal(uncertain.entitlements.commits, 0);
 });
 
-test("state recovery polls an existing provider task, stores actual credits, and commits only after quality pass", async () => {
-  const { service, repository, entitlements } = serviceWith({});
+test("state recovery stores actual credits and requires internal manual review before consuming entitlement", async () => {
+  const { service, entitlements } = serviceWith();
   const submitted = await service.submit({
     externalUserId: owner,
     memoryId,
@@ -362,89 +498,143 @@ test("state recovery polls an existing provider task, stores actual credits, and
     imageSha256: sha,
   });
 
-  const recovered = await service.recover(submitted.id);
-
-  assert.equal(recovered.status, "succeeded");
-  assert.equal(recovered.actualCredits, 44);
-  assert.equal(recovered.artifactKey, "first-presence/video.mp4");
-  assert.equal(recovered.quality?.status, "pass");
-  assert.equal(repository.jobs.size, 1);
-  assert.equal(entitlements.commits, 1);
+  const reviewable = await service.recover(submitted.id);
+  assert.equal(reviewable.status, "manual_review_required");
+  assert.equal(reviewable.actualCredits, 44);
+  assert.equal(entitlements.commits, 0);
   assert.equal(entitlements.releases, 0);
+
+  await assert.rejects(
+    service.review({
+      jobId: submitted.id,
+      reviewerAccount: "client@yijian.test",
+      action: "approve",
+      reason: "forged client approval",
+    }),
+    /FIRST_PRESENCE_REVIEW_UNAUTHORIZED/
+  );
+
+  const approved = await service.review({
+    jobId: submitted.id,
+    reviewerAccount: "internal-reviewer@yijian.test",
+    action: "approve",
+    reason: "A/B evidence reviewed by operator",
+    now: new Date("2026-07-28T06:00:00.000Z"),
+  });
+  assert.equal(approved.status, "succeeded");
+  assert.equal(approved.manualReview?.reviewerAccount, "internal-reviewer@yijian.test");
+  assert.equal(approved.manualReview?.reason, "A/B evidence reviewed by operator");
+  assert.equal(entitlements.commits, 1);
 });
 
-test("provider failure and quality rejection release the reserved user entitlement", async () => {
-  const failing = serviceWith({
-    provider: {
-      submit: async () => ({ taskId: "vidu-task-fail", providerState: "created", credits: 44 }),
-      poll: async () => ({
-        state: "failed",
-        providerState: "failed",
-        credits: 44,
-        errorCode: "VIDU_FAILED",
-      }),
-    },
-  });
-  const failed = await failing.service.submit({
+test("manual reject releases the user entitlement and records reviewer, time, and reason", async () => {
+  const { service, entitlements } = serviceWith();
+  const submitted = await service.submit({
     externalUserId: owner,
     memoryId,
     idempotencyKey: "video-request-4",
     imageDataUrl: image,
     imageSha256: sha,
   });
-  assert.equal((await failing.service.recover(failed.id)).status, "failed");
-  assert.equal(failing.entitlements.releases, 1);
-  assert.equal(failing.entitlements.commits, 0);
-
-  const rejected = serviceWith({
-    visual: {
-      personPresent: true,
-      finalFramePersonPresent: false,
-      personLeftFrame: true,
-      bodyOrHandAbnormal: true,
-    },
+  await service.recover(submitted.id);
+  const rejected = await service.review({
+    jobId: submitted.id,
+    reviewerAccount: "internal-reviewer@yijian.test",
+    action: "reject",
+    reason: "final frame evidence does not satisfy owner standard",
+    now: new Date("2026-07-28T06:01:00.000Z"),
   });
-  const job = await rejected.service.submit({
-    externalUserId: owner,
-    memoryId,
-    idempotencyKey: "video-request-5",
-    imageDataUrl: image,
-    imageSha256: sha,
-  });
-  const result = await rejected.service.recover(job.id);
-  assert.equal(result.status, "rejected");
-  assert.deepEqual(result.quality?.status, "reject");
-  assert.match(result.errorCode ?? "", /PERSON_LEFT_FRAME|FINAL_FRAME_PERSON_MISSING|BODY_OR_HAND_ABNORMAL/);
-  assert.equal(rejected.entitlements.releases, 1);
-  assert.equal(rejected.entitlements.commits, 0);
+  assert.equal(rejected.status, "rejected");
+  assert.equal(rejected.errorCode, "MANUAL_REVIEW_REJECTED");
+  assert.equal(rejected.manualReview?.reviewedAt, "2026-07-28T06:01:00.000Z");
+  assert.equal(entitlements.releases, 1);
+  assert.equal(entitlements.commits, 0);
 });
 
-test("quality gate rejects bad media, missing final person, leaving frame, and obvious body or hand defects", () => {
-  assert.deepEqual(
-    evaluateFirstPresenceQuality({
-      media: {
-        durationSeconds: 10,
-        width: 720,
-        height: 1280,
-        codec: "",
-        hasAudio: true,
+test("internal video review route requires internal flag, exact account, token, and strict body", async () => {
+  const previous = {
+    enabled: process.env.YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED,
+    token: process.env.YIJIAN_VIDEO_REVIEW_ACCESS_TOKEN,
+    account: process.env.YIJIAN_VIDEO_REVIEW_ACCOUNT,
+  };
+  const token = "v".repeat(48);
+  const reviewer = "internal-reviewer@yijian.test";
+  try {
+    delete process.env.YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED;
+    process.env.YIJIAN_VIDEO_REVIEW_ACCESS_TOKEN = token;
+    process.env.YIJIAN_VIDEO_REVIEW_ACCOUNT = reviewer;
+    let calls = 0;
+    const handler = createVideoReviewsHandler(() => ({
+      review: async (input) => {
+        calls += 1;
+        return {
+          id: input.jobId,
+          status: input.action === "approve" ? "succeeded" : "rejected",
+          manualReview: {
+            reviewerAccount: input.reviewerAccount,
+            reviewedAt: "2026-07-28T06:00:00.000Z",
+            action: input.action,
+            reason: input.reason,
+          },
+        } as never;
       },
-      visual: {
-        personPresent: false,
-        finalFramePersonPresent: false,
-        personLeftFrame: true,
-        bodyOrHandAbnormal: true,
+    }));
+    const unauthorized = await handler(new NextRequest("https://memoryai.test/api/internal/video-reviews", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-video-review-access-token": token,
+        "x-video-reviewer-account": reviewer,
       },
-    }).reasons,
-    [
-      "MEDIA_DURATION_INVALID",
-      "MEDIA_RESOLUTION_INVALID",
-      "MEDIA_AUDIO_PRESENT",
-      "MEDIA_CODEC_MISSING",
-      "PERSON_MISSING",
-      "PERSON_LEFT_FRAME",
-      "FINAL_FRAME_PERSON_MISSING",
-      "BODY_OR_HAND_ABNORMAL",
-    ]
-  );
+      body: JSON.stringify({ jobId: "first-presence-video-1", action: "approve", reason: "ok" }),
+    }));
+    assert.equal(unauthorized.status, 401);
+
+    process.env.YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED = "true";
+    const wrongAccount = await handler(new NextRequest("https://memoryai.test/api/internal/video-reviews", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-video-review-access-token": token,
+        "x-video-reviewer-account": "client@yijian.test",
+      },
+      body: JSON.stringify({ jobId: "first-presence-video-1", action: "approve", reason: "ok" }),
+    }));
+    assert.equal(wrongAccount.status, 401);
+
+    const forgedBody = await handler(new NextRequest("https://memoryai.test/api/internal/video-reviews", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-video-review-access-token": token,
+        "x-video-reviewer-account": reviewer,
+      },
+      body: JSON.stringify({
+        jobId: "first-presence-video-1",
+        action: "approve",
+        reason: "ok",
+        reviewerAccount: "client@yijian.test",
+      }),
+    }));
+    assert.equal(forgedBody.status, 400);
+
+    const approved = await handler(new NextRequest("https://memoryai.test/api/internal/video-reviews", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-video-review-access-token": token,
+        "x-video-reviewer-account": reviewer,
+      },
+      body: JSON.stringify({ jobId: "first-presence-video-1", action: "approve", reason: "operator checked frames" }),
+    }));
+    assert.equal(approved.status, 202);
+    assert.equal(calls, 1);
+  } finally {
+    if (previous.enabled === undefined) delete process.env.YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED;
+    else process.env.YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED = previous.enabled;
+    if (previous.token === undefined) delete process.env.YIJIAN_VIDEO_REVIEW_ACCESS_TOKEN;
+    else process.env.YIJIAN_VIDEO_REVIEW_ACCESS_TOKEN = previous.token;
+    if (previous.account === undefined) delete process.env.YIJIAN_VIDEO_REVIEW_ACCOUNT;
+    else process.env.YIJIAN_VIDEO_REVIEW_ACCOUNT = previous.account;
+  }
 });
