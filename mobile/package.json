@@ -5,6 +5,7 @@
   "description": "MemoryAI native mobile host for the existing Next.js product core.",
   "scripts": {
     "build": "vite build",
+    "typecheck": "tsc --noEmit",
     "build:debug": "vite build --mode debug",
     "sync": "tsx scripts/sync-mobile.ts release",
     "sync:debug": "tsx scripts/sync-mobile.ts debug",
