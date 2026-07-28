@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -8,6 +7,7 @@ import test from "node:test";
 import { NextRequest } from "next/server";
 
 import { isFormalApiPath, middleware } from "@/middleware";
+import { sourceAuditRouteFiles } from "@/scripts/security/source-audit-files";
 
 process.env.AUTH_ALLOWED_ORIGIN = "https://memoryai.test";
 
@@ -67,14 +67,7 @@ const P0_PATHS = new Set([
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 
 function trackedRoutes(): Array<{ file: string; pathname: string }> {
-  return execFileSync(
-    "git",
-    ["ls-files", "--cached", "--others", "--exclude-standard", "app/api/**/route.ts"],
-    { encoding: "utf8" }
-  )
-    .trim()
-    .split(/\r?\n/)
-    .filter(Boolean)
+  return sourceAuditRouteFiles()
     .map((file) => ({
       file,
       pathname: `/${file.replace(/\\/g, "/").replace(/^app\//, "").replace(/\/route\.ts$/, "")}`,

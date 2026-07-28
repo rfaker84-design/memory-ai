@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+
+import { sourceAuditFiles } from "@/scripts/security/source-audit-files";
 
 // Generated and untracked files are excluded by `git ls-files`. These are the
 // only binary formats currently tracked; every other tracked file is audited.
@@ -23,14 +24,7 @@ function identityStorageFindings(source: string): string[] {
 }
 
 function trackedTextFiles(): string[] {
-  const output = execFileSync("git", ["ls-files", "-z"], {
-    cwd: process.cwd(),
-    encoding: "buffer",
-  });
-  return output
-    .toString("utf8")
-    .split("\0")
-    .filter(Boolean)
+  return sourceAuditFiles()
     .filter((file) => !trackedBinaryExtensions.has(path.extname(file).toLowerCase()));
 }
 
