@@ -265,11 +265,30 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
 
   mode = "lost";
   const uncertain = await createService().submit({ ...input, idempotencyKey: "video:gate:lost-response:0001" });
-  const replay = await createService().submit({ ...input, idempotencyKey: "video:gate:lost-response:0001" });
+  const replays = await Promise.all(Array.from({ length: 16 }, () =>
+    createService().submit({ ...input, idempotencyKey: "video:gate:lost-response:0001" }),
+  ));
+  const recoveredUncertain = await Promise.all(Array.from({ length: 16 }, () =>
+    createService().recover(uncertain.id),
+  ));
+  await closePostgresPool(); // service restart must preserve the no-resubmit fence
+  const restartedRecovery = await Promise.all(Array.from({ length: 16 }, () =>
+    createService().recover(uncertain.id),
+  ));
   assert.equal(uncertain.status, "submission_uncertain");
-  assert.equal(replay.id, uncertain.id);
+  assert.equal(replays.every((job) => job.id === uncertain.id && job.status === "submission_uncertain"), true);
+  assert.equal(recoveredUncertain.every((job) => job.status === "submission_uncertain"), true);
+  assert.equal(restartedRecovery.every((job) => job.status === "submission_uncertain"), true);
   assert.equal(submits, 3, "lost response is never blindly resubmitted");
-  assert.deepEqual((await verify.query(`SELECT status FROM commerce_generation_reservations WHERE request_key = 'video:gate:lost-response:0001'`)).rows[0], { status: "reserved" });
+  const uncertainLink = (await verify.query<{ reservation_id: string; provider_task_id: string | null; provider_submission_state: string }>(
+    "SELECT reservation_id, provider_task_id, provider_submission_state FROM video_generation_jobs WHERE id = $1", [uncertain.id],
+  )).rows[0];
+  assert.ok(uncertainLink?.reservation_id);
+  assert.equal(uncertainLink.provider_task_id, null);
+  assert.equal(uncertainLink.provider_submission_state, "uncertain");
+  assert.deepEqual((await verify.query(
+    "SELECT status, outcome FROM commerce_generation_reservations WHERE id = $1", [uncertainLink.reservation_id],
+  )).rows[0], { status: "reserved", outcome: null });
   await assert.rejects(createService().submit({ ...input, externalUserId: other, memoryId: otherMemory!, idempotencyKey: "video:gate:cross-user:0001" }));
   await connections.close(verify);
   await closePostgresPool();

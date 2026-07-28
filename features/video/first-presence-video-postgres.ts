@@ -153,7 +153,10 @@ export class FirstPresenceVideoPostgresRepository
       `WITH claimed AS (
          UPDATE public.video_generation_jobs
          SET status = 'submitting', provider_submission_state = 'submitting'
-         WHERE id = $1 AND status = 'queued'
+         WHERE id = $1
+           AND status = 'queued'
+           AND provider_submission_state = 'not_started'
+           AND provider_task_id IS NULL
          RETURNING *
        ) SELECT claimed.id, u.external_id AS external_user_id, claimed.memory_id,
          claimed.idempotency_key, claimed.status, claimed.provider, claimed.provider_task_id,
@@ -223,7 +226,7 @@ export class FirstPresenceVideoPostgresRepository
         `UPDATE public.video_generation_jobs
          SET status = 'manual_review_required', provider_state = $2, actual_credits = $3,
            artifact_key = $4, quality_status = 'pending', quality_payload = $5::jsonb
-         WHERE id = $1 AND status NOT IN ('succeeded', 'rejected', 'failed')
+         WHERE id = $1 AND status NOT IN ('succeeded', 'rejected', 'failed', 'submission_uncertain')
          RETURNING id`,
         [input.id, input.providerState, input.actualCredits, input.artifactKey, JSON.stringify(input.quality)],
       );
@@ -378,7 +381,7 @@ export class FirstPresenceVideoPostgresRepository
          SET status = $2, provider_state = $3, actual_credits = $4, artifact_key = $5,
            quality_status = $6, quality_payload = $7::jsonb, error_code = $8,
            entitlement_settlement = $9
-         WHERE id = $1 AND status NOT IN ('succeeded', 'rejected', 'failed')
+         WHERE id = $1 AND status NOT IN ('succeeded', 'rejected', 'failed', 'submission_uncertain')
          RETURNING id`,
         [input.id, status, input.providerState, input.actualCredits, input.artifactKey, decision, JSON.stringify(input.quality), input.errorCode ?? null, settlement],
       );
@@ -400,7 +403,7 @@ export class FirstPresenceVideoPostgresRepository
   private async update(id: string, set: string, values: unknown[]): Promise<FirstPresenceVideoJob> {
     const result = await queryPostgres<JobRow>(
       `UPDATE public.video_generation_jobs j SET ${set}
-       WHERE j.id = $1 AND j.status NOT IN ('succeeded', 'rejected', 'failed')
+       WHERE j.id = $1 AND j.status NOT IN ('succeeded', 'rejected', 'failed', 'submission_uncertain')
        RETURNING j.id, (SELECT external_id FROM public.users WHERE id = j.user_id) AS external_user_id,
          j.memory_id, j.idempotency_key, j.status, j.provider, j.provider_task_id,
          j.provider_state, j.input_sha256, j.actual_credits, j.artifact_key,

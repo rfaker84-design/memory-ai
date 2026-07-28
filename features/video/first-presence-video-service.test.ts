@@ -523,9 +523,15 @@ test("idempotent submission and lost response recovery protection never submit o
   });
   const first = await uncertain.service.submit({ ...input, idempotencyKey: "video-request-2" });
   const replay = await uncertain.service.submit({ ...input, idempotencyKey: "video-request-2" });
+  const recoveries = await Promise.all(
+    Array.from({ length: 12 }, () => uncertain.service.recover(first.id)),
+  );
   assert.equal(first.status, "submission_uncertain");
   assert.equal(replay.id, first.id);
+  assert.equal(recoveries.every((job) => job.status === "submission_uncertain"), true);
+  assert.equal(submits, 2, "uncertain recovery never re-submits to the provider");
   assert.equal(uncertain.entitlements.commits, 0);
+  assert.equal(uncertain.entitlements.releases, 0);
 });
 
 test("concurrent submitters claim one durable submission and call Vidu once", async () => {
