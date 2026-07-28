@@ -100,6 +100,11 @@ export type FirstPresenceVideoRepository = {
     artifactKey: string;
     quality: FirstPresenceQualityDecision;
   }): Promise<FirstPresenceVideoJob>;
+  /** Persists the manual decision and settles the linked Commerce reservation atomically. */
+  settleManualReview(input: {
+    id: string;
+    manualReview: FirstPresenceManualReview;
+  }): Promise<FirstPresenceVideoJob>;
   markRejected(input: {
     id: string;
     providerState: string | null;
@@ -270,40 +275,14 @@ export class FirstPresenceVideoService {
   }): Promise<FirstPresenceVideoJob> {
     this.reviewPolicy.assertCanReview({ reviewerAccount: input.reviewerAccount });
     if (!input.reason.trim()) throw new Error("FIRST_PRESENCE_REVIEW_REASON_REQUIRED");
-    const job = await this.repository.findById(input.jobId);
-    if (!job) throw new Error("FIRST_PRESENCE_VIDEO_JOB_NOT_FOUND");
-    if (job.status !== "manual_review_required" || !job.quality || !job.artifactKey) {
-      throw new Error("FIRST_PRESENCE_VIDEO_NOT_REVIEWABLE");
-    }
     const manualReview: FirstPresenceManualReview = {
       reviewerAccount: input.reviewerAccount,
       reviewedAt: (input.now ?? new Date()).toISOString(),
       action: input.action,
       reason: input.reason.trim(),
     };
-    if (input.action === "reject") {
-      await this.releaseUserEntitlement(job);
-      return this.repository.markRejected({
-        id: job.id,
-        providerState: job.providerState,
-        actualCredits: job.actualCredits,
-        artifactKey: job.artifactKey,
-        quality: job.quality,
-        errorCode: "MANUAL_REVIEW_REJECTED",
-        manualReview,
-      });
-    }
-    await this.entitlements.commit({
-      externalUserId: job.externalUserId,
-      memoryId: job.memoryId,
-      idempotencyKey: job.idempotencyKey,
-    });
-    return this.repository.markSucceeded({
-      id: job.id,
-      providerState: job.providerState ?? "success",
-      actualCredits: job.actualCredits,
-      artifactKey: job.artifactKey,
-      quality: job.quality,
+    return this.repository.settleManualReview({
+      id: input.jobId,
       manualReview,
     });
   }

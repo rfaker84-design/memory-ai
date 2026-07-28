@@ -175,6 +175,22 @@ class MemoryFirstPresenceRepository implements FirstPresenceVideoRepository {
     });
   }
 
+  async settleManualReview(input: Parameters<FirstPresenceVideoRepository["settleManualReview"]>[0]) {
+    const current = this.jobs.get(input.id);
+    if (!current) throw new Error("missing job");
+    if (["succeeded", "rejected"].includes(current.status)) return current;
+    if (current.status !== "manual_review_required") {
+      throw new Error("FIRST_PRESENCE_VIDEO_NOT_REVIEWABLE");
+    }
+    return this.patch(input.id, input.manualReview.action === "approve"
+      ? { status: "succeeded", manualReview: input.manualReview }
+      : {
+        status: "rejected",
+        manualReview: input.manualReview,
+        errorCode: "MANUAL_REVIEW_REJECTED",
+      });
+  }
+
   async markRejected(input: Parameters<FirstPresenceVideoRepository["markRejected"]>[0]) {
     return this.patch(input.id, {
       status: "rejected",
@@ -575,7 +591,7 @@ test("state recovery stores actual credits and requires internal manual review b
   assert.equal(approved.status, "succeeded");
   assert.equal(approved.manualReview?.reviewerAccount, "internal-reviewer@yijian.test");
   assert.equal(approved.manualReview?.reason, "A/B evidence reviewed by operator");
-  assert.equal(entitlements.commits, 1);
+  assert.equal(entitlements.commits, 0, "review settlement belongs to the repository transaction");
 });
 
 test("manual reject releases the user entitlement and records reviewer, time, and reason", async () => {
@@ -598,7 +614,7 @@ test("manual reject releases the user entitlement and records reviewer, time, an
   assert.equal(rejected.status, "rejected");
   assert.equal(rejected.errorCode, "MANUAL_REVIEW_REJECTED");
   assert.equal(rejected.manualReview?.reviewedAt, "2026-07-28T06:01:00.000Z");
-  assert.equal(entitlements.releases, 1);
+  assert.equal(entitlements.releases, 0, "review settlement belongs to the repository transaction");
   assert.equal(entitlements.commits, 0);
 });
 

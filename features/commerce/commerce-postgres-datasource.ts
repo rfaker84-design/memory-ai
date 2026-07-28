@@ -241,6 +241,72 @@ async function readReservation(
   return result.rows[0];
 }
 
+/**
+ * Shared transaction primitive for consumers that must persist their own
+ * terminal record and the Migration 014 settlement as one atomic decision.
+ */
+export async function settleGenerationInPostgresTransaction(
+  client: PoolClient,
+  input: {
+    externalUserId: string;
+    requestKey: string;
+    outcome: GenerationSettlementOutcome;
+  },
+): Promise<GenerationReservation> {
+  const externalUserId = required(input.externalUserId, "userId");
+  const requestKey = required(input.requestKey, "requestKey", KEY_PATTERN);
+  if (![
+    "succeeded",
+    "system_failed",
+    "invalidated",
+  ].includes(input.outcome)) {
+    throw new CommerceValidationError("outcome is invalid");
+  }
+  const user = await lockUser(client, externalUserId);
+  await client.query(
+    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+    [`memoryai:commerce-generation:${user.id}:${requestKey}`],
+  );
+  const current = await readReservation(client, user.id, requestKey, true);
+  if (!current) {
+    throw new CommerceNotFoundError("Generation reservation was not found");
+  }
+  if (current.status !== "reserved") {
+    if (current.outcome === input.outcome) return reservation(current);
+    throw new CommerceStateError("Generation already settled");
+  }
+
+  const consumed = input.outcome === "succeeded";
+  await client.query(
+    `UPDATE public.commerce_credit_lots
+     SET reserved_credits = reserved_credits - 1,
+         consumed_credits = consumed_credits + $2,
+         updated_at = NOW()
+     WHERE id = $1 AND reserved_credits > 0`,
+    [current.credit_lot_id, consumed ? 1 : 0],
+  );
+  const updated = await client.query<ReservationRow>(
+    `UPDATE public.commerce_generation_reservations r
+     SET status = $2, outcome = $3, settled_at = NOW(), updated_at = NOW()
+     FROM public.commerce_credit_lots l
+     WHERE r.id = $1 AND r.credit_lot_id = l.id AND r.status = 'reserved'
+     RETURNING ${RESERVATION_COLUMNS}`,
+    [current.id, consumed ? "consumed" : "released", input.outcome],
+  );
+  if (!updated.rows[0]) {
+    throw new CommerceStateError("Generation settlement lost its lock");
+  }
+  if (consumed && current.purpose === "first_preview") {
+    await client.query(
+      `UPDATE public.commerce_save_rights
+       SET reservation_id = $2, updated_at = NOW()
+       WHERE user_id = $1 AND reservation_id IS NULL`,
+      [user.id, current.id],
+    );
+  }
+  return reservation(updated.rows[0]);
+}
+
 export class CommercePostgresDataSource implements CommerceDataSource {
   async createOrder(input: CreateCommerceOrderInput): Promise<CommerceOrder> {
     const externalUserId = required(input.externalUserId, "userId");
@@ -722,67 +788,9 @@ export class CommercePostgresDataSource implements CommerceDataSource {
     requestKey: string;
     outcome: GenerationSettlementOutcome;
   }): Promise<GenerationReservation> {
-    const externalUserId = required(input.externalUserId, "userId");
-    const requestKey = required(input.requestKey, "requestKey", KEY_PATTERN);
-    if (
-      !["succeeded", "system_failed", "invalidated"].includes(input.outcome)
-    ) {
-      throw new CommerceValidationError("outcome is invalid");
-    }
-    return withPostgresTransaction(async (client) => {
-      const user = await lockUser(client, externalUserId);
-      await client.query(
-        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-        [`memoryai:commerce-generation:${user.id}:${requestKey}`],
-      );
-      const current = await readReservation(
-        client,
-        user.id,
-        requestKey,
-        true,
-      );
-      if (!current) {
-        throw new CommerceNotFoundError("Generation reservation was not found");
-      }
-      if (current.status !== "reserved") {
-        if (current.outcome === input.outcome) return reservation(current);
-        throw new CommerceStateError("Generation already settled");
-      }
-
-      const consumed = input.outcome === "succeeded";
-      await client.query(
-        `UPDATE public.commerce_credit_lots
-         SET reserved_credits = reserved_credits - 1,
-             consumed_credits = consumed_credits + $2,
-             updated_at = NOW()
-         WHERE id = $1 AND reserved_credits > 0`,
-        [current.credit_lot_id, consumed ? 1 : 0],
-      );
-      const updated = await client.query<ReservationRow>(
-        `UPDATE public.commerce_generation_reservations r
-         SET status = $2, outcome = $3, settled_at = NOW(), updated_at = NOW()
-         FROM public.commerce_credit_lots l
-         WHERE r.id = $1 AND r.credit_lot_id = l.id AND r.status = 'reserved'
-         RETURNING ${RESERVATION_COLUMNS}`,
-        [
-          current.id,
-          consumed ? "consumed" : "released",
-          input.outcome,
-        ],
-      );
-      if (!updated.rows[0]) {
-        throw new CommerceStateError("Generation settlement lost its lock");
-      }
-      if (consumed && current.purpose === "first_preview") {
-        await client.query(
-          `UPDATE public.commerce_save_rights
-           SET reservation_id = $2, updated_at = NOW()
-           WHERE user_id = $1 AND reservation_id IS NULL`,
-          [user.id, current.id],
-        );
-      }
-      return reservation(updated.rows[0]);
-    });
+    return withPostgresTransaction((client) =>
+      settleGenerationInPostgresTransaction(client, input),
+    );
   }
 
   async recoverGeneration(

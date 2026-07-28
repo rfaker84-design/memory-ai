@@ -99,7 +99,8 @@ CREATE TABLE IF NOT EXISTS public.video_generation_quality_reviews (
     FOREIGN KEY (job_id) REFERENCES public.video_generation_jobs(id) ON DELETE CASCADE,
   CONSTRAINT uq_video_generation_quality_reviews_job_key UNIQUE (job_id, review_key),
   CONSTRAINT ck_video_generation_quality_reviews_key
-    CHECK (review_key ~ '^[A-Za-z0-9._:-]{16,128}$'),
+    -- Keep '-' first: placing it after ':' creates an invalid regex range in PG.
+    CHECK (review_key ~ '^[-A-Za-z0-9._:]{16,128}$'),
   CONSTRAINT ck_video_generation_quality_reviews_kind CHECK (reviewer_kind IN ('system', 'manual')),
   CONSTRAINT ck_video_generation_quality_reviews_reviewer
     CHECK (

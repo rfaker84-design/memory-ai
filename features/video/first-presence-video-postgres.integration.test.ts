@@ -98,7 +98,7 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
 
   Object.assign(process.env, { NODE_ENV: "test", DATABASE_URL: targetUrl, DATABASE_SSL: "false", DATABASE_POOL_MAX: "24" });
   const commerce = new CommercePostgresDataSource();
-  const product = getCommerceProduct("memory_video_49");
+  const product = getCommerceProduct("memory_video_99");
   const order = await commerce.createOrder({ externalUserId: owner, requestKey: "video:gate:order:0001", product, platform: "web", paymentRail: "test" });
   await commerce.applyPaymentEvent("test", { eventId: "video-gate-payment-0001", kind: "payment", orderNo: order.orderNo, transactionId: "video-gate-transaction-0001", status: "succeeded", amountFen: product.priceFen, payloadHash: sha("video-gate-payment") });
 
@@ -154,8 +154,61 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
   assert.equal(approved.status, "succeeded");
   const verify = new Client({ connectionString: targetUrl });
   await verify.connect();
-  assert.deepEqual((await verify.query(`SELECT status, outcome FROM commerce_generation_reservations WHERE request_key = $1`, [input.idempotencyKey])).rows[0], { status: "consumed", outcome: "succeeded" });
-  assert.equal(Number((await verify.query(`SELECT COUNT(*)::text AS count FROM video_generation_quality_reviews WHERE job_id = $1`, [jobs[0].id])).rows[0].count), 2);
+  const approvedLink = (await verify.query<{ reservation_id: string }>(
+    "SELECT reservation_id FROM video_generation_jobs WHERE id = $1", [jobs[0].id],
+  )).rows[0];
+  assert.ok(approvedLink?.reservation_id);
+  assert.deepEqual((await verify.query(
+    "SELECT status, outcome FROM commerce_generation_reservations WHERE id = $1", [approvedLink.reservation_id],
+  )).rows[0], { status: "consumed", outcome: "succeeded" });
+  assert.deepEqual((await verify.query(
+    "SELECT review_key FROM video_generation_quality_reviews WHERE job_id = $1 AND reviewer_kind = 'manual'", [jobs[0].id],
+  )).rows, [{ review_key: `manual.${jobs[0].id}` }], "actual UUID review key is accepted exactly once");
+
+  const injection = await createService().submit({ ...input, idempotencyKey: "video:gate:review-injection:0001" });
+  assert.equal((await createService().recover(injection.id)).status, "manual_review_required");
+  const injectionLink = (await verify.query<{ reservation_id: string }>(
+    "SELECT reservation_id FROM video_generation_jobs WHERE id = $1", [injection.id],
+  )).rows[0];
+  assert.ok(injectionLink?.reservation_id);
+  await assert.rejects(
+    new FirstPresenceVideoPostgresRepository().settleManualReview({
+      id: injection.id,
+      manualReview: {
+        reviewerAccount: "x", // violates the real manual reviewer constraint
+        reviewedAt: "2026-07-28T08:01:00.000Z",
+        action: "approve",
+        reason: "constraint injection",
+      },
+    }),
+  );
+  assert.deepEqual((await verify.query(
+    "SELECT status, entitlement_settlement FROM video_generation_jobs WHERE id = $1", [injection.id],
+  )).rows[0], { status: "manual_review_required", entitlement_settlement: "reserved" });
+  assert.deepEqual((await verify.query(
+    "SELECT status, outcome FROM commerce_generation_reservations WHERE id = $1", [injectionLink.reservation_id],
+  )).rows[0], { status: "reserved", outcome: null });
+  assert.equal(Number((await verify.query(
+    "SELECT COUNT(*)::text AS count FROM video_generation_quality_reviews WHERE job_id = $1 AND reviewer_kind = 'manual'", [injection.id],
+  )).rows[0].count), 0);
+  const reviewInput = {
+    jobId: injection.id,
+    reviewerAccount: "video-reviewer@yijian.test",
+    action: "approve" as const,
+    reason: "isolated retry accepted",
+    now: new Date("2026-07-28T08:02:00.000Z"),
+  };
+  const duplicateApprovals = await Promise.all(Array.from({ length: 8 }, () => createService().review(reviewInput)));
+  assert.equal(duplicateApprovals.every((job) => job.status === "succeeded"), true);
+  assert.equal(Number((await verify.query(
+    "SELECT COUNT(*)::text AS count FROM video_generation_quality_reviews WHERE job_id = $1 AND reviewer_kind = 'manual'", [injection.id],
+  )).rows[0].count), 1, "duplicate approve has one review row for this job");
+  assert.deepEqual((await verify.query(
+    `SELECT r.status, r.outcome, l.consumed_credits
+     FROM commerce_generation_reservations r
+     JOIN commerce_credit_lots l ON l.id = r.credit_lot_id
+     WHERE r.id = $1`, [injectionLink.reservation_id],
+  )).rows[0], { status: "consumed", outcome: "succeeded", consumed_credits: 2 }, "duplicate approve commits this linked reservation once");
 
   mode = "failed";
   const failed = await createService().submit({ ...input, idempotencyKey: "video:gate:release:0001" });

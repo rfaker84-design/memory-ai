@@ -2,7 +2,10 @@ import {
   queryPostgres,
   withPostgresTransaction,
 } from "../../src/server/database";
-import { CommercePostgresDataSource } from "../commerce/commerce-postgres-datasource";
+import {
+  CommercePostgresDataSource,
+  settleGenerationInPostgresTransaction,
+} from "../commerce/commerce-postgres-datasource";
 import type { CommerceDataSource } from "../commerce/commerce-datasource";
 import { CommerceStateError } from "../commerce/errors";
 import type { GenerationSettlementOutcome } from "../commerce/types";
@@ -236,6 +239,76 @@ export class FirstPresenceVideoPostgresRepository
       );
       if (!result.rows[0]) throw new Error("FIRST_PRESENCE_VIDEO_JOB_NOT_FOUND");
       return job(result.rows[0]);
+    });
+  }
+
+  async settleManualReview(input: {
+    id: string;
+    manualReview: FirstPresenceManualReview;
+  }): Promise<FirstPresenceVideoJob> {
+    return withPostgresTransaction(async (client) => {
+      const locked = await client.query<JobRow>(
+        `SELECT ${COLUMNS} FROM public.video_generation_jobs j
+         JOIN public.users u ON u.id = j.user_id WHERE j.id = $1 FOR UPDATE OF j`,
+        [input.id],
+      );
+      const current = locked.rows[0];
+      if (!current) throw new Error("FIRST_PRESENCE_VIDEO_JOB_NOT_FOUND");
+      const currentJob = job(current);
+      if (["succeeded", "rejected"].includes(currentJob.status)) {
+        return currentJob;
+      }
+      if (
+        currentJob.status !== "manual_review_required"
+        || !currentJob.quality
+        || !currentJob.artifactKey
+      ) {
+        throw new Error("FIRST_PRESENCE_VIDEO_NOT_REVIEWABLE");
+      }
+
+      const approved = input.manualReview.action === "approve";
+      // This deterministic UUID-bearing key makes concurrent approve retries
+      // one review decision, instead of one row per timestamp.
+      const reviewKey = `manual.${input.id}`;
+      await client.query(
+        `INSERT INTO public.video_generation_quality_reviews
+           (job_id, review_key, reviewer_kind, reviewer_account, reviewed_at, decision, reason_codes, quality_payload)
+         VALUES ($1, $2, 'manual', $3, $4::timestamptz, $5, $6::jsonb, $7::jsonb)`,
+        [
+          input.id,
+          reviewKey,
+          input.manualReview.reviewerAccount,
+          input.manualReview.reviewedAt,
+          approved ? "approved" : "rejected",
+          JSON.stringify([input.manualReview.reason]),
+          JSON.stringify({ quality: currentJob.quality, manualReview: input.manualReview }),
+        ],
+      );
+      await settleGenerationInPostgresTransaction(client, {
+        externalUserId: currentJob.externalUserId,
+        requestKey: currentJob.idempotencyKey,
+        outcome: approved ? "succeeded" : "invalidated",
+      });
+      const updated = await client.query<JobRow>(
+        `UPDATE public.video_generation_jobs j
+         SET status = $2, quality_status = $3, quality_payload = $4::jsonb,
+           error_code = $5, entitlement_settlement = $6
+         WHERE j.id = $1 AND j.status = 'manual_review_required'
+         RETURNING j.id, (SELECT external_id FROM public.users WHERE id = j.user_id) AS external_user_id,
+           j.memory_id, j.idempotency_key, j.status, j.provider, j.provider_task_id,
+           j.provider_state, j.input_sha256, j.actual_credits, j.artifact_key,
+           j.quality_payload, j.error_code, j.created_at, j.updated_at`,
+        [
+          input.id,
+          approved ? "succeeded" : "rejected",
+          approved ? "approved" : "rejected",
+          JSON.stringify(currentJob.quality),
+          approved ? null : "MANUAL_REVIEW_REJECTED",
+          approved ? "committed" : "released",
+        ],
+      );
+      if (!updated.rows[0]) throw new Error("FIRST_PRESENCE_VIDEO_REVIEW_STATE_LOST");
+      return job(updated.rows[0]);
     });
   }
 
