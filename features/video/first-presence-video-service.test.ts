@@ -67,6 +67,12 @@ class MemoryFirstPresenceRepository implements FirstPresenceVideoRepository {
     idempotencyKey: string;
     imageSha256: string;
   }) {
+    const existing = [...this.jobs.values()].find(
+      (job) => job.externalUserId === input.externalUserId
+        && job.memoryId === input.memoryId
+        && job.idempotencyKey === input.idempotencyKey
+    );
+    if (existing) return existing;
     const now = new Date().toISOString();
     const job: FirstPresenceVideoJob = {
       id: `first-presence-video-${++this.sequence}`,
@@ -90,7 +96,9 @@ class MemoryFirstPresenceRepository implements FirstPresenceVideoRepository {
     return job;
   }
 
-  async markSubmitting(id: string) {
+  async claimSubmission(id: string) {
+    const current = this.jobs.get(id);
+    if (!current || current.status !== "queued") return null;
     return this.patch(id, { status: "submitting" });
   }
 
@@ -115,6 +123,22 @@ class MemoryFirstPresenceRepository implements FirstPresenceVideoRepository {
   }) {
     return this.patch(input.id, {
       status: "running",
+      providerState: input.providerState,
+      actualCredits: input.actualCredits,
+    });
+  }
+
+  async markReserved(id: string) {
+    return this.jobs.get(id) ?? Promise.reject(new Error("missing job"));
+  }
+
+  async markQualityPending(input: {
+    id: string;
+    providerState: string;
+    actualCredits: number | null;
+  }) {
+    return this.patch(input.id, {
+      status: "quality_pending",
       providerState: input.providerState,
       actualCredits: input.actualCredits,
     });
@@ -486,6 +510,33 @@ test("idempotent submission and lost response recovery protection never submit o
   assert.equal(first.status, "submission_uncertain");
   assert.equal(replay.id, first.id);
   assert.equal(uncertain.entitlements.commits, 0);
+});
+
+test("concurrent submitters claim one durable submission and call Vidu once", async () => {
+  let submits = 0;
+  const { service, entitlements } = serviceWith({
+    provider: {
+      submit: async () => {
+        submits += 1;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return { taskId: "vidu-task-race", providerState: "created", credits: 44 };
+      },
+      poll: async () => {
+        throw new Error("unused");
+      },
+    },
+  });
+  const raceInput = {
+    externalUserId: owner,
+    memoryId,
+    idempotencyKey: "video-request-race",
+    imageDataUrl: image,
+    imageSha256: sha,
+  };
+  const jobs = await Promise.all(Array.from({ length: 12 }, () => service.submit(raceInput)));
+  assert.equal(new Set(jobs.map((job) => job.id)).size, 1);
+  assert.equal(submits, 1);
+  assert.equal(entitlements.reserves, 1);
 });
 
 test("state recovery stores actual credits and requires internal manual review before consuming entitlement", async () => {

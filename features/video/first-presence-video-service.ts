@@ -14,6 +14,7 @@ export type FirstPresenceVideoStatus =
   | "submitting"
   | "submitted"
   | "running"
+  | "quality_pending"
   | "manual_review_required"
   | "succeeded"
   | "rejected"
@@ -62,7 +63,10 @@ export type FirstPresenceVideoRepository = {
   }): Promise<FirstPresenceVideoJob | null>;
   findById(id: string): Promise<FirstPresenceVideoJob | null>;
   createQueued(input: CreateFirstPresenceVideoInput): Promise<FirstPresenceVideoJob>;
-  markSubmitting(id: string): Promise<FirstPresenceVideoJob>;
+  /** Atomically moves a queued job to submitting. Only its winner may call Vidu. */
+  claimSubmission(id: string): Promise<FirstPresenceVideoJob | null>;
+  /** Links the job to the existing Commerce reservation after the winner reserves it. */
+  markReserved(id: string): Promise<FirstPresenceVideoJob>;
   markSubmitted(input: {
     id: string;
     providerTaskId: string;
@@ -70,6 +74,11 @@ export type FirstPresenceVideoRepository = {
     actualCredits: number | null;
   }): Promise<FirstPresenceVideoJob>;
   markRunning(input: {
+    id: string;
+    providerState: string;
+    actualCredits: number | null;
+  }): Promise<FirstPresenceVideoJob>;
+  markQualityPending(input: {
     id: string;
     providerState: string;
     actualCredits: number | null;
@@ -120,6 +129,7 @@ export type FirstPresenceEntitlementPort = {
     externalUserId: string;
     memoryId: string;
     idempotencyKey: string;
+    outcome?: "system_failed" | "invalidated";
   }): Promise<void>;
   commit(input: {
     externalUserId: string;
@@ -180,17 +190,28 @@ export class FirstPresenceVideoService {
     });
     if (existing) return existing;
 
+    const created = await this.repository.createQueued(input);
+    const job = await this.repository.claimSubmission(created.id);
+    // A concurrent worker already owns the durable submission claim. Returning
+    // the persisted job makes retries safe without a second provider request.
+    if (!job) {
+      return (await this.repository.findById(created.id)) ?? created;
+    }
     const reservation = await this.entitlements.reserve({
       externalUserId: input.externalUserId,
       memoryId: input.memoryId,
       idempotencyKey: input.idempotencyKey,
     });
     if (reservation === "unavailable") {
+      await this.repository.markFailed({
+        id: job.id,
+        providerState: null,
+        actualCredits: null,
+        errorCode: "ENTITLEMENT_UNAVAILABLE",
+      });
       throw new Error("FIRST_PRESENCE_VIDEO_ENTITLEMENT_UNAVAILABLE");
     }
-
-    let job = await this.repository.createQueued(input);
-    job = await this.repository.markSubmitting(job.id);
+    await this.repository.markReserved(job.id);
     try {
       const submission = await this.provider.submit({
         imageDataUrl: input.imageDataUrl,
@@ -228,7 +249,15 @@ export class FirstPresenceVideoService {
     const job = await this.repository.findById(jobId);
     if (!job) throw new Error("FIRST_PRESENCE_VIDEO_JOB_NOT_FOUND");
     if (TERMINAL_STATUSES.has(job.status)) return job;
-    if (!job.providerTaskId) return job;
+    if (!job.providerTaskId) {
+      if (job.status === "submitting") {
+        return this.repository.markSubmissionUncertain({
+          id: job.id,
+          errorCode: "SUBMIT_STATE_RECOVERY_REQUIRED",
+        });
+      }
+      return job;
+    }
     return this.pollAndFinalize(job);
   }
 
@@ -304,6 +333,13 @@ export class FirstPresenceVideoService {
     job: FirstPresenceVideoJob,
     poll: Extract<ViduFirstPresencePoll, { state: "succeeded" }>
   ): Promise<FirstPresenceVideoJob> {
+    // Persist this boundary before downloading and evaluating media. A process
+    // restart can poll again, but cannot commit the entitlement before quality.
+    await this.repository.markQualityPending({
+      id: job.id,
+      providerState: poll.providerState,
+      actualCredits: poll.credits,
+    });
     let artifact: Awaited<ReturnType<FirstPresenceArtifactStore["download"]>>;
     try {
       artifact = await this.artifacts.download({
@@ -336,7 +372,7 @@ export class FirstPresenceVideoService {
     }
 
     if (quality.status === "reject") {
-      await this.releaseUserEntitlement(job);
+      await this.releaseUserEntitlement(job, "invalidated");
       return this.repository.markRejected({
         id: job.id,
         providerState: poll.providerState,
@@ -356,11 +392,15 @@ export class FirstPresenceVideoService {
     });
   }
 
-  private releaseUserEntitlement(job: FirstPresenceVideoJob): Promise<void> {
+  private releaseUserEntitlement(
+    job: FirstPresenceVideoJob,
+    outcome: "system_failed" | "invalidated" = "system_failed",
+  ): Promise<void> {
     return this.entitlements.release({
       externalUserId: job.externalUserId,
       memoryId: job.memoryId,
       idempotencyKey: job.idempotencyKey,
+      outcome,
     });
   }
 }
