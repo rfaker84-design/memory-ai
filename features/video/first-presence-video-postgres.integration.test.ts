@@ -16,6 +16,7 @@ import { FirstPresenceVideoService } from "./first-presence-video-service";
 import { ViduFirstPresenceNetworkError } from "./vidu-first-presence-provider";
 
 const { Client } = pg;
+const gateApplicationName = "memoryai-video-pg14-gate";
 const adminUrlValue = process.env.VIDEO_POSTGRES_GATE_ADMIN_URL;
 const gateDatabase = process.env.VIDEO_POSTGRES_GATE_DATABASE ?? "video_gate_migration016";
 const rollbackDatabase = `${gateDatabase}_rollback`;
@@ -31,7 +32,12 @@ const migrations = [
 ];
 
 function sha(value: string): string { return createHash("sha256").update(value).digest("hex"); }
-function databaseUrl(adminUrl: URL, database: string): string { const url = new URL(adminUrl); url.pathname = `/${database}`; return url.toString(); }
+function databaseUrl(adminUrl: URL, database: string): string {
+  const url = new URL(adminUrl);
+  url.pathname = `/${database}`;
+  url.searchParams.set("application_name", gateApplicationName);
+  return url.toString();
+}
 function assertGate(adminUrl: URL): void {
   assert.match(adminUrl.hostname, /^(127\.0\.0\.1|localhost|::1)$/);
   assert.match(gateDatabase, /^video_gate_[a-z0-9_]+$/);
@@ -49,6 +55,26 @@ async function apply(client: InstanceType<typeof Client>, until = migrations.len
   for (let index = 0; index < until; index += 1) await client.query(await migration(index));
 }
 
+/** Tracks every real pg.Client so every success and failure path closes it. */
+class GateConnections {
+  private readonly clients = new Set<InstanceType<typeof Client>>();
+
+  open(connectionString: string): InstanceType<typeof Client> {
+    const client = new Client({ connectionString });
+    this.clients.add(client);
+    return client;
+  }
+
+  async close(client: InstanceType<typeof Client>): Promise<void> {
+    if (!this.clients.delete(client)) return;
+    await client.end();
+  }
+
+  async closeAll(): Promise<void> {
+    await Promise.all([...this.clients].map((client) => this.close(client)));
+  }
+}
+
 test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
   skip: adminUrlValue ? false : "set VIDEO_POSTGRES_GATE_ADMIN_URL to run the destructive isolated PG14 gate",
   timeout: 120_000,
@@ -56,28 +82,30 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
   assert.ok(adminUrlValue);
   const adminUrl = new URL(adminUrlValue);
   assertGate(adminUrl);
-  const admin = new Client({ connectionString: adminUrl.toString() });
+  const connections = new GateConnections();
+  try {
+  const admin = connections.open(adminUrl.toString());
   await admin.connect();
   await reset(admin, gateDatabase);
   await reset(admin, rollbackDatabase);
   const version = (await admin.query<{ server_version: string }>("SELECT current_setting('server_version') AS server_version")).rows[0].server_version;
   assert.match(version, /^14\./, "gate requires PostgreSQL 14");
-  await admin.end();
+  await connections.close(admin);
 
   const targetUrl = databaseUrl(adminUrl, gateDatabase);
-  const target = new Client({ connectionString: targetUrl });
+  const target = connections.open(targetUrl);
   await target.connect();
   await apply(target);
   await target.query(await migration(15)); // replay contract
   await target.query(await readFile(new URL("../../database/verification/016-video-job-postgres-ledger-postflight.sql", import.meta.url), "utf8"));
 
-  const rollback = new Client({ connectionString: databaseUrl(adminUrl, rollbackDatabase) });
+  const rollback = connections.open(databaseUrl(adminUrl, rollbackDatabase));
   await rollback.connect();
   await apply(rollback, 15);
   await assert.rejects(rollback.query((await migration(15)).replace(/COMMIT;\s*$/, "SELECT 1 / 0;\nCOMMIT;\n")));
   await rollback.query("ROLLBACK");
   assert.equal((await rollback.query("SELECT to_regclass('public.video_generation_jobs') AS job")).rows[0].job, null, "failed 016 rolls back all video tables");
-  await rollback.end();
+  await connections.close(rollback);
 
   const owner = `phone:${sha("video-gate-owner")}`;
   const other = `phone:${sha("video-gate-other")}`;
@@ -94,7 +122,7 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
     `INSERT INTO public.memories (user_id, name, idempotency_key, creation_idempotency_key)
      VALUES ($1, 'Other TA', $2, $3) RETURNING id`, [otherId, sha("video-gate-other-memory"), "video:gate:other:0001"]
   )).rows[0].id;
-  await target.end();
+  await connections.close(target);
 
   Object.assign(process.env, { NODE_ENV: "test", DATABASE_URL: targetUrl, DATABASE_SSL: "false", DATABASE_POOL_MAX: "24" });
   const commerce = new CommercePostgresDataSource();
@@ -152,7 +180,7 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
     now: new Date("2026-07-28T08:00:00.000Z"),
   });
   assert.equal(approved.status, "succeeded");
-  const verify = new Client({ connectionString: targetUrl });
+  const verify = connections.open(targetUrl);
   await verify.connect();
   const approvedLink = (await verify.query<{ reservation_id: string }>(
     "SELECT reservation_id FROM video_generation_jobs WHERE id = $1", [jobs[0].id],
@@ -243,6 +271,25 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
   assert.equal(submits, 3, "lost response is never blindly resubmitted");
   assert.deepEqual((await verify.query(`SELECT status FROM commerce_generation_reservations WHERE request_key = 'video:gate:lost-response:0001'`)).rows[0], { status: "reserved" });
   await assert.rejects(createService().submit({ ...input, externalUserId: other, memoryId: otherMemory!, idempotencyKey: "video:gate:cross-user:0001" }));
-  await verify.end();
+  await connections.close(verify);
   await closePostgresPool();
+  const auditUrl = new URL(adminUrl);
+  auditUrl.searchParams.set("application_name", "memoryai-video-pg14-audit");
+  const audit = new Client({ connectionString: auditUrl.toString() });
+  try {
+    await audit.connect();
+    const lingering = await audit.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM pg_stat_activity
+       WHERE datname = $1 AND application_name = $2`,
+      [gateDatabase, gateApplicationName],
+    );
+    assert.equal(Number(lingering.rows[0]?.count ?? 0), 0, "gate leaves no target-database test clients");
+  } finally {
+    await audit.end();
+  }
+  } finally {
+    await connections.closeAll();
+    await closePostgresPool();
+  }
 });
