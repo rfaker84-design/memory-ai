@@ -117,8 +117,25 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
   const createService = () => new FirstPresenceVideoService(
     new FirstPresenceVideoPostgresRepository(), provider, new FirstPresenceCommerceEntitlementPort(commerce),
     { download: async ({ jobId }) => ({ artifactKey: `video/${jobId}.mp4`, body: Buffer.from("video") }) },
-    { probe: async () => ({ durationSeconds: 8, width: 1080, height: 1920, codec: "h264", hasAudio: false }) },
-    { analyze: async () => ({ personPresent: true, finalFramePersonPresent: true, personLeftFrame: false, bodyOrHandAbnormal: false }) },
+    {
+      inspect: async () => ({
+        durationSeconds: 8,
+        width: 1080,
+        height: 1920,
+        codec: "h264",
+        hasAudio: false,
+        sizeBytes: 5,
+        decodable: true,
+        evidence: {
+          firstFramePath: "evidence/first.jpg",
+          actionFramePath: "evidence/action.jpg",
+          finalFramePath: "evidence/final.jpg",
+        },
+      }),
+    },
+    { assertCanReview: ({ reviewerAccount }) => {
+      if (reviewerAccount !== "video-reviewer@yijian.test") throw new Error("FIRST_PRESENCE_REVIEW_UNAUTHORIZED");
+    } },
   );
   const input = { externalUserId: owner, memoryId: memory!, idempotencyKey: "video:gate:concurrent:0001", imageDataUrl: "data:image/png;base64,YWJj", imageSha256: sha("image") };
   const jobs = await Promise.all(Array.from({ length: 16 }, () => createService().submit(input)));
@@ -126,11 +143,19 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
   assert.equal(submits, 1, "multiworker duplicate requests submit once");
   await closePostgresPool(); // process restart boundary
   const finalized = await Promise.all(Array.from({ length: 12 }, () => createService().recover(jobs[0].id)));
-  assert.equal(finalized.every((job) => job.status === "succeeded"), true);
+  assert.equal(finalized.every((job) => job.status === "manual_review_required"), true);
+  const approved = await createService().review({
+    jobId: jobs[0].id,
+    reviewerAccount: "video-reviewer@yijian.test",
+    action: "approve",
+    reason: "isolated PostgreSQL review evidence accepted",
+    now: new Date("2026-07-28T08:00:00.000Z"),
+  });
+  assert.equal(approved.status, "succeeded");
   const verify = new Client({ connectionString: targetUrl });
   await verify.connect();
   assert.deepEqual((await verify.query(`SELECT status, outcome FROM commerce_generation_reservations WHERE request_key = $1`, [input.idempotencyKey])).rows[0], { status: "consumed", outcome: "succeeded" });
-  assert.equal(Number((await verify.query(`SELECT COUNT(*)::text AS count FROM video_generation_quality_reviews WHERE job_id = $1`, [jobs[0].id])).rows[0].count), 1);
+  assert.equal(Number((await verify.query(`SELECT COUNT(*)::text AS count FROM video_generation_quality_reviews WHERE job_id = $1`, [jobs[0].id])).rows[0].count), 2);
 
   mode = "failed";
   const failed = await createService().submit({ ...input, idempotencyKey: "video:gate:release:0001" });

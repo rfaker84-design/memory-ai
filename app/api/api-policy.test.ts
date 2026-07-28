@@ -38,6 +38,7 @@ const EXACT_FORMAL_PATHS = new Set([
   "/api/commerce/referrals/qualifications",
   "/api/commerce/testing/callbacks",
   "/api/internal/commerce-reconciliation",
+  "/api/internal/video-reviews",
   "/api/media/upload",
   "/api/media/local",
   "/api/health",
@@ -185,6 +186,7 @@ test("formal Session ownership and public health contracts remain explicit", asy
     commerceReferralQualifications: readFileSync("app/api/commerce/referrals/qualifications/route.ts", "utf8"),
     commerceTestCallback: readFileSync("app/api/commerce/testing/callbacks/route.ts", "utf8"),
     commerceReconciliation: readFileSync("app/api/internal/commerce-reconciliation/route.ts", "utf8"),
+    videoReviews: readFileSync("app/api/internal/video-reviews/_handler.ts", "utf8"),
     media: readFileSync("app/api/media/_lib.ts", "utf8"),
   };
   assert.match(sources.sendCode, /createSendCodeHandler/);
@@ -217,6 +219,9 @@ test("formal Session ownership and public health contracts remain explicit", asy
   assert.match(sources.commerceReferralQualifications, /createReferralQualificationHandler/);
   assert.match(sources.commerceTestCallback, /createCommerceTestCallbackHandler/);
   assert.match(sources.commerceReconciliation, /COMMERCE_RECONCILIATION_ACCESS_TOKEN/);
+  assert.match(sources.videoReviews, /YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED/);
+  assert.match(sources.videoReviews, /YIJIAN_VIDEO_REVIEW_ACCESS_TOKEN/);
+  assert.match(sources.videoReviews, /YIJIAN_VIDEO_REVIEW_ACCOUNT/);
   assert.match(sources.businessEvents, /verifyRequestSession/);
   assert.match(sources.businessFunnel, /BUSINESS_METRICS_ACCESS_TOKEN/);
 
