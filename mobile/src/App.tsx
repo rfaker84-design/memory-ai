@@ -1,0 +1,273 @@
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { App as NativeApp } from "@capacitor/app";
+import { Haptics, ImpactStyle } from "@capacitor/haptics";
+import { Share } from "@capacitor/share";
+import { runtimeConfig } from "./config/environment";
+import { MemoryMedia, type PickedMedia, saveSignedVideo } from "./native/memory-media";
+import { productApi, ProductApiError, type ProductMemory } from "./product/api";
+
+const DebugLab = __MOBILE_DEBUG_BUILD__
+  ? lazy(() => import("./debug/NativeCapabilityLab").then((module) => ({ default: module.NativeCapabilityLab })))
+  : null;
+
+type Screen = "splash" | "welcome" | "login" | "code" | "home" | "create" | "presence" | "chat" | "memory" | "gallery" | "profile" | "offline" | "debug";
+type SessionMode = "remote" | "preview";
+type ChatMessage = { role: "assistant" | "user"; content: string };
+
+const previewMemory = (name: string, relationship: string, lifeStory: string): ProductMemory => ({
+  id: "preview-memory",
+  name: name.trim() || "TA",
+  relationship: relationship.trim() || "重要的人",
+  lifeStory: lifeStory.trim() || "那些一起走过的日子，仍然在心里发着光。",
+});
+
+function friendlyError(error: unknown): string {
+  if (error instanceof ProductApiError) {
+    if (error.status === 401) return "登录状态已过期，请重新登录。";
+    if (error.status === 403) return "当前服务暂时无法完成这一步。";
+    if (error.status === 503) return "服务正在休息，请稍后再试。";
+    return error.message.includes("网络") ? error.message : "暂时无法完成这一步，请稍后再试。";
+  }
+  return "暂时无法完成这一步，请稍后再试。";
+}
+
+function initials(name: string) {
+  return Array.from(name.trim() || "忆见").slice(0, 2).join("");
+}
+
+function press(action: () => void) {
+  void Haptics.impact({ style: ImpactStyle.Light }).catch(() => undefined);
+  action();
+}
+
+function BrandSplash() {
+  return <main className="brandSplash" aria-label="忆见">
+    <div className="brandHalo" aria-hidden="true" />
+    <div className="brandMark"><span>忆见</span><small>MEMORYAI</small></div>
+    <p>让想念的人，继续陪伴。</p>
+  </main>;
+}
+
+function Offline({ retry }: { retry: () => void }) {
+  return <main className="offlineScene">
+    <div className="quietDot" aria-hidden="true" />
+    <p className="eyebrow">忆见</p>
+    <h1>此刻没有网络。</h1>
+    <p>你已写下的内容会留在这里。等连接恢复后，再继续和 TA 相见。</p>
+    <button className="textButton" onClick={retry}>重新连接</button>
+  </main>;
+}
+
+function BottomNav({ active, onChange, hasMemory }: { active: Screen; onChange: (screen: Screen) => void; hasMemory: boolean }) {
+  const items: Array<[Screen, string, string]> = [
+    ["home", "⌂", "首页"],
+    ["chat", "·", "聊天"],
+    ["memory", "◌", "记忆"],
+    ["profile", "○", "我的"],
+  ];
+  return <nav className="bottomNav" aria-label="主导航">
+    {items.map(([screen, icon, label]) => <button key={screen} className={active === screen ? "active" : ""} onClick={() => press(() => onChange(screen))}>
+      <span>{icon}</span><small>{label}</small>{screen !== "profile" && screen !== "home" && !hasMemory ? <i /> : null}
+    </button>)}
+  </nav>;
+}
+
+export function App() {
+  const [screen, setScreen] = useState<Screen>("splash");
+  const [online, setOnline] = useState(() => navigator.onLine);
+  const [mode, setMode] = useState<SessionMode>("remote");
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [challengeId, setChallengeId] = useState("");
+  const [memory, setMemory] = useState<ProductMemory | null>(null);
+  const [name, setName] = useState("");
+  const [relationship, setRelationship] = useState("");
+  const [story, setStory] = useState("");
+  const [media, setMedia] = useState<PickedMedia[]>([]);
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [question, setQuestion] = useState("");
+  const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
+
+  const hasMemory = Boolean(memory);
+  const title = memory?.name || "TA";
+  const productOnline = online && (mode === "preview" || productApi.enabled());
+
+  useEffect(() => {
+    const finish = window.setTimeout(() => setScreen((current) => current === "splash" ? (navigator.onLine ? "welcome" : "offline") : current), 1000);
+    const onOnline = () => setOnline(true);
+    const onOffline = () => { setOnline(false); setScreen("offline"); };
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => { window.clearTimeout(finish); window.removeEventListener("online", onOnline); window.removeEventListener("offline", onOffline); };
+  }, []);
+
+  const openMemory = useCallback(async (id: string, destination: "memory" | "gallery" = "memory") => {
+    if (__MOBILE_DEBUG_BUILD__ && id === "preview-memory") {
+      setMode("preview");
+      setMemory((current) => current ?? previewMemory("TA", "重要的人", "那些共同经历的瞬间，仍然被好好记得。"));
+      setScreen(destination);
+      return;
+    }
+    if (!online || !productApi.enabled()) { setScreen("offline"); return; }
+    setBusy(true);
+    try { setMemory(await productApi.getMemory(id)); setMode("remote"); setScreen(destination); }
+    catch (error) { setNotice(friendlyError(error)); setScreen("home"); }
+    finally { setBusy(false); }
+  }, [online]);
+
+  const handleAppUrl = useCallback((url: string) => {
+      try {
+        const directMemoryId = /^yijianmemory:\/\/memory\/([^/?#]+)/.exec(url)?.[1] ?? "";
+        const destination = /[?&]view=gallery(?:[&#]|$)/.test(url) ? "gallery" : "memory";
+        if (directMemoryId) { void openMemory(directMemoryId, destination); return; }
+        const parsed = new URL(url);
+        if (parsed.hostname === "memory" && parsed.pathname.length > 1) { void openMemory(parsed.pathname.replace(/^\//, ""), destination); return; }
+        if (__MOBILE_DEBUG_BUILD__ && parsed.hostname === "debug" && parsed.pathname === "/native") setScreen("debug");
+      } catch { setScreen("home"); }
+  }, [openMemory]);
+
+  useEffect(() => {
+    const listener = NativeApp.addListener("appUrlOpen", ({ url }) => {
+      handleAppUrl(url);
+    });
+    void NativeApp.getLaunchUrl().then((result) => {
+      if (result?.url) handleAppUrl(result.url);
+    });
+    return () => { void listener.then((value) => value.remove()); };
+  }, [handleAppUrl]);
+
+  useEffect(() => {
+    if (!__MOBILE_DEBUG_BUILD__ || mode !== "preview") return;
+    void import("./debug/productPreview").then(({ debugPreviewVideoUrl }) => setPreviewVideoUrl(debugPreviewVideoUrl()));
+  }, [mode]);
+
+  const beginPreview = () => {
+    setMode("preview");
+    setNotice("");
+    setScreen("home");
+  };
+
+  const sendCode = async () => {
+    if (!/^1\d{10}$/.test(phone.trim())) { setNotice("请输入正确的中国大陆手机号。"); return; }
+    if (!productApi.enabled()) { setNotice("当前服务尚未连接，请稍后再试。"); return; }
+    setBusy(true); setNotice("");
+    try {
+      const result = await productApi.sendCode(phone.trim());
+      if (!result.challengeId) throw new ProductApiError(503);
+      setChallengeId(result.challengeId); setScreen("code");
+    } catch (error) { setNotice(friendlyError(error)); }
+    finally { setBusy(false); }
+  };
+
+  const verifyCode = async () => {
+    if (!/^\d{6}$/.test(code.trim()) || !challengeId) { setNotice("请输入 6 位验证码。"); return; }
+    setBusy(true); setNotice("");
+    try {
+      const result = await productApi.verifyCode(phone.trim(), challengeId, code.trim());
+      if (!result.authenticated) throw new ProductApiError(401);
+      setMode("remote"); setScreen("home");
+    } catch (error) { setNotice(friendlyError(error)); }
+    finally { setBusy(false); }
+  };
+
+  const chooseMedia = async () => {
+    try {
+      const result = await MemoryMedia.pickMedia({ limit: 20 });
+      setMedia(result.items);
+      setNotice(result.items.length ? `已选 ${result.items.length} 项素材。` : "");
+    } catch { setNotice("这次没有选择素材。"); }
+  };
+
+  const createMemory = async () => {
+    if (!name.trim() || !relationship.trim()) { setNotice("请先写下 TA 的名字和你们的关系。"); return; }
+    setBusy(true); setNotice("");
+    try {
+      const created = mode === "preview"
+        ? previewMemory(name, relationship, story)
+        : await productApi.createMemory({ name: name.trim(), relationship: relationship.trim(), lifeStory: story.trim() });
+      setMemory(created); setMessages([{ role: "assistant", content: `我在。关于${created.name}，你想先从哪一段记忆开始？` }]); setScreen("presence");
+    } catch (error) { setNotice(friendlyError(error)); }
+    finally { setBusy(false); }
+  };
+
+  const sendQuestion = async () => {
+    const value = question.trim();
+    if (!value || !memory) return;
+    setQuestion(""); setMessages((current) => [...current, { role: "user", content: value }]);
+    setBusy(true);
+    try {
+      if (mode === "preview") {
+        setMessages((current) => [...current, { role: "assistant", content: "我记得你说过的这些。慢慢说，我一直在听。" }]);
+      } else {
+        const result = await productApi.askMemory(memory.id, value);
+        setMessages((current) => [...current, { role: "assistant", content: result.answer || result.reply || result.text || "我在听。" }]);
+      }
+    } catch (error) { setNotice(friendlyError(error)); }
+    finally { setBusy(false); }
+  };
+
+  const saveVideo = async () => {
+    if (!previewVideoUrl) { setNotice("影像准备好后，就可以保存到系统相册。 "); return; }
+    setBusy(true); setNotice("");
+    try { await saveSignedVideo({ signedUrl: previewVideoUrl, fileName: "yijian-memory.mp4", mimeType: "video/mp4" }); setNotice("影像已保存到系统相册。"); }
+    catch { setNotice("暂时无法保存这段影像，请稍后再试。"); }
+    finally { setBusy(false); }
+  };
+
+  const shareVideo = async () => {
+    try { await Share.share({ title: `${title} 的影像`, text: "忆见里的一段珍贵记忆" }); }
+    catch { setNotice("分享已取消。"); }
+  };
+
+  const content = useMemo(() => {
+    if (screen === "splash") return <BrandSplash />;
+    if (screen === "offline") return <Offline retry={() => setScreen(navigator.onLine ? "welcome" : "offline")} />;
+    if (screen === "debug" && DebugLab) return <Suspense fallback={<BrandSplash />}><DebugLab /></Suspense>;
+    if (screen === "welcome") return <main className="welcomeScene">
+      <div className="nightWindow" aria-hidden="true" /><p className="eyebrow">忆见</p><h1>让想念的人，<br />继续陪伴。</h1>
+      <p>从一段真实的记忆开始，把 TA 留在你的日常里。</p><button className="primaryButton" onClick={() => press(() => setScreen("login"))}>开始相见</button>
+    </main>;
+    if (screen === "login" || screen === "code") return <main className="authScene">
+      <button className="backButton" onClick={() => setScreen("welcome")}>‹</button><p className="eyebrow">忆见</p>
+      <h1>{screen === "login" ? "用手机号继续" : "输入验证码"}</h1>
+      <p>{screen === "login" ? "登录后，你可以创建 TA、保存记忆，并在需要的时候继续对话。" : `验证码已发送至 ${phone}`}</p>
+      {screen === "login" ? <input className="field" value={phone} onChange={(event) => setPhone(event.target.value.replace(/\D/g, "").slice(0, 11))} inputMode="tel" placeholder="请输入手机号" autoFocus /> : <input className="field codeField" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" placeholder="6 位验证码" autoFocus />}
+      {notice ? <p className="notice">{notice}</p> : null}
+      <button className="primaryButton" disabled={busy} onClick={() => void (screen === "login" ? sendCode() : verifyCode())}>{busy ? "请稍候" : screen === "login" ? "获取验证码" : "进入忆见"}</button>
+      {__MOBILE_DEBUG_BUILD__ && screen === "login" ? <button className="quietLink" onClick={beginPreview}>在此设备预览产品流程</button> : null}
+    </main>;
+    if (screen === "create") return <main className="createScene">
+      <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><span>创建 TA</span><small>1 / 1</small></header>
+      <div className="presencePlaceholder"><span>{initials(name || "TA")}</span></div><h1>先把 TA 写下来。</h1><p>只记录你愿意确认的真实片段，其他内容可以慢慢补充。</p>
+      <label>TA 的名字<input className="field" value={name} onChange={(event) => setName(event.target.value)} placeholder="姓名或昵称" /></label>
+      <label>你们的关系<input className="field" value={relationship} onChange={(event) => setRelationship(event.target.value)} placeholder="例如：母亲、朋友" /></label>
+      <label>一段想说的话<textarea className="field" value={story} onChange={(event) => setStory(event.target.value)} placeholder="写下一件你们共同经历过的事" rows={3} /></label>
+      <button className="mediaChoice" onClick={() => void chooseMedia()}><span>照片与视频</span><small>{media.length ? `已选 ${media.length} 项素材` : "从系统相册选择"}</small></button>
+      {notice ? <p className="notice">{notice}</p> : null}<button className="primaryButton" disabled={busy} onClick={() => void createMemory()}>{busy ? "正在靠近" : "让 TA 出现"}</button>
+    </main>;
+    if (screen === "presence" && memory) return <main className="presenceScene">
+      <div className="presenceLight" aria-hidden="true" /><p className="eyebrow">一段新的陪伴正在开始</p><div className="personFrame"><span>{initials(memory.name)}</span></div><h1>{memory.name}</h1><p>{memory.relationship} · 已被好好记下</p>
+      <blockquote>“{memory.lifeStory || "你愿意留下的每一段记忆，都会慢慢成为相见的地方。"}”</blockquote>
+      <button className="primaryButton" onClick={() => press(() => setScreen("chat"))}>和 TA 说句话</button><button className="quietLink" onClick={() => setScreen("memory")}>进入记忆</button>
+    </main>;
+    if (screen === "chat") return <main className="chatScene">
+      <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><div><strong>{title}</strong><small>正在陪伴</small></div><button className="headerAction" onClick={() => setScreen("gallery")}>影像</button></header>
+      <div className="chatBody">{memory ? <div className="chatPortrait">{initials(memory.name)}</div> : null}{messages.length ? messages.map((message, index) => <p key={`${message.role}-${index}`} className={`bubble ${message.role}`}>{message.content}</p>) : <p className="emptyCopy">先创建一位你想念的人。</p>}</div>
+      <form className="chatComposer" onSubmit={(event) => { event.preventDefault(); void sendQuestion(); }}><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="想和 TA 说些什么" disabled={!memory || busy} /><button disabled={!question.trim() || busy}>发送</button></form>
+      {notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="chat" onChange={setScreen} hasMemory={hasMemory} />
+    </main>;
+    if (screen === "memory" || screen === "gallery") return <main className="memoryScene">
+      <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><span>记忆</span><button className="headerAction" onClick={() => setScreen(screen === "memory" ? "gallery" : "memory")}>{screen === "memory" ? "影像" : "详情"}</button></header>
+      {memory ? <>{screen === "memory" ? <section className="memoryHero"><div className="personFrame small"><span>{initials(memory.name)}</span></div><p className="eyebrow">{memory.relationship}</p><h1>{memory.name}</h1><p>{memory.lifeStory || "这段记忆正在慢慢长出新的形状。"}</p><button className="primaryButton" onClick={() => setScreen("chat")}>继续对话</button></section> : <section className="galleryScene"><p className="eyebrow">影像</p><h1>把瞬间，留在身边。</h1>{previewVideoUrl ? <article className="videoCard"><div><span>回忆片段</span><small>{memory.name} · 一段被珍藏的时光</small></div><button onClick={() => void saveVideo()} disabled={busy}>保存到相册</button><button className="secondaryButton" onClick={() => void shareVideo()}>分享</button></article> : <p className="emptyCopy">当影像准备好后，它会安静地留在这里。</p>}</section>}</> : <section className="emptyMemory"><h1>还没有一段记忆。</h1><p>从你最想念的人开始。</p><button className="primaryButton" onClick={() => setScreen("create")}>创建 TA</button></section>}
+      {notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="memory" onChange={setScreen} hasMemory={hasMemory} />
+    </main>;
+    if (screen === "profile") return <main className="profileScene"><p className="eyebrow">我的</p><h1>把陪伴，慢慢留住。</h1><section><span>资料与偏好</span><span>隐私与授权</span><span>关于忆见</span></section><p>每一段记忆都只为你和 TA 而存在。</p><BottomNav active="profile" onChange={setScreen} hasMemory={hasMemory} /></main>;
+    return <main className="homeScene"><p className="eyebrow">忆见</p><div className="homeSpace"><div className="homeGlow" aria-hidden="true" />{memory ? <><div className="personFrame"><span>{initials(memory.name)}</span></div><p>{memory.name} 在这里</p></> : <><div className="emptyPortrait" /><h1>为谁，留一盏灯？</h1><p>从一个名字、一句常说的话，开始重新靠近。</p></>}</div>
+      <button className="primaryButton" onClick={() => press(() => setScreen(memory ? "chat" : "create"))}>{memory ? "继续相见" : "创建 TA"}</button>{notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="home" onChange={setScreen} hasMemory={hasMemory} />
+    </main>;
+  }, [busy, challengeId, code, hasMemory, media.length, memory, messages, mode, name, notice, online, phone, previewVideoUrl, question, relationship, screen, story, title]);
+
+  return <div className={`appRoot ${productOnline ? "isOnline" : ""}`}>{content}</div>;
+}

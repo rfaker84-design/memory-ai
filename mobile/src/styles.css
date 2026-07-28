@@ -1,0 +1,103 @@
+:root {
+  color: #f5eee7;
+  background: #120f0d;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; background: #120f0d; }
+button, input, textarea { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+button:active { transform: scale(.97); }
+
+.appRoot { min-height: 100dvh; background: radial-gradient(110% 52% at 78% 0%, rgba(126, 85, 43, .18), transparent 59%), #120f0d; }
+.appRoot > main { min-height: 100dvh; }
+.eyebrow { margin: 0; color: #d7ad75; font-size: 12px; letter-spacing: .15em; }
+h1 { margin: 0; color: #f8f1ea; font-size: clamp(35px, 11vw, 52px); font-weight: 560; line-height: 1.13; letter-spacing: -.035em; }
+p { color: rgba(237, 225, 212, .7); font-size: 15px; line-height: 1.75; }
+.primaryButton, .secondaryButton, .textButton, .quietLink, .backButton, .headerAction { border: 0; cursor: pointer; }
+.primaryButton { min-height: 54px; width: 100%; border-radius: 999px; padding: 0 22px; color: #21180f; background: #e8c48e; font-weight: 680; box-shadow: 0 12px 32px rgba(232, 196, 142, .11); transition: transform .24s cubic-bezier(.16, 1, .3, 1), background .24s ease; }
+.primaryButton:disabled { cursor: wait; opacity: .55; }
+.secondaryButton { min-height: 48px; border-radius: 999px; color: #eadbc7; background: rgba(243, 226, 206, .07); }
+.textButton, .quietLink { padding: 10px 0; color: rgba(228, 209, 186, .68); background: transparent; font-size: 14px; }
+.notice, .floatingNotice { margin: 0; color: #e8c896; font-size: 13px; line-height: 1.55; }
+.floatingNotice { text-align: center; }
+
+.brandSplash { position: relative; display: grid; place-items: center; overflow: hidden; text-align: center; }
+.brandHalo { position: absolute; width: min(80vw, 380px); height: min(80vw, 380px); border-radius: 50%; background: radial-gradient(circle, rgba(212, 160, 97, .2), rgba(212, 160, 97, .03) 42%, transparent 68%); transform: translateY(-18px); }
+.brandMark { position: relative; display: grid; gap: 10px; color: #f5e8db; font-size: 42px; letter-spacing: .08em; }
+.brandMark small { color: #d4aa72; font-size: 10px; letter-spacing: .3em; }
+.brandSplash p { position: absolute; bottom: max(64px, calc(env(safe-area-inset-bottom) + 32px)); margin: 0; color: rgba(241, 226, 210, .63); }
+
+.welcomeScene, .authScene, .offlineScene, .createScene, .presenceScene, .memoryScene, .profileScene, .homeScene, .chatScene { padding: max(30px, env(safe-area-inset-top)) 24px max(94px, calc(env(safe-area-inset-bottom) + 76px)); }
+.welcomeScene { position: relative; display: flex; min-height: 100dvh; flex-direction: column; justify-content: flex-end; gap: 20px; overflow: hidden; }
+.welcomeScene h1 { position: relative; max-width: 330px; }
+.welcomeScene p:not(.eyebrow) { position: relative; max-width: 290px; margin: 0 0 14px; }
+.nightWindow { position: absolute; inset: 0 0 43%; background: radial-gradient(ellipse at 52% 38%, rgba(236, 194, 137, .21), transparent 22%), radial-gradient(ellipse at 46% 50%, rgba(92, 58, 35, .29), transparent 51%); }
+.nightWindow::after { content: ""; position: absolute; inset: 0; opacity: .28; background-image: radial-gradient(#e8c899 1px, transparent 1px), radial-gradient(#e8c899 1px, transparent 1px); background-position: 14% 22%, 74% 48%; background-size: 92px 92px, 132px 132px; }
+
+.offlineScene { display: flex; min-height: 100dvh; flex-direction: column; justify-content: center; gap: 16px; }
+.offlineScene h1 { max-width: 290px; }
+.offlineScene p:not(.eyebrow) { max-width: 285px; margin: 0 0 12px; }
+.quietDot { width: 48px; height: 48px; margin-bottom: 20px; border: 1px solid rgba(225, 188, 138, .25); border-radius: 50%; box-shadow: 0 0 54px rgba(225, 188, 138, .13); }
+
+.authScene { display: flex; min-height: 100dvh; flex-direction: column; justify-content: center; gap: 16px; }
+.authScene h1 { font-size: clamp(34px, 9vw, 44px); }
+.authScene > p:not(.eyebrow):not(.notice) { max-width: 310px; margin: 0 0 22px; }
+.backButton { width: 38px; height: 38px; padding: 0; color: #e8d6bf; background: transparent; font-size: 34px; line-height: 1; text-align: left; }
+.field { width: 100%; border: 1px solid rgba(231, 207, 177, .16); border-radius: 15px; padding: 15px 16px; color: #f7eee5; outline: none; background: rgba(255, 247, 238, .06); }
+.field:focus { border-color: rgba(228, 186, 132, .63); }
+.codeField { font-size: 23px; letter-spacing: .34em; text-align: center; }
+
+.pageHeader { display: grid; min-height: 44px; grid-template-columns: 52px 1fr 52px; align-items: center; margin-bottom: 22px; color: #eadbc9; text-align: center; }
+.pageHeader > span { font-size: 14px; letter-spacing: .06em; }
+.pageHeader small { color: rgba(232, 211, 188, .47); font-size: 12px; }
+.headerAction { color: #dcbd8f; background: transparent; font-size: 13px; }
+
+.createScene { display: flex; flex-direction: column; gap: 14px; }
+.createScene > h1 { font-size: 34px; }
+.createScene > p { margin: -4px 0 10px; }
+.createScene label { display: grid; gap: 8px; color: rgba(242, 226, 208, .78); font-size: 13px; }
+.createScene textarea { resize: vertical; }
+.presencePlaceholder { display: grid; width: 74px; height: 74px; place-items: center; border: 1px solid rgba(229, 192, 141, .29); border-radius: 50%; color: #edcfaa; background: radial-gradient(circle at 50% 34%, rgba(230, 193, 139, .19), transparent 63%); font-size: 22px; }
+.mediaChoice { display: flex; min-height: 68px; align-items: center; justify-content: space-between; border: 1px solid rgba(231, 207, 177, .13); border-radius: 17px; padding: 13px 16px; color: #f0e2d3; background: rgba(255, 247, 238, .045); text-align: left; }
+.mediaChoice small { color: rgba(234, 212, 187, .52); }
+
+.presenceScene { position: relative; display: flex; min-height: 100dvh; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; text-align: center; }
+.presenceScene > * { position: relative; z-index: 1; }
+.presenceLight { position: absolute; top: 15%; width: 350px; height: 350px; border-radius: 50%; background: radial-gradient(circle, rgba(222, 177, 119, .24), transparent 65%); }
+.personFrame { display: grid; width: 164px; height: 164px; place-items: center; border: 1px solid rgba(232, 200, 159, .29); border-radius: 50%; color: #efd1ae; background: radial-gradient(circle at 50% 28%, rgba(236, 206, 163, .29), rgba(102, 66, 38, .16) 45%, transparent 71%); box-shadow: 0 0 70px rgba(223, 176, 119, .11); font-size: 42px; }
+.personFrame.small { width: 110px; height: 110px; font-size: 29px; }
+.presenceScene h1 { margin-top: 25px; font-size: 42px; }
+.presenceScene > p:not(.eyebrow) { margin: 4px 0 20px; }
+blockquote { max-width: 300px; margin: 12px auto 38px; color: rgba(245, 231, 214, .76); font-size: 15px; line-height: 1.8; }
+.presenceScene .primaryButton { max-width: 330px; }
+
+.homeScene { display: flex; min-height: 100dvh; flex-direction: column; gap: 16px; }
+.homeSpace { position: relative; display: flex; min-height: 0; flex: 1; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; text-align: center; }
+.homeSpace h1 { max-width: 270px; font-size: 42px; }
+.homeSpace p { position: relative; max-width: 260px; margin: 14px 0 0; }
+.homeGlow { position: absolute; width: 330px; height: 330px; border-radius: 50%; background: radial-gradient(circle, rgba(210, 154, 90, .19), transparent 66%); }
+.emptyPortrait { position: relative; width: 118px; height: 118px; margin-bottom: 34px; border: 1px solid rgba(231, 198, 156, .18); border-radius: 50%; background: radial-gradient(circle at 50% 34%, rgba(236, 201, 156, .13), transparent 60%); }
+.homeSpace .personFrame { position: relative; width: 135px; height: 135px; margin-bottom: 25px; font-size: 34px; }
+
+.bottomNav { position: fixed; right: 16px; bottom: max(12px, env(safe-area-inset-bottom)); left: 16px; z-index: 4; display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid rgba(255, 244, 230, .08); border-radius: 23px; padding: 7px 4px; background: rgba(30, 24, 19, .88); box-shadow: 0 12px 36px rgba(0, 0, 0, .25); backdrop-filter: blur(14px); }
+.bottomNav button { position: relative; display: grid; min-height: 46px; place-items: center; gap: 1px; border: 0; border-radius: 16px; color: rgba(238, 220, 199, .48); background: transparent; }
+.bottomNav button.active { color: #ebc791; background: rgba(229, 193, 143, .09); }
+.bottomNav span { font-size: 19px; line-height: 16px; }.bottomNav small { font-size: 10px; }.bottomNav i { position: absolute; top: 7px; right: 23%; width: 4px; height: 4px; border-radius: 50%; background: #dfb778; }
+
+.chatScene { display: flex; min-height: 100dvh; flex-direction: column; padding-bottom: max(150px, calc(env(safe-area-inset-bottom) + 132px)); }
+.chatScene .pageHeader { grid-template-columns: 52px 1fr 52px; text-align: left; }.chatScene .pageHeader div { display: grid; gap: 1px; }.chatScene .pageHeader small { font-size: 11px; }.chatScene .headerAction { text-align: right; }
+.chatBody { display: flex; flex: 1; flex-direction: column; gap: 12px; overflow: auto; padding: 20px 0; }
+.chatPortrait { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid rgba(232, 200, 159, .28); border-radius: 50%; color: #eac79c; font-size: 12px; }
+.bubble { max-width: 78%; margin: 0; border-radius: 18px; padding: 11px 14px; font-size: 14px; line-height: 1.65; }.bubble.assistant { align-self: flex-start; border-top-left-radius: 4px; color: rgba(246, 232, 215, .88); background: rgba(245, 229, 210, .08); }.bubble.user { align-self: flex-end; border-top-right-radius: 4px; color: #2c2117; background: #e6bf84; }
+.chatComposer { position: fixed; right: 24px; bottom: max(80px, calc(env(safe-area-inset-bottom) + 69px)); left: 24px; z-index: 3; display: flex; gap: 8px; border: 1px solid rgba(255, 245, 232, .1); border-radius: 20px; padding: 7px; background: #211a15; }.chatComposer input { min-width: 0; flex: 1; border: 0; padding: 8px; color: #eee2d5; outline: 0; background: transparent; }.chatComposer button { border: 0; border-radius: 14px; padding: 0 14px; color: #291d12; background: #e8c48e; font-size: 13px; }.chatComposer button:disabled { opacity: .5; }
+
+.memoryScene { padding-bottom: max(108px, calc(env(safe-area-inset-bottom) + 88px)); }.memoryHero, .galleryScene, .emptyMemory { display: flex; min-height: calc(100dvh - 165px); flex-direction: column; align-items: center; justify-content: center; text-align: center; }.memoryHero h1, .galleryScene h1, .emptyMemory h1 { margin: 12px 0; }.memoryHero > p:not(.eyebrow), .galleryScene > p:not(.eyebrow), .emptyMemory p { max-width: 295px; margin: 0 0 28px; }.memoryHero .primaryButton { max-width: 320px; }
+.videoCard { display: grid; width: 100%; gap: 10px; border-radius: 23px; padding: 24px; color: #f6e8d8; background: radial-gradient(circle at 74% 14%, rgba(219, 164, 94, .27), transparent 37%), rgba(245, 229, 211, .06); text-align: left; }.videoCard div { display: grid; min-height: 156px; align-content: end; gap: 6px; }.videoCard span { font-size: 22px; }.videoCard small { color: rgba(243, 224, 204, .62); }.videoCard button { min-height: 47px; border: 0; border-radius: 999px; color: #261a10; background: #e9c68f; }.videoCard .secondaryButton { color: #eadaca; background: rgba(245, 230, 212, .1); }
+.emptyCopy { margin: auto; color: rgba(235, 216, 195, .58); text-align: center; }
+
+.profileScene { display: flex; min-height: 100dvh; flex-direction: column; justify-content: center; gap: 18px; }.profileScene h1 { max-width: 280px; }.profileScene section { display: grid; gap: 0; margin-top: 12px; }.profileScene section span { border-bottom: 1px solid rgba(235, 217, 196, .09); padding: 17px 0; color: rgba(244, 231, 217, .78); }.profileScene > p:not(.eyebrow) { max-width: 270px; margin: 5px 0; color: rgba(235, 215, 194, .48); }
+
+@media (prefers-reduced-motion: no-preference) { .brandMark, .welcomeScene > *, .presenceScene > *, .homeSpace > * { animation: soft-enter .52s cubic-bezier(.16, 1, .3, 1) both; }.welcomeScene h1 { animation-delay: .04s; }.welcomeScene p { animation-delay: .08s; }.welcomeScene .primaryButton { animation-delay: .12s; } @keyframes soft-enter { from { opacity: 0; transform: translateY(18px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } } }

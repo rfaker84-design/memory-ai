@@ -1,0 +1,40 @@
+{
+  "name": "memoryai-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MemoryAI native mobile host for the existing Next.js product core.",
+  "scripts": {
+    "build": "vite build",
+    "build:debug": "vite build --mode debug",
+    "sync": "npm run build && cap sync",
+    "sync:debug": "npm run build:debug && cap sync android",
+    "android:debug": "npm run sync:debug && cd android && gradlew.bat assembleDebug",
+    "android:release-audit": "npm run build && cap sync android && npm run verify:config && cd android && gradlew.bat assembleRelease",
+    "android:install": "cd android && gradlew.bat installDebug",
+    "ios:sync": "npm run sync && cap sync ios",
+    "ios:open": "cap open ios",
+    "verify:config": "tsx scripts/verify-mobile-config.ts"
+  },
+  "dependencies": {
+    "@capacitor/app": "^7.0.0",
+    "@capacitor/camera": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/haptics": "^7.0.0",
+    "@capacitor/preferences": "^7.0.0",
+    "@capacitor/push-notifications": "^7.0.0",
+    "@capacitor/share": "^7.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "vite": "^6.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/ios": "^7.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}
