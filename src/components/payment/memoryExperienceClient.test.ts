@@ -116,6 +116,12 @@ test("frozen refund rules have one shared source for purchase and refund surface
   for (const surface of [purchaseSurface, refundSurface, termsSurface, reportSurface]) assert.doesNotMatch(surface, /退款结果异常/);
 });
 
+test("Terms delegates its no-reason refund wording to refundPolicy", () => {
+  const termsSurface = readFileSync(new URL("../../../app/terms/page.tsx", import.meta.url), "utf8");
+  assert.match(termsSurface, /import\s*\{\s*refundPolicy\s*\}.*refundPolicy/);
+  assert.match(termsSurface, /refundPolicy\.noReason/);
+});
+
 test("the purchase surface uses the frozen emotional handoff title", () => {
   const purchaseSurface = readFileSync(new URL("./MemoryExperienceOffer.tsx", import.meta.url), "utf8");
   assert.match(purchaseSurface, /想继续和TA说说话/);
