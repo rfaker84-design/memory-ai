@@ -22,7 +22,10 @@ test("016 persists video jobs without introducing a second entitlement ledger", 
   assert.match(migration, /quality_pending/);
   assert.match(migration, /quality_status = 'approved' AND entitlement_settlement = 'committed'/);
   assert.match(migration, /status = 'rejected'.*entitlement_settlement = 'released'/s);
-  assert.match(migration, /review_key ~ '\^\[-A-Za-z0-9\._:\]\{16,128\}\$'/);
+  assert.match(migration, /char_length\(review_key\) BETWEEN 16 AND 128/);
+  assert.match(migration, /char_length\(reviewer_account\) BETWEEN 3 AND 256/);
+  assert.match(migration, /reviewer_account !~ '\[\[:space:\]\]'/);
+  assert.doesNotMatch(migration, /~ '[^']*\{\d+(?:,\d+)?\}/);
   assert.match(migration, /COMMIT;\s*$/);
   assert.doesNotMatch(migration, /CREATE TABLE IF NOT EXISTS public\.commerce_credit_lots/i);
   assert.doesNotMatch(migration, /CREATE TABLE IF NOT EXISTS public\.commerce_generation_reservations/i);

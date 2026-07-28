@@ -165,6 +165,26 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
     "SELECT review_key FROM video_generation_quality_reviews WHERE job_id = $1 AND reviewer_kind = 'manual'", [jobs[0].id],
   )).rows, [{ review_key: `manual.${jobs[0].id}` }], "actual UUID review key is accepted exactly once");
 
+  const constraintJob = (await verify.query<{ id: string }>(
+    `INSERT INTO video_generation_jobs (user_id, memory_id, idempotency_key, input_sha256)
+     VALUES ($1, $2, 'video:gate:account-boundary:0001', $3) RETURNING id`,
+    [ownerId, memory, sha("account-boundary")],
+  )).rows[0].id;
+  const insertAccountReview = (reviewKey: string, reviewerAccount: string) =>
+    verify.query(
+      `INSERT INTO video_generation_quality_reviews
+         (job_id, review_key, reviewer_kind, reviewer_account, reviewed_at, decision, reason_codes, quality_payload)
+       VALUES ($1, $2, 'manual', $3, '2026-07-28T08:00:00.000Z', 'approved', '[]'::jsonb, '{}'::jsonb)`,
+      [constraintJob, reviewKey, reviewerAccount],
+    );
+  await insertAccountReview("manual-account-003", "abc");
+  await insertAccountReview("manual-account-256", "a".repeat(256));
+  await assert.rejects(insertAccountReview("manual-account-257", "a".repeat(257)));
+  await assert.rejects(insertAccountReview("manual-account-space", "a b"));
+  assert.equal(Number((await verify.query(
+    "SELECT COUNT(*)::text AS count FROM video_generation_quality_reviews WHERE job_id = $1", [constraintJob],
+  )).rows[0].count), 2, "only the exact 3- and 256-character manual accounts persist");
+
   const injection = await createService().submit({ ...input, idempotencyKey: "video:gate:review-injection:0001" });
   assert.equal((await createService().recover(injection.id)).status, "manual_review_required");
   const injectionLink = (await verify.query<{ reservation_id: string }>(

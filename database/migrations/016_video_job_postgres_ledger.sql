@@ -50,7 +50,10 @@ CREATE TABLE IF NOT EXISTS public.video_generation_jobs (
   CONSTRAINT uq_video_generation_jobs_request UNIQUE (user_id, memory_id, idempotency_key),
   CONSTRAINT uq_video_generation_jobs_reservation UNIQUE (reservation_id),
   CONSTRAINT ck_video_generation_jobs_key
-    CHECK (idempotency_key ~ '^[A-Za-z0-9._:-]{16,128}$'),
+    CHECK (
+      char_length(idempotency_key) BETWEEN 16 AND 128
+      AND idempotency_key ~ '^[-A-Za-z0-9._:]+$'
+    ),
   CONSTRAINT ck_video_generation_jobs_provider
     CHECK (provider = 'vidu-cn-q2-pro-fast'),
   CONSTRAINT ck_video_generation_jobs_status
@@ -62,7 +65,7 @@ CREATE TABLE IF NOT EXISTS public.video_generation_jobs (
   CONSTRAINT ck_video_generation_jobs_settlement
     CHECK (entitlement_settlement IN ('reserved', 'committed', 'released')),
   CONSTRAINT ck_video_generation_jobs_hash
-    CHECK (input_sha256 ~ '^[0-9a-f]{64}$'),
+    CHECK (char_length(input_sha256) = 64 AND input_sha256 ~ '^[0-9a-f]+$'),
   CONSTRAINT ck_video_generation_jobs_credits
     CHECK (actual_credits IS NULL OR actual_credits >= 0),
   CONSTRAINT ck_video_generation_jobs_terminal
@@ -100,12 +103,19 @@ CREATE TABLE IF NOT EXISTS public.video_generation_quality_reviews (
   CONSTRAINT uq_video_generation_quality_reviews_job_key UNIQUE (job_id, review_key),
   CONSTRAINT ck_video_generation_quality_reviews_key
     -- Keep '-' first: placing it after ':' creates an invalid regex range in PG.
-    CHECK (review_key ~ '^[-A-Za-z0-9._:]{16,128}$'),
+    CHECK (
+      char_length(review_key) BETWEEN 16 AND 128
+      AND review_key ~ '^[-A-Za-z0-9._:]+$'
+    ),
   CONSTRAINT ck_video_generation_quality_reviews_kind CHECK (reviewer_kind IN ('system', 'manual')),
   CONSTRAINT ck_video_generation_quality_reviews_reviewer
     CHECK (
       (reviewer_kind = 'system' AND reviewer_account IS NULL)
-      OR (reviewer_kind = 'manual' AND reviewer_account ~ '^[^[:space:]]{3,256}$')
+      OR (
+        reviewer_kind = 'manual'
+        AND char_length(reviewer_account) BETWEEN 3 AND 256
+        AND reviewer_account !~ '[[:space:]]'
+      )
     ),
   CONSTRAINT ck_video_generation_quality_reviews_reviewed_at
     CHECK (
