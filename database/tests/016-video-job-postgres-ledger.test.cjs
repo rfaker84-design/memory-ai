@@ -16,6 +16,7 @@ test("016 persists video jobs without introducing a second entitlement ledger", 
   assert.match(migration, /commerce_generation_reservations/);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.video_generation_jobs/);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.video_generation_quality_reviews/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.video_generation_reconciliations/);
   assert.match(migration, /uq_video_generation_jobs_request UNIQUE \(user_id, memory_id, idempotency_key\)/);
   assert.match(migration, /ux_video_generation_jobs_provider_task/);
   assert.match(migration, /submission_uncertain/);
@@ -33,6 +34,7 @@ test("016 persists video jobs without introducing a second entitlement ledger", 
   assert.match(postflight, /video_generation_jobs/);
   assert.match(postflight, /ownership_or_reservation_mismatch/);
   assert.match(postflight, /terminal_settlement_mismatch/);
+  assert.match(postflight, /reconciliation_job_state_mismatch/);
   assert.doesNotMatch(postflight, /\b(?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP)\b/i);
 
   assert.equal(runner.includes("016_video_job_postgres_ledger.sql"), false);

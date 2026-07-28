@@ -279,7 +279,7 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
   assert.equal(replays.every((job) => job.id === uncertain.id && job.status === "submission_uncertain"), true);
   assert.equal(recoveredUncertain.every((job) => job.status === "submission_uncertain"), true);
   assert.equal(restartedRecovery.every((job) => job.status === "submission_uncertain"), true);
-  assert.equal(submits, 3, "lost response is never blindly resubmitted");
+  assert.equal(submits, 4, "the fourth submit is the initial lost response; replays never submit again");
   const uncertainLink = (await verify.query<{ reservation_id: string; provider_task_id: string | null; provider_submission_state: string }>(
     "SELECT reservation_id, provider_task_id, provider_submission_state FROM video_generation_jobs WHERE id = $1", [uncertain.id],
   )).rows[0];
@@ -289,6 +289,68 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
   assert.deepEqual((await verify.query(
     "SELECT status, outcome FROM commerce_generation_reservations WHERE id = $1", [uncertainLink.reservation_id],
   )).rows[0], { status: "reserved", outcome: null });
+
+  const repository = new FirstPresenceVideoPostgresRepository();
+  const attachRequest = {
+    id: uncertain.id,
+    requestKey: "video:gate:attach-uncertain:0001",
+    operatorAccount: "video-reconciler@yijian.test",
+    action: "ATTACH_PROVIDER_TASK" as const,
+    providerTaskId: "vidu-confirmed-task-001",
+    reason: "Vidu backoffice confirms the task exists",
+  };
+  const attached = await Promise.all(Array.from({ length: 8 }, () =>
+    repository.reconcileUncertainSubmission(attachRequest),
+  ));
+  assert.equal(attached.every((job) => job.status === "submitted" && job.providerTaskId === attachRequest.providerTaskId), true);
+  assert.equal(submits, 4, "attach never submits or consumes a credit");
+  assert.equal((await createService().recover(uncertain.id)).status, "manual_review_required", "attached task returns to normal polling and review");
+  assert.equal(Number((await verify.query(
+    "SELECT COUNT(*)::text AS count FROM video_generation_reconciliations WHERE job_id = $1", [uncertain.id],
+  )).rows[0].count), 1, "attach writes one auditable idempotent action");
+
+  mode = "lost";
+  const unresolved = await createService().submit({ ...input, idempotencyKey: "video:gate:release-unresolved:0001" });
+  assert.equal(unresolved.status, "submission_uncertain");
+  assert.equal(submits, 5);
+  const unresolvedLink = (await verify.query<{ reservation_id: string }>(
+    "SELECT reservation_id FROM video_generation_jobs WHERE id = $1", [unresolved.id],
+  )).rows[0];
+  assert.ok(unresolvedLink?.reservation_id);
+  const releaseRequest = {
+    id: unresolved.id,
+    requestKey: "video:gate:release-uncertain:0001",
+    operatorAccount: "video-reconciler@yijian.test",
+    action: "RELEASE_UNRESOLVED" as const,
+    reason: "Vidu backoffice cannot locate the task",
+  };
+  const released = await Promise.all(Array.from({ length: 8 }, () =>
+    repository.reconcileUncertainSubmission(releaseRequest),
+  ));
+  assert.equal(released.every((job) => job.status === "failed"), true);
+  assert.deepEqual((await verify.query(
+    "SELECT status, outcome FROM commerce_generation_reservations WHERE id = $1", [unresolvedLink.reservation_id],
+  )).rows[0], { status: "released", outcome: "system_failed" });
+  assert.equal(Number((await verify.query(
+    "SELECT COUNT(*)::text AS count FROM video_generation_reconciliations WHERE job_id = $1", [unresolved.id],
+  )).rows[0].count), 1, "release writes one action and settles once");
+
+  const contested = await createService().submit({ ...input, idempotencyKey: "video:gate:contested-uncertain:0001" });
+  assert.equal(contested.status, "submission_uncertain");
+  const race = await Promise.allSettled([
+    repository.reconcileUncertainSubmission({
+      id: contested.id, requestKey: "video:gate:race-attach:0001", operatorAccount: "video-reconciler@yijian.test",
+      action: "ATTACH_PROVIDER_TASK", providerTaskId: "vidu-confirmed-task-race", reason: "attach race",
+    }),
+    repository.reconcileUncertainSubmission({
+      id: contested.id, requestKey: "video:gate:race-release:0001", operatorAccount: "video-reconciler@yijian.test",
+      action: "RELEASE_UNRESOLVED", reason: "release race",
+    }),
+  ]);
+  assert.equal(race.filter((result) => result.status === "fulfilled").length, 1, "attach and release cannot both reconcile one job");
+  assert.equal(Number((await verify.query(
+    "SELECT COUNT(*)::text AS count FROM video_generation_reconciliations WHERE job_id = $1", [contested.id],
+  )).rows[0].count), 1);
   await assert.rejects(createService().submit({ ...input, externalUserId: other, memoryId: otherMemory!, idempotencyKey: "video:gate:cross-user:0001" }));
   await connections.close(verify);
   await closePostgresPool();

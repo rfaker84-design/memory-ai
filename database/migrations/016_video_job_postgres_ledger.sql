@@ -130,6 +130,45 @@ CREATE TABLE IF NOT EXISTS public.video_generation_quality_reviews (
 CREATE INDEX IF NOT EXISTS ix_video_generation_quality_reviews_job_created
   ON public.video_generation_quality_reviews (job_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS public.video_generation_reconciliations (
+  id UUID NOT NULL DEFAULT pg_catalog.gen_random_uuid(),
+  job_id UUID NOT NULL,
+  request_key TEXT NOT NULL,
+  action TEXT NOT NULL,
+  operator_account TEXT NOT NULL,
+  provider_task_id TEXT,
+  reason TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT pk_video_generation_reconciliations PRIMARY KEY (id),
+  CONSTRAINT fk_video_generation_reconciliations_job
+    FOREIGN KEY (job_id) REFERENCES public.video_generation_jobs(id) ON DELETE CASCADE,
+  CONSTRAINT uq_video_generation_reconciliations_job_request UNIQUE (job_id, request_key),
+  CONSTRAINT uq_video_generation_reconciliations_job UNIQUE (job_id),
+  CONSTRAINT ck_video_generation_reconciliations_request CHECK (
+    char_length(request_key) BETWEEN 16 AND 128
+    AND request_key ~ '^[-A-Za-z0-9._:]+$'
+  ),
+  CONSTRAINT ck_video_generation_reconciliations_action CHECK (
+    action IN ('attach_provider_task', 'release_unresolved')
+  ),
+  CONSTRAINT ck_video_generation_reconciliations_operator CHECK (
+    char_length(operator_account) BETWEEN 3 AND 256
+    AND operator_account !~ '[[:space:]]'
+  ),
+  CONSTRAINT ck_video_generation_reconciliations_provider_task CHECK (
+    (action = 'attach_provider_task'
+      AND provider_task_id IS NOT NULL
+      AND char_length(provider_task_id) BETWEEN 1 AND 256
+      AND provider_task_id ~ '^[-A-Za-z0-9._:]+$')
+    OR (action = 'release_unresolved' AND provider_task_id IS NULL)
+  ),
+  CONSTRAINT ck_video_generation_reconciliations_reason
+    CHECK (char_length(reason) BETWEEN 1 AND 1000)
+);
+
+CREATE INDEX IF NOT EXISTS ix_video_generation_reconciliations_created
+  ON public.video_generation_reconciliations (created_at DESC);
+
 DROP TRIGGER IF EXISTS trg_video_generation_jobs_updated_at ON public.video_generation_jobs;
 CREATE TRIGGER trg_video_generation_jobs_updated_at
   BEFORE UPDATE ON public.video_generation_jobs

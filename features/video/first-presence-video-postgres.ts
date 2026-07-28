@@ -203,6 +203,97 @@ export class FirstPresenceVideoPostgresRepository
     return this.update(input.id, `status = 'submission_uncertain', provider_submission_state = 'uncertain', error_code = $2`, [input.errorCode]);
   }
 
+  /**
+   * The only path that may move a submission_uncertain job again. It writes a
+   * durable reconciliation decision before changing the job, and release uses
+   * the same transaction as the Migration 014 entitlement settlement.
+   */
+  async reconcileUncertainSubmission(input: {
+    id: string;
+    requestKey: string;
+    operatorAccount: string;
+    action: "ATTACH_PROVIDER_TASK" | "RELEASE_UNRESOLVED";
+    providerTaskId?: string;
+    reason: string;
+  }): Promise<FirstPresenceVideoJob> {
+    return withPostgresTransaction(async (client) => {
+      const locked = await client.query<JobRow>(
+        `SELECT ${COLUMNS} FROM public.video_generation_jobs j
+         JOIN public.users u ON u.id = j.user_id WHERE j.id = $1 FOR UPDATE OF j`,
+        [input.id],
+      );
+      const row = locked.rows[0];
+      if (!row) throw new Error("FIRST_PRESENCE_VIDEO_JOB_NOT_FOUND");
+      const current = job(row);
+      const existing = await client.query<{
+        action: "attach_provider_task" | "release_unresolved";
+        provider_task_id: string | null;
+      }>(
+        `SELECT action, provider_task_id
+         FROM public.video_generation_reconciliations
+         WHERE job_id = $1 AND request_key = $2`,
+        [input.id, input.requestKey],
+      );
+      const action = input.action === "ATTACH_PROVIDER_TASK"
+        ? "attach_provider_task"
+        : "release_unresolved";
+      const providerTaskId = input.providerTaskId ?? null;
+      if (existing.rows[0]) {
+        if (
+          existing.rows[0].action !== action
+          || existing.rows[0].provider_task_id !== providerTaskId
+        ) {
+          throw new Error("FIRST_PRESENCE_RECONCILIATION_IDEMPOTENCY_CONFLICT");
+        }
+        return current;
+      }
+      if (current.status !== "submission_uncertain") {
+        throw new Error("FIRST_PRESENCE_VIDEO_NOT_UNCERTAIN");
+      }
+
+      await client.query(
+        `INSERT INTO public.video_generation_reconciliations
+           (job_id, request_key, action, operator_account, provider_task_id, reason)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [input.id, input.requestKey, action, input.operatorAccount, providerTaskId, input.reason],
+      );
+      if (input.action === "ATTACH_PROVIDER_TASK") {
+        const attached = await client.query<JobRow>(
+          `UPDATE public.video_generation_jobs j
+           SET status = 'submitted', provider_submission_state = 'accepted',
+             provider_task_id = $2, provider_state = 'reconciled_attached', error_code = NULL
+           WHERE j.id = $1 AND j.status = 'submission_uncertain'
+           RETURNING j.id, (SELECT external_id FROM public.users WHERE id = j.user_id) AS external_user_id,
+             j.memory_id, j.idempotency_key, j.status, j.provider, j.provider_task_id,
+             j.provider_state, j.input_sha256, j.actual_credits, j.artifact_key,
+             j.quality_payload, j.error_code, j.created_at, j.updated_at`,
+          [input.id, providerTaskId],
+        );
+        if (!attached.rows[0]) throw new Error("FIRST_PRESENCE_RECONCILIATION_STATE_LOST");
+        return job(attached.rows[0]);
+      }
+
+      await settleGenerationInPostgresTransaction(client, {
+        externalUserId: current.externalUserId,
+        requestKey: current.idempotencyKey,
+        outcome: "system_failed",
+      });
+      const released = await client.query<JobRow>(
+        `UPDATE public.video_generation_jobs j
+         SET status = 'failed', provider_state = 'unresolved_released',
+           error_code = 'UNRESOLVED_SUBMISSION_RELEASED', entitlement_settlement = 'released'
+         WHERE j.id = $1 AND j.status = 'submission_uncertain'
+         RETURNING j.id, (SELECT external_id FROM public.users WHERE id = j.user_id) AS external_user_id,
+           j.memory_id, j.idempotency_key, j.status, j.provider, j.provider_task_id,
+           j.provider_state, j.input_sha256, j.actual_credits, j.artifact_key,
+           j.quality_payload, j.error_code, j.created_at, j.updated_at`,
+        [input.id],
+      );
+      if (!released.rows[0]) throw new Error("FIRST_PRESENCE_RECONCILIATION_STATE_LOST");
+      return job(released.rows[0]);
+    });
+  }
+
   async markFailed(input: { id: string; providerState: string | null; actualCredits: number | null; errorCode: string }): Promise<FirstPresenceVideoJob> {
     return this.update(input.id, `status = 'failed', provider_state = $2, actual_credits = $3, error_code = $4, entitlement_settlement = 'released'`, [input.providerState, input.actualCredits, input.errorCode]);
   }
