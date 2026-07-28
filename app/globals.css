@@ -6,8 +6,6 @@
    鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲 */
 
 :root {
-  color-scheme: light;
-
   --bg-warm:       #F6F1E8;
   --bg-warmer:     #F2EBE0;
   --bg-card:       #FFFFFF;
@@ -60,7 +58,11 @@
 }
 
 *, *::before, *::after { box-sizing:border-box; }
-html { -webkit-text-size-adjust:100%; -webkit-tap-highlight-color:transparent; }
+html {
+  color-scheme: light;
+  -webkit-text-size-adjust:100%;
+  -webkit-tap-highlight-color:transparent;
+}
 
 body {
   margin:0; padding:0;

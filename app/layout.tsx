@@ -19,7 +19,7 @@ export const viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="zh-CN" style={{ colorScheme: "light" }}>
+    <html lang="zh-CN">
       <body className="antialiased"
         style={{ background: "#0B0A08", margin: 0, padding: 0 }}>
         <MobileAppShell>{children}</MobileAppShell>
