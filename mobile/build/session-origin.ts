@@ -5,6 +5,7 @@ type BuildEnvironment = Readonly<Record<string, string | undefined>>;
 const ROOT_DOMAIN = "yijianmemory.cn";
 const RELEASE_APP_HOSTNAME = `app.${ROOT_DOMAIN}`;
 const DEBUG_APP_HOSTNAME = `app.staging.${ROOT_DOMAIN}`;
+const MIN_STAGING_ACCESS_TOKEN_BYTES = 48;
 
 function normalizeHostname(value: string | undefined, fallback: string): string {
   const hostname = (value ?? fallback).trim().toLowerCase();
@@ -57,6 +58,29 @@ export function validateApiBaseUrl(
   return parsed.origin;
 }
 
+export function validateStagingAccessToken(
+  channel: MobileBuildChannel,
+  apiBaseUrl: string | null,
+  value: string | undefined,
+): string | null {
+  const raw = value?.trim();
+  if (channel !== "debug") {
+    if (raw) throw new Error("VITE_MOBILE_STAGING_ACCESS_TOKEN is Debug-only and must never be present in a Release build.");
+    return null;
+  }
+  if (!apiBaseUrl && raw) {
+    throw new Error("VITE_MOBILE_STAGING_ACCESS_TOKEN requires a Debug staging API origin.");
+  }
+  if (apiBaseUrl && !raw) {
+    throw new Error("VITE_MOBILE_STAGING_ACCESS_TOKEN is required when a Debug staging API origin is configured.");
+  }
+  if (!raw) return null;
+  if (raw !== value || /\s/.test(raw) || new TextEncoder().encode(raw).length < MIN_STAGING_ACCESS_TOKEN_BYTES) {
+    throw new Error("VITE_MOBILE_STAGING_ACCESS_TOKEN must be a high-strength token without whitespace.");
+  }
+  return raw;
+}
+
 export function resolveMobileSessionContract(
   channel: MobileBuildChannel,
   environment: BuildEnvironment,
@@ -74,10 +98,12 @@ export function resolveMobileSessionContract(
     throw new Error("VITE_MOBILE_TEST_VIDEO_URL is Debug-only and must never be present in a Release build.");
   }
 
+  const apiBaseUrl = validateApiBaseUrl(channel, appHostname, environment.VITE_MOBILE_API_BASE_URL);
   return Object.freeze({
     channel,
     appHostname,
     appOrigin: `https://${appHostname}`,
-    apiBaseUrl: validateApiBaseUrl(channel, appHostname, environment.VITE_MOBILE_API_BASE_URL),
+    apiBaseUrl,
+    stagingAccessToken: validateStagingAccessToken(channel, apiBaseUrl, environment.VITE_MOBILE_STAGING_ACCESS_TOKEN),
   });
 }

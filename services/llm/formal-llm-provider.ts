@@ -1,4 +1,5 @@
 import { getLLMAIProviderAdapter } from "../ai/global-ai-registry";
+import { getStagingRuntimeConfiguration, isStagingRuntime } from "../../src/server/runtime/staging-contract";
 import type { LLMProvider } from "./llm-provider";
 
 export class FormalLLMConfigurationError extends Error {}
@@ -19,14 +20,19 @@ export function resolveFormalLLMProvider(
   const name = getConfiguredLLMProviderName(environment);
 
   if (environment.NODE_ENV === "production") {
-    if (name !== "deepseek") {
-      throw new FormalLLMConfigurationError("DEEPSEEK_PROVIDER_REQUIRED");
-    }
-    if (!environment.DEEPSEEK_API_KEY?.trim()) {
-      throw new FormalLLMConfigurationError("DEEPSEEK_API_KEY_NOT_CONFIGURED");
-    }
-    if (!environment.DEEPSEEK_MODEL?.trim()) {
-      throw new FormalLLMConfigurationError("DEEPSEEK_MODEL_NOT_CONFIGURED");
+    if (isStagingRuntime(environment)) {
+      getStagingRuntimeConfiguration(environment);
+      if (name !== "mock") throw new FormalLLMConfigurationError("STAGING_MOCK_LLM_REQUIRED");
+    } else {
+      if (name !== "deepseek") {
+        throw new FormalLLMConfigurationError("DEEPSEEK_PROVIDER_REQUIRED");
+      }
+      if (!environment.DEEPSEEK_API_KEY?.trim()) {
+        throw new FormalLLMConfigurationError("DEEPSEEK_API_KEY_NOT_CONFIGURED");
+      }
+      if (!environment.DEEPSEEK_MODEL?.trim()) {
+        throw new FormalLLMConfigurationError("DEEPSEEK_MODEL_NOT_CONFIGURED");
+      }
     }
   }
 

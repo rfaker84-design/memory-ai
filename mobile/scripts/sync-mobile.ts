@@ -8,10 +8,9 @@ if (channel !== "debug" && channel !== "release") {
 }
 
 const environment: NodeJS.ProcessEnv = { ...process.env, MOBILE_BUILD_CHANNEL: channel };
-if (channel === "release") {
-  delete environment.VITE_MOBILE_API_BASE_URL;
-  delete environment.VITE_MOBILE_TEST_VIDEO_URL;
-}
+// Keep the caller's variables intact for a Release build. The Vite contract
+// must see and reject accidental Debug/staging injection instead of silently
+// removing it before validation.
 
 function run(script: string, args: string[]): void {
   const result = spawnSync(process.execPath, [script, ...args], {

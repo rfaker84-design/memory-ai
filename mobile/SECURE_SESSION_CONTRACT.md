@@ -63,6 +63,9 @@ non-production conditions:
    account. The API must expose the already-formal login, memory creation, and
    chat routes; no local preview data or synthetic session is acceptable.
 
+For the complete server-side isolation, fixed-SMS, media, and rotating-token
+requirements, see [`docs/Deployment/sprint22-staging-runtime-contract.md`](../docs/Deployment/sprint22-staging-runtime-contract.md).
+
 ## Device acceptance procedure
 
 1. Build with `MOBILE_APP_ORIGIN_HOST=app.staging.yijianmemory.cn` and

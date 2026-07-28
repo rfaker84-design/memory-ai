@@ -10,6 +10,7 @@ export type SmsVerificationSendResult = {
 
 export interface SmsVerificationProvider {
   assertConfigured?(): void;
+  createVerificationCode?(): string;
   sendVerificationCode(
     input: SmsVerificationSendInput
   ): Promise<SmsVerificationSendResult>;

@@ -16,7 +16,7 @@ The native capability lab is reachable only in a **Debug** build through `yijian
 
 The secure session design is documented in
 [`SECURE_SESSION_CONTRACT.md`](./SECURE_SESSION_CONTRACT.md). Create a local
-environment file from `.env.staging.example`. A Debug build is pinned to the
+environment file from [`staging.env.example`](./staging.env.example). A Debug build is pinned to the
 packaged local WebView origin `https://app.staging.yijianmemory.cn` and accepts
 only its same-site API sibling `https://api.staging.yijianmemory.cn`.
 
@@ -53,6 +53,7 @@ npm run sync
 # is debug-only evidence for the native save/share path.
 $env:MOBILE_APP_ORIGIN_HOST = "app.staging.yijianmemory.cn"
 $env:VITE_MOBILE_API_BASE_URL = "https://api.staging.yijianmemory.cn"
+$env:VITE_MOBILE_STAGING_ACCESS_TOKEN = "<48-plus-byte-rotating-staging-token>"
 $env:VITE_MOBILE_TEST_VIDEO_URL = "https://example.invalid/debug-video.mp4"
 npm run android:debug
 
@@ -63,6 +64,7 @@ npm run android:install
 # Release fails closed if either Debug variable is still defined.
 Remove-Item Env:VITE_MOBILE_API_BASE_URL -ErrorAction SilentlyContinue
 Remove-Item Env:VITE_MOBILE_TEST_VIDEO_URL -ErrorAction SilentlyContinue
+Remove-Item Env:VITE_MOBILE_STAGING_ACCESS_TOKEN -ErrorAction SilentlyContinue
 Remove-Item Env:MOBILE_APP_ORIGIN_HOST -ErrorAction SilentlyContinue
 npm run android:release-audit
 

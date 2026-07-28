@@ -1,3 +1,8 @@
+import {
+  assertStagingRuntimeConfiguration,
+  StagingRuntimeConfigurationError,
+} from "../runtime/staging-contract";
+
 export class ProductionAuthConfigurationError extends Error {
   constructor(public readonly code: string) {
     super(code);
@@ -66,6 +71,30 @@ function requireFormalLLM(environment: NodeJS.ProcessEnv): void {
   }
 }
 
+function requireFormalTTS(environment: NodeJS.ProcessEnv): void {
+  if (environment.TTS_PROVIDER?.trim() !== "tencent") {
+    throw new ProductionAuthConfigurationError("TENCENT_TTS_PROVIDER_REQUIRED");
+  }
+}
+
+function requireDeploymentEnvironment(environment: NodeJS.ProcessEnv): "production" | "staging" {
+  const deploymentEnvironment = environment.DEPLOYMENT_ENV?.trim();
+  if (deploymentEnvironment === "production" || deploymentEnvironment === "staging") {
+    return deploymentEnvironment;
+  }
+  throw new ProductionAuthConfigurationError("DEPLOYMENT_ENV_INVALID");
+}
+
+function rejectStagingCapabilities(environment: NodeJS.ProcessEnv): void {
+  const stagingVariable = Object.keys(environment).find((name) => name.startsWith("STAGING_") && environment[name]?.trim());
+  if (stagingVariable) {
+    throw new ProductionAuthConfigurationError("STAGING_CAPABILITY_FORBIDDEN");
+  }
+  if (environment.STORAGE_PROVIDER?.trim() === "local") {
+    throw new ProductionAuthConfigurationError("STAGING_CAPABILITY_FORBIDDEN");
+  }
+}
+
 /**
  * Prevent a production process from becoming healthy while authentication is
  * unusable. SMS is intentionally capability-scoped so an unavailable SMS
@@ -80,8 +109,6 @@ export function assertProductionAuthConfiguration(
   requireSecret(environment, "AUTH_VERIFICATION_PEPPER");
   requireSecret(environment, "SESSION_SECRET");
   requireRefundReviewAccessToken(environment);
-  requireHttpsOrigin(environment);
-  requireFormalLLM(environment);
 
   if (environment.AUTH_TRUST_NGINX_PROXY !== "true") {
     throw new ProductionAuthConfigurationError("AUTH_TRUST_NGINX_PROXY_NOT_CONFIGURED");
@@ -89,4 +116,22 @@ export function assertProductionAuthConfiguration(
   if (environment.AUTH_PROXY_LOOPBACK_ONLY !== "true") {
     throw new ProductionAuthConfigurationError("AUTH_PROXY_LOOPBACK_CONTRACT_NOT_CONFIGURED");
   }
+
+  const deploymentEnvironment = requireDeploymentEnvironment(environment);
+  if (deploymentEnvironment === "staging") {
+    try {
+      assertStagingRuntimeConfiguration(environment);
+      return;
+    } catch (error) {
+      if (error instanceof StagingRuntimeConfigurationError) {
+        throw new ProductionAuthConfigurationError(error.code);
+      }
+      throw error;
+    }
+  }
+
+  rejectStagingCapabilities(environment);
+  requireHttpsOrigin(environment);
+  requireFormalLLM(environment);
+  requireFormalTTS(environment);
 }

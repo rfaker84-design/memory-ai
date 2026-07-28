@@ -12,6 +12,7 @@ export default defineConfig(({ mode }) => {
     define: {
       __MOBILE_DEBUG_BUILD__: JSON.stringify(channel === "debug"),
       __MOBILE_APP_ORIGIN__: JSON.stringify(sessionContract.appOrigin),
+      __MOBILE_STAGING_ACCESS_TOKEN__: JSON.stringify(sessionContract.stagingAccessToken ?? ""),
     },
   };
 });

@@ -107,7 +107,7 @@ test("the packaged same-site App origin receives credentialed CORS without wildc
   assert.equal(preflight.status, 204);
   assert.equal(preflight.headers.get("access-control-allow-origin"), "https://memoryai.test");
   assert.equal(preflight.headers.get("access-control-allow-credentials"), "true");
-  assert.equal(preflight.headers.get("access-control-allow-headers"), "Content-Type, Authorization, Idempotency-Key");
+  assert.equal(preflight.headers.get("access-control-allow-headers"), "Content-Type, Authorization, Idempotency-Key, X-MemoryAI-Staging-Access");
   assert.equal(preflight.headers.get("vary"), "Origin");
 
   const actual = middleware(new NextRequest("https://memoryai.test/api/auth/session", {
@@ -138,5 +138,55 @@ test("credentialed CORS serializes a configured Origin without a trailing slash"
     assert.equal(response.headers.get("access-control-allow-origin"), "https://memoryai.test");
   } finally {
     process.env.AUTH_ALLOWED_ORIGIN = configured;
+  }
+});
+
+test("staging requires the Debug APK access token after CORS preflight while permitting its signed local-media read", () => {
+  const environment: NodeJS.ProcessEnv = {
+    NODE_ENV: "production",
+    DEPLOYMENT_ENV: "staging",
+    DATABASE_URL: "postgresql://staging:secret@127.0.0.1:5432/memoryai_staging",
+    STAGING_DATABASE_ISOLATION: "isolated",
+    STAGING_DATABASE_NAME: "memoryai_staging",
+    STAGING_DATA_SOURCE: "empty",
+    AUTH_ALLOWED_ORIGIN: "https://app.staging.yijianmemory.cn",
+    STAGING_ACCESS_TOKEN: "a".repeat(48),
+    STAGING_FIXED_SMS_CODE: "246810",
+    STAGING_FIXED_SMS_PHONES: "+8613800013800,+8613900013900",
+    STAGING_MEDIA_ROOT: "/var/lib/memoryai-staging/media",
+    STAGING_MEDIA_SIGNING_SECRET: "m".repeat(32),
+    LLM_PROVIDER: "mock",
+    TTS_PROVIDER: "mock",
+  };
+  const previous = new Map(Object.keys(environment).map((key) => [key, process.env[key]]));
+  Object.assign(process.env, environment);
+  try {
+    const preflight = middleware(new NextRequest("https://api.staging.yijianmemory.cn/api/auth/session", {
+      method: "OPTIONS",
+      headers: { origin: "https://app.staging.yijianmemory.cn" },
+    }));
+    assert.equal(preflight.status, 204);
+
+    const denied = middleware(new NextRequest("https://api.staging.yijianmemory.cn/api/auth/session", {
+      headers: { origin: "https://app.staging.yijianmemory.cn" },
+    }));
+    assert.equal(denied.status, 403);
+    assert.equal(denied.headers.get("access-control-allow-origin"), "https://app.staging.yijianmemory.cn");
+
+    const allowed = middleware(new NextRequest("https://api.staging.yijianmemory.cn/api/auth/session", {
+      headers: {
+        origin: "https://app.staging.yijianmemory.cn",
+        "x-memoryai-staging-access": "a".repeat(48),
+      },
+    }));
+    assert.equal(allowed.headers.get("x-middleware-next"), "1");
+
+    const signedMedia = middleware(new NextRequest("https://api.staging.yijianmemory.cn/api/media/local?signature=opaque"));
+    assert.equal(signedMedia.headers.get("x-middleware-next"), "1");
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 });

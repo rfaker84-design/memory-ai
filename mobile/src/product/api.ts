@@ -22,10 +22,15 @@ function apiUrl(path: string): string {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response: Response;
   try {
+    const headers = new Headers(init.headers);
+    headers.set("Accept", "application/json");
+    if (__MOBILE_DEBUG_BUILD__ && runtimeConfig.stagingAccessToken) {
+      headers.set("X-MemoryAI-Staging-Access", runtimeConfig.stagingAccessToken);
+    }
     response = await fetch(apiUrl(path), {
       ...init,
       credentials: "include",
-      headers: { Accept: "application/json", ...init.headers },
+      headers,
     });
   } catch {
     throw new ProductApiError(0, "网络暂时不稳定，请稍后再试");

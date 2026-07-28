@@ -30,6 +30,7 @@ export const runtimeConfig = Object.freeze({
     appHostname(),
     import.meta.env.VITE_MOBILE_API_BASE_URL,
   ),
+  stagingAccessToken: __MOBILE_DEBUG_BUILD__ ? __MOBILE_STAGING_ACCESS_TOKEN__ || null : null,
 });
 
 export function debugVideoUrl(): string | null {

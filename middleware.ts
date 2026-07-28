@@ -3,10 +3,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkAllowedOrigin } from "@/src/server/security/origin";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 import { isLegacyChatCommerceTestEnvironment } from "@/features/payment/legacy-chat-commerce-gate";
+import {
+  hasValidStagingAccessToken,
+  isStagingRuntime,
+  StagingRuntimeConfigurationError,
+} from "@/src/server/runtime/staging-contract";
 
 const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const CORS_ALLOWED_METHODS = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
-const CORS_ALLOWED_HEADERS = "Content-Type, Authorization, Idempotency-Key";
+const CORS_ALLOWED_HEADERS = "Content-Type, Authorization, Idempotency-Key, X-MemoryAI-Staging-Access";
+const STAGING_ACCESS_HEADER = "x-memoryai-staging-access";
 
 const FORMAL_API_PATHS = new Set([
   "/api/auth/send-code",
@@ -36,6 +42,7 @@ const FORMAL_API_PATHS = new Set([
   "/api/commerce/testing/callbacks",
   "/api/internal/commerce-reconciliation",
   "/api/media/upload",
+  "/api/media/local",
   "/api/health",
   "/api/health/database",
   "/api/health/ai",
@@ -81,6 +88,19 @@ function corsFailure(code: "AUTH_ALLOWED_ORIGIN_NOT_CONFIGURED" | "AUTH_ALLOWED_
   ));
 }
 
+function stagingAccessFailure(status: 403 | 503, allowedOrigin?: string): NextResponse {
+  const response = applyAuthNoStore(NextResponse.json(
+    { error: status === 403 ? "STAGING_ACCESS_DENIED" : "STAGING_UNAVAILABLE" },
+    { status },
+  ));
+  return allowedOrigin ? applyCredentialedCors(response, allowedOrigin) : response;
+}
+
+function requiresStagingAccessToken(request: NextRequest): boolean {
+  if (!isStagingRuntime()) return false;
+  return !(request.method === "GET" && request.nextUrl.pathname === "/api/media/local");
+}
+
 export function middleware(request: NextRequest) {
   if (
     LEGACY_CHAT_COMMERCE_API_PATHS.has(request.nextUrl.pathname)
@@ -100,6 +120,7 @@ export function middleware(request: NextRequest) {
   }
 
   const browserOrigin = request.headers.get("origin");
+  let allowedCorsOrigin: string | undefined;
   if (request.method === "OPTIONS") {
     const result = checkAllowedOrigin(request);
     if (!result.allowed) return corsFailure(result.code);
@@ -109,8 +130,23 @@ export function middleware(request: NextRequest) {
   if (browserOrigin) {
     const result = checkAllowedOrigin(request);
     if (!result.allowed) return corsFailure(result.code);
-    return applyCredentialedCors(NextResponse.next(), browserOrigin);
+    allowedCorsOrigin = browserOrigin;
   }
+
+  if (requiresStagingAccessToken(request)) {
+    try {
+      if (!hasValidStagingAccessToken(request.headers.get(STAGING_ACCESS_HEADER))) {
+        return stagingAccessFailure(403, allowedCorsOrigin);
+      }
+    } catch (error) {
+      if (error instanceof StagingRuntimeConfigurationError) {
+        return stagingAccessFailure(503, allowedCorsOrigin);
+      }
+      throw error;
+    }
+  }
+
+  if (allowedCorsOrigin) return applyCredentialedCors(NextResponse.next(), allowedCorsOrigin);
 
   if (!MUTATION_METHODS.has(request.method)) return NextResponse.next();
 

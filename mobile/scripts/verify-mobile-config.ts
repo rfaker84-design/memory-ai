@@ -1,8 +1,24 @@
 import config from "../capacitor.config";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 const RELEASE_APP_HOSTNAME = "app.yijianmemory.cn";
+const RELEASE_FORBIDDEN_MARKERS = [
+  "app.staging.yijianmemory.cn",
+  "api.staging.yijianmemory.cn",
+  "x-memoryai-staging-access",
+  "staging_fixed_sms",
+  "vite_mobile_staging_access_token",
+];
+
+function releaseAssetText(directory: string): string {
+  return readdirSync(directory, { withFileTypes: true })
+    .map((entry) => {
+      const child = resolve(directory, entry.name);
+      return entry.isDirectory() ? releaseAssetText(child) : readFileSync(child).toString("utf8");
+    })
+    .join("\n");
+}
 
 if (config.appId !== "cn.yijianmemory.mobile" || config.webDir !== "dist") {
   throw new Error("Invalid native application identity or web directory.");
@@ -28,4 +44,11 @@ if (existsSync(nativeConfigPath)) {
   }
 }
 
-console.log("Release mobile configuration is local-package only; no remote server.url or Debug API is present.");
+const releaseAssetsPath = resolve("android/app/src/main/assets/public");
+if (existsSync(releaseAssetsPath)) {
+  const assets = releaseAssetText(releaseAssetsPath).toLowerCase();
+  const forbidden = RELEASE_FORBIDDEN_MARKERS.find((marker) => assets.includes(marker));
+  if (forbidden) throw new Error(`Android Release assets contain forbidden staging marker: ${forbidden}`);
+}
+
+console.log("Release mobile configuration is local-package only; no remote server.url, staging token, or Debug API is present.");

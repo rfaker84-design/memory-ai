@@ -10,6 +10,7 @@ import {
 
 const productionEnvironment: NodeJS.ProcessEnv = {
   NODE_ENV: "production",
+  DEPLOYMENT_ENV: "production",
   DATABASE_URL: "postgresql://memoryai:password@127.0.0.1:5432/memoryai",
   AUTH_VERIFICATION_PEPPER: "p".repeat(32),
   SESSION_SECRET: "s".repeat(32),
@@ -20,6 +21,7 @@ const productionEnvironment: NodeJS.ProcessEnv = {
   LLM_PROVIDER: "deepseek",
   DEEPSEEK_API_KEY: "test-provider-key",
   DEEPSEEK_MODEL: "deepseek-chat",
+  TTS_PROVIDER: "tencent",
 };
 
 test("production startup accepts core authentication configuration without SMS capability variables", () => {
@@ -33,11 +35,13 @@ test("production authentication startup configuration fails closed for every req
     ["SESSION_SECRET", "SESSION_SECRET_NOT_CONFIGURED"],
     ["REFUND_REVIEW_ACCESS_TOKEN", "REFUND_REVIEW_ACCESS_TOKEN_NOT_CONFIGURED"],
     ["AUTH_ALLOWED_ORIGIN", "AUTH_ALLOWED_ORIGIN_NOT_CONFIGURED"],
+    ["DEPLOYMENT_ENV", "DEPLOYMENT_ENV_INVALID"],
     ["AUTH_TRUST_NGINX_PROXY", "AUTH_TRUST_NGINX_PROXY_NOT_CONFIGURED"],
     ["AUTH_PROXY_LOOPBACK_ONLY", "AUTH_PROXY_LOOPBACK_CONTRACT_NOT_CONFIGURED"],
     ["LLM_PROVIDER", "DEEPSEEK_PROVIDER_REQUIRED"],
     ["DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY_NOT_CONFIGURED"],
     ["DEEPSEEK_MODEL", "DEEPSEEK_MODEL_NOT_CONFIGURED"],
+    ["TTS_PROVIDER", "TENCENT_TTS_PROVIDER_REQUIRED"],
   ];
 
   for (const [name, code] of cases) {
@@ -57,6 +61,7 @@ test("production authentication startup configuration rejects weak secrets and u
     ["REFUND_REVIEW_ACCESS_TOKEN", "too-short", "REFUND_REVIEW_ACCESS_TOKEN_NOT_CONFIGURED"],
     ["DATABASE_URL", "mysql://example.test/auth", "DATABASE_URL_INVALID"],
     ["AUTH_ALLOWED_ORIGIN", "http://memoryai.test", "AUTH_ALLOWED_ORIGIN_INVALID"],
+    ["TTS_PROVIDER", "mock", "TENCENT_TTS_PROVIDER_REQUIRED"],
   ] as const) {
     const environment = { ...productionEnvironment, [name]: value };
     assert.throws(
@@ -69,6 +74,21 @@ test("production authentication startup configuration rejects weak secrets and u
 
 test("non-production configuration does not prevent local development startup", () => {
   assert.doesNotThrow(() => assertProductionAuthConfiguration({ NODE_ENV: "development" }));
+});
+
+test("production rejects every staging-only capability even when its other settings are valid", () => {
+  for (const override of [
+    { STAGING_ACCESS_TOKEN: "a".repeat(48) },
+    { STAGING_FIXED_SMS_CODE: "246810" },
+    { STAGING_MEDIA_ROOT: "/var/lib/memoryai-staging/media" },
+    { STORAGE_PROVIDER: "local" },
+  ]) {
+    assert.throws(
+      () => assertProductionAuthConfiguration({ ...productionEnvironment, ...override }),
+      (error: unknown) => error instanceof ProductionAuthConfigurationError
+        && error.code === "STAGING_CAPABILITY_FORBIDDEN",
+    );
+  }
 });
 
 test("production instrumentation invokes the startup gate before serving requests", async () => {
