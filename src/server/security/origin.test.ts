@@ -94,3 +94,49 @@ test("safe methods pass through without Origin", () => {
   const response = middleware(new NextRequest("https://memoryai.test/api/health"));
   assert.equal(response.headers.get("x-middleware-next"), "1");
 });
+
+test("the packaged same-site App origin receives credentialed CORS without wildcard reflection", async () => {
+  const preflight = middleware(new NextRequest("https://memoryai.test/api/memories", {
+    method: "OPTIONS",
+    headers: {
+      origin: "https://memoryai.test",
+      "access-control-request-method": "POST",
+      "access-control-request-headers": "content-type,idempotency-key",
+    },
+  }));
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get("access-control-allow-origin"), "https://memoryai.test");
+  assert.equal(preflight.headers.get("access-control-allow-credentials"), "true");
+  assert.equal(preflight.headers.get("access-control-allow-headers"), "Content-Type, Authorization, Idempotency-Key");
+  assert.equal(preflight.headers.get("vary"), "Origin");
+
+  const actual = middleware(new NextRequest("https://memoryai.test/api/auth/session", {
+    headers: { origin: "https://memoryai.test" },
+  }));
+  assert.equal(actual.headers.get("access-control-allow-origin"), "https://memoryai.test");
+  assert.equal(actual.headers.get("access-control-allow-credentials"), "true");
+
+  const rejected = middleware(new NextRequest("https://memoryai.test/api/memories", {
+    method: "OPTIONS",
+    headers: { origin: "https://attacker.invalid" },
+  }));
+  assert.equal(rejected.status, 403);
+  assert.equal(rejected.headers.get("access-control-allow-origin"), null);
+  assert.equal(rejected.headers.get("access-control-allow-credentials"), null);
+  assert.equal((await rejected.json()).error, "ORIGIN_NOT_ALLOWED");
+});
+
+test("credentialed CORS serializes a configured Origin without a trailing slash", () => {
+  const configured = process.env.AUTH_ALLOWED_ORIGIN;
+  process.env.AUTH_ALLOWED_ORIGIN = "https://memoryai.test/";
+  try {
+    const response = middleware(new NextRequest("https://memoryai.test/api/memories", {
+      method: "OPTIONS",
+      headers: { origin: "https://memoryai.test" },
+    }));
+    assert.equal(response.status, 204);
+    assert.equal(response.headers.get("access-control-allow-origin"), "https://memoryai.test");
+  } finally {
+    process.env.AUTH_ALLOWED_ORIGIN = configured;
+  }
+});

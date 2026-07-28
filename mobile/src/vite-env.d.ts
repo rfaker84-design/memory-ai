@@ -10,3 +10,4 @@ interface ImportMeta {
 }
 
 declare const __MOBILE_DEBUG_BUILD__: boolean;
+declare const __MOBILE_APP_ORIGIN__: string;

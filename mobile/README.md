@@ -14,21 +14,28 @@ The native capability lab is reachable only in a **Debug** build through `yijian
 
 ## Secure staging connection
 
-Create a local environment file from `.env.staging.example` and set
-`VITE_MOBILE_API_BASE_URL` to an HTTPS non-production API origin. The value is
-available to the packaged UI for future API adapters; it is not assigned to
-Capacitor `server.url`.
+The secure session design is documented in
+[`SECURE_SESSION_CONTRACT.md`](./SECURE_SESSION_CONTRACT.md). Create a local
+environment file from `.env.staging.example`. A Debug build is pinned to the
+packaged local WebView origin `https://app.staging.yijianmemory.cn` and accepts
+only its same-site API sibling `https://api.staging.yijianmemory.cn`.
+
+The API value is available only to packaged Debug UI adapters; it is never
+assigned to Capacitor `server.url`. Release rejects both that value and the
+Debug test-video value at bundle time, then uses the local HTTPS origin
+`https://app.yijianmemory.cn` with no remote API configured.
 
 The staging host must:
 
 1. serve the existing Next.js app over HTTPS;
-2. set `AUTH_ALLOWED_ORIGIN` to that exact staging origin, so SMS login, logout and media mutations remain same-origin and keep their existing Cookie/session protection;
+2. set `AUTH_ALLOWED_ORIGIN=https://app.staging.yijianmemory.cn`; API CORS must return that exact Origin plus credential support, never `*`;
 3. use non-production SMS, PostgreSQL, COS and provider credentials;
 4. never redirect to `yijianmemory.cn`.
 
-`src/config/environment.ts` rejects HTTP and `yijianmemory.cn` /
-`www.yijianmemory.cn`. `capacitor.config.ts` has no `server` entry, and
-`verify:config` rejects any generated Android `server.url`.
+`src/config/environment.ts` rejects HTTP, LAN/IP targets, mismatched siblings,
+and any Release API injection. `capacitor.config.ts` has no `server.url` entry,
+and `verify:config` rejects a generated Android remote URL or non-HTTPS Release
+origin.
 
 ## Commands
 
@@ -42,18 +49,21 @@ npm install
 npm run verify:config
 npm run sync
 
-# Build a debug APK with a non-production API origin. The optional video is
-# debug-only evidence for the native save/share path.
-$env:VITE_MOBILE_API_BASE_URL = "https://mobile-staging.example.invalid"
+# Build a debug APK with an approved same-site staging API. The optional video
+# is debug-only evidence for the native save/share path.
+$env:MOBILE_APP_ORIGIN_HOST = "app.staging.yijianmemory.cn"
+$env:VITE_MOBILE_API_BASE_URL = "https://api.staging.yijianmemory.cn"
 $env:VITE_MOBILE_TEST_VIDEO_URL = "https://example.invalid/debug-video.mp4"
 npm run android:debug
 
 # Install a built debug APK on a connected device/emulator
 npm run android:install
 
-# Build and audit an unsigned release APK without environment injection
+# Build and audit an unsigned release APK without environment injection.
+# Release fails closed if either Debug variable is still defined.
 Remove-Item Env:VITE_MOBILE_API_BASE_URL -ErrorAction SilentlyContinue
 Remove-Item Env:VITE_MOBILE_TEST_VIDEO_URL -ErrorAction SilentlyContinue
+Remove-Item Env:MOBILE_APP_ORIGIN_HOST -ErrorAction SilentlyContinue
 npm run android:release-audit
 
 # On a macOS machine with Xcode and CocoaPods
