@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import MobileAppShell from "../src/components/MobileAppShell";
 import "./globals.css";
+import { RootDocument } from "./root-document";
 
 export const metadata: Metadata = {
   title: "忆见",
@@ -19,11 +20,8 @@ export const viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="zh-CN">
-      <body className="antialiased"
-        style={{ background: "#0B0A08", margin: 0, padding: 0 }}>
-        <MobileAppShell>{children}</MobileAppShell>
-      </body>
-    </html>
+    <RootDocument>
+      <MobileAppShell>{children}</MobileAppShell>
+    </RootDocument>
   );
 }
