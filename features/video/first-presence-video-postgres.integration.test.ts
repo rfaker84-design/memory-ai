@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import pg from "pg";
@@ -14,6 +16,9 @@ import {
 } from "./first-presence-video-postgres";
 import { FirstPresenceVideoService } from "./first-presence-video-service";
 import { ViduFirstPresenceNetworkError } from "./vidu-first-presence-provider";
+import { LocalStagingVideoArtifactStorage } from "./video-artifact-storage";
+import { FirstPresenceVideoArtifactQueryPort } from "./video-artifact-query";
+import { FirstPresenceVideoWorker } from "./first-presence-video-worker";
 
 const { Client } = pg;
 const gateApplicationName = "memoryai-video-pg14-gate";
@@ -142,9 +147,19 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
       ? { state: "failed" as const, providerState: "failed", credits: 44, errorCode: "PROVIDER_FAILED" }
       : { state: "succeeded" as const, providerState: "success", credits: 44, outputUrl: `https://example.test/${taskId}.mp4` },
   };
+  const artifactStorage = new LocalStagingVideoArtifactStorage({
+    root: await mkdtemp(path.join(os.tmpdir(), "memoryai-video-pg14-artifacts-")),
+    signingSecret: "v".repeat(48),
+    playbackBaseUrl: "https://staging.yijian.test/internal/video-playback",
+    downloader: {
+      download: async ({ jobId }) => ({
+        artifactKey: `provider/${jobId}.mp4`, body: Buffer.from("video"), contentType: "video/mp4", finalUrl: "https://provider.example/video.mp4",
+      }),
+    },
+  });
   const createService = () => new FirstPresenceVideoService(
     new FirstPresenceVideoPostgresRepository(), provider, new FirstPresenceCommerceEntitlementPort(commerce),
-    { download: async ({ jobId }) => ({ artifactKey: `video/${jobId}.mp4`, body: Buffer.from("video") }) },
+    artifactStorage,
     {
       inspect: async () => ({
         durationSeconds: 8,
@@ -189,6 +204,13 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
   assert.deepEqual((await verify.query(
     "SELECT status, outcome FROM commerce_generation_reservations WHERE id = $1", [approvedLink.reservation_id],
   )).rows[0], { status: "consumed", outcome: "succeeded" });
+  const artifacts = new FirstPresenceVideoArtifactQueryPort(artifactStorage);
+  const approvedArtifact = await artifacts.findApprovedForOwner({ externalUserId: owner, jobId: approved.id, expiresInSeconds: 60 });
+  assert.ok(approvedArtifact);
+  assert.equal(approvedArtifact.presentation, "additional_generation");
+  assert.equal(approvedArtifact.saveAllowed, true);
+  assert.match(approvedArtifact.playbackUrl, /signature=/);
+  assert.equal(await artifacts.findApprovedForOwner({ externalUserId: other, jobId: approved.id }), null, "cross-user artifact reads are hidden");
   assert.deepEqual((await verify.query(
     "SELECT review_key FROM video_generation_quality_reviews WHERE job_id = $1 AND reviewer_kind = 'manual'", [jobs[0].id],
   )).rows, [{ review_key: `manual.${jobs[0].id}` }], "actual UUID review key is accepted exactly once");
@@ -215,6 +237,7 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
 
   const injection = await createService().submit({ ...input, idempotencyKey: "video:gate:review-injection:0001" });
   assert.equal((await createService().recover(injection.id)).status, "manual_review_required");
+  assert.equal(await artifacts.findApprovedForOwner({ externalUserId: owner, jobId: injection.id }), null, "manual-review artifacts are never user-readable");
   const injectionLink = (await verify.query<{ reservation_id: string }>(
     "SELECT reservation_id FROM video_generation_jobs WHERE id = $1", [injection.id],
   )).rows[0];
@@ -351,6 +374,17 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
   assert.equal(Number((await verify.query(
     "SELECT COUNT(*)::text AS count FROM video_generation_reconciliations WHERE job_id = $1", [contested.id],
   )).rows[0].count), 1);
+  mode = "success";
+  const workerBaseline = submits;
+  const queuedForWorker = await createService().enqueue({ ...input, idempotencyKey: "video:gate:worker-restart:0001" });
+  const workerA = new FirstPresenceVideoWorker(new FirstPresenceVideoPostgresRepository(), createService());
+  const workerB = new FirstPresenceVideoWorker(new FirstPresenceVideoPostgresRepository(), createService());
+  await Promise.all([workerA.runOnce(), workerB.runOnce()]);
+  assert.equal(submits, workerBaseline + 1, "two PostgreSQL workers claim one queued job before Vidu submit");
+  await closePostgresPool();
+  await new FirstPresenceVideoWorker(new FirstPresenceVideoPostgresRepository(), createService()).runOnce();
+  assert.equal((await new FirstPresenceVideoPostgresRepository().findById(queuedForWorker.id))?.status, "manual_review_required", "a restarted worker resumes poll/download/quality without another submit");
+  assert.equal(submits, workerBaseline + 1);
   await assert.rejects(createService().submit({ ...input, externalUserId: other, memoryId: otherMemory!, idempotencyKey: "video:gate:cross-user:0001" }));
   await connections.close(verify);
   await closePostgresPool();

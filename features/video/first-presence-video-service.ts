@@ -62,6 +62,7 @@ export type FirstPresenceVideoRepository = {
     idempotencyKey: string;
   }): Promise<FirstPresenceVideoJob | null>;
   findById(id: string): Promise<FirstPresenceVideoJob | null>;
+  listWorkerCandidates(input: { limit: number }): Promise<FirstPresenceVideoJob[]>;
   createQueued(input: CreateFirstPresenceVideoInput): Promise<FirstPresenceVideoJob>;
   /** Atomically moves a queued job to submitting. Only its winner may call Vidu. */
   claimSubmission(id: string): Promise<FirstPresenceVideoJob | null>;
@@ -144,10 +145,12 @@ export type FirstPresenceEntitlementPort = {
 };
 
 export type FirstPresenceArtifactStore = {
-  download(input: { url: string; jobId: string }): Promise<{
-    artifactKey: string;
-    body: Buffer;
-  }>;
+  stageInput(input: { jobId: string; imageDataUrl: string }): Promise<void>;
+  readInput(input: { jobId: string }): Promise<string>;
+  deleteInput(input: { jobId: string }): Promise<void>;
+  download(input: { url: string; jobId: string }): Promise<{ artifactKey: string; body: Buffer; contentType: string | null }>;
+  stageArtifact(input: { jobId: string; body: Buffer; contentType: string | null }): Promise<{ artifactKey: string; body: Buffer; contentType: string | null }>;
+  deleteArtifact(input: { artifactKey: string }): Promise<void>;
 };
 
 export type FirstPresenceMediaProbePort = {
@@ -195,35 +198,71 @@ export class FirstPresenceVideoService {
     });
     if (existing) return existing;
 
-    const created = await this.repository.createQueued(input);
-    const job = await this.repository.claimSubmission(created.id);
-    // A concurrent worker already owns the durable submission claim. Returning
-    // the persisted job makes retries safe without a second provider request.
-    if (!job) {
-      return (await this.repository.findById(created.id)) ?? created;
-    }
-    const reservation = await this.entitlements.reserve({
+    const queued = await this.enqueue(input);
+    return this.processQueued(queued.id);
+  }
+
+  /** Persists the provider input in private staging before a worker may claim. */
+  async enqueue(input: CreateFirstPresenceVideoInput): Promise<FirstPresenceVideoJob> {
+    const existing = await this.repository.findByIdempotencyKey({
       externalUserId: input.externalUserId,
       memoryId: input.memoryId,
       idempotencyKey: input.idempotencyKey,
     });
-    if (reservation === "unavailable") {
+    if (existing) {
+      if (existing.status === "queued") {
+        await this.artifacts.stageInput({ jobId: existing.id, imageDataUrl: input.imageDataUrl });
+      }
+      return existing;
+    }
+    const created = await this.repository.createQueued(input);
+    try {
+      await this.artifacts.stageInput({ jobId: created.id, imageDataUrl: input.imageDataUrl });
+      return created;
+    } catch (error) {
       await this.repository.markFailed({
+        id: created.id,
+        providerState: null,
+        actualCredits: null,
+        errorCode: "INPUT_STAGING_FAILED",
+      });
+      throw error;
+    }
+  }
+
+  /** Only a winner of the durable queued -> submitting claim may call Vidu. */
+  async processQueued(jobId: string): Promise<FirstPresenceVideoJob> {
+    const current = await this.repository.findById(jobId);
+    if (!current) throw new Error("FIRST_PRESENCE_VIDEO_JOB_NOT_FOUND");
+    const job = await this.repository.claimSubmission(current.id);
+    // A concurrent worker already owns the durable submission claim. Returning
+    // the persisted job makes retries safe without a second provider request.
+    if (!job) {
+      return (await this.repository.findById(current.id)) ?? current;
+    }
+    const reservation = await this.entitlements.reserve({
+      externalUserId: job.externalUserId,
+      memoryId: job.memoryId,
+      idempotencyKey: job.idempotencyKey,
+    });
+    if (reservation === "unavailable") {
+      return this.repository.markFailed({
         id: job.id,
         providerState: null,
         actualCredits: null,
         errorCode: "ENTITLEMENT_UNAVAILABLE",
       });
-      throw new Error("FIRST_PRESENCE_VIDEO_ENTITLEMENT_UNAVAILABLE");
     }
     await this.repository.markReserved(job.id);
+    let submitted: FirstPresenceVideoJob;
     try {
+      const imageDataUrl = await this.artifacts.readInput({ jobId: job.id });
       const submission = await this.provider.submit({
-        imageDataUrl: input.imageDataUrl,
-        imageSha256: input.imageSha256,
+        imageDataUrl,
+        imageSha256: job.inputSha256,
         idempotencyKey: job.id,
       });
-      return await this.repository.markSubmitted({
+      submitted = await this.repository.markSubmitted({
         id: job.id,
         providerTaskId: submission.taskId,
         providerState: submission.providerState,
@@ -237,9 +276,9 @@ export class FirstPresenceVideoService {
         });
       }
       await this.entitlements.release({
-        externalUserId: input.externalUserId,
-        memoryId: input.memoryId,
-        idempotencyKey: input.idempotencyKey,
+        externalUserId: job.externalUserId,
+        memoryId: job.memoryId,
+        idempotencyKey: job.idempotencyKey,
       });
       return this.repository.markFailed({
         id: job.id,
@@ -248,6 +287,15 @@ export class FirstPresenceVideoService {
         errorCode: "SUBMIT_FAILED",
       });
     }
+    try {
+      await this.artifacts.deleteInput({ jobId: job.id });
+    } catch (error) {
+      console.error("[video] submitted input cleanup failed", {
+        jobId: job.id,
+        error: error instanceof Error ? error.message : "VIDEO_INPUT_CLEANUP_FAILED",
+      });
+    }
+    return submitted;
   }
 
   async recover(jobId: string): Promise<FirstPresenceVideoJob> {
@@ -281,10 +329,14 @@ export class FirstPresenceVideoService {
       action: input.action,
       reason: input.reason.trim(),
     };
-    return this.repository.settleManualReview({
+    const settled = await this.repository.settleManualReview({
       id: input.jobId,
       manualReview,
     });
+    if (settled.status === "rejected" && settled.artifactKey) {
+      await this.artifacts.deleteArtifact({ artifactKey: settled.artifactKey });
+    }
+    return settled;
   }
 
   private async pollAndFinalize(job: FirstPresenceVideoJob): Promise<FirstPresenceVideoJob> {
@@ -319,9 +371,9 @@ export class FirstPresenceVideoService {
       providerState: poll.providerState,
       actualCredits: poll.credits,
     });
-    let artifact: Awaited<ReturnType<FirstPresenceArtifactStore["download"]>>;
+    let downloaded: Awaited<ReturnType<FirstPresenceArtifactStore["download"]>>;
     try {
-      artifact = await this.artifacts.download({
+      downloaded = await this.artifacts.download({
         url: poll.outputUrl,
         jobId: job.id,
       });
@@ -335,12 +387,30 @@ export class FirstPresenceVideoService {
       });
     }
 
+    let artifact: Awaited<ReturnType<FirstPresenceArtifactStore["stageArtifact"]>>;
+    try {
+      artifact = await this.artifacts.stageArtifact({
+        jobId: job.id,
+        body: downloaded.body,
+        contentType: downloaded.contentType,
+      });
+    } catch {
+      await this.releaseUserEntitlement(job);
+      return this.repository.markFailed({
+        id: job.id,
+        providerState: poll.providerState,
+        actualCredits: poll.credits,
+        errorCode: "ARTIFACT_STAGING_FAILED",
+      });
+    }
+
     let quality: FirstPresenceQualityDecision;
     try {
       quality = evaluateFirstPresenceQuality({
         media: await this.mediaInspector.inspect(artifact),
       });
     } catch {
+      await this.artifacts.deleteArtifact({ artifactKey: artifact.artifactKey });
       await this.releaseUserEntitlement(job);
       return this.repository.markFailed({
         id: job.id,
@@ -351,17 +421,19 @@ export class FirstPresenceVideoService {
     }
 
     if (quality.status === "reject") {
+      await this.artifacts.deleteArtifact({ artifactKey: artifact.artifactKey });
       await this.releaseUserEntitlement(job, "invalidated");
       return this.repository.markRejected({
         id: job.id,
         providerState: poll.providerState,
         actualCredits: poll.credits,
-        artifactKey: artifact.artifactKey,
+        artifactKey: null,
         quality,
         errorCode: quality.reasons[0] ?? "QUALITY_REJECTED",
       });
     }
 
+    await this.artifacts.deleteInput({ jobId: job.id });
     return this.repository.markManualReviewRequired({
       id: job.id,
       providerState: poll.providerState,

@@ -108,6 +108,18 @@ export class FirstPresenceVideoPostgresRepository
     return readById(id);
   }
 
+  async listWorkerCandidates(input: { limit: number }): Promise<FirstPresenceVideoJob[]> {
+    const result = await queryPostgres<JobRow>(
+      `SELECT ${COLUMNS} FROM public.video_generation_jobs j
+       JOIN public.users u ON u.id = j.user_id
+       WHERE j.status IN ('queued', 'submitting', 'submitted', 'running', 'quality_pending')
+       ORDER BY j.created_at ASC
+       LIMIT $1`,
+      [input.limit],
+    );
+    return result.rows.map(job);
+  }
+
   async createQueued(input: CreateFirstPresenceVideoInput): Promise<FirstPresenceVideoJob> {
     return withPostgresTransaction(async (client) => {
       const owner = await client.query<{ id: string }>(

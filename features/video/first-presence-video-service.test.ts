@@ -61,6 +61,10 @@ class MemoryFirstPresenceRepository implements FirstPresenceVideoRepository {
     return this.jobs.get(id) ?? null;
   }
 
+  async listWorkerCandidates({ limit }: { limit: number }) {
+    return [...this.jobs.values()].filter((job) => ["queued", "submitting", "submitted", "running", "quality_pending"].includes(job.status)).slice(0, limit);
+  }
+
   async createQueued(input: {
     externalUserId: string;
     memoryId: string;
@@ -289,10 +293,16 @@ function serviceWith(input: {
     provider,
     entitlements,
     {
+      stageInput: async () => undefined,
+      readInput: async () => image,
+      deleteInput: async () => undefined,
       download: async () => ({
         artifactKey: "first-presence/video.mp4",
         body: Buffer.from("mp4"),
+        contentType: "video/mp4",
       }),
+      stageArtifact: async ({ body }) => ({ artifactKey: "first-presence/video.mp4", body, contentType: "video/mp4" }),
+      deleteArtifact: async () => undefined,
     },
     {
       inspect: async () =>
