@@ -21,6 +21,7 @@ const mutationPaths = [
   "/api/commerce/refunds",
   "/api/commerce/referrals/code",
   "/api/commerce/referrals/qualifications",
+  "/api/internal/video-reconciliation",
   "/api/media/upload",
   "/api/media/media-id",
 ];

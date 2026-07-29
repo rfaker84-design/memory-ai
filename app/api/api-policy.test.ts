@@ -123,9 +123,19 @@ test("middleware enforces the formal API allowlist before route execution", asyn
   assertNoStore(formalMutation);
 });
 
+test("video reconciliation is an explicitly audited formal internal route", () => {
+  const pathname = "/api/internal/video-reconciliation";
+  assert.equal(EXACT_FORMAL_PATHS.has(pathname), true);
+  assert.equal(isFormalApiPath(pathname), true);
+  const source = readFileSync("app/api/internal/video-reconciliation/_handler.ts", "utf8");
+  assert.match(source, /YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED/);
+  assert.match(source, /YIJIAN_VIDEO_RECONCILIATION_ACCESS_TOKEN/);
+  assert.match(source, /timingSafeEqual/);
+});
+
 test("every tracked non-formal Route Handler is a route-level 410", async () => {
   const routes = trackedRoutes();
-  assert.equal(routes.length, 112, "the audit must enumerate the complete tracked API surface");
+  assert.equal(routes.length, 113, "the audit must enumerate the complete tracked API surface");
 
   for (const { file, pathname } of routes) {
     const formal = isFormalApiPath(pathname);
