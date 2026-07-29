@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 
 import {
+  DatabaseDependencyError,
   queryPostgres,
   withPostgresTransaction,
 } from "../../src/server/database";
@@ -415,7 +416,8 @@ export class FirstPresenceVideoOwnerPostgresPort
       KEY_PATTERN,
     );
 
-    return withPostgresTransaction(async (client) => {
+    try {
+      return await withPostgresTransaction(async (client) => {
       const user = await client.query<{ id: string }>(
         `SELECT id FROM public.users WHERE external_id = $1 FOR UPDATE`,
         [externalUserId],
@@ -496,7 +498,19 @@ export class FirstPresenceVideoOwnerPostgresPort
         if (error instanceof FirstPresenceVideoOwnerApiError) throw error;
         throw new FirstPresenceVideoOwnerApiError("VIDEO_INPUT_STAGING_UNAVAILABLE");
       }
-    });
+      });
+    } catch (error) {
+      // Domain rejections occur inside a transaction for correct locking and
+      // rollback, but are still client-visible 4xx conditions rather than a
+      // database outage. All other database failures remain fail-closed.
+      if (
+        error instanceof DatabaseDependencyError
+        && error.cause instanceof FirstPresenceVideoOwnerApiError
+      ) {
+        throw error.cause;
+      }
+      throw error;
+    }
   }
 
   async listForOwner(input: {

@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { NextRequest } from "next/server";
 import pg from "pg";
 
+import { createFirstPresencePlaybackAuthorizationHandler } from "../../app/api/memories/[memoryId]/first-presence-video/[jobId]/playback/_handler";
+import { createFirstPresencePlaybackReadHandler } from "../../app/api/first-presence-video/playback/[token]/_handler";
 import { closePostgresPool } from "../../src/server/database";
+import type { AuthSession } from "../../src/server/auth";
 import { getCommerceProduct } from "../commerce/catalog";
 import { CommercePostgresDataSource } from "../commerce/commerce-postgres-datasource";
 import {
@@ -15,6 +19,17 @@ import {
   FirstPresenceVideoPostgresRepository,
 } from "./first-presence-video-postgres";
 import { FirstPresenceVideoService } from "./first-presence-video-service";
+import {
+  FirstPresenceVideoOwnerApiError,
+  FirstPresenceVideoOwnerApiService,
+  FirstPresenceVideoOwnerPostgresPort,
+  NoopFirstPresenceVideoQueuePort,
+} from "./first-presence-video-owner-api";
+import {
+  FirstPresencePlaybackAuthorizationService,
+  FirstPresencePlaybackSigner,
+  FirstPresenceVideoArtifactStorageReader,
+} from "./first-presence-video-playback";
 import { ViduFirstPresenceNetworkError } from "./vidu-first-presence-provider";
 import { LocalStagingVideoArtifactStorage } from "./video-artifact-storage";
 import { FirstPresenceVideoArtifactQueryPort } from "./video-artifact-query";
@@ -85,10 +100,12 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
   timeout: 120_000,
 }, async () => {
   assert.ok(adminUrlValue);
-  const adminUrl = new URL(adminUrlValue);
-  assertGate(adminUrl);
+  let adminUrl: URL | null = null;
+  let artifactRoot: string | null = null;
   const connections = new GateConnections();
   try {
+  adminUrl = new URL(adminUrlValue);
+  assertGate(adminUrl);
   const admin = connections.open(adminUrl.toString());
   await admin.connect();
   await reset(admin, gateDatabase);
@@ -127,6 +144,20 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
     `INSERT INTO public.memories (user_id, name, idempotency_key, creation_idempotency_key)
      VALUES ($1, 'Other TA', $2, $3) RETURNING id`, [otherId, sha("video-gate-other-memory"), "video:gate:other:0001"]
   )).rows[0].id;
+  const ownerPortraitSha = sha("video-gate-owner-portrait");
+  await target.query(
+    `INSERT INTO public.media_assets (
+       user_id, memory_id, media_type, storage_key, mime_type, size_bytes,
+       sha256, status, metadata
+     ) VALUES ($1, $2, 'image', $3, 'image/png', 3, $4, 'uploaded', $5::jsonb)`,
+    [
+      ownerId,
+      memory,
+      "media/video-gate/owner-portrait.png",
+      ownerPortraitSha,
+      JSON.stringify({ qualityPreflightStatus: "passed" }),
+    ],
+  );
   await connections.close(target);
 
   Object.assign(process.env, { NODE_ENV: "test", DATABASE_URL: targetUrl, DATABASE_SSL: "false", DATABASE_POOL_MAX: "24" });
@@ -148,7 +179,7 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
       : { state: "succeeded" as const, providerState: "success", credits: 44, outputUrl: `https://example.test/${taskId}.mp4` },
   };
   const artifactStorage = new LocalStagingVideoArtifactStorage({
-    root: await mkdtemp(path.join(os.tmpdir(), "memoryai-video-pg14-artifacts-")),
+    root: artifactRoot = await mkdtemp(path.join(os.tmpdir(), "memoryai-video-pg14-artifacts-")),
     signingSecret: "v".repeat(48),
     playbackBaseUrl: "https://staging.yijian.test/internal/video-playback",
     downloader: {
@@ -180,10 +211,167 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
       if (reviewerAccount !== "video-reviewer@yijian.test") throw new Error("FIRST_PRESENCE_REVIEW_UNAUTHORIZED");
     } },
   );
+  const verify = connections.open(targetUrl);
+  await verify.connect();
+  const failedOwnerPort = new FirstPresenceVideoOwnerPostgresPort(() => ({
+    stage: async () => { throw new Error("INPUT_STAGING_INJECTED_FAILURE"); },
+    discard: async () => undefined,
+  }));
+  const failedOwnerApi = new FirstPresenceVideoOwnerApiService(
+    failedOwnerPort,
+    failedOwnerPort,
+    new NoopFirstPresenceVideoQueuePort(),
+  );
+  await assert.rejects(
+    failedOwnerApi.create({
+      externalUserId: owner,
+      memoryId: memory!,
+      idempotencyKey: "video:gate:owner-staging-failure:0001",
+      intent: "initial_preview",
+    }),
+    (error: unknown) => error instanceof FirstPresenceVideoOwnerApiError
+      && error.code === "VIDEO_INPUT_STAGING_UNAVAILABLE",
+  );
+  assert.equal(Number((await verify.query(
+    "SELECT COUNT(*)::text AS count FROM video_generation_jobs WHERE idempotency_key = 'video:gate:owner-staging-failure:0001'",
+  )).rows[0].count), 0, "input staging failure rolls back the durable job");
+  assert.equal(Number((await verify.query(
+    "SELECT COUNT(*)::text AS count FROM commerce_generation_reservations WHERE request_key = 'video:gate:owner-staging-failure:0001'",
+  )).rows[0].count), 0, "input staging failure rolls back its reservation");
+
+  const ownerPort = new FirstPresenceVideoOwnerPostgresPort(() => ({
+    stage: ({ jobId }) => artifactStorage.stageInput({
+      jobId,
+      imageDataUrl: "data:image/png;base64,YWJj",
+    }),
+    discard: ({ jobId }) => artifactStorage.deleteInput({ jobId }),
+  }));
+  const ownerApi = new FirstPresenceVideoOwnerApiService(
+    ownerPort,
+    ownerPort,
+    new NoopFirstPresenceVideoQueuePort(),
+  );
+  await assert.rejects(
+    ownerApi.create({
+      externalUserId: owner,
+      memoryId: memory!,
+      idempotencyKey: "video:gate:two-rounds-required:0001",
+      intent: "additional_generation",
+    }),
+    (error: unknown) => error instanceof FirstPresenceVideoOwnerApiError
+      && error.code === "TWO_CHAT_ROUNDS_REQUIRED",
+  );
+  const ownerPreview = await ownerApi.create({
+    externalUserId: owner,
+    memoryId: memory!,
+    idempotencyKey: "video:gate:owner-initial-preview:0001",
+    intent: "initial_preview",
+  });
+  assert.equal(ownerPreview.status, "queued");
+  const ownerPreviewReplay = await ownerApi.create({
+    externalUserId: owner,
+    memoryId: memory!,
+    idempotencyKey: "video:gate:owner-initial-preview:0001",
+    intent: "initial_preview",
+  });
+  assert.equal(ownerPreviewReplay.id, ownerPreview.id, "owner idempotency does not create a second job or reservation");
+  const ownerWorker = new FirstPresenceVideoWorker(new FirstPresenceVideoPostgresRepository(), createService());
+  await ownerWorker.runOnce();
+  await ownerWorker.runOnce();
+  const ownerPreviewApproved = await createService().review({
+    jobId: ownerPreview.id,
+    reviewerAccount: "video-reviewer@yijian.test",
+    action: "approve",
+    reason: "isolated owner initial preview review",
+    now: new Date("2026-07-29T00:00:00.000Z"),
+  });
+  assert.equal(ownerPreviewApproved.status, "succeeded");
+  const ownerArtifacts = new FirstPresenceVideoArtifactQueryPort(artifactStorage);
+  const ownerPreviewArtifact = await ownerArtifacts.findApprovedForOwner({
+    externalUserId: owner,
+    memoryId: memory!,
+    jobId: ownerPreview.id,
+  });
+  assert.ok(ownerPreviewArtifact);
+  assert.equal(ownerPreviewArtifact.presentation, "initial_preview");
+  assert.equal(ownerPreviewArtifact.saveAllowed, false, "initial previews are inline-only and never acquire save rights");
+
+  const playbackSigner = new FirstPresencePlaybackSigner("p".repeat(48));
+  const ownerSession = async () => ({ externalUserId: owner } as AuthSession);
+  const authorizationHandler = createFirstPresencePlaybackAuthorizationHandler(
+    () => new FirstPresencePlaybackAuthorizationService(ownerArtifacts, playbackSigner),
+    ownerSession,
+  );
+  const authorizationResponse = await authorizationHandler.GET(new NextRequest(
+    `https://memoryai.test/api/memories/${memory}/first-presence-video/${ownerPreview.id}/playback`,
+  ), { params: Promise.resolve({ memoryId: memory!, jobId: ownerPreview.id }) });
+  assert.equal(authorizationResponse.status, 200);
+  const authorizationBody = await authorizationResponse.json() as { playback: { url: string; saveAllowed: boolean; contentDisposition: string } };
+  assert.equal(authorizationBody.playback.saveAllowed, false);
+  assert.equal(authorizationBody.playback.contentDisposition, "inline");
+  assert.doesNotMatch(JSON.stringify(authorizationBody), /video-artifacts|provider|storage_key|\\.mp4/i);
+  const playbackToken = decodeURIComponent(new URL(authorizationBody.playback.url, "https://memoryai.test").pathname.split("/").at(-1)!);
+  const playbackHandler = createFirstPresencePlaybackReadHandler(
+    () => ({
+      artifacts: ownerArtifacts,
+      reader: new FirstPresenceVideoArtifactStorageReader(artifactStorage),
+      signer: playbackSigner,
+    }),
+    ownerSession,
+  );
+  const playbackResponse = await playbackHandler.GET(new NextRequest(
+    `https://memoryai.test/api/first-presence-video/playback/${playbackToken}`,
+  ), { params: Promise.resolve({ token: playbackToken }) });
+  assert.equal(playbackResponse.status, 200);
+  assert.equal(await playbackResponse.text(), "video");
+  assert.equal(playbackResponse.headers.get("content-type"), "video/mp4");
+  assert.equal(playbackResponse.headers.get("content-length"), "5");
+  assert.equal(playbackResponse.headers.get("accept-ranges"), "bytes");
+  assert.match(playbackResponse.headers.get("content-disposition") ?? "", /^inline/);
+  const rangeResponse = await playbackHandler.GET(new NextRequest(
+    `https://memoryai.test/api/first-presence-video/playback/${playbackToken}`,
+    { headers: { range: "bytes=1-3" } },
+  ), { params: Promise.resolve({ token: playbackToken }) });
+  assert.equal(rangeResponse.status, 206);
+  assert.equal(await rangeResponse.text(), "ide");
+  assert.equal(rangeResponse.headers.get("content-range"), "bytes 1-3/5");
+  const multiRangeResponse = await playbackHandler.GET(new NextRequest(
+    `https://memoryai.test/api/first-presence-video/playback/${playbackToken}`,
+    { headers: { range: "bytes=0-1,3-4" } },
+  ), { params: Promise.resolve({ token: playbackToken }) });
+  assert.equal(multiRangeResponse.status, 416);
+  const otherSession = async () => ({ externalUserId: other } as AuthSession);
+  const crossUserRead = createFirstPresencePlaybackReadHandler(
+    () => ({ artifacts: ownerArtifacts, reader: new FirstPresenceVideoArtifactStorageReader(artifactStorage), signer: playbackSigner }),
+    otherSession,
+  );
+  const crossUserResponse = await crossUserRead.GET(new NextRequest(
+    `https://memoryai.test/api/first-presence-video/playback/${playbackToken}`,
+  ), { params: Promise.resolve({ token: playbackToken }) });
+  assert.equal(crossUserResponse.status, 404);
+  const expiredToken = playbackSigner.issue({ artifact: ownerPreviewArtifact, externalUserId: owner, now: new Date(0), ttlSeconds: 1 }).token;
+  const expiredResponse = await playbackHandler.GET(new NextRequest(
+    `https://memoryai.test/api/first-presence-video/playback/${expiredToken}`,
+  ), { params: Promise.resolve({ token: expiredToken }) });
+  assert.equal(expiredResponse.status, 404);
+  const tamperedToken = `${playbackToken.slice(0, -1)}${playbackToken.endsWith("a") ? "b" : "a"}`;
+  const tamperedResponse = await playbackHandler.GET(new NextRequest(
+    `https://memoryai.test/api/first-presence-video/playback/${tamperedToken}`,
+  ), { params: Promise.resolve({ token: tamperedToken }) });
+  assert.equal(tamperedResponse.status, 404);
+  const reboundJobId = "00000000-0000-4000-8000-000000000099";
+  const reboundArtifact = await artifactStorage.stageArtifact({ jobId: reboundJobId, body: Buffer.from("other"), contentType: "video/mp4" });
+  await verify.query("UPDATE public.video_generation_jobs SET artifact_key = $2 WHERE id = $1", [ownerPreview.id, reboundArtifact.artifactKey]);
+  const reboundResponse = await playbackHandler.GET(new NextRequest(
+    `https://memoryai.test/api/first-presence-video/playback/${playbackToken}`,
+  ), { params: Promise.resolve({ token: playbackToken }) });
+  assert.equal(reboundResponse.status, 404, "a token cannot survive an artifact binding change");
+  await verify.query("UPDATE public.video_generation_jobs SET artifact_key = $2 WHERE id = $1", [ownerPreview.id, ownerPreviewArtifact.artifactKey]);
+  const submitsBeforeServiceFlows = submits;
   const input = { externalUserId: owner, memoryId: memory!, idempotencyKey: "video:gate:concurrent:0001", imageDataUrl: "data:image/png;base64,YWJj", imageSha256: sha("image") };
   const jobs = await Promise.all(Array.from({ length: 16 }, () => createService().submit(input)));
   assert.equal(new Set(jobs.map((job) => job.id)).size, 1);
-  assert.equal(submits, 1, "multiworker duplicate requests submit once");
+  assert.equal(submits, submitsBeforeServiceFlows + 1, "multiworker duplicate requests submit once");
   await closePostgresPool(); // process restart boundary
   const finalized = await Promise.all(Array.from({ length: 12 }, () => createService().recover(jobs[0].id)));
   assert.equal(finalized.every((job) => job.status === "manual_review_required"), true);
@@ -195,8 +383,6 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
     now: new Date("2026-07-28T08:00:00.000Z"),
   });
   assert.equal(approved.status, "succeeded");
-  const verify = connections.open(targetUrl);
-  await verify.connect();
   const approvedLink = (await verify.query<{ reservation_id: string }>(
     "SELECT reservation_id FROM video_generation_jobs WHERE id = $1", [jobs[0].id],
   )).rows[0];
@@ -302,7 +488,7 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
   assert.equal(replays.every((job) => job.id === uncertain.id && job.status === "submission_uncertain"), true);
   assert.equal(recoveredUncertain.every((job) => job.status === "submission_uncertain"), true);
   assert.equal(restartedRecovery.every((job) => job.status === "submission_uncertain"), true);
-  assert.equal(submits, 4, "the fourth submit is the initial lost response; replays never submit again");
+  assert.equal(submits, submitsBeforeServiceFlows + 4, "the fourth submit is the initial lost response; replays never submit again");
   const uncertainLink = (await verify.query<{ reservation_id: string; provider_task_id: string | null; provider_submission_state: string }>(
     "SELECT reservation_id, provider_task_id, provider_submission_state FROM video_generation_jobs WHERE id = $1", [uncertain.id],
   )).rows[0];
@@ -326,7 +512,7 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
     repository.reconcileUncertainSubmission(attachRequest),
   ));
   assert.equal(attached.every((job) => job.status === "submitted" && job.providerTaskId === attachRequest.providerTaskId), true);
-  assert.equal(submits, 4, "attach never submits or consumes a credit");
+  assert.equal(submits, submitsBeforeServiceFlows + 4, "attach never submits or consumes a credit");
   assert.equal((await createService().recover(uncertain.id)).status, "manual_review_required", "attached task returns to normal polling and review");
   assert.equal(Number((await verify.query(
     "SELECT COUNT(*)::text AS count FROM video_generation_reconciliations WHERE job_id = $1", [uncertain.id],
@@ -335,7 +521,7 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
   mode = "lost";
   const unresolved = await createService().submit({ ...input, idempotencyKey: "video:gate:release-unresolved:0001" });
   assert.equal(unresolved.status, "submission_uncertain");
-  assert.equal(submits, 5);
+  assert.equal(submits, submitsBeforeServiceFlows + 5);
   const unresolvedLink = (await verify.query<{ reservation_id: string }>(
     "SELECT reservation_id FROM video_generation_jobs WHERE id = $1", [unresolved.id],
   )).rows[0];
@@ -406,5 +592,21 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
   } finally {
     await connections.closeAll();
     await closePostgresPool();
+    if (adminUrl) {
+      const cleanup = new Client({ connectionString: adminUrl.toString() });
+      try {
+        await cleanup.connect();
+        await cleanup.query(`DROP DATABASE IF EXISTS "${gateDatabase}"`);
+        await cleanup.query(`DROP DATABASE IF EXISTS "${rollbackDatabase}"`);
+        const leftovers = await cleanup.query<{ count: string }>(
+          "SELECT COUNT(*)::text AS count FROM pg_database WHERE datname = ANY($1::text[])",
+          [[gateDatabase, rollbackDatabase]],
+        );
+        assert.equal(Number(leftovers.rows[0]?.count ?? 0), 0, "gate removes every temporary database");
+      } finally {
+        await cleanup.end();
+      }
+    }
+    if (artifactRoot) await rm(artifactRoot, { recursive: true, force: true });
   }
 });
