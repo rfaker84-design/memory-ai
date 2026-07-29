@@ -34,7 +34,9 @@ export class AuthService {
     this.smsProvider.assertConfigured?.();
     const now = this.now();
     const challengeId = randomUUID();
-    const code = this.smsProvider.createVerificationCode?.() ?? generateVerificationCode();
+    const code = this.smsProvider.prepareVerificationCode?.(phoneE164)
+      ?? this.smsProvider.createVerificationCode?.()
+      ?? generateVerificationCode();
     const phoneHash = hashPhone(phoneE164);
     const created = await this.repository.createChallenge({
       challengeId,

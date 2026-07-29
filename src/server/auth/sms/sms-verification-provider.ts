@@ -10,6 +10,11 @@ export type SmsVerificationSendResult = {
 
 export interface SmsVerificationProvider {
   assertConfigured?(): void;
+  /**
+   * Returns a recipient-approved code before AuthService writes a challenge.
+   * Providers that do not implement this keep the regular random-code path.
+   */
+  prepareVerificationCode?(phoneE164: string): string;
   createVerificationCode?(): string;
   sendVerificationCode(
     input: SmsVerificationSendInput

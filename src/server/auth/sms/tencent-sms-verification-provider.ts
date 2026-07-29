@@ -12,7 +12,7 @@ import {
   type SmsVerificationSendInput,
   type SmsVerificationSendResult,
 } from "./sms-verification-provider";
-import { isStagingRuntime } from "../../runtime/staging-contract";
+import { getStagingRuntimeConfiguration, isStagingRuntime } from "../../runtime/staging-contract";
 import { StagingFixedSmsVerificationProvider } from "./staging-fixed-sms-verification-provider";
 
 const TencentSmsClient = sms.v20210111.Client;
@@ -162,7 +162,11 @@ let fixedCodeProvider: SmsVerificationProvider | undefined;
 export function getSmsVerificationProvider(
   environment: NodeJS.ProcessEnv = process.env
 ): SmsVerificationProvider {
-  if (isStagingRuntime(environment)) return new StagingFixedSmsVerificationProvider();
+  if (isStagingRuntime(environment)) {
+    return new StagingFixedSmsVerificationProvider({
+      loadConfiguration: () => getStagingRuntimeConfiguration(environment),
+    });
+  }
 
   const provider = environment.AUTH_SMS_PROVIDER?.trim() || "tencent";
   if (provider === "fixed") {
