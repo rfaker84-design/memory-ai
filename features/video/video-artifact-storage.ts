@@ -23,6 +23,11 @@ export type VideoArtifactStoragePort = {
   deleteArtifact(input: { artifactKey: string }): Promise<void>;
   createSignedPlaybackUrl(input: { artifactKey: string; expiresInSeconds: number }): Promise<{ url: string; expiresAt: string }>;
   readArtifact(input: { artifactKey: string }): Promise<Buffer>;
+  readArtifactRange(input: { artifactKey: string; start?: number; end?: number }): Promise<{
+    body: Buffer;
+    contentType: string;
+    totalBytes: number;
+  }>;
   verifySignedPlayback(input: { artifactKey: string; expiresAt: string; signature: string }): boolean;
 };
 
@@ -130,6 +135,31 @@ export class LocalStagingVideoArtifactStorage implements VideoArtifactStoragePor
   readArtifact(input: { artifactKey: string }): Promise<Buffer> {
     if (!OUTPUT_KEY.test(input.artifactKey)) throw new Error("VIDEO_ARTIFACT_INVALID_KEY");
     return this.read(input.artifactKey);
+  }
+
+  async readArtifactRange(input: { artifactKey: string; start?: number; end?: number }): Promise<{
+    body: Buffer;
+    contentType: string;
+    totalBytes: number;
+  }> {
+    const body = await this.readArtifact({ artifactKey: input.artifactKey });
+    const start = input.start ?? 0;
+    const end = input.end ?? body.byteLength - 1;
+    if (
+      body.byteLength < 1
+      || !Number.isInteger(start)
+      || !Number.isInteger(end)
+      || start < 0
+      || end < start
+      || end >= body.byteLength
+    ) {
+      throw new Error("VIDEO_ARTIFACT_INVALID_RANGE");
+    }
+    return {
+      body: body.subarray(start, end + 1),
+      contentType: "video/mp4",
+      totalBytes: body.byteLength,
+    };
   }
 
   verifySignedPlayback(input: { artifactKey: string; expiresAt: string; signature: string }): boolean {

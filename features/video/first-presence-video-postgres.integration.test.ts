@@ -205,12 +205,12 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
     "SELECT status, outcome FROM commerce_generation_reservations WHERE id = $1", [approvedLink.reservation_id],
   )).rows[0], { status: "consumed", outcome: "succeeded" });
   const artifacts = new FirstPresenceVideoArtifactQueryPort(artifactStorage);
-  const approvedArtifact = await artifacts.findApprovedForOwner({ externalUserId: owner, jobId: approved.id, expiresInSeconds: 60 });
+  const approvedArtifact = await artifacts.findApprovedForOwner({ externalUserId: owner, memoryId: memory!, jobId: approved.id, expiresInSeconds: 60 });
   assert.ok(approvedArtifact);
   assert.equal(approvedArtifact.presentation, "additional_generation");
   assert.equal(approvedArtifact.saveAllowed, true);
   assert.match(approvedArtifact.playbackUrl, /signature=/);
-  assert.equal(await artifacts.findApprovedForOwner({ externalUserId: other, jobId: approved.id }), null, "cross-user artifact reads are hidden");
+  assert.equal(await artifacts.findApprovedForOwner({ externalUserId: other, memoryId: otherMemory!, jobId: approved.id }), null, "cross-user artifact reads are hidden");
   assert.deepEqual((await verify.query(
     "SELECT review_key FROM video_generation_quality_reviews WHERE job_id = $1 AND reviewer_kind = 'manual'", [jobs[0].id],
   )).rows, [{ review_key: `manual.${jobs[0].id}` }], "actual UUID review key is accepted exactly once");
@@ -237,7 +237,7 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
 
   const injection = await createService().submit({ ...input, idempotencyKey: "video:gate:review-injection:0001" });
   assert.equal((await createService().recover(injection.id)).status, "manual_review_required");
-  assert.equal(await artifacts.findApprovedForOwner({ externalUserId: owner, jobId: injection.id }), null, "manual-review artifacts are never user-readable");
+  assert.equal(await artifacts.findApprovedForOwner({ externalUserId: owner, memoryId: memory!, jobId: injection.id }), null, "manual-review artifacts are never user-readable");
   const injectionLink = (await verify.query<{ reservation_id: string }>(
     "SELECT reservation_id FROM video_generation_jobs WHERE id = $1", [injection.id],
   )).rows[0];

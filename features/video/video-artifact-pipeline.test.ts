@@ -47,6 +47,14 @@ test("local video staging is idempotent, private, and signs short playback grant
   const stored = await storage.stageArtifact({ jobId: id, body: downloaded.body, contentType: downloaded.contentType });
   await storage.stageArtifact({ jobId: id, body: downloaded.body, contentType: downloaded.contentType });
   assert.deepEqual(await storage.readArtifact({ artifactKey: stored.artifactKey }), Buffer.from("downloaded"));
+  assert.deepEqual(
+    await storage.readArtifactRange({ artifactKey: stored.artifactKey, start: 2, end: 5 }),
+    { body: Buffer.from("wnlo"), contentType: "video/mp4", totalBytes: 10 },
+  );
+  await assert.rejects(
+    storage.readArtifactRange({ artifactKey: "../escape.mp4", start: 0, end: 0 }),
+    /VIDEO_ARTIFACT_INVALID_KEY/,
+  );
   const signed = await storage.createSignedPlaybackUrl({ artifactKey: stored.artifactKey, expiresInSeconds: 60 });
   const parsed = new URL(signed.url);
   assert.equal(storage.verifySignedPlayback({

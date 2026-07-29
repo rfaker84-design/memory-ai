@@ -93,8 +93,14 @@ test("Origin boundary fails closed when production configuration is missing", as
 });
 
 test("safe methods pass through without Origin", () => {
-  const response = middleware(new NextRequest("https://memoryai.test/api/health"));
-  assert.equal(response.headers.get("x-middleware-next"), "1");
+  for (const pathname of [
+    "/api/health",
+    "/api/memories/memory-id/first-presence-video/job-id/playback",
+    "/api/first-presence-video/playback/signed-token",
+  ]) {
+    const response = middleware(new NextRequest(`https://memoryai.test${pathname}`));
+    assert.equal(response.headers.get("x-middleware-next"), "1", pathname);
+  }
 });
 
 test("the packaged same-site App origin receives credentialed CORS without wildcard reflection", async () => {
