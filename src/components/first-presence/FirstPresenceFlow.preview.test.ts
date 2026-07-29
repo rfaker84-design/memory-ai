@@ -48,7 +48,7 @@ test("preview is explicit, zero-write, and production-gated", () => {
 });
 
 test("formal creation leaves React memory state for the stable owned chat URL", () => {
-  assert.match(flow, /router\.replace\(`\/memory-chat\/\$\{encodeURIComponent\(payload\.id\)\}`\)/);
+  assert.match(flow, /await completeCreatedMemory\(payload\.id, idempotencyKey\.current\)/);
   assert.match(chatPage, /loadOwnedMemory\(id/);
   assert.match(chatPage, /loadOwnedMediaUrl\(memory\.photoAssetId/);
   assert.match(chatPage, /clearCreationRecovery\(\)/);
@@ -68,12 +68,18 @@ test("formal creation leaves React memory state for the stable owned chat URL", 
   assert.match(conversationAdapter, /hasPersistedFirstGreeting\(restored\.messages\)/);
 });
 
-test("formal creation persists only a minimal recovery record and establishes the stable URL before media upload", () => {
+test("formal creation uploads current selected media before the one stable chat navigation", () => {
   assert.match(flow, /writeCreationRecovery\(\{\s*idempotencyKey: idempotencyKey\.current,\s*phase: "creating"/);
   assert.match(flow, /recoverPendingCreation\(\)/);
   assert.match(recoveryClient, /request\("\/api\/memories\/recovery"/);
   assert.match(recoveryClient, /body: JSON\.stringify\(\{\}\)/);
-  assert.doesNotMatch(flow, /\/api\/media\/upload/);
+  assert.match(flow, /await uploadCurrentCreationMedia\(/);
+  assert.match(flow, /await completeCreatedMemory\(payload\.id, idempotencyKey\.current\)/);
+  const completion = flow.slice(flow.indexOf("const completeCreatedMemory"), flow.indexOf("const continueRecoveredCreation"));
+  assert.match(completion, /await uploadCurrentCreationMedia\([\s\S]*?router\.replace\(`\/memory-chat\//);
+  assert.match(flow, /creationOperationInFlight\.current/);
+  assert.match(recoveryClient, /payload\.asset\.status !== "uploaded"/);
+  assert.match(recoveryClient, /clearCreationRecovery\(storage\)/);
   assert.match(mediaRecoveryGate, /uploadCreationMedia\(memory\.id, file\)/);
   assert.match(mediaRecoveryGate, /人物资料已经保存。照片或声音尚未完成，你可以重新选择，或稍后补充。/);
   assert.match(
@@ -83,6 +89,16 @@ test("formal creation persists only a minimal recovery record and establishes th
   assert.match(mediaRecoveryGate, /remainingMediaKinds\(record\.phase, Boolean\(memory\.photoAssetId\)\)/);
   assert.match(mediaRecoveryGate, /markTransientCreationMediaUploaded\(memory\.id, kind\)/);
   assert.match(mediaRecoveryGate, /clearCreationRecovery\(\)/);
+});
+
+test("handoff failures never enter a local conversation or local greeting", () => {
+  const formalCreate = flow.slice(flow.indexOf("const createRealPresence"), flow.indexOf("useEffect(() => {", flow.indexOf("const createRealPresence")));
+  assert.match(formalCreate, /if \(!writeCreationRecovery\(/);
+  assert.match(formalCreate, /setStage\("network-failed"\)/);
+  assert.doesNotMatch(formalCreate, /previewGreeting/);
+  assert.match(mediaRecoveryGate, /if \(!record \|\| record\.memoryId !== memory\.id\)[\s\S]*?setPhase\("error"\)/);
+  assert.match(chatPage, /requiresMediaRecovery: readCreationRecovery\(\)\?\.memoryId === memory\.id/);
+  assert.match(conversationAdapter, /fetch\(`\/api\/memories\/\$\{encodeURIComponent\(memoryId\)\}\/first-greeting`/);
 });
 
 test("portrait remains consistent and the retired purchase card cannot render", () => {

@@ -7,8 +7,14 @@ export type PickedMedia = {
   sizeBytes?: number;
 };
 
+export type ReadMedia = {
+  base64: string;
+  sizeBytes: number;
+};
+
 export interface MemoryMediaPlugin {
   pickMedia(options: { limit: number }): Promise<{ items: PickedMedia[] }>;
+  readMedia(options: { uri: string }): Promise<ReadMedia>;
   saveVideo(options: { signedUrl: string; fileName: string; mimeType: string }): Promise<{ uri: string }>;
 }
 

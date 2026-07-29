@@ -61,12 +61,17 @@ export function CreationMediaRecoveryGate({
   const mediaConsentRecorded = useRef(false);
 
   const finishMediaRecovery = useCallback(() => {
-    clearCreationRecovery();
+    if (!clearCreationRecovery()) {
+      setNotice("素材已经由服务端保存，但当前页面还不能安全清理恢复状态。请留在这里后再试一次。");
+      setPhase("error");
+      return false;
+    }
     clearTransientCreationMedia(memory.id);
     setRemaining([]);
     setSelected({});
     setNotice("");
     setPhase("conversation");
+    return true;
   }, [memory.id]);
 
   const uploadAvailableMedia = useCallback(async (
@@ -110,11 +115,13 @@ export function CreationMediaRecoveryGate({
         markTransientCreationMediaUploaded(memory.id, kind);
         pending.delete(kind);
         const nextPhase = phaseForRemainingMedia(pending);
-        writeCreationRecovery({
+        if (!writeCreationRecovery({
           idempotencyKey: record.idempotencyKey,
           memoryId: memory.id,
           phase: nextPhase,
-        });
+        })) {
+          throw new Error("RECOVERY_WRITE_FAILED");
+        }
         setRemaining(Array.from(pending));
       }
 
@@ -180,7 +187,8 @@ export function CreationMediaRecoveryGate({
       }
 
       if (!record || record.memoryId !== memory.id) {
-        setPhase("conversation");
+        setNotice("当前页面缺少这次创建的恢复确认，因此不会直接进入对话。请返回上一页后重新确认。");
+        setPhase("error");
         return;
       }
 
@@ -219,6 +227,15 @@ export function CreationMediaRecoveryGate({
     stageTransientCreationMedia(memory.id, { [kind]: file });
     setNotice("");
     setPhase("selection");
+  };
+
+  const deferMediaRecovery = () => {
+    if (remaining.some((kind) => selected[kind])) {
+      setNotice("已经选中的素材必须先得到服务端保存确认，或重新选择后再继续。");
+      setPhase("error");
+      return;
+    }
+    finishMediaRecovery();
   };
 
   if (phase === "conversation") {
@@ -292,7 +309,7 @@ export function CreationMediaRecoveryGate({
               >
                 继续保存素材
               </MemoryButton>
-              <button type="button" onClick={finishMediaRecovery}>稍后补充</button>
+              <button type="button" onClick={deferMediaRecovery}>稍后补充</button>
             </div>
           </>
         )}

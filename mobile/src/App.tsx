@@ -5,6 +5,13 @@ import { Share } from "@capacitor/share";
 import { runtimeConfig } from "./config/environment";
 import { MemoryMedia, type PickedMedia, saveSignedVideo } from "./native/memory-media";
 import { productApi, ProductApiError, type ProductMemory } from "./product/api";
+import {
+  CreationFlowError,
+  type PendingCreation,
+  requestServerGreeting,
+  startPendingCreation,
+  uploadPendingMedia,
+} from "./product/creation-flow";
 
 const DebugLab = __MOBILE_DEBUG_BUILD__
   ? lazy(() => import("./debug/NativeCapabilityLab").then((module) => ({ default: module.NativeCapabilityLab })))
@@ -22,6 +29,7 @@ const previewMemory = (name: string, relationship: string, lifeStory: string): P
 });
 
 function friendlyError(error: unknown): string {
+  if (error instanceof CreationFlowError) return error.message;
   if (error instanceof ProductApiError) {
     if (error.status === 401) return "登录状态已过期，请重新登录。";
     if (error.status === 403) return "当前服务暂时无法完成这一步。";
@@ -84,6 +92,7 @@ export function App() {
   const [relationship, setRelationship] = useState("");
   const [story, setStory] = useState("");
   const [media, setMedia] = useState<PickedMedia[]>([]);
+  const [pendingCreation, setPendingCreation] = useState<PendingCreation | null>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -95,12 +104,40 @@ export function App() {
   const productOnline = online && (mode === "preview" || productApi.enabled());
 
   useEffect(() => {
-    const finish = window.setTimeout(() => setScreen((current) => current === "splash" ? (navigator.onLine ? "welcome" : "offline") : current), 1000);
-    const onOnline = () => setOnline(true);
+    let active = true;
+    const restoreSession = async () => {
+      if (!navigator.onLine) {
+        if (active) setScreen("offline");
+        return;
+      }
+      if (!productApi.enabled()) {
+        if (active) setScreen("welcome");
+        return;
+      }
+      try {
+        const session = await productApi.session();
+        if (!session.authenticated) {
+          if (active) setScreen("welcome");
+          return;
+        }
+        const memories = await productApi.listMemories();
+        const restoredMemory = memories[0] ?? null;
+        const conversation = restoredMemory ? await productApi.getConversation(restoredMemory.id) : { messages: [] };
+        if (!active) return;
+        setMode("remote");
+        setMemory(restoredMemory);
+        setMessages(conversation.messages);
+        setScreen("home");
+      } catch {
+        if (active) setScreen("welcome");
+      }
+    };
+    const finish = window.setTimeout(() => { void restoreSession(); }, 1000);
+    const onOnline = () => { setOnline(true); void restoreSession(); };
     const onOffline = () => { setOnline(false); setScreen("offline"); };
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
-    return () => { window.clearTimeout(finish); window.removeEventListener("online", onOnline); window.removeEventListener("offline", onOffline); };
+    return () => { active = false; window.clearTimeout(finish); window.removeEventListener("online", onOnline); window.removeEventListener("offline", onOffline); };
   }, []);
 
   const openMemory = useCallback(async (id: string, destination: "memory" | "gallery" = "memory") => {
@@ -176,18 +213,41 @@ export function App() {
     try {
       const result = await MemoryMedia.pickMedia({ limit: 20 });
       setMedia(result.items);
+      if (pendingCreation && pendingCreation.uploadedMediaUris.length === 0) {
+        setPendingCreation({ ...pendingCreation, media: result.items });
+      }
       setNotice(result.items.length ? `已选 ${result.items.length} 项素材。` : "");
     } catch { setNotice("这次没有选择素材。"); }
   };
 
   const createMemory = async () => {
     if (!name.trim() || !relationship.trim()) { setNotice("请先写下 TA 的名字和你们的关系。"); return; }
+    if (mode !== "preview" && !pendingCreation && !media.some((item) => item.mimeType.toLowerCase().startsWith("image/"))) {
+      setNotice("请至少选择一张照片后再继续。");
+      return;
+    }
     setBusy(true); setNotice("");
     try {
-      const created = mode === "preview"
-        ? previewMemory(name, relationship, story)
-        : await productApi.createMemory({ name: name.trim(), relationship: relationship.trim(), lifeStory: story.trim() });
-      setMemory(created); setMessages([{ role: "assistant", content: `我在。关于${created.name}，你想先从哪一段记忆开始？` }]); setScreen("presence");
+      if (mode === "preview") {
+        const created = previewMemory(name, relationship, story);
+        setMemory(created);
+        setMessages([{ role: "assistant", content: `我在。关于${created.name}，你想先从哪一段记忆开始？` }]);
+        setScreen("presence");
+        return;
+      }
+      let pending = pendingCreation;
+      if (!pending) {
+        const created = await productApi.createMemory({ name: name.trim(), relationship: relationship.trim(), lifeStory: story.trim() });
+        pending = startPendingCreation(created, media);
+        setPendingCreation(pending);
+      }
+      const uploaded = await uploadPendingMedia(pending, productApi, setPendingCreation);
+      setPendingCreation(uploaded);
+      const greeting = await requestServerGreeting(uploaded, productApi);
+      setMemory(uploaded.memory);
+      setMessages([{ role: "assistant", content: greeting.greeting.content }]);
+      setPendingCreation(null);
+      setScreen("presence");
     } catch (error) { setNotice(friendlyError(error)); }
     finally { setBusy(false); }
   };
@@ -244,8 +304,8 @@ export function App() {
       <label>TA 的名字<input className="field" value={name} onChange={(event) => setName(event.target.value)} placeholder="姓名或昵称" /></label>
       <label>你们的关系<input className="field" value={relationship} onChange={(event) => setRelationship(event.target.value)} placeholder="例如：母亲、朋友" /></label>
       <label>一段想说的话<textarea className="field" value={story} onChange={(event) => setStory(event.target.value)} placeholder="写下一件你们共同经历过的事" rows={3} /></label>
-      <button className="mediaChoice" onClick={() => void chooseMedia()}><span>照片与视频</span><small>{media.length ? `已选 ${media.length} 项素材` : "从系统相册选择"}</small></button>
-      {notice ? <p className="notice">{notice}</p> : null}<button className="primaryButton" disabled={busy} onClick={() => void createMemory()}>{busy ? "正在靠近" : "让 TA 出现"}</button>
+      <button className="mediaChoice" disabled={busy || Boolean(pendingCreation?.uploadedMediaUris.length)} onClick={() => void chooseMedia()}><span>照片与声音</span><small>{media.length ? `已选 ${media.length} 项素材` : "从系统相册选择"}</small></button>
+      {notice ? <p className="notice">{notice}</p> : null}<button className="primaryButton" disabled={busy} onClick={() => void createMemory()}>{busy ? "正在靠近" : pendingCreation ? "继续保存素材" : "让 TA 出现"}</button>
     </main>;
     if (screen === "presence" && memory) return <main className="presenceScene">
       <div className="presenceLight" aria-hidden="true" /><p className="eyebrow">一段新的陪伴正在开始</p><div className="personFrame"><span>{initials(memory.name)}</span></div><h1>{memory.name}</h1><p>{memory.relationship} · 已被好好记下</p>
@@ -267,7 +327,7 @@ export function App() {
     return <main className="homeScene"><p className="eyebrow">忆见</p><div className="homeSpace"><div className="homeGlow" aria-hidden="true" />{memory ? <><div className="personFrame"><span>{initials(memory.name)}</span></div><p>{memory.name} 在这里</p></> : <><div className="emptyPortrait" /><h1>为谁，留一盏灯？</h1><p>从一个名字、一句常说的话，开始重新靠近。</p></>}</div>
       <button className="primaryButton" onClick={() => press(() => setScreen(memory ? "chat" : "create"))}>{memory ? "继续相见" : "创建 TA"}</button>{notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="home" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
-  }, [busy, challengeId, code, hasMemory, media.length, memory, messages, mode, name, notice, online, phone, previewVideoUrl, question, relationship, screen, story, title]);
+  }, [busy, challengeId, code, hasMemory, media.length, memory, messages, mode, name, notice, online, pendingCreation, phone, previewVideoUrl, question, relationship, screen, story, title]);
 
   return <div className={`appRoot ${productOnline ? "isOnline" : ""}`}>{content}</div>;
 }

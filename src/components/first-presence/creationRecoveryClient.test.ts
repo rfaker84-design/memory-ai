@@ -7,8 +7,10 @@ import {
   mediaPhase,
   phaseForRemainingMedia,
   readCreationRecovery,
+  readTransientCreationMedia,
   recoverPendingCreation,
   remainingMediaKinds,
+  uploadCurrentCreationMedia,
   uploadCreationMedia,
   writeCreationRecovery,
 } from "./creationRecoveryClient";
@@ -181,7 +183,7 @@ test("media upload stays scoped to the stable memory and accepts server deduplic
       assert.equal(init?.credentials, "same-origin");
       requestBodies.push(init?.body as FormData);
       return Response.json({
-        asset: { id: "asset-1", mediaType: "image" },
+        asset: { id: "asset-1", mediaType: "image", status: "uploaded" },
         duplicate: true,
       });
     },
@@ -193,6 +195,78 @@ test("media upload stays scoped to the stable memory and accepts server deduplic
     mediaType: "image",
     duplicate: true,
   });
+});
+
+test("current media handoff refuses to advance when its recovery checkpoint cannot be written", async () => {
+  let mediaRequests = 0;
+  const unavailableStorage = {
+    getItem() { return null; },
+    setItem() { throw new Error("storage unavailable"); },
+    removeItem() {},
+  };
+  await assert.rejects(
+    uploadCurrentCreationMedia({
+      memoryId: MEMORY_ID,
+      idempotencyKey: KEY,
+      files: { photo: new File(["synthetic"], "portrait.png", { type: "image/png" }) },
+    }, {
+      storage: unavailableStorage,
+      request: async () => {
+        mediaRequests += 1;
+        return Response.json({});
+      },
+    }),
+    (error) => error instanceof Error && error.message === "RECOVERY_WRITE_FAILED",
+  );
+  assert.equal(mediaRequests, 0);
+});
+
+test("failed upload keeps the recovery record and never requests a first greeting", async () => {
+  const current = storage();
+  const requestedPaths: string[] = [];
+  await assert.rejects(
+    uploadCurrentCreationMedia({
+      memoryId: MEMORY_ID,
+      idempotencyKey: KEY,
+      files: { photo: new File(["synthetic"], "portrait.png", { type: "image/png" }) },
+    }, {
+      storage: current,
+      request: async (input) => {
+        requestedPaths.push(String(input));
+        return Response.json({ error: "STORAGE_UNAVAILABLE" }, { status: 503 });
+      },
+    }),
+    (error) => error instanceof CreationRecoveryRequestError && error.status === 503,
+  );
+  assert.deepEqual(requestedPaths, ["/api/media/upload"]);
+  assert.deepEqual(readCreationRecovery(current), {
+    idempotencyKey: KEY,
+    memoryId: MEMORY_ID,
+    phase: "photo-pending",
+  });
+});
+
+test("confirmed upload clears recovery and completes one handoff without a local greeting", async () => {
+  const current = storage();
+  const requestedPaths: string[] = [];
+  const confirmed = await uploadCurrentCreationMedia({
+    memoryId: MEMORY_ID,
+    idempotencyKey: KEY,
+    files: { photo: new File(["synthetic"], "portrait.png", { type: "image/png" }) },
+  }, {
+    storage: current,
+    request: async (input) => {
+      requestedPaths.push(String(input));
+      return Response.json({
+        asset: { id: "asset-confirmed", mediaType: "image", status: "uploaded" },
+        duplicate: false,
+      }, { status: 201 });
+    },
+  });
+  assert.deepEqual(confirmed, [{ kind: "photo", assetId: "asset-confirmed", mediaType: "image" }]);
+  assert.deepEqual(requestedPaths, ["/api/media/upload"]);
+  assert.equal(readCreationRecovery(current), null);
+  assert.equal(readTransientCreationMedia(MEMORY_ID), null);
 });
 
 test("media upload surfaces auth loss without leaking server details", async () => {

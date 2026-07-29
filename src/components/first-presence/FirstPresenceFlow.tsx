@@ -20,10 +20,9 @@ import { buildConfirmedMemoryProfile } from "./confirmedMemoryProfile";
 import { recordTrustConsent, TrustConsentRequestError } from "../trust/trustConsentClient";
 import {
   clearCreationRecovery,
-  mediaPhase,
   readCreationRecovery,
   recoverPendingCreation,
-  stageTransientCreationMedia,
+  uploadCurrentCreationMedia,
   writeCreationRecovery,
 } from "./creationRecoveryClient";
 import styles from "./FirstPresenceFlow.module.css";
@@ -218,6 +217,8 @@ export function FirstPresenceFlow({
   const [busy, setBusy] = useState(false);
   const idempotencyKey = useRef<string | null>(null);
   const recoveryCheckStarted = useRef(false);
+  const creationOperationInFlight = useRef(false);
+  const conversationNavigationCommitted = useRef(false);
   const localPortraitUrl = useRef<string | null>(null);
   const titleId = useId();
 
@@ -406,8 +407,23 @@ export function FirstPresenceFlow({
     return "";
   };
 
+  const completeCreatedMemory = useCallback(async (memoryId: string, key: string) => {
+    await uploadCurrentCreationMedia({
+      memoryId,
+      idempotencyKey: key,
+      files: {
+        ...(photoFile ? { photo: photoFile } : {}),
+        ...(voiceFile ? { voice: voiceFile } : {}),
+      },
+    });
+    if (conversationNavigationCommitted.current) return;
+    conversationNavigationCommitted.current = true;
+    router.replace(`/memory-chat/${encodeURIComponent(memoryId)}`);
+  }, [photoFile, router, voiceFile]);
+
   const continueRecoveredCreation = useCallback(async (unknownAfterRefresh = false) => {
-    if (busy) return;
+    if (creationOperationInFlight.current) return;
+    creationOperationInFlight.current = true;
     setBusy(true);
     setError("");
     setStage("creating");
@@ -432,24 +448,23 @@ export function FirstPresenceFlow({
       }
       if (result.status === "known") {
         idempotencyKey.current = result.record.idempotencyKey;
+        if (photoFile || voiceFile) {
+          await completeCreatedMemory(result.memoryId, result.record.idempotencyKey);
+          return;
+        }
         router.replace(`/memory-chat/${encodeURIComponent(result.memoryId)}`);
         return;
       }
 
-      const nextPhase = mediaPhase(
-        Boolean(photoFile),
-        Boolean(voiceFile),
-        unknownAfterRefresh && !photoFile && !voiceFile,
-      );
       idempotencyKey.current = result.record.idempotencyKey;
-      stageTransientCreationMedia(result.memory.id, {
-        ...(photoFile ? { photo: photoFile } : {}),
-        ...(voiceFile ? { voice: voiceFile } : {}),
-      });
+      if (photoFile || voiceFile || !unknownAfterRefresh) {
+        await completeCreatedMemory(result.memory.id, result.record.idempotencyKey);
+        return;
+      }
       if (!writeCreationRecovery({
         idempotencyKey: result.record.idempotencyKey,
         memoryId: result.memory.id,
-        phase: nextPhase,
+        phase: "media-pending",
       })) {
         setError("TA 已经保存，但当前页面暂时无法保留后续素材状态。请不要关闭页面，稍后再次确认。");
         setStage("network-failed");
@@ -457,14 +472,16 @@ export function FirstPresenceFlow({
       }
       router.replace(`/memory-chat/${encodeURIComponent(result.memory.id)}`);
     } catch {
-      setError("连接仍未恢复。系统不会重复创建 TA；请稍后由你再次确认。");
+      setError("刚才的素材还没有得到服务端保存确认。系统不会重复创建 TA，也不会进入对话；请稍后由你再次确认。");
       setStage("network-failed");
     } finally {
+      creationOperationInFlight.current = false;
       setBusy(false);
     }
-  }, [busy, photoFile, router, voiceFile]);
+  }, [completeCreatedMemory, photoFile, router, voiceFile]);
 
   const createRealPresence = async () => {
+    if (creationOperationInFlight.current) return;
     if (authState === "checking") {
       setError("仍在确认登录状态，请稍后再继续。");
       return;
@@ -482,6 +499,7 @@ export function FirstPresenceFlow({
     }
 
     setBusy(true);
+    creationOperationInFlight.current = true;
     setError("");
     setStage("creating");
 
@@ -519,30 +537,23 @@ export function FirstPresenceFlow({
         return;
       }
       if (!response.ok || !payload.id) {
-        await continueRecoveredCreation();
+        setError("还不能确认 TA 是否已经保存。系统不会重复创建；请稍后由你再次确认。");
+        setStage("network-failed");
         return;
       }
 
-      const nextPhase = mediaPhase(Boolean(photoFile), Boolean(voiceFile));
-      stageTransientCreationMedia(payload.id, {
-        ...(photoFile ? { photo: photoFile } : {}),
-        ...(voiceFile ? { voice: voiceFile } : {}),
-      });
-      writeCreationRecovery({
-        idempotencyKey: idempotencyKey.current,
-        memoryId: payload.id,
-        phase: nextPhase,
-      });
-      router.replace(`/memory-chat/${encodeURIComponent(payload.id)}`);
+      await completeCreatedMemory(payload.id, idempotencyKey.current);
     } catch (cause) {
       if (cause instanceof TrustConsentRequestError) {
         setError("刚才的确认还没有保存好。你的回答都还在这里。");
         setQuestionIndex(8);
         setStage("questions");
       } else {
-        await continueRecoveredCreation();
+        setError("刚才的素材还没有得到服务端保存确认。系统不会重复创建 TA，也不会进入对话；请稍后由你再次确认。");
+        setStage("network-failed");
       }
     } finally {
+      creationOperationInFlight.current = false;
       setBusy(false);
     }
   };

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import type { Memory } from "../../../features/memory/types";
 import { CreationMediaRecoveryGate } from "../../../src/components/first-presence/CreationMediaRecoveryGate";
+import { MemoryConversationScene } from "../../../src/components/first-presence/MemoryConversationScene";
 import {
   clearCreationRecovery,
   readCreationRecovery,
@@ -19,7 +20,7 @@ import styles from "./page.module.css";
 
 type PageState =
   | { status: "loading" }
-  | { status: "ready"; memory: Memory; portraitUrl: string | null }
+  | { status: "ready"; memory: Memory; portraitUrl: string | null; requiresMediaRecovery: boolean }
   | { status: "unauthenticated" | "not-found" | "error" };
 
 function firstGreetingKey(memoryId: string) {
@@ -46,7 +47,12 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
           }
         }
         if (!controller.signal.aborted) {
-          setState({ status: "ready", memory, portraitUrl });
+          setState({
+            status: "ready",
+            memory,
+            portraitUrl,
+            requiresMediaRecovery: readCreationRecovery()?.memoryId === memory.id,
+          });
         }
       })
       .catch((error) => {
@@ -87,16 +93,28 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
     );
   }
 
+  const conversation = (
+    <MemoryConversationScene
+      memoryId={state.memory.id}
+      memoryName={state.memory.name}
+      firstGreetingKey={firstGreetingKey(state.memory.id)}
+      initialPortraitUrl={state.portraitUrl}
+      onLeave={() => router.replace("/")}
+    />
+  );
+
   return (
     <main className={styles.page}>
       <div className={styles.stars} aria-hidden="true" />
       <MotionProvider>
-        <CreationMediaRecoveryGate
-          memory={state.memory}
-          firstGreetingKey={firstGreetingKey(state.memory.id)}
-          initialPortraitUrl={state.portraitUrl}
-          onLeave={() => router.replace("/")}
-        />
+        {state.requiresMediaRecovery ? (
+          <CreationMediaRecoveryGate
+            memory={state.memory}
+            firstGreetingKey={firstGreetingKey(state.memory.id)}
+            initialPortraitUrl={state.portraitUrl}
+            onLeave={() => router.replace("/")}
+          />
+        ) : conversation}
       </MotionProvider>
     </main>
   );

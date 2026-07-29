@@ -19,8 +19,8 @@ export type CreationRecoveryRecord = {
 
 export type CreationMediaKind = "photo" | "voice";
 
-type RecoveryStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
-type TransientCreationMedia = Partial<Record<CreationMediaKind, File>>;
+export type RecoveryStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+export type TransientCreationMedia = Partial<Record<CreationMediaKind, File>>;
 
 const phases = new Set<CreationRecoveryPhase>([
   "creating",
@@ -95,12 +95,13 @@ export function writeCreationRecovery(
 
 export function clearCreationRecovery(
   storage: RecoveryStorage | null = defaultStorage(),
-) {
-  if (!storage) return;
+) : boolean {
+  if (!storage) return false;
   try {
     storage.removeItem(CREATION_RECOVERY_STORAGE_KEY);
+    return true;
   } catch {
-    // Storage cleanup is best effort after the server-owned Memory is confirmed.
+    return false;
   }
 }
 
@@ -219,13 +220,14 @@ export async function uploadCreationMedia(
   });
   const payload = await response.json().catch(() => ({})) as {
     error?: unknown;
-    asset?: { id?: unknown; mediaType?: unknown };
+    asset?: { id?: unknown; mediaType?: unknown; status?: unknown };
     duplicate?: unknown;
   };
   if (
     !response.ok
     || typeof payload.asset?.id !== "string"
     || typeof payload.asset.mediaType !== "string"
+    || payload.asset.status !== "uploaded"
   ) {
     throw new CreationRecoveryRequestError(
       response.status || 502,
@@ -237,6 +239,71 @@ export async function uploadCreationMedia(
     mediaType: payload.asset.mediaType,
     duplicate: payload.duplicate === true,
   };
+}
+
+export class CreationMediaHandoffError extends Error {
+  constructor(readonly code: "RECOVERY_WRITE_FAILED" | "MEDIA_TYPE_MISMATCH" | "RECOVERY_CLEAR_FAILED") {
+    super(code);
+    this.name = "CreationMediaHandoffError";
+  }
+}
+
+export type ConfirmedCreationMedia = {
+  kind: CreationMediaKind;
+  assetId: string;
+  mediaType: string;
+};
+
+export async function uploadCurrentCreationMedia(
+  input: {
+    memoryId: string;
+    idempotencyKey: string;
+    files: TransientCreationMedia;
+  },
+  options: {
+    request?: typeof fetch;
+    storage?: RecoveryStorage | null;
+  } = {},
+): Promise<ConfirmedCreationMedia[]> {
+  const { memoryId, idempotencyKey, files } = input;
+  const storage = options.storage ?? defaultStorage();
+  const selected = (Object.entries(files) as Array<[CreationMediaKind, File | undefined]>)
+    .filter((entry): entry is [CreationMediaKind, File] => Boolean(entry[1]));
+  let pending = new Set(selected.map(([kind]) => kind));
+
+  if (!writeCreationRecovery({
+    idempotencyKey,
+    memoryId,
+    phase: phaseForRemainingMedia(pending),
+  }, storage)) {
+    throw new CreationMediaHandoffError("RECOVERY_WRITE_FAILED");
+  }
+
+  stageTransientCreationMedia(memoryId, files);
+  const confirmed: ConfirmedCreationMedia[] = [];
+  for (const [kind, file] of selected) {
+    const uploaded = await uploadCreationMedia(memoryId, file, options.request);
+    const expectedMediaType = kind === "photo" ? "image" : "audio";
+    if (uploaded.mediaType !== expectedMediaType) {
+      throw new CreationMediaHandoffError("MEDIA_TYPE_MISMATCH");
+    }
+    confirmed.push({ kind, assetId: uploaded.assetId, mediaType: uploaded.mediaType });
+    markTransientCreationMediaUploaded(memoryId, kind);
+    pending.delete(kind);
+    if (!writeCreationRecovery({
+      idempotencyKey,
+      memoryId,
+      phase: phaseForRemainingMedia(pending),
+    }, storage)) {
+      throw new CreationMediaHandoffError("RECOVERY_WRITE_FAILED");
+    }
+  }
+
+  if (!clearCreationRecovery(storage)) {
+    throw new CreationMediaHandoffError("RECOVERY_CLEAR_FAILED");
+  }
+  clearTransientCreationMedia(memoryId);
+  return confirmed;
 }
 
 export type PendingCreationRecoveryResult =
