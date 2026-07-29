@@ -274,6 +274,10 @@ test("formal owner route preserves session-only identity and persistent worker b
   assert.match(ownerApiSource, /commerce_generation_reservations/);
   assert.match(ownerApiSource, /memory_chat_turns[\s\S]*status = 'completed'/);
   assert.match(ownerApiSource, /media_assets[\s\S]*qualityPreflight/);
+  assert.match(ownerApiSource, /OwnerVideoInputStagingPort/);
+  assert.match(ownerApiSource, /await this\.inputStaging\.stage/);
+  assert.match(ownerApiSource, /id, user_id, memory_id, reservation_id, idempotency_key, input_sha256/);
   assert.match(ownerApiSource, /OwnerVideoQueuePort/);
+  assert.match(handlerSource, /createFirstPresenceVideoOwnerInputStaging/);
   assert.doesNotMatch(ownerApiSource, /ViduFirstPresenceProvider|provider\.submit|provider\.poll/);
 });

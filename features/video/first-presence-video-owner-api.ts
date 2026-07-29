@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { PoolClient } from "pg";
 
 import {
@@ -58,6 +60,16 @@ export type OwnerVideoJobQueryPort = {
 
 export type OwnerVideoQueuePort = {
   enqueue(input: { jobId: string }): Promise<void>;
+};
+
+/**
+ * The owner API must stage a verified portrait before it commits a queued row.
+ * This prevents a worker in another process from claiming a job whose input
+ * has not yet reached durable storage.
+ */
+export type OwnerVideoInputStagingPort = {
+  stage(input: { jobId: string; storageKey: string }): Promise<void>;
+  discard(input: { jobId: string }): Promise<void>;
 };
 
 export class FirstPresenceVideoOwnerApiError extends Error {
@@ -203,9 +215,9 @@ async function selectedPortrait(
   client: PoolClient,
   userId: string,
   memoryId: string,
-): Promise<{ sha256: string } | null> {
-  const result = await client.query<{ sha256: string }>(
-    `SELECT sha256
+): Promise<{ sha256: string; storage_key: string } | null> {
+  const result = await client.query<{ sha256: string; storage_key: string }>(
+    `SELECT sha256, storage_key
      FROM public.media_assets
      WHERE user_id = $1
        AND memory_id = $2
@@ -388,6 +400,10 @@ async function reserveCredit(
 
 export class FirstPresenceVideoOwnerPostgresPort
   implements OwnerVideoJobCommandPort, OwnerVideoJobQueryPort {
+  constructor(
+    private readonly createInputStaging: () => OwnerVideoInputStagingPort,
+  ) {}
+
   async createOrRecover(
     input: CreateOwnerVideoJobInput,
   ): Promise<OwnerVideoJobCreateResult> {
@@ -456,21 +472,30 @@ export class FirstPresenceVideoOwnerPostgresPort
         generationKey: requestKey,
         intent: input.intent,
       });
-      const inserted = await client.query<OwnerJobRow>(
-        `WITH written AS (
-           INSERT INTO public.video_generation_jobs (
-             user_id, memory_id, reservation_id, idempotency_key, input_sha256
-           ) VALUES ($1, $2, $3, $4, $5)
-           RETURNING *
-         )
-         SELECT ${OWNER_JOB_COLUMNS.replaceAll("j.", "written.")}
-         FROM written
-         JOIN public.users u ON u.id = written.user_id
-         JOIN public.commerce_generation_reservations r ON r.id = written.reservation_id
-         JOIN public.commerce_credit_lots l ON l.id = r.credit_lot_id`,
-        [userId, memoryId, reservation.id, requestKey, portrait.sha256],
-      );
-      return { job: toOwnerJob(inserted.rows[0]), created: true };
+      const jobId = randomUUID();
+      const inputStaging = this.createInputStaging();
+      try {
+        await inputStaging.stage({ jobId, storageKey: portrait.storage_key });
+        const inserted = await client.query<OwnerJobRow>(
+          `WITH written AS (
+             INSERT INTO public.video_generation_jobs (
+               id, user_id, memory_id, reservation_id, idempotency_key, input_sha256
+             ) VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING *
+           )
+           SELECT ${OWNER_JOB_COLUMNS.replaceAll("j.", "written.")}
+           FROM written
+           JOIN public.users u ON u.id = written.user_id
+           JOIN public.commerce_generation_reservations r ON r.id = written.reservation_id
+           JOIN public.commerce_credit_lots l ON l.id = r.credit_lot_id`,
+          [jobId, userId, memoryId, reservation.id, requestKey, portrait.sha256],
+        );
+        return { job: toOwnerJob(inserted.rows[0]), created: true };
+      } catch (error) {
+        await inputStaging.discard({ jobId }).catch(() => undefined);
+        if (error instanceof FirstPresenceVideoOwnerApiError) throw error;
+        throw new FirstPresenceVideoOwnerApiError("VIDEO_INPUT_STAGING_UNAVAILABLE");
+      }
     });
   }
 

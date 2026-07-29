@@ -5,6 +5,7 @@ import {
   FirstPresenceVideoOwnerApiService,
   FirstPresenceVideoOwnerPostgresPort,
   NoopFirstPresenceVideoQueuePort,
+  createFirstPresenceVideoOwnerInputStaging,
   type FirstPresenceVideoIntent,
 } from "../../../../../features/video";
 import {
@@ -28,7 +29,9 @@ const json = (body: Record<string, unknown>, init?: ResponseInit) =>
   applyAuthNoStore(NextResponse.json(body, init));
 
 const service = (): OwnerVideoApiService => {
-  const postgres = new FirstPresenceVideoOwnerPostgresPort();
+  const postgres = new FirstPresenceVideoOwnerPostgresPort(
+    createFirstPresenceVideoOwnerInputStaging,
+  );
   return new FirstPresenceVideoOwnerApiService(
     postgres,
     postgres,
@@ -65,6 +68,7 @@ function failure(error: unknown) {
       FREE_PREVIEW_ALREADY_USED: 409,
       GENERATION_CREDIT_UNAVAILABLE: 409,
       TA_LIMIT_EXCEEDED: 409,
+      VIDEO_INPUT_STAGING_UNAVAILABLE: 503,
     };
     return json(
       { error: error.code },
