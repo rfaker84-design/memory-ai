@@ -14,6 +14,7 @@ const mutationPaths = [
   "/api/memories/memory-id",
   "/api/memories/memory-id/chat-session",
   "/api/memories/memory-id/first-greeting",
+  "/api/memories/memory-id/first-presence-video",
   "/api/memory-chat",
   "/api/consents",
   "/api/business-events",
