@@ -7,6 +7,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { packageStandaloneRuntime, readStandaloneManifest } = require("./standalone-runtime-layout.cjs");
+const { createStagingRuntimeTestEnvironment } = require("../test-support/staging-runtime-test-environment.cjs");
 
 const root = path.resolve(__dirname, "../..");
 const standalone = path.join(root, ".next", "standalone");
@@ -49,6 +50,24 @@ async function waitForServer(port, child) {
   throw lastError ?? new Error("standalone did not start");
 }
 
+function startStandalone(port, environment) {
+  const output = [];
+  const child = spawn(process.execPath, ["run-standalone-from-manifest.cjs"], {
+    cwd: runtime,
+    env: {
+      ...process.env,
+      ...environment,
+      NODE_PATH: "",
+      PORT: String(port),
+      HOSTNAME: "127.0.0.1",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stdout.on("data", (chunk) => output.push(String(chunk)));
+  child.stderr.on("data", (chunk) => output.push(String(chunk)));
+  return { child, output: () => output.join("") };
+}
+
 async function stopChild(child) {
   if (child.exitCode !== null) return;
   child.kill();
@@ -72,35 +91,35 @@ async function main() {
   assert.equal(typeof runtimeRequire("cos-nodejs-sdk-v5"), "function");
   assert.throws(() => runtimeRequire.resolve("request"), /Cannot find module/);
 
-  const port = await freePort();
-  const child = spawn(process.execPath, ["run-standalone-from-manifest.cjs"], {
-    cwd: runtime,
-    env: {
-      ...process.env,
-      NODE_ENV: "production",
-      NODE_PATH: "",
-      PORT: String(port),
-      HOSTNAME: "127.0.0.1",
-      DATABASE_URL: "postgresql://memoryai:password@127.0.0.1:5432/memoryai",
-      AUTH_VERIFICATION_PEPPER: "p".repeat(32),
-      SESSION_SECRET: "s".repeat(32),
-      REFUND_REVIEW_ACCESS_TOKEN: "r".repeat(48),
-      AUTH_ALLOWED_ORIGIN: `https://127.0.0.1:${port}`,
-      AUTH_TRUST_NGINX_PROXY: "true",
-      AUTH_PROXY_LOOPBACK_ONLY: "true",
-      LLM_PROVIDER: "deepseek",
-      DEEPSEEK_API_KEY: "standalone-test-key",
-      DEEPSEEK_MODEL: "deepseek-chat",
-    },
-    stdio: "ignore",
-  });
+  const staging = createStagingRuntimeTestEnvironment();
+  let started;
+  let incomplete;
   try {
-    await waitForServer(port, child);
+    const incompletePort = await freePort();
+    const incompleteEnvironment = { ...staging.environment };
+    // Override any host-inherited value so the negative path remains isolated.
+    incompleteEnvironment.DEPLOYMENT_ENV = "";
+    incomplete = startStandalone(incompletePort, incompleteEnvironment);
+    await waitForServer(incompletePort, incomplete.child);
+    const denied = await request(incompletePort, "/_next/image?url=%2Ficon-192.png&w=64&q=75");
+    assert.equal(denied.statusCode, 500, "incomplete production staging contract must fail closed");
+    assert.match(incomplete.output(), /DEPLOYMENT_ENV_INVALID/);
+    await stopChild(incomplete.child);
+    incomplete = undefined;
+
+    const port = await freePort();
+    started = startStandalone(port, staging.environment);
+    await waitForServer(port, started.child);
+    const icon = await request(port, "/icon-192.png");
+    assert.equal(icon.statusCode, 200, "standalone public icon must be served");
     const optimized = await request(port, "/_next/image?url=%2Ficon-192.png&w=64&q=75");
     assert.equal(optimized.statusCode, 200, "standalone image optimization must succeed");
-    assert.match(optimized.headers["content-type"] ?? "", /^image\//);
+    assert.equal(optimized.headers["content-type"], "image/png");
+    assert.doesNotMatch(started.output(), /DEPLOYMENT_ENV_INVALID/);
   } finally {
-    await stopChild(child);
+    if (incomplete) await stopChild(incomplete.child);
+    if (started) await stopChild(started.child);
+    staging.cleanup();
   }
 
   console.log(`STANDALONE_MEDIA_RUNTIME_PASS cos=${path.relative(runtime, cosEntry)}`);

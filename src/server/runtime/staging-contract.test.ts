@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import test from "node:test";
 
 import {
@@ -8,22 +9,12 @@ import {
   StagingRuntimeConfigurationError,
 } from "./staging-contract";
 
-const stagingEnvironment: NodeJS.ProcessEnv = {
-  NODE_ENV: "production",
-  DEPLOYMENT_ENV: "staging",
-  DATABASE_URL: "postgresql://staging:secret@127.0.0.1:5432/memoryai_staging",
-  STAGING_DATABASE_ISOLATION: "isolated",
-  STAGING_DATABASE_NAME: "memoryai_staging",
-  STAGING_DATA_SOURCE: "empty",
-  AUTH_ALLOWED_ORIGIN: STAGING_APP_ORIGIN,
-  STAGING_ACCESS_TOKEN: "a".repeat(48),
-  STAGING_FIXED_SMS_CODE: "246810",
-  STAGING_FIXED_SMS_PHONES: "+8613800013800,+8613900013900",
-  STAGING_MEDIA_ROOT: "/var/lib/memoryai-staging/media",
-  STAGING_MEDIA_SIGNING_SECRET: "m".repeat(32),
-  LLM_PROVIDER: "mock",
-  TTS_PROVIDER: "mock",
-};
+const { createStagingRuntimeTestEnvironment } = createRequire(import.meta.url)(
+  "../../../scripts/test-support/staging-runtime-test-environment.cjs",
+);
+const stagingEnvironment: NodeJS.ProcessEnv = createStagingRuntimeTestEnvironment({
+  mediaRoot: "/var/lib/memoryai-staging/media",
+}).environment;
 
 test("staging runtime requires an isolated database, exact App origin, fixed test capability, and strong token", () => {
   const configuration = getStagingRuntimeConfiguration(stagingEnvironment);
