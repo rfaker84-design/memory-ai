@@ -10,6 +10,7 @@ import pg from "pg";
 
 import { createFirstPresencePlaybackAuthorizationHandler } from "../../app/api/memories/[memoryId]/first-presence-video/[jobId]/playback/_handler";
 import { createFirstPresencePlaybackReadHandler } from "../../app/api/first-presence-video/playback/[token]/_handler";
+import { createVideoReviewsHandler } from "../../app/api/internal/video-reviews/_handler";
 import { closePostgresPool } from "../../src/server/database";
 import type { AuthSession } from "../../src/server/auth";
 import { getCommerceProduct } from "../commerce/catalog";
@@ -278,14 +279,39 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
   const ownerWorker = new FirstPresenceVideoWorker(new FirstPresenceVideoPostgresRepository(), createService());
   await ownerWorker.runOnce();
   await ownerWorker.runOnce();
-  const ownerPreviewApproved = await createService().review({
-    jobId: ownerPreview.id,
-    reviewerAccount: "video-reviewer@yijian.test",
-    action: "approve",
-    reason: "isolated owner initial preview review",
-    now: new Date("2026-07-29T00:00:00.000Z"),
+  delete process.env.YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED;
+  delete process.env.YIJIAN_VIDEO_REVIEW_ACCESS_TOKEN;
+  delete process.env.YIJIAN_VIDEO_REVIEW_ACCOUNT;
+  const reviewHandler = createVideoReviewsHandler(() => createService());
+  const reviewRequest = (headers: Record<string, string>) => new NextRequest(
+    "https://memoryai.test/api/internal/video-reviews",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", ...headers },
+      body: JSON.stringify({ jobId: ownerPreview.id, action: "approve", reason: "isolated owner initial preview review" }),
+    },
+  );
+  assert.equal((await reviewHandler(reviewRequest({}))).status, 401, "manual review remains disabled without its exact internal flag");
+  const reviewToken = "r".repeat(48);
+  Object.assign(process.env, {
+    YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED: "true",
+    YIJIAN_VIDEO_REVIEW_ACCESS_TOKEN: reviewToken,
+    YIJIAN_VIDEO_REVIEW_ACCOUNT: "video-reviewer@yijian.test",
   });
-  assert.equal(ownerPreviewApproved.status, "succeeded");
+  assert.equal((await reviewHandler(reviewRequest({
+    "x-video-review-access-token": reviewToken,
+    "x-video-reviewer-account": "attacker@yijian.test",
+  }))).status, 401, "manual review rejects a non-exact reviewer account");
+  const ownerPreviewReview = await reviewHandler(reviewRequest({
+    "x-video-review-access-token": reviewToken,
+    "x-video-reviewer-account": "video-reviewer@yijian.test",
+  }));
+  assert.equal(ownerPreviewReview.status, 202);
+  const ownerPreviewApproved = await ownerPort.listForOwner({ externalUserId: owner, memoryId: memory! });
+  assert.equal(ownerPreviewApproved[0]?.status, "succeeded");
+  delete process.env.YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED;
+  delete process.env.YIJIAN_VIDEO_REVIEW_ACCESS_TOKEN;
+  delete process.env.YIJIAN_VIDEO_REVIEW_ACCOUNT;
   const ownerArtifacts = new FirstPresenceVideoArtifactQueryPort(artifactStorage);
   const ownerPreviewArtifact = await ownerArtifacts.findApprovedForOwner({
     externalUserId: owner,
