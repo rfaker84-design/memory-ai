@@ -11,7 +11,7 @@ import {
   type VideoArtifactReaderPort,
 } from "@/features/video";
 import type { AuthSession } from "@/src/server/auth";
-import { createFirstPresencePlaybackAuthorizationHandler } from "@/app/api/memories/[memoryId]/first-presence-video/[jobId]/playback/_handler";
+import { createFirstPresencePlaybackAuthorizationHandler } from "@/app/api/memories/[id]/first-presence-video/[jobId]/playback/_handler";
 import { createFirstPresencePlaybackReadHandler } from "./[token]/_handler";
 
 const owner = "owner-a";
@@ -87,7 +87,7 @@ test("owner playback authorization returns only the controlled inline projection
   );
   const response = await handler.GET(new NextRequest(
     `https://memoryai.test/api/memories/${memoryId}/first-presence-video/${jobId}/playback`,
-  ), { params: Promise.resolve({ memoryId, jobId }) });
+  ), { params: Promise.resolve({ id: memoryId, jobId }) });
   assert.equal(response.status, 200);
   const body = await response.json() as { playback: Record<string, unknown> };
   assert.deepEqual(Object.keys(body.playback).sort(), ["contentDisposition", "expiresAt", "saveAllowed", "url"]);

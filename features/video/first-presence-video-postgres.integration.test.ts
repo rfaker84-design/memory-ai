@@ -8,7 +8,7 @@ import test from "node:test";
 import { NextRequest } from "next/server";
 import pg from "pg";
 
-import { createFirstPresencePlaybackAuthorizationHandler } from "../../app/api/memories/[memoryId]/first-presence-video/[jobId]/playback/_handler";
+import { createFirstPresencePlaybackAuthorizationHandler } from "../../app/api/memories/[id]/first-presence-video/[jobId]/playback/_handler";
 import { createFirstPresencePlaybackReadHandler } from "../../app/api/first-presence-video/playback/[token]/_handler";
 import { createVideoReviewsHandler } from "../../app/api/internal/video-reviews/_handler";
 import { closePostgresPool } from "../../src/server/database";
@@ -330,7 +330,7 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
   );
   const authorizationResponse = await authorizationHandler.GET(new NextRequest(
     `https://memoryai.test/api/memories/${memory}/first-presence-video/${ownerPreview.id}/playback`,
-  ), { params: Promise.resolve({ memoryId: memory!, jobId: ownerPreview.id }) });
+  ), { params: Promise.resolve({ id: memory!, jobId: ownerPreview.id }) });
   assert.equal(authorizationResponse.status, 200);
   const authorizationBody = await authorizationResponse.json() as { playback: { url: string; saveAllowed: boolean; contentDisposition: string } };
   assert.equal(authorizationBody.playback.saveAllowed, false);

@@ -12,7 +12,7 @@ import { AuthConfigurationError, type AuthSession, verifyRequestSession } from "
 import { DatabaseDependencyError } from "@/src/server/database";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 
-type Context = { params: Promise<{ memoryId: string; jobId: string }> };
+type Context = { params: Promise<{ id: string; jobId: string }> };
 type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
 type PlaybackAuthorizationService = Pick<FirstPresencePlaybackAuthorizationService, "authorize">;
 
@@ -53,7 +53,7 @@ export function createFirstPresencePlaybackAuthorizationHandler(
         if ([...request.nextUrl.searchParams.keys()].length > 0) {
           return json({ error: "INVALID_PLAYBACK_REQUEST" }, { status: 400 });
         }
-        const { memoryId, jobId } = await params;
+        const { id: memoryId, jobId } = await params;
         const playback: PlaybackAuthorizationDto = await serviceFactory().authorize({
           externalUserId: session.externalUserId,
           memoryId,

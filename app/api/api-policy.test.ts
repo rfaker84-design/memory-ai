@@ -193,7 +193,7 @@ test("formal Session ownership and public health contracts remain explicit", asy
     chatSession: readFileSync("app/api/memories/[id]/chat-session/_handler.ts", "utf8"),
     firstGreeting: readFileSync("app/api/memories/[id]/first-greeting/_handler.ts", "utf8"),
     firstPresenceVideo: readFileSync("app/api/memories/[id]/first-presence-video/_handler.ts", "utf8"),
-    firstPresencePlayback: readFileSync("app/api/memories/[memoryId]/first-presence-video/[jobId]/playback/_handler.ts", "utf8"),
+    firstPresencePlayback: readFileSync("app/api/memories/[id]/first-presence-video/[jobId]/playback/_handler.ts", "utf8"),
     signedFirstPresencePlayback: readFileSync("app/api/first-presence-video/playback/[token]/_handler.ts", "utf8"),
     firstPresencePlaybackService: readFileSync("features/video/first-presence-video-playback.ts", "utf8"),
     memoryChat: readFileSync("app/api/memory-chat/route.ts", "utf8"),
