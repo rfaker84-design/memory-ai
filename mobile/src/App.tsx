@@ -4,7 +4,12 @@ import { Haptics, ImpactStyle } from "@capacitor/haptics";
 import { Share } from "@capacitor/share";
 import { runtimeConfig } from "./config/environment";
 import { MemoryMedia, type PickedMedia, saveSignedVideo } from "./native/memory-media";
-import { productApi, ProductApiError, type ProductMemory } from "./product/api";
+import {
+  productApi,
+  ProductApiError,
+  type ProductConversation,
+  type ProductMemory,
+} from "./product/api";
 import {
   CreationFlowError,
   type PendingCreation,
@@ -12,14 +17,14 @@ import {
   startPendingCreation,
   uploadPendingMedia,
 } from "./product/creation-flow";
+import { VideoOpportunityScreen } from "./product/VideoOpportunityScreen";
 
 const DebugLab = __MOBILE_DEBUG_BUILD__
   ? lazy(() => import("./debug/NativeCapabilityLab").then((module) => ({ default: module.NativeCapabilityLab })))
   : null;
 
-type Screen = "splash" | "welcome" | "login" | "code" | "home" | "create" | "presence" | "chat" | "memory" | "gallery" | "profile" | "offline" | "debug";
+type Screen = "splash" | "welcome" | "login" | "code" | "home" | "create" | "presence" | "chat" | "memory" | "video" | "profile" | "offline" | "debug";
 type SessionMode = "remote" | "preview";
-type ChatMessage = { role: "assistant" | "user"; content: string };
 
 const previewMemory = (name: string, relationship: string, lifeStory: string): ProductMemory => ({
   id: "preview-memory",
@@ -41,6 +46,12 @@ function friendlyError(error: unknown): string {
 
 function initials(name: string) {
   return Array.from(name.trim() || "忆见").slice(0, 2).join("");
+}
+
+function firstMemoryId(memories: ProductMemory[]): string | null {
+  if (memories.length === 1) return memories[0]?.id ?? null;
+  if (!memories.length || memories.some((memory) => !memory.createdAt?.trim())) return null;
+  return [...memories].sort((left, right) => left.createdAt!.localeCompare(right.createdAt!))[0]?.id ?? null;
 }
 
 function press(action: () => void) {
@@ -88,6 +99,7 @@ export function App() {
   const [code, setCode] = useState("");
   const [challengeId, setChallengeId] = useState("");
   const [memory, setMemory] = useState<ProductMemory | null>(null);
+  const [firstOwnedMemoryId, setFirstOwnedMemoryId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [relationship, setRelationship] = useState("");
   const [story, setStory] = useState("");
@@ -95,12 +107,14 @@ export function App() {
   const [pendingCreation, setPendingCreation] = useState<PendingCreation | null>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [conversation, setConversation] = useState<ProductConversation>({ sessionId: null, messages: [] });
   const [question, setQuestion] = useState("");
   const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
 
   const hasMemory = Boolean(memory);
   const title = memory?.name || "TA";
+  const isFirstMemory = Boolean(memory && firstOwnedMemoryId === memory.id);
+  const messages = conversation.messages;
   const productOnline = online && (mode === "preview" || productApi.enabled());
 
   useEffect(() => {
@@ -122,11 +136,14 @@ export function App() {
         }
         const memories = await productApi.listMemories();
         const restoredMemory = memories[0] ?? null;
-        const conversation = restoredMemory ? await productApi.getConversation(restoredMemory.id) : { messages: [] };
+        const conversation = restoredMemory
+          ? await productApi.getConversation(restoredMemory.id)
+          : { sessionId: null, messages: [] };
         if (!active) return;
         setMode("remote");
         setMemory(restoredMemory);
-        setMessages(conversation.messages);
+        setFirstOwnedMemoryId(firstMemoryId(memories));
+        setConversation(conversation);
         setScreen("home");
       } catch {
         if (active) setScreen("welcome");
@@ -140,16 +157,29 @@ export function App() {
     return () => { active = false; window.clearTimeout(finish); window.removeEventListener("online", onOnline); window.removeEventListener("offline", onOffline); };
   }, []);
 
-  const openMemory = useCallback(async (id: string, destination: "memory" | "gallery" = "memory") => {
+  const openMemory = useCallback(async (id: string, destination: "memory" | "video" = "memory") => {
     if (__MOBILE_DEBUG_BUILD__ && id === "preview-memory") {
       setMode("preview");
+      setConversation({ sessionId: null, messages: [] });
+      setFirstOwnedMemoryId(null);
       setMemory((current) => current ?? previewMemory("TA", "重要的人", "那些共同经历的瞬间，仍然被好好记得。"));
       setScreen(destination);
       return;
     }
     if (!online || !productApi.enabled()) { setScreen("offline"); return; }
     setBusy(true);
-    try { setMemory(await productApi.getMemory(id)); setMode("remote"); setScreen(destination); }
+    try {
+      const [ownedMemory, restoredConversation, memories] = await Promise.all([
+        productApi.getMemory(id),
+        productApi.getConversation(id),
+        productApi.listMemories(),
+      ]);
+      setMemory(ownedMemory);
+      setConversation(restoredConversation);
+      setFirstOwnedMemoryId(firstMemoryId(memories));
+      setMode("remote");
+      setScreen(destination);
+    }
     catch (error) { setNotice(friendlyError(error)); setScreen("home"); }
     finally { setBusy(false); }
   }, [online]);
@@ -157,7 +187,7 @@ export function App() {
   const handleAppUrl = useCallback((url: string) => {
       try {
         const directMemoryId = /^yijianmemory:\/\/memory\/([^/?#]+)/.exec(url)?.[1] ?? "";
-        const destination = /[?&]view=gallery(?:[&#]|$)/.test(url) ? "gallery" : "memory";
+        const destination = /[?&]view=(?:gallery|video)(?:[&#]|$)/.test(url) ? "video" : "memory";
         if (directMemoryId) { void openMemory(directMemoryId, destination); return; }
         const parsed = new URL(url);
         if (parsed.hostname === "memory" && parsed.pathname.length > 1) { void openMemory(parsed.pathname.replace(/^\//, ""), destination); return; }
@@ -231,7 +261,8 @@ export function App() {
       if (mode === "preview") {
         const created = previewMemory(name, relationship, story);
         setMemory(created);
-        setMessages([{ role: "assistant", content: `我在。关于${created.name}，你想先从哪一段记忆开始？` }]);
+        setFirstOwnedMemoryId(null);
+        setConversation({ sessionId: null, messages: [{ role: "assistant", content: `我在。关于${created.name}，你想先从哪一段记忆开始？` }] });
         setScreen("presence");
         return;
       }
@@ -243,9 +274,18 @@ export function App() {
       }
       const uploaded = await uploadPendingMedia(pending, productApi, setPendingCreation);
       setPendingCreation(uploaded);
-      const greeting = await requestServerGreeting(uploaded, productApi);
-      setMemory(uploaded.memory);
-      setMessages([{ role: "assistant", content: greeting.greeting.content }]);
+      const confirmedMemory = await productApi.getMemory(uploaded.memory.id);
+      if (!confirmedMemory.photoAssetId?.trim()) {
+        throw new ProductApiError(502, "The uploaded portrait was not confirmed by the server.");
+      }
+      await requestServerGreeting(uploaded, productApi);
+      const [restoredConversation, memories] = await Promise.all([
+        productApi.getConversation(confirmedMemory.id),
+        productApi.listMemories(),
+      ]);
+      setMemory(confirmedMemory);
+      setConversation(restoredConversation);
+      setFirstOwnedMemoryId(firstMemoryId(memories));
       setPendingCreation(null);
       setScreen("presence");
     } catch (error) { setNotice(friendlyError(error)); }
@@ -255,14 +295,18 @@ export function App() {
   const sendQuestion = async () => {
     const value = question.trim();
     if (!value || !memory) return;
-    setQuestion(""); setMessages((current) => [...current, { role: "user", content: value }]);
+    setQuestion("");
     setBusy(true);
     try {
       if (mode === "preview") {
-        setMessages((current) => [...current, { role: "assistant", content: "我记得你说过的这些。慢慢说，我一直在听。" }]);
+        setConversation((current) => ({
+          ...current,
+          sessionId: null,
+          messages: [...current.messages, { role: "assistant", content: "我记得你说过的这些。慢慢说，我一直在听。" }],
+        }));
       } else {
-        const result = await productApi.askMemory(memory.id, value);
-        setMessages((current) => [...current, { role: "assistant", content: result.answer || result.reply || result.text || "我在听。" }]);
+        await productApi.askMemory(memory.id, value);
+        setConversation(await productApi.getConversation(memory.id));
       }
     } catch (error) { setNotice(friendlyError(error)); }
     finally { setBusy(false); }
@@ -310,24 +354,39 @@ export function App() {
     if (screen === "presence" && memory) return <main className="presenceScene">
       <div className="presenceLight" aria-hidden="true" /><p className="eyebrow">一段新的陪伴正在开始</p><div className="personFrame"><span>{initials(memory.name)}</span></div><h1>{memory.name}</h1><p>{memory.relationship} · 已被好好记下</p>
       <blockquote>“{memory.lifeStory || "你愿意留下的每一段记忆，都会慢慢成为相见的地方。"}”</blockquote>
-      <button className="primaryButton" onClick={() => press(() => setScreen("chat"))}>和 TA 说句话</button><button className="quietLink" onClick={() => setScreen("memory")}>进入记忆</button>
+      <button className="primaryButton" onClick={() => press(() => setScreen("chat"))}>和 TA 说句话</button><button className="quietLink" onClick={() => setScreen("video")}>查看影像机会</button><button className="quietLink" onClick={() => setScreen("memory")}>进入记忆</button>
     </main>;
     if (screen === "chat") return <main className="chatScene">
-      <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><div><strong>{title}</strong><small>正在陪伴</small></div><button className="headerAction" onClick={() => setScreen("gallery")}>影像</button></header>
+      <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><div><strong>{title}</strong><small>正在陪伴</small></div><button className="headerAction" onClick={() => setScreen("video")}>影像</button></header>
       <div className="chatBody">{memory ? <div className="chatPortrait">{initials(memory.name)}</div> : null}{messages.length ? messages.map((message, index) => <p key={`${message.role}-${index}`} className={`bubble ${message.role}`}>{message.content}</p>) : <p className="emptyCopy">先创建一位你想念的人。</p>}</div>
       <form className="chatComposer" onSubmit={(event) => { event.preventDefault(); void sendQuestion(); }}><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="想和 TA 说些什么" disabled={!memory || busy} /><button disabled={!question.trim() || busy}>发送</button></form>
       {notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="chat" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
-    if (screen === "memory" || screen === "gallery") return <main className="memoryScene">
-      <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><span>记忆</span><button className="headerAction" onClick={() => setScreen(screen === "memory" ? "gallery" : "memory")}>{screen === "memory" ? "影像" : "详情"}</button></header>
-      {memory ? <>{screen === "memory" ? <section className="memoryHero"><div className="personFrame small"><span>{initials(memory.name)}</span></div><p className="eyebrow">{memory.relationship}</p><h1>{memory.name}</h1><p>{memory.lifeStory || "这段记忆正在慢慢长出新的形状。"}</p><button className="primaryButton" onClick={() => setScreen("chat")}>继续对话</button></section> : <section className="galleryScene"><p className="eyebrow">影像</p><h1>把瞬间，留在身边。</h1>{previewVideoUrl ? <article className="videoCard"><div><span>回忆片段</span><small>{memory.name} · 一段被珍藏的时光</small></div><button onClick={() => void saveVideo()} disabled={busy}>保存到相册</button><button className="secondaryButton" onClick={() => void shareVideo()}>分享</button></article> : <p className="emptyCopy">当影像准备好后，它会安静地留在这里。</p>}</section>}</> : <section className="emptyMemory"><h1>还没有一段记忆。</h1><p>从你最想念的人开始。</p><button className="primaryButton" onClick={() => setScreen("create")}>创建 TA</button></section>}
+    if (screen === "video" && memory) {
+      if (mode === "preview") return <main className="memoryScene">
+        <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><span>影像</span><button className="headerAction" onClick={() => setScreen("memory")}>详情</button></header>
+        <section className="galleryScene"><p className="eyebrow">影像</p><h1>把瞬间，留在身边。</h1>{previewVideoUrl ? <article className="videoCard"><div><span>回忆片段</span><small>{memory.name} · 一段被珍藏的时光</small></div><button onClick={() => void saveVideo()} disabled={busy}>保存到相册</button><button className="secondaryButton" onClick={() => void shareVideo()}>分享</button></article> : <p className="emptyCopy">影像准备好后，会安静地留在这里。</p>}</section>
+      </main>;
+      return <VideoOpportunityScreen
+        memory={memory}
+        conversation={conversation}
+        isFirstMemory={isFirstMemory}
+        online={online && productApi.enabled()}
+        onBack={() => setScreen("memory")}
+        onOpenChat={() => setScreen("chat")}
+      />;
+    }
+    if (screen === "video") return <main className="memoryScene"><section className="emptyMemory"><h1>还没有一段记忆。</h1><p>从你最想念的人开始。</p><button className="primaryButton" onClick={() => setScreen("create")}>创建 TA</button></section></main>;
+    if (screen === "memory") return <main className="memoryScene">
+      <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><span>记忆</span><button className="headerAction" onClick={() => setScreen("video")}>影像</button></header>
+      {memory ? <section className="memoryHero"><div className="personFrame small"><span>{initials(memory.name)}</span></div><p className="eyebrow">{memory.relationship}</p><h1>{memory.name}</h1><p>{memory.lifeStory || "这段记忆正在慢慢长出新的形状。"}</p><button className="primaryButton" onClick={() => setScreen("chat")}>继续对话</button></section> : <section className="emptyMemory"><h1>还没有一段记忆。</h1><p>从你最想念的人开始。</p><button className="primaryButton" onClick={() => setScreen("create")}>创建 TA</button></section>}
       {notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="memory" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
     if (screen === "profile") return <main className="profileScene"><p className="eyebrow">我的</p><h1>把陪伴，慢慢留住。</h1><section><span>资料与偏好</span><span>隐私与授权</span><span>关于忆见</span></section><p>每一段记忆都只为你和 TA 而存在。</p><BottomNav active="profile" onChange={setScreen} hasMemory={hasMemory} /></main>;
     return <main className="homeScene"><p className="eyebrow">忆见</p><div className="homeSpace"><div className="homeGlow" aria-hidden="true" />{memory ? <><div className="personFrame"><span>{initials(memory.name)}</span></div><p>{memory.name} 在这里</p></> : <><div className="emptyPortrait" /><h1>为谁，留一盏灯？</h1><p>从一个名字、一句常说的话，开始重新靠近。</p></>}</div>
       <button className="primaryButton" onClick={() => press(() => setScreen(memory ? "chat" : "create"))}>{memory ? "继续相见" : "创建 TA"}</button>{notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="home" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
-  }, [busy, challengeId, code, hasMemory, media.length, memory, messages, mode, name, notice, online, pendingCreation, phone, previewVideoUrl, question, relationship, screen, story, title]);
+  }, [busy, challengeId, code, conversation, hasMemory, isFirstMemory, media.length, memory, messages, mode, name, notice, online, pendingCreation, phone, previewVideoUrl, question, relationship, screen, story, title]);
 
   return <div className={`appRoot ${productOnline ? "isOnline" : ""}`}>{content}</div>;
 }

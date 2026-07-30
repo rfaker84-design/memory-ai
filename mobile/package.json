@@ -15,7 +15,8 @@
     "ios:sync": "npm run sync && cap sync ios",
     "ios:open": "cap open ios",
     "verify:config": "tsx scripts/verify-mobile-config.ts",
-    "test:secure-session-contract": "tsx --test scripts/session-origin.test.ts"
+    "test:secure-session-contract": "tsx --test scripts/session-origin.test.ts",
+    "test:video-opportunity": "tsx --test src/product/video-opportunity.test.ts"
   },
   "dependencies": {
     "@capacitor/app": "^7.0.0",
