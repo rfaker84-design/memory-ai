@@ -2,11 +2,14 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 
+import { getVideoArtifactStorageConfiguration } from "../../src/server/runtime/video-staging-contract";
+
 import { SecureVideoDownloader } from "./first-presence-media-inspection";
 
 const JOB_ID = /^[0-9a-f-]{16,64}$/i;
 const OUTPUT_KEY = /^video-artifacts\/[0-9a-f-]{16,64}\.mp4$/i;
 const INPUT_KEY = /^video-inputs\/[0-9a-f-]{16,64}\.dataurl$/i;
+const PRODUCTION_STAGING_CONSTRUCTOR = Symbol("production-staging-artifact-storage");
 
 export type StagedVideoArtifact = {
   artifactKey: string;
@@ -70,8 +73,8 @@ export class LocalStagingVideoArtifactStorage implements VideoArtifactStoragePor
   private readonly playbackBaseUrl: URL;
   private readonly downloader: Pick<SecureVideoDownloader, "download">;
 
-  constructor(options: LocalStagingVideoArtifactStorageOptions) {
-    if (process.env.NODE_ENV === "production") {
+  constructor(options: LocalStagingVideoArtifactStorageOptions, authorization?: symbol) {
+    if (process.env.NODE_ENV === "production" && authorization !== PRODUCTION_STAGING_CONSTRUCTOR) {
       throw new Error("VIDEO_ARTIFACT_STORAGE_UNAVAILABLE");
     }
     if (Buffer.byteLength(options.signingSecret, "utf8") < 48) {
@@ -211,12 +214,14 @@ export class LocalStagingVideoArtifactStorage implements VideoArtifactStoragePor
 export function createVideoArtifactStorageFromEnvironment(
   environment: Record<string, string | undefined> = process.env,
 ): VideoArtifactStoragePort {
-  if (environment.NODE_ENV === "production" || environment.VIDEO_ARTIFACT_STORAGE_PROVIDER !== "local-staging") {
+  try {
+    const configuration = getVideoArtifactStorageConfiguration(environment as NodeJS.ProcessEnv);
+    return new LocalStagingVideoArtifactStorage({
+      root: configuration.artifactRoot,
+      signingSecret: configuration.signingSecret,
+      playbackBaseUrl: configuration.playbackBaseUrl,
+    }, PRODUCTION_STAGING_CONSTRUCTOR);
+  } catch {
     throw new Error("VIDEO_ARTIFACT_STORAGE_UNAVAILABLE");
   }
-  const root = environment.VIDEO_ARTIFACT_STAGING_ROOT;
-  const signingSecret = environment.VIDEO_ARTIFACT_SIGNING_SECRET;
-  const playbackBaseUrl = environment.VIDEO_ARTIFACT_PLAYBACK_BASE_URL;
-  if (!root || !signingSecret || !playbackBaseUrl) throw new Error("VIDEO_ARTIFACT_STORAGE_UNAVAILABLE");
-  return new LocalStagingVideoArtifactStorage({ root, signingSecret, playbackBaseUrl });
 }

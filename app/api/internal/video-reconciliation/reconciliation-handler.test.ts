@@ -5,7 +5,7 @@ import { NextRequest } from "next/server";
 
 import { createVideoReconciliationHandler } from "./_handler";
 
-const token = "r".repeat(48);
+const token = "reconcile-Z9y8X7w6V5u4T3s2R1q0P9o8N7m6L5k4J3i2H1g0Ff";
 const account = "reconciler@yijian.test";
 const jobId = "00000000-0000-4000-8000-000000000021";
 const key = "video:reconciliation:request:0001";
@@ -13,8 +13,11 @@ const key = "video:reconciliation:request:0001";
 test("uncertain reconciliation is internal-only, timing-token guarded, and body-strict", async () => {
   const previous = {
     enabled: process.env.YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED,
-    token: process.env.YIJIAN_VIDEO_RECONCILIATION_ACCESS_TOKEN,
+    token: process.env.VIDEO_RECONCILIATION_ACCESS_TOKEN,
     account: process.env.YIJIAN_VIDEO_RECONCILIATION_ACCOUNT,
+    reviewEnabled: process.env.YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED,
+    reviewToken: process.env.VIDEO_REVIEW_ACCESS_TOKEN,
+    reviewAccount: process.env.YIJIAN_VIDEO_REVIEW_ACCOUNT,
   };
   const calls: Array<Record<string, unknown>> = [];
   const handler = createVideoReconciliationHandler(() => ({
@@ -31,8 +34,11 @@ test("uncertain reconciliation is internal-only, timing-token guarded, and body-
     }));
   try {
     process.env.YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED = "true";
-    process.env.YIJIAN_VIDEO_RECONCILIATION_ACCESS_TOKEN = token;
+    process.env.VIDEO_RECONCILIATION_ACCESS_TOKEN = token;
     process.env.YIJIAN_VIDEO_RECONCILIATION_ACCOUNT = account;
+    process.env.YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED = "true";
+    process.env.VIDEO_REVIEW_ACCESS_TOKEN = "review-A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0Uv";
+    process.env.YIJIAN_VIDEO_REVIEW_ACCOUNT = "video-reviewer@yijian.test";
 
     assert.equal((await request({ action: "RELEASE_UNRESOLVED", jobId, idempotencyKey: key, reason: "confirmed absent" })).status, 401);
     assert.equal((await request(
@@ -64,9 +70,15 @@ test("uncertain reconciliation is internal-only, timing-token guarded, and body-
   } finally {
     if (previous.enabled === undefined) delete process.env.YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED;
     else process.env.YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED = previous.enabled;
-    if (previous.token === undefined) delete process.env.YIJIAN_VIDEO_RECONCILIATION_ACCESS_TOKEN;
-    else process.env.YIJIAN_VIDEO_RECONCILIATION_ACCESS_TOKEN = previous.token;
+    if (previous.token === undefined) delete process.env.VIDEO_RECONCILIATION_ACCESS_TOKEN;
+    else process.env.VIDEO_RECONCILIATION_ACCESS_TOKEN = previous.token;
     if (previous.account === undefined) delete process.env.YIJIAN_VIDEO_RECONCILIATION_ACCOUNT;
     else process.env.YIJIAN_VIDEO_RECONCILIATION_ACCOUNT = previous.account;
+    if (previous.reviewEnabled === undefined) delete process.env.YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED;
+    else process.env.YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED = previous.reviewEnabled;
+    if (previous.reviewToken === undefined) delete process.env.VIDEO_REVIEW_ACCESS_TOKEN;
+    else process.env.VIDEO_REVIEW_ACCESS_TOKEN = previous.reviewToken;
+    if (previous.reviewAccount === undefined) delete process.env.YIJIAN_VIDEO_REVIEW_ACCOUNT;
+    else process.env.YIJIAN_VIDEO_REVIEW_ACCOUNT = previous.reviewAccount;
   }
 });

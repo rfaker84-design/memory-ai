@@ -1,4 +1,5 @@
 import { closePostgresPool } from "../src/server/database";
+import { assertVideoWorkerStartupConfiguration } from "../src/server/runtime/video-staging-contract";
 import {
   FirstPresenceVideoPostgresRepository,
   FirstPresenceVideoWorker,
@@ -11,9 +12,7 @@ function positiveInteger(value: string | undefined, fallback: number, maximum: n
 }
 
 async function main(): Promise<void> {
-  if (process.env.YIJIAN_VIDEO_WORKER_ENABLED !== "true") {
-    throw new Error("VIDEO_WORKER_DISABLED");
-  }
+  assertVideoWorkerStartupConfiguration();
   const service = createFirstPresenceVideoRuntime();
   const worker = new FirstPresenceVideoWorker(new FirstPresenceVideoPostgresRepository(), service);
   const once = process.env.VIDEO_WORKER_ONCE === "true";

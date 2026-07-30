@@ -637,15 +637,21 @@ test("manual reject releases the user entitlement and records reviewer, time, an
 test("internal video review route requires internal flag, exact account, token, and strict body", async () => {
   const previous = {
     enabled: process.env.YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED,
-    token: process.env.YIJIAN_VIDEO_REVIEW_ACCESS_TOKEN,
+    token: process.env.VIDEO_REVIEW_ACCESS_TOKEN,
     account: process.env.YIJIAN_VIDEO_REVIEW_ACCOUNT,
+    reconciliationEnabled: process.env.YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED,
+    reconciliationToken: process.env.VIDEO_RECONCILIATION_ACCESS_TOKEN,
+    reconciliationAccount: process.env.YIJIAN_VIDEO_RECONCILIATION_ACCOUNT,
   };
-  const token = "v".repeat(48);
+  const token = "review-A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0Uv";
   const reviewer = "internal-reviewer@yijian.test";
   try {
     delete process.env.YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED;
-    process.env.YIJIAN_VIDEO_REVIEW_ACCESS_TOKEN = token;
+    process.env.VIDEO_REVIEW_ACCESS_TOKEN = token;
     process.env.YIJIAN_VIDEO_REVIEW_ACCOUNT = reviewer;
+    process.env.YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED = "true";
+    process.env.VIDEO_RECONCILIATION_ACCESS_TOKEN = "reconcile-Z9y8X7w6V5u4T3s2R1q0P9o8N7m6L5k4J3i2H1g0Ff";
+    process.env.YIJIAN_VIDEO_RECONCILIATION_ACCOUNT = "video-reconciler@yijian.test";
     let calls = 0;
     const handler = createVideoReviewsHandler(() => ({
       review: async (input) => {
@@ -715,9 +721,15 @@ test("internal video review route requires internal flag, exact account, token, 
   } finally {
     if (previous.enabled === undefined) delete process.env.YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED;
     else process.env.YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED = previous.enabled;
-    if (previous.token === undefined) delete process.env.YIJIAN_VIDEO_REVIEW_ACCESS_TOKEN;
-    else process.env.YIJIAN_VIDEO_REVIEW_ACCESS_TOKEN = previous.token;
+    if (previous.token === undefined) delete process.env.VIDEO_REVIEW_ACCESS_TOKEN;
+    else process.env.VIDEO_REVIEW_ACCESS_TOKEN = previous.token;
     if (previous.account === undefined) delete process.env.YIJIAN_VIDEO_REVIEW_ACCOUNT;
     else process.env.YIJIAN_VIDEO_REVIEW_ACCOUNT = previous.account;
+    if (previous.reconciliationEnabled === undefined) delete process.env.YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED;
+    else process.env.YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED = previous.reconciliationEnabled;
+    if (previous.reconciliationToken === undefined) delete process.env.VIDEO_RECONCILIATION_ACCESS_TOKEN;
+    else process.env.VIDEO_RECONCILIATION_ACCESS_TOKEN = previous.reconciliationToken;
+    if (previous.reconciliationAccount === undefined) delete process.env.YIJIAN_VIDEO_RECONCILIATION_ACCOUNT;
+    else process.env.YIJIAN_VIDEO_RECONCILIATION_ACCOUNT = previous.reconciliationAccount;
   }
 });

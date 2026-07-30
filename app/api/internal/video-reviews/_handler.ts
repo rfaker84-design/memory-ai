@@ -1,39 +1,24 @@
-import { timingSafeEqual } from "node:crypto";
-
 import { NextRequest, NextResponse } from "next/server";
 
 import type { FirstPresenceVideoService } from "@/features/video";
+import { authorizeVideoInternalRequest } from "@/src/server/security/video-internal-access";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 
 type ReviewService = Pick<FirstPresenceVideoService, "review">;
 const TOKEN_HEADER = "x-video-review-access-token";
 const REVIEWER_HEADER = "x-video-reviewer-account";
-const MINIMUM_TOKEN_BYTES = 48;
 const UUID_OR_JOB_PATTERN = /^[A-Za-z0-9._:-]{8,120}$/;
 
 const json = (body: Record<string, unknown>, init?: ResponseInit) =>
   applyAuthNoStore(NextResponse.json(body, init));
 
 function authorized(request: NextRequest): { ok: true; reviewerAccount: string } | { ok: false } {
-  if (process.env.YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED !== "true") return { ok: false };
-  const expectedToken = process.env.YIJIAN_VIDEO_REVIEW_ACCESS_TOKEN;
-  const expectedReviewer = process.env.YIJIAN_VIDEO_REVIEW_ACCOUNT;
-  const suppliedToken = request.headers.get(TOKEN_HEADER);
-  const suppliedReviewer = request.headers.get(REVIEWER_HEADER);
-  if (
-    !expectedToken ||
-    expectedToken !== expectedToken.trim() ||
-    Buffer.byteLength(expectedToken, "utf8") < MINIMUM_TOKEN_BYTES ||
-    !expectedReviewer ||
-    !suppliedToken ||
-    suppliedReviewer !== expectedReviewer
-  ) {
-    return { ok: false };
-  }
-  const left = Buffer.from(expectedToken);
-  const right = Buffer.from(suppliedToken);
-  if (left.length !== right.length || !timingSafeEqual(left, right)) return { ok: false };
-  return { ok: true, reviewerAccount: suppliedReviewer };
+  const reviewerAccount = authorizeVideoInternalRequest({
+    kind: "review",
+    token: request.headers.get(TOKEN_HEADER),
+    account: request.headers.get(REVIEWER_HEADER),
+  });
+  return reviewerAccount ? { ok: true, reviewerAccount } : { ok: false };
 }
 
 function failure(error: unknown): NextResponse {

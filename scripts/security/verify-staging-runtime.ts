@@ -1,8 +1,10 @@
 import { assertProductionAuthConfiguration } from "../../src/server/auth/production-config";
 import { getStagingRuntimeConfiguration } from "../../src/server/runtime/staging-contract";
+import { getVideoArtifactStorageConfiguration } from "../../src/server/runtime/video-staging-contract";
 
 assertProductionAuthConfiguration(process.env);
 const configuration = getStagingRuntimeConfiguration(process.env);
+getVideoArtifactStorageConfiguration(process.env);
 
 console.log(JSON.stringify({
   deploymentEnvironment: "staging",

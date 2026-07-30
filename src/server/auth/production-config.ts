@@ -2,6 +2,10 @@ import {
   assertStagingRuntimeConfiguration,
   StagingRuntimeConfigurationError,
 } from "../runtime/staging-contract";
+import {
+  getVideoInternalAccessConfiguration,
+  VideoInternalAccessConfigurationError,
+} from "../security/video-internal-access";
 
 export class ProductionAuthConfigurationError extends Error {
   constructor(public readonly code: string) {
@@ -93,6 +97,9 @@ function rejectStagingCapabilities(environment: NodeJS.ProcessEnv): void {
   if (environment.STORAGE_PROVIDER?.trim() === "local") {
     throw new ProductionAuthConfigurationError("STAGING_CAPABILITY_FORBIDDEN");
   }
+  if (environment.VIDEO_ARTIFACT_STORAGE_PROVIDER?.trim() === "local-staging") {
+    throw new ProductionAuthConfigurationError("STAGING_CAPABILITY_FORBIDDEN");
+  }
 }
 
 /**
@@ -118,6 +125,15 @@ export function assertProductionAuthConfiguration(
   }
 
   const deploymentEnvironment = requireDeploymentEnvironment(environment);
+  try {
+    getVideoInternalAccessConfiguration(environment);
+  } catch (error) {
+    if (error instanceof VideoInternalAccessConfigurationError) {
+      throw new ProductionAuthConfigurationError(error.code);
+    }
+    throw error;
+  }
+
   if (deploymentEnvironment === "staging") {
     try {
       assertStagingRuntimeConfiguration(environment);

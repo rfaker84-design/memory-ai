@@ -137,9 +137,7 @@ test("video reconciliation is an explicitly audited formal internal route", () =
   assert.equal(EXACT_FORMAL_PATHS.has(pathname), true);
   assert.equal(isFormalApiPath(pathname), true);
   const source = readFileSync("app/api/internal/video-reconciliation/_handler.ts", "utf8");
-  assert.match(source, /YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED/);
-  assert.match(source, /YIJIAN_VIDEO_RECONCILIATION_ACCESS_TOKEN/);
-  assert.match(source, /timingSafeEqual/);
+  assert.match(source, /authorizeVideoInternalRequest/);
 });
 
 test("every tracked non-formal Route Handler is a route-level 410", async () => {
@@ -212,6 +210,7 @@ test("formal Session ownership and public health contracts remain explicit", asy
     commerceReconciliation: readFileSync("app/api/internal/commerce-reconciliation/route.ts", "utf8"),
     videoReviews: readFileSync("app/api/internal/video-reviews/_handler.ts", "utf8"),
     videoReconciliation: readFileSync("app/api/internal/video-reconciliation/_handler.ts", "utf8"),
+    videoInternalAccess: readFileSync("src/server/security/video-internal-access.ts", "utf8"),
     media: readFileSync("app/api/media/_lib.ts", "utf8"),
   };
   assert.match(sources.sendCode, /createSendCodeHandler/);
@@ -251,12 +250,11 @@ test("formal Session ownership and public health contracts remain explicit", asy
   assert.match(sources.commerceReferralQualifications, /createReferralQualificationHandler/);
   assert.match(sources.commerceTestCallback, /createCommerceTestCallbackHandler/);
   assert.match(sources.commerceReconciliation, /COMMERCE_RECONCILIATION_ACCESS_TOKEN/);
-  assert.match(sources.videoReviews, /YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED/);
-  assert.match(sources.videoReviews, /YIJIAN_VIDEO_REVIEW_ACCESS_TOKEN/);
-  assert.match(sources.videoReviews, /YIJIAN_VIDEO_REVIEW_ACCOUNT/);
-  assert.match(sources.videoReconciliation, /YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED/);
-  assert.match(sources.videoReconciliation, /YIJIAN_VIDEO_RECONCILIATION_ACCESS_TOKEN/);
-  assert.match(sources.videoReconciliation, /YIJIAN_VIDEO_RECONCILIATION_ACCOUNT/);
+  assert.match(sources.videoReviews, /authorizeVideoInternalRequest/);
+  assert.match(sources.videoReconciliation, /authorizeVideoInternalRequest/);
+  assert.match(sources.videoInternalAccess, /VIDEO_REVIEW_ACCESS_TOKEN/);
+  assert.match(sources.videoInternalAccess, /VIDEO_RECONCILIATION_ACCESS_TOKEN/);
+  assert.match(sources.videoInternalAccess, /constantTimeEquals/);
   assert.match(sources.businessEvents, /verifyRequestSession/);
   assert.match(sources.businessFunnel, /BUSINESS_METRICS_ACCESS_TOKEN/);
 

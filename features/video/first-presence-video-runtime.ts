@@ -1,4 +1,5 @@
 import { createMediaStorage } from "../../src/server/storage";
+import { getVideoArtifactStorageConfiguration } from "../../src/server/runtime/video-staging-contract";
 
 import type { OwnerVideoInputStagingPort } from "./first-presence-video-owner-api";
 import {
@@ -16,9 +17,7 @@ import {
 } from "./video-artifact-storage";
 
 function requiredEvidenceRoot(): string {
-  const value = process.env.VIDEO_WORKER_EVIDENCE_ROOT?.trim();
-  if (!value) throw new Error("VIDEO_WORKER_EVIDENCE_ROOT_MISSING");
-  return value;
+  return getVideoArtifactStorageConfiguration().evidenceRoot;
 }
 
 /** One composition root for the durable worker and internal review endpoint. */

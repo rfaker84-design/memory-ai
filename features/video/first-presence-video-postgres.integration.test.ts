@@ -280,7 +280,10 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
   await ownerWorker.runOnce();
   await ownerWorker.runOnce();
   delete process.env.YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED;
-  delete process.env.YIJIAN_VIDEO_REVIEW_ACCESS_TOKEN;
+  delete process.env.VIDEO_REVIEW_ACCESS_TOKEN;
+  delete process.env.YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED;
+  delete process.env.VIDEO_RECONCILIATION_ACCESS_TOKEN;
+  delete process.env.YIJIAN_VIDEO_RECONCILIATION_ACCOUNT;
   delete process.env.YIJIAN_VIDEO_REVIEW_ACCOUNT;
   const reviewHandler = createVideoReviewsHandler(() => createService());
   const reviewRequest = (headers: Record<string, string>) => new NextRequest(
@@ -292,11 +295,14 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
     },
   );
   assert.equal((await reviewHandler(reviewRequest({}))).status, 401, "manual review remains disabled without its exact internal flag");
-  const reviewToken = "r".repeat(48);
+  const reviewToken = "review-A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0Uv";
   Object.assign(process.env, {
     YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED: "true",
-    YIJIAN_VIDEO_REVIEW_ACCESS_TOKEN: reviewToken,
+    VIDEO_REVIEW_ACCESS_TOKEN: reviewToken,
     YIJIAN_VIDEO_REVIEW_ACCOUNT: "video-reviewer@yijian.test",
+    YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED: "true",
+    VIDEO_RECONCILIATION_ACCESS_TOKEN: "reconcile-Z9y8X7w6V5u4T3s2R1q0P9o8N7m6L5k4J3i2H1g0Ff",
+    YIJIAN_VIDEO_RECONCILIATION_ACCOUNT: "video-reconciler@yijian.test",
   });
   assert.equal((await reviewHandler(reviewRequest({
     "x-video-review-access-token": reviewToken,
@@ -310,7 +316,10 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
   const ownerPreviewApproved = await ownerPort.listForOwner({ externalUserId: owner, memoryId: memory! });
   assert.equal(ownerPreviewApproved[0]?.status, "succeeded");
   delete process.env.YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED;
-  delete process.env.YIJIAN_VIDEO_REVIEW_ACCESS_TOKEN;
+  delete process.env.VIDEO_REVIEW_ACCESS_TOKEN;
+  delete process.env.YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED;
+  delete process.env.VIDEO_RECONCILIATION_ACCESS_TOKEN;
+  delete process.env.YIJIAN_VIDEO_RECONCILIATION_ACCOUNT;
   delete process.env.YIJIAN_VIDEO_REVIEW_ACCOUNT;
   const ownerArtifacts = new FirstPresenceVideoArtifactQueryPort(artifactStorage);
   const ownerPreviewArtifact = await ownerArtifacts.findApprovedForOwner({

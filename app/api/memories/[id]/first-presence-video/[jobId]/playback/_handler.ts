@@ -20,7 +20,7 @@ const json = (body: Record<string, unknown>, init?: ResponseInit) =>
   applyAuthNoStore(NextResponse.json(body, init));
 
 function service(): PlaybackAuthorizationService {
-  const secret = process.env.YIJIAN_VIDEO_PLAYBACK_SIGNING_SECRET;
+  const secret = process.env.VIDEO_ARTIFACT_SIGNING_SECRET;
   if (!secret) throw new FirstPresencePlaybackError("PLAYBACK_UNAVAILABLE");
   return new FirstPresencePlaybackAuthorizationService(
     new FirstPresenceVideoArtifactQueryPort(createVideoArtifactStorageFromEnvironment()),

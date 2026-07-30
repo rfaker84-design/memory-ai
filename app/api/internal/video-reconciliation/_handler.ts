@@ -1,14 +1,12 @@
-import { timingSafeEqual } from "node:crypto";
-
 import { NextRequest, NextResponse } from "next/server";
 
 import type { FirstPresenceUncertainReconciliationService } from "@/features/video";
+import { authorizeVideoInternalRequest } from "@/src/server/security/video-internal-access";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 
 type ReconciliationService = Pick<FirstPresenceUncertainReconciliationService, "reconcile">;
 const TOKEN_HEADER = "x-video-reconciliation-access-token";
 const ACCOUNT_HEADER = "x-video-reconciliation-account";
-const MINIMUM_TOKEN_BYTES = 48;
 const JOB_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const KEY_PATTERN = /^[-A-Za-z0-9._:]{16,128}$/;
 const PROVIDER_TASK_PATTERN = /^[-A-Za-z0-9._:]{1,256}$/;
@@ -17,23 +15,12 @@ const json = (body: Record<string, unknown>, init?: ResponseInit) =>
   applyAuthNoStore(NextResponse.json(body, init));
 
 function authorized(request: NextRequest): { ok: true; operatorAccount: string } | { ok: false } {
-  if (process.env.YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED !== "true") return { ok: false };
-  const expectedToken = process.env.YIJIAN_VIDEO_RECONCILIATION_ACCESS_TOKEN;
-  const expectedAccount = process.env.YIJIAN_VIDEO_RECONCILIATION_ACCOUNT;
-  const suppliedToken = request.headers.get(TOKEN_HEADER);
-  const suppliedAccount = request.headers.get(ACCOUNT_HEADER);
-  if (
-    !expectedToken
-    || expectedToken !== expectedToken.trim()
-    || Buffer.byteLength(expectedToken, "utf8") < MINIMUM_TOKEN_BYTES
-    || !expectedAccount
-    || !suppliedToken
-    || suppliedAccount !== expectedAccount
-  ) return { ok: false };
-  const expected = Buffer.from(expectedToken);
-  const supplied = Buffer.from(suppliedToken);
-  if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) return { ok: false };
-  return { ok: true, operatorAccount: suppliedAccount };
+  const operatorAccount = authorizeVideoInternalRequest({
+    kind: "reconciliation",
+    token: request.headers.get(TOKEN_HEADER),
+    account: request.headers.get(ACCOUNT_HEADER),
+  });
+  return operatorAccount ? { ok: true, operatorAccount } : { ok: false };
 }
 
 function invalidBody(input: Record<string, unknown>): boolean {
