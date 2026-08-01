@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { completion, creationCompletionStatus, createMemoryRequestHeaders, draftForStorage, validateStage } from "./createMemoryLogic";
+import { canEnterConversation, completion, creationCompletionStatus, createMemoryRequestHeaders, draftForStorage, validateStage } from "./createMemoryLogic";
 import { emptyDraft } from "./types";
 
 test("four-stage validation keeps memory optional", () => {
@@ -31,4 +31,6 @@ test("completion is deterministic and never invents blank facts", () => {
 test("an unconfirmed media upload never becomes a local creation success", () => {
   assert.equal(creationCompletionStatus(true), "success");
   assert.equal(creationCompletionStatus(false), "media-recovery");
+  assert.equal(canEnterConversation("success"), true);
+  assert.equal(canEnterConversation("media-recovery"), false);
 });

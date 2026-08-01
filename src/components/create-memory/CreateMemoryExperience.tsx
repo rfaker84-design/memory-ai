@@ -6,7 +6,7 @@ import { MemoryButton, MemoryInput } from "../memory-ui";
 import { useReducedMotion } from "../../motion";
 import { useCreateMemoryDraft } from "./useCreateMemoryDraft";
 import type { CreateStage } from "./types";
-import { completion, creationCompletionStatus, createMemoryRequestHeaders, validateStage } from "./createMemoryLogic";
+import { canEnterConversation, completion, creationCompletionStatus, createMemoryRequestHeaders, validateStage } from "./createMemoryLogic";
 import { recordTrustConsent, TrustConsentRequestError } from "../trust/trustConsentClient";
 import styles from "./CreateMemoryExperience.module.css";
 
@@ -155,7 +155,7 @@ export function CreateMemoryExperience() {
           {error && <div className={styles.error} role="alert">{error}</div>}
           <div className={styles.status}>{status === "saving-draft" ? "正在保存草稿…" : status === "uploading" ? "正在上传素材…" : status === "submitting" ? "正在写入 PostgreSQL…" : uploadState === "unavailable" ? "素材服务尚未就绪" : "草稿已自动保存（不含素材）"}</div>
           <div className={styles.actions}>{stage > 0 && <MemoryButton variant="ghost" onClick={() => setStage((stage - 1) as CreateStage)}>上一步</MemoryButton>}{stage === 1 && <button className={styles.skip} onClick={() => setStage(2)}>稍后补充</button>}{stage < 3 ? <MemoryButton onClick={next} disabled={stage === 2 && !draft.consent}>继续</MemoryButton> : <MemoryButton loading={status === "submitting" || status === "uploading"} onClick={create}>创建 TA</MemoryButton>}</div>
-        </> : <div className={styles.success}><div className={styles.eyebrow}>{status === "media-recovery" ? "素材等待确认" : "创建完成"}</div><h1 className={styles.title}>{status === "media-recovery" ? `${created.name} 已创建，素材尚未保存` : `${created.name} 正在变得清晰`}</h1><p className={styles.desc}>{status === "media-recovery" ? "TA 资料已写入记忆空间，但所选素材尚未收到服务端确认。请使用同一 TA 明确重试上传。" : "资料已写入你的记忆空间。"}</p>{error && <p className={styles.error} role="alert">{error}</p>}{status === "media-recovery" && (photo || voice) && <MemoryButton variant="secondary" onClick={retryMediaUpload}>重试素材上传</MemoryButton>}<MemoryButton onClick={() => router.push(`/memory/${created.id}`)}>进入 TA 的详情</MemoryButton><MemoryButton variant="secondary" onClick={() => router.push(`/memory-chat/${created.id}`)}>开始对话</MemoryButton></div>}
+        </> : <div className={styles.success}><div className={styles.eyebrow}>{status === "media-recovery" ? "素材等待确认" : "创建完成"}</div><h1 className={styles.title}>{status === "media-recovery" ? `${created.name} 已创建，素材尚未保存` : `${created.name} 正在变得清晰`}</h1><p className={styles.desc}>{status === "media-recovery" ? "TA 资料已写入记忆空间，但所选素材尚未收到服务端确认。请使用同一 TA 明确重试上传。" : "资料已写入你的记忆空间。"}</p>{error && <p className={styles.error} role="alert">{error}</p>}{status === "media-recovery" && (photo || voice) && <MemoryButton variant="secondary" onClick={retryMediaUpload}>重试素材上传</MemoryButton>}<MemoryButton onClick={() => router.push(`/memory/${created.id}`)}>进入 TA 的详情</MemoryButton>{canEnterConversation(status === "media-recovery" ? "media-recovery" : "success") && <MemoryButton variant="secondary" onClick={() => router.push(`/memory-chat/${created.id}`)}>开始对话</MemoryButton>}</div>}
       </section>
     </div>
   </main>;
