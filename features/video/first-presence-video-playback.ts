@@ -30,6 +30,7 @@ type SignedPlaybackClaims = {
   artifactBinding: string;
   expiresAt: number;
 };
+type VerifiedPlaybackClaims = SignedPlaybackClaims & { signingSecretIndex: number };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
@@ -81,10 +82,13 @@ function safeEqual(left: string, right: string): boolean {
 
 /** HMAC-signed, bounded bearer token. It never contains the storage object key. */
 export class FirstPresencePlaybackSigner {
-  constructor(private readonly secret: string) {
-    if (Buffer.byteLength(secret, "utf8") < 32) {
+  private readonly secrets: readonly string[];
+
+  constructor(secret: string, previousSecret?: string | null) {
+    if (Buffer.byteLength(secret, "utf8") < 32 || (previousSecret && Buffer.byteLength(previousSecret, "utf8") < 32)) {
       throw new FirstPresencePlaybackError("PLAYBACK_UNAVAILABLE");
     }
+    this.secrets = Object.freeze([secret, ...(previousSecret ? [previousSecret] : [])]);
   }
 
   issue(input: {
@@ -106,30 +110,34 @@ export class FirstPresencePlaybackSigner {
       artifactBinding: this.binding(input.artifact.artifactKey),
       expiresAt,
     });
-    const signature = createHmac("sha256", this.secret).update(payload, "utf8").digest("base64url");
+    const signature = createHmac("sha256", this.secrets[0]).update(payload, "utf8").digest("base64url");
     return { token: `${payload}.${signature}`, expiresAt: new Date(expiresAt * 1000).toISOString() };
   }
 
-  verify(token: string, now: Date = new Date()): SignedPlaybackClaims | null {
+  verify(token: string, now: Date = new Date()): VerifiedPlaybackClaims | null {
     if (!TOKEN_PATTERN.test(token)) return null;
     const [payload, signature, extra] = token.split(".");
     if (!payload || !signature || extra) return null;
-    const expected = createHmac("sha256", this.secret).update(payload, "utf8").digest("base64url");
-    if (!safeEqual(signature, expected)) return null;
     const claims = decode(payload);
     if (!claims || claims.expiresAt <= Math.floor(now.getTime() / 1000)) return null;
-    return claims;
+    for (const [signingSecretIndex, secret] of this.secrets.entries()) {
+      const expected = createHmac("sha256", secret).update(payload, "utf8").digest("base64url");
+      if (safeEqual(signature, expected)) return { ...claims, signingSecretIndex };
+    }
+    return null;
   }
 
-  assertMatchesArtifact(claims: SignedPlaybackClaims, artifact: ApprovedVideoArtifact, externalUserId: string): boolean {
-    return safeEqual(claims.ownerBinding, this.binding(externalUserId))
+  assertMatchesArtifact(claims: VerifiedPlaybackClaims, artifact: ApprovedVideoArtifact, externalUserId: string): boolean {
+    const secret = this.secrets[claims.signingSecretIndex];
+    if (!secret) return false;
+    return safeEqual(claims.ownerBinding, this.binding(externalUserId, secret))
       && claims.memoryId === artifact.memoryId
       && claims.jobId === artifact.jobId
-      && safeEqual(claims.artifactBinding, this.binding(artifact.artifactKey));
+      && safeEqual(claims.artifactBinding, this.binding(artifact.artifactKey, secret));
   }
 
-  private binding(value: string): string {
-    return createHmac("sha256", this.secret).update(value, "utf8").digest("base64url");
+  private binding(value: string, secret = this.secrets[0]): string {
+    return createHmac("sha256", secret).update(value, "utf8").digest("base64url");
   }
 }
 

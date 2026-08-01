@@ -130,6 +130,17 @@ test("expired or tampered playback tokens are uniformly unreadable", async () =>
   assert.equal(tamperedResponse.status, 404);
 });
 
+test("previous playback signing key preserves owner and artifact binding only during rotation", async () => {
+  const previous = "previous-playback-secret-which-is-at-least-32-bytes";
+  const oldToken = issue(new FirstPresencePlaybackSigner(previous));
+  const { handler } = readHandler(new Query(), new Reader(), new FirstPresencePlaybackSigner(secret, previous));
+  const response = await handler.GET(readRequest(oldToken), { params: Promise.resolve({ token: oldToken }) });
+  assert.equal(response.status, 200);
+  const mismatched = readHandler(new Query(), new Reader(), new FirstPresencePlaybackSigner(secret, previous), "attacker");
+  const denied = await mismatched.handler.GET(readRequest(oldToken), { params: Promise.resolve({ token: oldToken }) });
+  assert.equal(denied.status, 404);
+});
+
 test("cross-user, unapproved, and path-escape artifacts cannot be read", async () => {
   const crossUser = readHandler(new Query(), new Reader(), new FirstPresencePlaybackSigner(secret), "attacker");
   const token = issue(crossUser.signer);
