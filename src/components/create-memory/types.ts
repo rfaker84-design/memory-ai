@@ -1,5 +1,5 @@
 export type CreateStage = 0 | 1 | 2 | 3;
-export type CreateStatus = "loading" | "editing" | "saving-draft" | "uploading" | "submitting" | "success" | "recoverable-error" | "fatal-error";
+export type CreateStatus = "loading" | "editing" | "saving-draft" | "uploading" | "submitting" | "success" | "media-recovery" | "recoverable-error" | "fatal-error";
 
 export type CreateDraft = {
   name: string;

@@ -1,5 +1,9 @@
 import type { CreateDraft, CreateStage } from "./types";
 
+export function creationCompletionStatus(mediaUploadConfirmed: boolean) {
+  return mediaUploadConfirmed ? "success" as const : "media-recovery" as const;
+}
+
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
 
 export function validateStage(stage: CreateStage, draft: CreateDraft): string | null {

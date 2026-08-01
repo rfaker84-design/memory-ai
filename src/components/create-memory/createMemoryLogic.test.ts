@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { completion, createMemoryRequestHeaders, draftForStorage, validateStage } from "./createMemoryLogic";
+import { completion, creationCompletionStatus, createMemoryRequestHeaders, draftForStorage, validateStage } from "./createMemoryLogic";
 import { emptyDraft } from "./types";
 
 test("four-stage validation keeps memory optional", () => {
@@ -26,4 +26,9 @@ test("completion is deterministic and never invents blank facts", () => {
   assert.equal(completion({ ...emptyDraft, name: "阿念" }), 11);
   assert.equal(createMemoryRequestHeaders("memory-1234567890")["Idempotency-Key"], "memory-1234567890");
   assert.throws(() => createMemoryRequestHeaders("short"));
+});
+
+test("an unconfirmed media upload never becomes a local creation success", () => {
+  assert.equal(creationCompletionStatus(true), "success");
+  assert.equal(creationCompletionStatus(false), "media-recovery");
 });
