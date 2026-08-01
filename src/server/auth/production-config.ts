@@ -81,6 +81,21 @@ function requireFormalTTS(environment: NodeJS.ProcessEnv): void {
   }
 }
 
+function requireFormalMediaStorage(environment: NodeJS.ProcessEnv): void {
+  const provider = environment.MEDIA_STORAGE_PROVIDER?.trim() || "cos";
+  if (provider !== "cos") {
+    throw new ProductionAuthConfigurationError("MEDIA_STORAGE_PROVIDER_INVALID");
+  }
+  for (const name of [
+    "TENCENT_SECRET_ID",
+    "TENCENT_SECRET_KEY",
+    "COS_MEDIA_BUCKET",
+    "COS_MEDIA_REGION",
+  ]) {
+    requireValue(environment, name);
+  }
+}
+
 function requireDeploymentEnvironment(environment: NodeJS.ProcessEnv): "production" | "staging" {
   const deploymentEnvironment = environment.DEPLOYMENT_ENV?.trim();
   if (deploymentEnvironment === "production" || deploymentEnvironment === "staging") {
@@ -153,4 +168,5 @@ export function assertProductionAuthConfiguration(
   requireHttpsOrigin(environment);
   requireFormalLLM(environment);
   requireFormalTTS(environment);
+  requireFormalMediaStorage(environment);
 }

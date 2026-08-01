@@ -28,6 +28,11 @@ const productionEnvironment: NodeJS.ProcessEnv = {
   DEEPSEEK_API_KEY: "test-provider-key",
   DEEPSEEK_MODEL: "deepseek-chat",
   TTS_PROVIDER: "tencent",
+  MEDIA_STORAGE_PROVIDER: "cos",
+  TENCENT_SECRET_ID: "test-tencent-secret-id",
+  TENCENT_SECRET_KEY: "test-tencent-secret-key",
+  COS_MEDIA_BUCKET: "memoryai-test-1250000000",
+  COS_MEDIA_REGION: "ap-guangzhou",
 };
 
 test("production startup accepts core authentication configuration without SMS capability variables", () => {
@@ -50,6 +55,10 @@ test("production authentication startup configuration fails closed for every req
     ["DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY_NOT_CONFIGURED"],
     ["DEEPSEEK_MODEL", "DEEPSEEK_MODEL_NOT_CONFIGURED"],
     ["TTS_PROVIDER", "TENCENT_TTS_PROVIDER_REQUIRED"],
+    ["TENCENT_SECRET_ID", "TENCENT_SECRET_ID_NOT_CONFIGURED"],
+    ["TENCENT_SECRET_KEY", "TENCENT_SECRET_KEY_NOT_CONFIGURED"],
+    ["COS_MEDIA_BUCKET", "COS_MEDIA_BUCKET_NOT_CONFIGURED"],
+    ["COS_MEDIA_REGION", "COS_MEDIA_REGION_NOT_CONFIGURED"],
   ];
 
   for (const [name, code] of cases) {
@@ -70,6 +79,7 @@ test("production authentication startup configuration rejects weak secrets and u
     ["DATABASE_URL", "mysql://example.test/auth", "DATABASE_URL_INVALID"],
     ["AUTH_ALLOWED_ORIGIN", "http://memoryai.test", "AUTH_ALLOWED_ORIGIN_INVALID"],
     ["TTS_PROVIDER", "mock", "TENCENT_TTS_PROVIDER_REQUIRED"],
+    ["MEDIA_STORAGE_PROVIDER", "unsupported", "MEDIA_STORAGE_PROVIDER_INVALID"],
   ] as const) {
     const environment = { ...productionEnvironment, [name]: value };
     assert.throws(
