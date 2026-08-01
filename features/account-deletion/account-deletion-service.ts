@@ -105,6 +105,31 @@ export class PostgresAccountDeletionService {
         );
         row = inserted.rows[0];
         if (!row) throw new Error("ACCOUNT_DELETION_REQUEST_UNAVAILABLE");
+        await client.query(
+          `INSERT INTO public.account_deletion_object_ledger (deletion_request_id, object_kind, object_key)
+           SELECT $1::uuid, 'media_object', object_key
+           FROM (
+             SELECT storage_key AS object_key FROM public.media_assets WHERE user_id = $2::uuid AND storage_key IS NOT NULL
+             UNION
+             SELECT thumbnail_key AS object_key FROM public.media_assets WHERE user_id = $2::uuid AND thumbnail_key IS NOT NULL
+           ) media
+           ON CONFLICT DO NOTHING`,
+          [row.id, input.userId],
+        );
+        await client.query(
+          `INSERT INTO public.account_deletion_object_ledger (deletion_request_id, object_kind, object_key)
+           SELECT $1::uuid, 'video_artifact', artifact_key
+           FROM public.video_generation_jobs WHERE user_id = $2::uuid AND artifact_key IS NOT NULL
+           ON CONFLICT DO NOTHING`,
+          [row.id, input.userId],
+        );
+        await client.query(
+          `INSERT INTO public.account_deletion_object_ledger (deletion_request_id, object_kind, provider, provider_task_id)
+           SELECT $1::uuid, 'provider_task', provider, provider_task_id
+           FROM public.video_generation_jobs WHERE user_id = $2::uuid AND provider_task_id IS NOT NULL
+           ON CONFLICT DO NOTHING`,
+          [row.id, input.userId],
+        );
         for (const kind of ACCOUNT_DELETION_TASK_KINDS) {
           await client.query(
             `INSERT INTO public.account_deletion_tasks (deletion_request_id, kind, idempotency_key, next_attempt_at)

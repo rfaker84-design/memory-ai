@@ -54,6 +54,34 @@ CREATE TABLE IF NOT EXISTS public.account_deletion_tasks (
 );
 CREATE INDEX IF NOT EXISTS idx_account_deletion_tasks_ready ON public.account_deletion_tasks (status, next_attempt_at);
 
+-- This private ledger preserves only the locator needed to delete a remote
+-- object after online content rows are removed. It is never returned through
+-- the customer receipt endpoint.
+CREATE TABLE IF NOT EXISTS public.account_deletion_object_ledger (
+  id UUID PRIMARY KEY DEFAULT pg_catalog.gen_random_uuid(),
+  deletion_request_id UUID NOT NULL REFERENCES public.account_deletion_requests(id) ON DELETE CASCADE,
+  object_kind TEXT NOT NULL,
+  object_key TEXT,
+  provider TEXT,
+  provider_task_id TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  deleted_at TIMESTAMPTZ,
+  receipt JSONB NOT NULL DEFAULT '{}'::jsonb,
+  last_error_code TEXT,
+  CONSTRAINT ck_account_deletion_object_kind CHECK (object_kind IN ('media_object','video_artifact','provider_task')),
+  CONSTRAINT ck_account_deletion_object_locator CHECK (
+    (object_kind IN ('media_object','video_artifact') AND object_key IS NOT NULL AND provider_task_id IS NULL)
+    OR (object_kind = 'provider_task' AND provider IS NOT NULL AND provider_task_id IS NOT NULL AND object_key IS NULL)
+  ),
+  CONSTRAINT ck_account_deletion_object_status CHECK (status IN ('pending','deleted','retry','blocked'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_account_deletion_object_locator
+  ON public.account_deletion_object_ledger (
+    deletion_request_id, object_kind,
+    COALESCE(object_key, ''), COALESCE(provider, ''), COALESCE(provider_task_id, '')
+  );
+CREATE INDEX IF NOT EXISTS idx_account_deletion_object_pending ON public.account_deletion_object_ledger (deletion_request_id, status);
+
 CREATE TABLE IF NOT EXISTS public.auth_session_revocations (
   jti UUID PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
