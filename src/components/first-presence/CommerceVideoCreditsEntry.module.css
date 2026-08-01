@@ -92,8 +92,30 @@
 }
 
 .package:disabled {
-  cursor: wait;
+  cursor: not-allowed;
   opacity: 0.6;
+}
+
+.commercialConsent {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin: 0.85rem 0 0;
+  color: rgba(230, 207, 183, 0.72);
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+.commercialConsent input {
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.15rem;
+  accent-color: #d7b184;
+}
+
+.commercialConsent input:focus-visible {
+  outline: 2px solid #d7b184;
+  outline-offset: 0.16rem;
 }
 
 .rules {

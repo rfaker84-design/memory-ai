@@ -67,6 +67,8 @@ test("orders API accepts only product and platform and delegates iOS to StoreKit
       assert.equal(platform, "ios");
       return adapter;
     },
+    () => undefined,
+    async () => true,
   );
   const response = await handler.POST(
     new NextRequest("https://memoryai.test/api/commerce/orders", {
@@ -77,6 +79,7 @@ test("orders API accepts only product and platform and delegates iOS to StoreKit
         "idempotency-key": "commerce-order-route-0001",
       },
       body: JSON.stringify({
+        memoryId: "00000000-0000-4000-8000-000000000003",
         productId: "memory_video_49",
         platform: "ios",
       }),
@@ -113,6 +116,9 @@ test("orders API never exposes a dynamic commerce state message", async () => {
       listOrders: async () => [],
     }),
     async () => session,
+    undefined,
+    undefined,
+    async () => true,
   );
   const response = await handler.POST(
     new NextRequest("https://memoryai.test/api/commerce/orders", {
@@ -122,7 +128,7 @@ test("orders API never exposes a dynamic commerce state message", async () => {
         "content-type": "application/json",
         "idempotency-key": "commerce-order-route-state-conflict",
       },
-      body: JSON.stringify({ productId: "memory_video_49", platform: "web" }),
+      body: JSON.stringify({ memoryId: "00000000-0000-4000-8000-000000000003", productId: "memory_video_49", platform: "web" }),
     }),
   );
   assert.equal(response.status, 409);
@@ -139,14 +145,37 @@ test("purchase kill switch blocks order creation after authentication and Origin
     async () => session,
     () => { throw new Error("payment adapter must not be selected"); },
     () => { throw new ProductCapabilityUnavailableError("COMMERCE_PURCHASES_DISABLED"); },
+    async () => true,
   );
   const response = await handler.POST(new NextRequest("https://memoryai.test/api/commerce/orders", {
     method: "POST",
     headers: { origin: "https://memoryai.test", "content-type": "application/json", "idempotency-key": "commerce-kill-switch-0001" },
-    body: JSON.stringify({ productId: "memory_video_49", platform: "web" }),
+    body: JSON.stringify({ memoryId: "00000000-0000-4000-8000-000000000003", productId: "memory_video_49", platform: "web" }),
   }));
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { error: "COMMERCE_PURCHASES_DISABLED" });
+  assert.equal(createCalls, 0);
+});
+
+test("orders API rejects direct purchase without TA-bound commercial consent", async () => {
+  let createCalls = 0;
+  const handler = createCommerceOrdersHandler(
+    () => ({
+      async createOrder() { createCalls += 1; throw new Error("must not create an order"); },
+      async listOrders() { return []; },
+    }),
+    async () => session,
+    () => ({ rail: "test", prepareCheckout: async () => ({ kind: "test_callback_required", orderNo: order.orderNo, chargesMoney: false }) }),
+    () => undefined,
+    async () => false,
+  );
+  const response = await handler.POST(new NextRequest("https://memoryai.test/api/commerce/orders", {
+    method: "POST",
+    headers: { origin: "https://memoryai.test", "content-type": "application/json", "idempotency-key": "commerce-consent-required-0001" },
+    body: JSON.stringify({ memoryId: "00000000-0000-4000-8000-000000000003", productId: "memory_video_49", platform: "web" }),
+  }));
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: "COMMERCIAL_CONSENT_REQUIRED" });
   assert.equal(createCalls, 0);
 });
 

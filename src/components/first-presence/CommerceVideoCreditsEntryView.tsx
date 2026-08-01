@@ -18,6 +18,7 @@ type Props = {
   balanceState: CommerceVideoCreditsBalanceState;
   catalogLoading: boolean;
   catalogUnavailable: boolean;
+  commercialAccepted?: boolean;
   memoryId: string;
   notice: string;
   products: CommerceVideoProduct[];
@@ -27,6 +28,7 @@ type Props = {
   titleId: string;
   view: View;
   onBack: () => void;
+  onCommercialAcceptanceChange?: (accepted: boolean) => void;
   onCreateOrder: (product: CommerceVideoProduct) => void;
   onOpenInvite: () => void;
   onOpenPackages: () => void;
@@ -37,6 +39,7 @@ export function CommerceVideoCreditsEntryView({
   balanceState,
   catalogLoading,
   catalogUnavailable,
+  commercialAccepted = false,
   memoryId,
   notice,
   products,
@@ -46,6 +49,7 @@ export function CommerceVideoCreditsEntryView({
   titleId,
   view,
   onBack,
+  onCommercialAcceptanceChange = () => undefined,
   onCreateOrder,
   onOpenInvite,
   onOpenPackages,
@@ -102,6 +106,14 @@ export function CommerceVideoCreditsEntryView({
             <div className={styles.detail}>
               {catalogLoading && <p className={styles.notice} role="status">正在准备影像次数。</p>}
               {catalogUnavailable && <p className={styles.notice} role="status">暂时无法读取影像套餐，请稍后再试。</p>}
+              <label className={styles.commercialConsent}>
+                <input
+                  type="checkbox"
+                  checked={commercialAccepted}
+                  onChange={(event) => onCommercialAcceptanceChange(event.currentTarget.checked)}
+                />
+                <span>我已年满 18 周岁，理解价格、影像次数、一次性收费与退款规则，并同意将本次确认记录用于订单与售后处理。</span>
+              </label>
               <div className={styles.packages}>
                 {products.map((product) => (
                   <button
@@ -109,7 +121,7 @@ export function CommerceVideoCreditsEntryView({
                     type="button"
                     className={styles.package}
                     onClick={() => onCreateOrder(product)}
-                    disabled={submitting !== null}
+                    disabled={submitting !== null || !commercialAccepted}
                   >
                     <strong>{product.priceFen / 100}元 / {product.generationCredits}次</strong>
                   </button>

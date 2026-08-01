@@ -21,6 +21,10 @@ import {
   CommerceVideoCreditsEntryView,
   type CommerceVideoCreditsEntryStyles,
 } from "./CommerceVideoCreditsEntryView";
+import {
+  recordTrustConsent,
+  TrustConsentRequestError,
+} from "../trust/trustConsentClient";
 import styles from "./CommerceVideoCreditsEntry.module.css";
 
 type View = "choices" | "invite" | "packages";
@@ -49,6 +53,7 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
     kind: "loading",
   });
   const [submitting, setSubmitting] = useState<string | null>(null);
+  const [commercialAccepted, setCommercialAccepted] = useState(false);
   const balanceAttempt = useRef(0);
 
   const refreshBalance = useCallback(async () => {
@@ -64,6 +69,10 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
       if (balanceAttempt.current === attempt) setBalanceState({ kind: "unavailable" });
     }
   }, []);
+
+  useEffect(() => {
+    setCommercialAccepted(false);
+  }, [memoryId]);
 
   useEffect(() => {
     void refreshBalance();
@@ -112,6 +121,7 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
   };
 
   const createOrder = async (product: CommerceVideoProduct) => {
+    if (balanceState.kind !== "empty" || !commercialAccepted) return;
     const platform = commercePlatform(navigator.userAgent);
     if (platform === "ios") {
       setNotice("iOS 内购尚未完成配置，暂不能提交订单。");
@@ -120,7 +130,8 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
     setSubmitting(product.id);
     setNotice("");
     try {
-      const result = await createCommerceVideoOrder(product.id, platform);
+      await recordTrustConsent("commercial_use", memoryId);
+      const result = await createCommerceVideoOrder(memoryId, product.id, platform);
       const checkout = result.checkout as { kind?: string } | undefined;
       if (checkout?.kind === "test_callback_required") {
         setNotice("测试订单已创建，需由受控测试回调完成；不会发起真实扣款。");
@@ -128,7 +139,9 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
         setNotice("当前支付通道不可用，订单不会获得额度。");
       }
     } catch (error) {
-      setNotice(unavailableCopy(error));
+      setNotice(error instanceof TrustConsentRequestError
+        ? "购买确认尚未安全记录，订单未创建。恢复连接后请重新确认。"
+        : unavailableCopy(error));
     } finally {
       setSubmitting(null);
     }
@@ -142,6 +155,7 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
         balanceState={balanceState}
         catalogLoading={catalogLoading}
         catalogUnavailable={catalogUnavailable}
+        commercialAccepted={commercialAccepted}
         memoryId={memoryId}
         notice={notice}
         products={products}
@@ -151,6 +165,7 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
         titleId={titleId}
         view={view}
         onBack={() => setView("choices")}
+        onCommercialAcceptanceChange={setCommercialAccepted}
         onCreateOrder={(product) => void createOrder(product)}
         onOpenInvite={() => void openInvite()}
         onOpenPackages={openPackages}

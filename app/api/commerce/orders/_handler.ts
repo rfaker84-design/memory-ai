@@ -18,6 +18,7 @@ import {
   type AuthSession,
   verifyRequestSession,
 } from "@/src/server/auth";
+import { hasApprovedMemoryConsent } from "@/features/consent/trust-consent-postgres";
 import { DatabaseDependencyError } from "@/src/server/database";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 import {
@@ -32,8 +33,14 @@ type AdapterFactory = (
   platform: CommercePlatform,
 ) => CommercePaymentAdapter;
 type CapabilityAssertion = (capability: ProductCapability) => void;
+type CommercialConsentVerifier = (input: {
+  externalUserId: string;
+  consentType: "commercial_use";
+  memoryId: string;
+}) => Promise<boolean>;
 
 const KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
+const MEMORY_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const PUBLIC_COMMERCE_STATE_CODE = /^[A-Z][A-Z0-9_]{2,127}$/;
 const json = (body: Record<string, unknown>, init?: ResponseInit) =>
   applyAuthNoStore(NextResponse.json(body, init));
@@ -76,6 +83,7 @@ export function createCommerceOrdersHandler(
   sessionResolver: SessionResolver = verifyRequestSession,
   adapterFactory: AdapterFactory = createCommercePaymentAdapter,
   assertCapability: CapabilityAssertion = assertProductCapabilityEnabled,
+  commercialConsentVerifier: CommercialConsentVerifier = hasApprovedMemoryConsent,
 ) {
   return {
     GET: async (request: NextRequest) => {
@@ -107,18 +115,27 @@ export function createCommerceOrdersHandler(
           typeof body !== "object"
           || body === null
           || Array.isArray(body)
-          || Object.keys(body).sort().join(",") !== "platform,productId"
+          || Object.keys(body).sort().join(",") !== "memoryId,platform,productId"
         ) {
           return json({ error: "INVALID_COMMERCE_REQUEST" }, { status: 400 });
         }
         const input = body as Record<string, unknown>;
         if (
           typeof input.productId !== "string"
+          || typeof input.memoryId !== "string"
+          || !MEMORY_ID_PATTERN.test(input.memoryId)
           || !["web", "android", "ios"].includes(String(input.platform))
         ) {
           return json({ error: "INVALID_COMMERCE_REQUEST" }, { status: 400 });
         }
         const platform = input.platform as CommercePlatform;
+        if (!(await commercialConsentVerifier({
+          externalUserId: session.externalUserId,
+          consentType: "commercial_use",
+          memoryId: input.memoryId,
+        }))) {
+          return json({ error: "COMMERCIAL_CONSENT_REQUIRED" }, { status: 403 });
+        }
         const result = await serviceFactory().createOrder({
           externalUserId: session.externalUserId,
           requestKey,

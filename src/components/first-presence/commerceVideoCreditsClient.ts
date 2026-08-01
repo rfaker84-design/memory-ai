@@ -114,6 +114,7 @@ export async function createReferralCode(request: typeof fetch = fetch) {
 }
 
 export async function createCommerceVideoOrder(
+  memoryId: string,
   productId: CommerceVideoProduct["id"],
   platform: "web" | "android" | "ios",
   request: typeof fetch = fetch,
@@ -124,7 +125,7 @@ export async function createCommerceVideoOrder(
       "Content-Type": "application/json",
       "Idempotency-Key": randomKey("commerce-video-order"),
     },
-    body: JSON.stringify({ productId, platform }),
+    body: JSON.stringify({ memoryId, productId, platform }),
   }, request);
 }
 

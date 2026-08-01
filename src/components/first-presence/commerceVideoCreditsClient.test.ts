@@ -61,13 +61,19 @@ test("video-credit entry creates only server-priced Commerce orders and referral
   };
 
   await createReferralCode(request as typeof fetch);
-  await createCommerceVideoOrder("memory_video_199", "android", request as typeof fetch);
+  await createCommerceVideoOrder(
+    "00000000-0000-4000-8000-000000000001",
+    "memory_video_199",
+    "android",
+    request as typeof fetch,
+  );
 
   assert.equal(calls[0].input, "/api/commerce/referrals/code");
   assert.equal(calls[0].init?.method, "POST");
   assert.match(String((calls[0].init?.headers as Record<string, string>)["Idempotency-Key"]), /^commerce-referral-/);
   assert.equal(calls[1].input, "/api/commerce/orders");
   assert.deepEqual(JSON.parse(String(calls[1].init?.body)), {
+    memoryId: "00000000-0000-4000-8000-000000000001",
     productId: "memory_video_199",
     platform: "android",
   });

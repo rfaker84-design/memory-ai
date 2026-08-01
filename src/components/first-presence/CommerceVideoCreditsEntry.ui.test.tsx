@@ -24,6 +24,7 @@ const styles: CommerceVideoCreditsEntryStyles = {
   back: "back",
   balance: "balance",
   choices: "choices",
+  commercialConsent: "commercialConsent",
   code: "code",
   description: "description",
   detail: "detail",
@@ -95,6 +96,35 @@ test("zero-balance UI is the only state that presents invitation and packages", 
   assert.match(rendered, /邀请朋友/);
   assert.match(rendered, /选择影像次数/);
   assert.doesNotMatch(rendered, /使用现有额度生成影像/);
+});
+
+test("package choices require an explicit commercial confirmation", () => {
+  const rendered = renderToStaticMarkup(
+    <MotionProvider>
+      <CommerceVideoCreditsEntryView
+        balanceState={resolveCommerceVideoCreditsBalanceState(emptyBalance)}
+        catalogLoading={false}
+        catalogUnavailable={false}
+        commercialAccepted={false}
+        memoryId="test-memory"
+        notice=""
+        products={[{ id: "memory_video_49", priceFen: 4900, generationCredits: 2, grantsFirstPreviewSave: true }]}
+        referral={null}
+        styles={styles}
+        submitting={null}
+        titleId="test-entry-title"
+        view="packages"
+        onBack={() => undefined}
+        onCommercialAcceptanceChange={() => undefined}
+        onCreateOrder={() => undefined}
+        onOpenInvite={() => undefined}
+        onOpenPackages={() => undefined}
+        onRetryBalance={() => undefined}
+      />
+    </MotionProvider>,
+  );
+  assert.match(rendered, /我已年满 18 周岁/);
+  assert.match(rendered, /disabled/);
 });
 
 test("unavailable-balance UI provides retry without treating the query as zero credits", () => {
