@@ -553,6 +553,13 @@ test("session key rotation signs with current kid and accepts only a bounded pre
       (error: unknown) => error instanceof AuthConfigurationError
         && error.code === "SESSION_SECRET_PREVIOUS_CONFIGURATION_INVALID",
     );
+
+    process.env.SESSION_SECRET_PREVIOUS_VALID_UNTIL = new Date(Date.now() + (7 * 24 * 60 * 60 + 31) * 1000).toISOString();
+    await assert.rejects(
+      verifySessionToken(oldToken),
+      (error: unknown) => error instanceof AuthConfigurationError
+        && error.code === "SESSION_SECRET_PREVIOUS_CONFIGURATION_INVALID",
+    );
   } finally {
     for (const key of keys) {
       const value = saved.get(key);

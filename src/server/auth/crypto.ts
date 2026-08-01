@@ -27,6 +27,10 @@ export type VerificationPepper = Readonly<{ id: string; secret: string }>;
 export type VerificationPepperKeyRing = Readonly<{ current: VerificationPepper; previous: VerificationPepper | null }>;
 const MINIMUM_VERIFICATION_PEPPER_OVERLAP_MS = (7 * 24 * 60 * 60 + 30) * 1000;
 const MAXIMUM_VERIFICATION_PEPPER_OVERLAP_MS = 180 * 24 * 60 * 60 * 1000;
+// An old session key is needed only until the last pre-rotation Session can
+// expire, including the JWT clock tolerance. Longer overlap would turn a
+// planned rotation into an indefinite second signing authority.
+const MAXIMUM_SESSION_SECRET_OVERLAP_MS = (7 * 24 * 60 * 60 + 30) * 1000;
 
 function requiredSecret(name: "AUTH_VERIFICATION_PEPPER" | "SESSION_SECRET", environment: NodeJS.ProcessEnv = process.env): string {
   const value = environment[name];
@@ -151,7 +155,8 @@ export function sessionSigningKeyRing(
   }
   const previousId = sessionKeyId(environment, "SESSION_SECRET_PREVIOUS_KID");
   const validUntilMilliseconds = Date.parse(previousValidUntil);
-  if (!Number.isFinite(validUntilMilliseconds) || validUntilMilliseconds <= now.getTime()) {
+  const overlap = validUntilMilliseconds - now.getTime();
+  if (!Number.isFinite(validUntilMilliseconds) || overlap <= 0 || overlap > MAXIMUM_SESSION_SECRET_OVERLAP_MS) {
     throw new AuthConfigurationError("SESSION_SECRET_PREVIOUS_CONFIGURATION_INVALID");
   }
   if (previousId === current.id || previousSecret === environment.SESSION_SECRET) {

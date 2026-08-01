@@ -130,6 +130,11 @@ test("production startup rejects incomplete or expired session rotation configur
       SESSION_SECRET_PREVIOUS_KID: "previous-v1",
       SESSION_SECRET_PREVIOUS_VALID_UNTIL: new Date(Date.now() - 1_000).toISOString(),
     },
+    {
+      SESSION_SECRET_PREVIOUS: "p".repeat(32),
+      SESSION_SECRET_PREVIOUS_KID: "previous-v1",
+      SESSION_SECRET_PREVIOUS_VALID_UNTIL: new Date(Date.now() + (7 * 24 * 60 * 60 + 31) * 1000).toISOString(),
+    },
   ]) {
     assert.throws(
       () => assertProductionAuthConfiguration({ ...productionEnvironment, ...override }),

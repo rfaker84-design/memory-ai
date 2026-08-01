@@ -54,6 +54,7 @@ function requireConfiguredExact(environment, name, expected, code) {
 }
 
 function requireSessionRotationContract(environment) {
+  const maximumOverlapMilliseconds = (7 * 24 * 60 * 60 + 30) * 1000;
   const currentId = environment.SESSION_SECRET_KID && environment.SESSION_SECRET_KID.trim() || "current";
   if (!/^[A-Za-z0-9_-]{1,32}$/.test(currentId)) throw failure("SESSION_SECRET_KID_INVALID");
   const previous = environment.SESSION_SECRET_PREVIOUS;
@@ -67,7 +68,8 @@ function requireSessionRotationContract(environment) {
     || previousId === currentId
     || previous === environment.SESSION_SECRET
     || !Number.isFinite(Date.parse(validUntil))
-    || Date.parse(validUntil) <= Date.now()) {
+    || Date.parse(validUntil) <= Date.now()
+    || Date.parse(validUntil) - Date.now() > maximumOverlapMilliseconds) {
     throw failure("SESSION_SECRET_PREVIOUS_CONFIGURATION_INVALID");
   }
 }

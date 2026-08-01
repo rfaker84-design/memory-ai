@@ -44,9 +44,16 @@ runtime contract.
 
 ## Current implementation boundary
 
-The current candidate fails closed on missing required runtime values but does
-not yet implement versioned dual validation for identity peppers, sessions,
-internal control tokens, or signed media URLs. Therefore this document is a
-binding implementation and evidence checklist, not proof that a production
-rotation is ready. Production remains NO-GO until the corresponding gate is
-closed with code, Linux-artifact, and controlled-environment evidence.
+The candidate fails closed on missing or malformed rotation configuration and
+supports one explicitly-versioned previous Session key, identity pepper,
+internal video-control token, and Staging media/access signing value. New
+Sessions and signatures always use the current value. The old Session key may
+remain valid for no more than the seven-day Session TTL plus 30 seconds of
+clock tolerance; Staging media and video playback keys use their 900-second
+maximum URL/token lifetime. Identity-pepper overlap is deliberately longer to
+allow its separately controlled identity-data migration.
+
+This is code-level evidence only. It neither creates credentials nor proves a
+secret-store injection, Linux artifact, controlled-environment validation, or
+old-value revocation. Production remains NO-GO until those independent gates
+have real evidence.
