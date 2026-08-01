@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import type { CSSProperties, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
+import { useId, type CSSProperties, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react";
 
 import { MemoryRadius, MemoryShadow, MemorySpacing, MemorySurface, MemoryTypography } from "../../design";
 import { useReducedMotion } from "../../motion";
@@ -17,6 +17,13 @@ export type MemoryInputProps = (NativeInputProps | NativeTextareaProps) & {
 
 export function MemoryInput({ label, hint, error, multiline = false, style, ...props }: MemoryInputProps) {
   const reduced = useReducedMotion();
+  const messageId = useId();
+  const message = error || hint;
+  const controlProps = {
+    ...props,
+    "aria-invalid": props["aria-invalid"] ?? (error ? true : undefined),
+    "aria-describedby": props["aria-describedby"] ?? (message ? messageId : undefined),
+  };
   const controlStyle: CSSProperties = {
     width: "100%",
     minHeight: multiline ? 144 : 52,
@@ -29,7 +36,6 @@ export function MemoryInput({ label, hint, error, multiline = false, style, ...p
     fontSize: MemoryTypography.size.body,
     lineHeight: MemoryTypography.lineHeight.normal,
     padding: `${MemorySpacing.md} ${MemorySpacing.lg}`,
-    outline: "none",
     resize: multiline ? "vertical" : undefined,
     transitionProperty: reduced ? "border-color" : "border-color, box-shadow, background",
     transitionDuration: "180ms",
@@ -45,13 +51,13 @@ export function MemoryInput({ label, hint, error, multiline = false, style, ...p
         </span>
       )}
       {multiline ? (
-        <textarea {...(props as NativeTextareaProps)} style={controlStyle} />
+        <textarea {...(controlProps as NativeTextareaProps)} style={controlStyle} />
       ) : (
-        <input {...(props as NativeInputProps)} style={controlStyle} />
+        <input {...(controlProps as NativeInputProps)} style={controlStyle} />
       )}
-      {(hint || error) && (
-        <span style={{ color: error ? MemorySurface.state.danger : MemorySurface.content.muted, fontSize: MemoryTypography.size.caption }}>
-          {error || hint}
+      {message && (
+        <span id={messageId} style={{ color: error ? MemorySurface.state.danger : MemorySurface.content.muted, fontSize: MemoryTypography.size.caption }}>
+          {message}
         </span>
       )}
     </label>

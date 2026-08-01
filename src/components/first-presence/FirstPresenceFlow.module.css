@@ -366,7 +366,7 @@
 }
 
 .sceneField > span {
-  color: rgba(233, 216, 193, 0.58);
+  color: rgba(245, 232, 212, 0.82);
   font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 0.78rem;
 }
@@ -414,7 +414,7 @@
   border: 0;
   padding: 0.4rem 0;
   background: transparent;
-  color: rgba(237, 222, 202, 0.62);
+  color: rgba(245, 232, 212, 0.84);
   font: inherit;
   font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 0.92rem;
@@ -482,12 +482,13 @@
 
 .consentBlock p { margin: 0; }
 .consentBlock a { color: #d7b57e; text-underline-offset: 0.22rem; }
-.loginAgreement { display: flex; align-items: flex-start; gap: 10px; color: #c8c4ca; font-size: 13px; line-height: 1.55; }
+.loginAgreement { display: flex; min-height: 44px; align-items: center; gap: 10px; color: #e6dde0; font-size: 13px; line-height: 1.55; }
 .loginAgreement input { margin-top: 0.28rem; accent-color: #d7b57e; }
 .loginAgreement a { color: #d7b57e; text-underline-offset: 0.22rem; }
 
 .trustCheck {
   display: flex;
+  min-height: 44px;
   align-items: flex-start;
   gap: 0.72rem;
   cursor: pointer;
