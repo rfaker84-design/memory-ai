@@ -72,6 +72,7 @@ test("three Memories succeed, a fourth returns 409, and an original key still re
     () => service,
     noOpAuditService,
     ownerResolver(),
+    async () => true,
   );
   const keys = ["memory-limit-key-0001", "memory-limit-key-0002", "memory-limit-key-0003"];
   const responses = [];
@@ -104,8 +105,32 @@ test("a real database dependency failure remains a 503", async () => {
     }),
     noOpAuditService,
     ownerResolver(),
+    async () => true,
   );
   const response = await handlers.POST(request("memory-limit-database-error"));
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { error: "DATABASE_UNAVAILABLE" });
+});
+
+test("a direct Memory API request cannot bypass required profile consent", async () => {
+  let createCalls = 0;
+  const handlers = createMemoriesHandlers(
+    () => ({
+      async createMemory(): Promise<Memory> {
+        createCalls += 1;
+        return memoryFor("must-not-create", 1);
+      },
+      async listUserMemories(): Promise<Memory[]> {
+        return [];
+      },
+    }),
+    noOpAuditService,
+    ownerResolver(),
+    async () => false,
+  );
+
+  const response = await handlers.POST(request("memory-consent-required"));
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: "MEMORY_CONSENT_REQUIRED" });
+  assert.equal(createCalls, 0);
 });

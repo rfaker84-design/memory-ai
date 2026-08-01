@@ -3,19 +3,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { DatabaseDependencyError, safeDatabaseErrorLog, withPostgresTransaction } from "@/src/server/database";
 import { AuthConfigurationError, requireAllowedOrigin, type AuthSession, verifyRequestSession } from "@/src/server/auth";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
+import {
+  TRUST_CONSENT_VERSION,
+  type TrustConsentType,
+} from "@/features/consent/trust-consent-postgres";
 
 const CONSENT_TYPES = new Set(["memory_profile", "media_asset", "commercial_use"]);
 const REQUEST_KEY = /^[A-Za-z0-9._:-]{16,128}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const TRUST_VERSION = "commercial-trust-v1";
-
-type ConsentType = "memory_profile" | "media_asset" | "commercial_use";
-type RecordConsent = (input: { externalUserId: string; consentType: ConsentType; memoryId: string | null; requestKey: string }) => Promise<void>;
+type RecordConsent = (input: { externalUserId: string; consentType: TrustConsentType; memoryId: string | null; requestKey: string }) => Promise<void>;
 type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
 
 const json = (body: Record<string, unknown>, init?: ResponseInit) => applyAuthNoStore(NextResponse.json(body, init));
 
-function parseBody(value: unknown): { consentType: ConsentType; memoryId: string | null } | null {
+function parseBody(value: unknown): { consentType: TrustConsentType; memoryId: string | null } | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const body = value as Record<string, unknown>;
   const keys = Object.keys(body).sort();
@@ -24,7 +25,7 @@ function parseBody(value: unknown): { consentType: ConsentType; memoryId: string
   const memoryId = body.memoryId;
   if (memoryId !== undefined && (typeof memoryId !== "string" || !UUID.test(memoryId))) return null;
   if (body.consentType !== "memory_profile" && memoryId === undefined) return null;
-  return { consentType: body.consentType as ConsentType, memoryId: typeof memoryId === "string" ? memoryId : null };
+  return { consentType: body.consentType as TrustConsentType, memoryId: typeof memoryId === "string" ? memoryId : null };
 }
 
 const recordConsent: RecordConsent = async ({ externalUserId, consentType, memoryId, requestKey }) => {
@@ -48,13 +49,13 @@ const recordConsent: RecordConsent = async ({ externalUserId, consentType, memor
     const written = await client.query(
       `SELECT id FROM consent_records WHERE user_id = $1 AND consent_type = $2
        AND memory_id IS NOT DISTINCT FROM $3 AND metadata ->> 'version' = $4 LIMIT 1`,
-      [userId, consentType, memoryId, TRUST_VERSION],
+      [userId, consentType, memoryId, TRUST_CONSENT_VERSION],
     );
     if (written.rows[0]) return;
     await client.query(
       `INSERT INTO consent_records (user_id, memory_id, consent_type, status, notes, metadata)
        VALUES ($1, $2, $3, 'approved', $4, $5::jsonb)`,
-      [userId, memoryId, consentType, TRUST_VERSION, JSON.stringify({ requestKey, version: TRUST_VERSION })],
+      [userId, memoryId, consentType, TRUST_CONSENT_VERSION, JSON.stringify({ requestKey, version: TRUST_CONSENT_VERSION })],
     );
   });
 };

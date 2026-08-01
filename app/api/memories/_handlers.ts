@@ -18,6 +18,7 @@ import {
   AuthConfigurationError,
   requireAllowedOrigin,
 } from "../../../src/server/auth";
+import { hasApprovedMemoryProfileConsent } from "../../../features/consent/trust-consent-postgres";
 
 import { resolveSessionOwner } from "./_session-user-boundary";
 
@@ -35,6 +36,7 @@ type MemoryServiceFactory = () => Pick<
   "createMemory" | "listUserMemories"
 >;
 type AuditServiceFactory = () => Pick<AuditService, "log">;
+type MemoryProfileConsentVerifier = (externalUserId: string) => Promise<boolean>;
 
 function databaseErrorResponse(error: unknown) {
   if (error instanceof MemoryLimitError) {
@@ -71,6 +73,7 @@ export function createMemoriesHandlers(
   memoryServiceFactory: MemoryServiceFactory = createMemoryService,
   auditServiceFactory: AuditServiceFactory = createAuditService,
   sessionOwnerResolver: typeof resolveSessionOwner = resolveSessionOwner,
+  memoryProfileConsentVerifier: MemoryProfileConsentVerifier = hasApprovedMemoryProfileConsent,
 ) {
   return {
     async GET(req: NextRequest) {
@@ -99,6 +102,12 @@ export function createMemoriesHandlers(
         if ("response" in owner) return owner.response;
         const idempotencyKey = req.headers.get("idempotency-key") ?? undefined;
         const userId = owner.externalUserId;
+        if (!(await memoryProfileConsentVerifier(userId))) {
+          return NextResponse.json(
+            { error: "MEMORY_CONSENT_REQUIRED" },
+            { status: 403 }
+          );
+        }
         const {
           name,
           relationship,
