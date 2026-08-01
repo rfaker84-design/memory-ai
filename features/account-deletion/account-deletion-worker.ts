@@ -27,7 +27,10 @@ export class PostgresAccountDeletionWorker {
       return "completed";
     } catch (error) {
       const code = error instanceof AccountDeletionProviderBlocked ? "PROVIDER_DELETE_BLOCKED" : "DELETE_RETRY";
-      const status = error instanceof AccountDeletionProviderBlocked ? "failed" : "retry";
+      // A missing provider deletion capability is not a completed deletion.
+      // Keep the task durable and retryable so a later approved adapter can
+      // resume it without recreating the customer request.
+      const status = "retry";
       await queryPostgres(
         `UPDATE public.account_deletion_tasks SET status=$2, next_attempt_at=NOW()+INTERVAL '1 hour', last_error_code=$3
          WHERE id=$1::uuid AND status='running'`, [task.id, status, code],
@@ -52,7 +55,7 @@ export class PostgresAccountDeletionWorker {
   }
 
   private async execute(task: ClaimedTask): Promise<void> {
-    if (task.kind === "revoke_sessions") return;
+    if (task.kind === "revoke_sessions") return this.verifySessionInvalidation(task.userId);
     if (task.kind === "content_online") return this.deleteOnlineContent(task.userId);
     if (task.kind === "cos_provider") return this.deleteExternalObjects(task.deletionRequestId);
     if (task.kind === "backup_retention") return this.verifyBackupTombstone(task.deletionRequestId);
@@ -76,6 +79,13 @@ export class PostgresAccountDeletionWorker {
         "UPDATE public.users SET profile='{}'::jsonb, updated_at=NOW() WHERE id=$1::uuid",
       ]) await client.query(statement, [userId]);
     });
+  }
+
+  private async verifySessionInvalidation(userId: string): Promise<void> {
+    const invalidated = await queryPostgres<{ active: boolean }>(
+      `SELECT EXISTS (SELECT 1 FROM public.auth_session_invalidations WHERE user_id=$1::uuid) AS active`, [userId],
+    );
+    if (!invalidated.rows[0]?.active) throw new Error("ACCOUNT_DELETION_SESSION_INVALIDATION_MISSING");
   }
 
   private async deleteExternalObjects(requestId: string): Promise<void> {

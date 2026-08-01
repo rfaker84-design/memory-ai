@@ -112,6 +112,10 @@ export class PostgresAccountDeletionService {
              SELECT storage_key AS object_key FROM public.media_assets WHERE user_id = $2::uuid AND storage_key IS NOT NULL
              UNION
              SELECT thumbnail_key AS object_key FROM public.media_assets WHERE user_id = $2::uuid AND thumbnail_key IS NOT NULL
+             UNION
+             SELECT input_key AS object_key FROM public.provider_jobs WHERE user_id = $2::uuid AND input_key IS NOT NULL
+             UNION
+             SELECT output_key AS object_key FROM public.provider_jobs WHERE user_id = $2::uuid AND output_key IS NOT NULL
            ) media
            ON CONFLICT DO NOTHING`,
           [row.id, input.userId],
