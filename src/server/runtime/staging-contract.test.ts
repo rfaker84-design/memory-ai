@@ -44,6 +44,31 @@ test("staging runtime fails closed for production-shaped database, origin, provi
   }
 });
 
+test("staging access rotation accepts one previous token only during a bounded overlap", () => {
+  const now = new Date("2026-08-01T00:00:00.000Z");
+  const valid = {
+    ...stagingEnvironment,
+    STAGING_ACCESS_TOKEN_PREVIOUS: "p".repeat(48),
+    STAGING_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL: new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+  };
+  const configuration = getStagingRuntimeConfiguration(valid, now);
+  assert.equal(configuration.previousAccessToken, "p".repeat(48));
+  assert.equal(hasValidStagingAccessToken("p".repeat(48), valid, now), true);
+  for (const override of [
+    { STAGING_ACCESS_TOKEN_PREVIOUS: "p".repeat(48) },
+    {
+      STAGING_ACCESS_TOKEN_PREVIOUS: "p".repeat(48),
+      STAGING_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL: new Date(now.getTime() + 24 * 60 * 60 * 1000 + 1).toISOString(),
+    },
+  ]) {
+    assert.throws(
+      () => getStagingRuntimeConfiguration({ ...stagingEnvironment, ...override }, now),
+      (error: unknown) => error instanceof StagingRuntimeConfigurationError
+        && error.code === "STAGING_ACCESS_TOKEN_PREVIOUS_INVALID",
+    );
+  }
+});
+
 test("a disposable deletion test identity is staging-only, distinct, and requires the revocation-safe deletion runtime", () => {
   const enabled = {
     ...stagingEnvironment,

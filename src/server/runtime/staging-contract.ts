@@ -3,6 +3,7 @@ export const STAGING_API_ORIGIN = "https://api.staging.yijianmemory.cn";
 
 const MIN_STAGING_ACCESS_TOKEN_BYTES = 48;
 const MIN_STAGING_MEDIA_SIGNING_SECRET_BYTES = 32;
+const MAX_STAGING_ACCESS_PREVIOUS_TOKEN_WINDOW_SECONDS = 24 * 60 * 60;
 const MAX_STAGING_MEDIA_PREVIOUS_SECRET_WINDOW_SECONDS = 900;
 
 export class StagingRuntimeConfigurationError extends Error {
@@ -15,6 +16,7 @@ export class StagingRuntimeConfigurationError extends Error {
 export type StagingRuntimeConfiguration = Readonly<{
   databaseName: string;
   accessToken: string;
+  previousAccessToken: string | null;
   fixedSmsCode: string;
   fixedSmsPhones: readonly [string, string];
   /** A disposable identity accepted only while the guarded deletion test is enabled. */
@@ -130,6 +132,24 @@ function parsePreviousMediaSigningSecret(environment: NodeJS.ProcessEnv, now: Da
   return previous;
 }
 
+function parsePreviousAccessToken(environment: NodeJS.ProcessEnv, now: Date): string | null {
+  const previous = environment.STAGING_ACCESS_TOKEN_PREVIOUS;
+  const validUntil = environment.STAGING_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL;
+  if (!previous && !validUntil) return null;
+  if (!previous || !validUntil || previous !== previous.trim()
+    || new TextEncoder().encode(previous).length < MIN_STAGING_ACCESS_TOKEN_BYTES
+    || previous === environment.STAGING_ACCESS_TOKEN) {
+    throw new StagingRuntimeConfigurationError("STAGING_ACCESS_TOKEN_PREVIOUS_INVALID");
+  }
+  const expiry = Date.parse(validUntil);
+  const remainingMilliseconds = expiry - now.getTime();
+  if (!Number.isFinite(expiry) || remainingMilliseconds <= 0
+    || remainingMilliseconds > MAX_STAGING_ACCESS_PREVIOUS_TOKEN_WINDOW_SECONDS * 1000) {
+    throw new StagingRuntimeConfigurationError("STAGING_ACCESS_TOKEN_PREVIOUS_INVALID");
+  }
+  return previous;
+}
+
 /** True only for the intentional production-built staging runtime. */
 export function isStagingRuntime(environment: NodeJS.ProcessEnv = process.env): boolean {
   return environment.NODE_ENV === "production" && environment.DEPLOYMENT_ENV === "staging";
@@ -158,6 +178,7 @@ export function getStagingRuntimeConfiguration(
   return Object.freeze({
     databaseName: parseStagingDatabaseName(environment),
     accessToken: requiredSecret(environment, "STAGING_ACCESS_TOKEN", MIN_STAGING_ACCESS_TOKEN_BYTES),
+    previousAccessToken: parsePreviousAccessToken(environment, now),
     fixedSmsCode,
     fixedSmsPhones,
     accountDeletionTestPhone: parseAccountDeletionTestPhone(environment, fixedSmsPhones),
@@ -195,8 +216,11 @@ function constantTimeEquals(expected: string, candidate: string): boolean {
 export function hasValidStagingAccessToken(
   candidate: string | null,
   environment: NodeJS.ProcessEnv = process.env,
+  now: Date = new Date(),
 ): boolean {
   if (!candidate) return false;
-  const configuration = getStagingRuntimeConfiguration(environment);
-  return constantTimeEquals(configuration.accessToken, candidate);
+  const configuration = getStagingRuntimeConfiguration(environment, now);
+  return constantTimeEquals(configuration.accessToken, candidate)
+    || (configuration.previousAccessToken !== null
+      && constantTimeEquals(configuration.previousAccessToken, candidate));
 }
