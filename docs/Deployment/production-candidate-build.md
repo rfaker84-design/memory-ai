@@ -11,6 +11,13 @@ Build and export the evidence on a Linux host with Docker BuildKit:
 scripts/ops/export-production-candidate-evidence.sh
 ```
 
+The repository also provides a manually dispatched GitHub Actions workflow at
+`.github/workflows/production-candidate-evidence.yml`. It accepts only an exact
+40-character source commit, checks that the checkout resolves to that commit and
+is clean, then runs the same Linux BuildKit export and verifies `SHA256SUMS`
+before uploading the bundle. It has read-only repository permission and contains
+no Staging, production, PM2, Nginx, database, or deployment operation.
+
 The export directory contains an immutable `manifest.json` of every file in
 `.next/standalone-rc`, SPDX SBOM (`sbom.spdx.json`), SLSA-compatible provenance
 (`provenance.intoto.json`), and `SHA256SUMS` covering all three. The evidence

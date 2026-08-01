@@ -1,0 +1,59 @@
+name: Production candidate evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Exact immutable 40-character commit to build
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    name: Build immutable Linux standalone evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    concurrency:
+      group: production-candidate-evidence-${{ inputs.source_commit }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out the requested immutable commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.source_commit }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Refuse an unresolved, substituted, or dirty source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ inputs.source_commit }}" = "$(git rev-parse HEAD)"
+          test -z "$(git status --porcelain)"
+          git rev-parse HEAD
+          git rev-parse HEAD^{tree}
+
+      - name: Export the BuildKit-only candidate evidence
+        shell: bash
+        env:
+          PRODUCTION_CANDIDATE_EVIDENCE_DIR: artifacts/production-candidate
+        run: |
+          set -euo pipefail
+          docker buildx version
+          scripts/ops/export-production-candidate-evidence.sh
+          cd "$PRODUCTION_CANDIDATE_EVIDENCE_DIR"
+          sha256sum --check SHA256SUMS
+          test -s manifest.json
+          test -s provenance.intoto.json
+          test -s sbom.spdx.json
+
+      - name: Upload immutable evidence bundle
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: production-candidate-${{ inputs.source_commit }}
+          path: artifacts/production-candidate
+          if-no-files-found: error
+          retention-days: 90
