@@ -153,7 +153,9 @@ test("production startup rejects incomplete, expired, or overlong refund-review 
     },
     {
       REFUND_REVIEW_ACCESS_TOKEN_PREVIOUS: "p".repeat(48),
-      REFUND_REVIEW_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL: new Date(Date.now() + 15 * 60 * 1000 + 1).toISOString(),
+      // Leave a real margin beyond the maximum so clock advancement between
+      // construction and validation cannot turn this negative case valid.
+      REFUND_REVIEW_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL: new Date(Date.now() + 15 * 60 * 1000 + 1_000).toISOString(),
     },
   ]) {
     assert.throws(

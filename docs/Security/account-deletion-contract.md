@@ -68,3 +68,16 @@ Vidu completed-artifact deletion is a separate vendor action: until Vidu
 provides a documented deletion route or human-process receipt, the worker must
 keep the provider task pending or blocked and must not report the account
 deletion as complete.
+
+## Customer data export
+
+`POST /api/account/export` is separately fail-closed behind
+`ACCOUNT_DATA_EXPORT_ENABLED=true` and
+`AUTH_SESSION_REVOCATION_ENFORCED=true`. It requires the current Owner Session,
+an allowed browser Origin, and a reauthentication no older than five minutes.
+The response is an attachment with private no-store headers. It includes owned
+TA content, conversations, messages, media metadata, consent records, video
+job state, and a minimum customer-facing order/refund summary. It never exports
+session material, device data, authentication challenges, provider payloads or
+identifiers, object keys, signed URLs, payment-rail identifiers, or internal
+audit metadata. Media download endpoints remain independently Owner-bound.

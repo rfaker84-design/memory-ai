@@ -26,6 +26,7 @@ const EXACT_FORMAL_PATHS = new Set([
   "/api/memory-chat",
   "/api/consents",
   "/api/reports",
+  "/api/account/export",
   "/api/account/deletion",
   "/api/account/deletion/guardian-confirmation",
   "/api/business-events",
@@ -148,7 +149,7 @@ test("video reconciliation is an explicitly audited formal internal route", () =
 
 test("every tracked non-formal Route Handler is a route-level 410", async () => {
   const routes = trackedRoutes();
-  assert.equal(routes.length, 123, "the audit must enumerate the complete tracked API surface");
+  assert.equal(routes.length, 124, "the audit must enumerate the complete tracked API surface");
 
   for (const { file, pathname } of routes) {
     const formal = isFormalApiPath(pathname);
@@ -203,6 +204,7 @@ test("formal Session ownership and public health contracts remain explicit", asy
     memoryChat: readFileSync("app/api/memory-chat/route.ts", "utf8"),
     consents: readFileSync("app/api/consents/route.ts", "utf8"),
     reports: readFileSync("app/api/reports/_handler.ts", "utf8"),
+    accountExport: readFileSync("app/api/account/export/route.ts", "utf8"),
     accountDeletion: readFileSync("app/api/account/deletion/route.ts", "utf8"),
     guardianDeletionConfirmation: readFileSync("app/api/account/deletion/guardian-confirmation/route.ts", "utf8"),
     businessEvents: readFileSync("app/api/business-events/_handler.ts", "utf8"),
@@ -239,6 +241,7 @@ test("formal Session ownership and public health contracts remain explicit", asy
   assert.match(sources.consents, /createConsentsHandler/);
   assert.match(sources.reports, /verifyRequestSession/);
   assert.match(sources.reports, /requireAllowedOrigin/);
+  assert.match(sources.accountExport, /createAccountDataExportHandler/);
   assert.match(sources.accountDeletion, /createAccountDeletionHandler/);
   assert.match(sources.guardianDeletionConfirmation, /createGuardianDeletionConfirmationHandler/);
   assert.match(sources.operationsAlerts, /OPERATIONS_METRICS_ACCESS_TOKEN/);

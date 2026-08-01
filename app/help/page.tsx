@@ -44,6 +44,7 @@ export default function HelpPage() {
             <li>登录、上传、生成或播放失败时，请记录页面显示的请求编号和发生时间；已登录用户可通过投诉与删除入口提交可追踪工单。</li>
             <li>如遇到自伤、自杀、暴力或未成年人受害的即时风险，请优先联系当地紧急服务、可信赖的成年人或危机支持资源。</li>
             <li>需要投诉、授权撤销、退款或数据删除时，请使用正式处置入口；账户注销进度会在应用内显示。</li>
+            <li><Link href="/settings/data-export" className="underline">下载我的资料副本</Link></li>
           </ul>
           <p className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-[#f1c980]">
             <Link href="/report" className="underline">投诉、退款与数据删除</Link>
