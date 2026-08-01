@@ -13,6 +13,7 @@ import {
 } from "../../../features/long-term-memory";
 import { MemoryEngineService } from "../../../features/memory-engine/memory-engine-service";
 import { assertSafeMemorialResponse } from "../../../features/memory-engine/response-pipeline";
+import { crisisResponseFor } from "../../../features/memory-engine/crisis-response";
 import { MemoryValidationError } from "../../../features/memory/errors";
 import { MemoryPostgresDataSource } from "../../../features/memory/memory-postgres-datasource";
 import { MemoryRepository } from "../../../features/memory/memory-repository";
@@ -214,8 +215,10 @@ export function createMemoryChatHandler(
         await turnService.fail(turnInput);
         return NextResponse.json({ error: "PAYMENT_ENTITLEMENT_REQUIRED" }, { status: 402 });
       }
+      let quotaReleased = false;
       const releaseQuota = async () => {
-        if (quota === "reserved") {
+        if (quota === "reserved" && !quotaReleased) {
+          quotaReleased = true;
           await quotaService.releaseChatQuota({ externalUserId: userId, memoryId: parsed.memoryId, idempotencyKey });
         }
       };
@@ -234,26 +237,33 @@ export function createMemoryChatHandler(
         return NextResponse.json({ answer, reply: answer, text: answer });
       }
 
+      const crisisResponse = crisisResponseFor(parsed.question);
+      if (crisisResponse) await releaseQuota();
+
       let answer: string;
       try {
-        const engineResponse = await engineServiceFactory().generateReply({
-          userId,
-          memoryId: parsed.memoryId,
-          sessionId: claim.conversation.id,
-          userMessage: parsed.question,
-          routeContext: {
+        if (crisisResponse) {
+          answer = crisisResponse;
+        } else {
+          const engineResponse = await engineServiceFactory().generateReply({
+            userId,
+            memoryId: parsed.memoryId,
+            sessionId: claim.conversation.id,
+            userMessage: parsed.question,
+            routeContext: {
+              memoryName: memory.name,
+              relationship: memory.relationship,
+              lifeStory: memory.lifeStory,
+              personalityProfile: memory.personalityProfile,
+              speechStyle: memory.speechStyle,
+              catchPhrases: memory.catchPhrases,
+            },
+          });
+          answer = assertSafeMemorialResponse(engineResponse.content.trim(), {
             memoryName: memory.name,
             relationship: memory.relationship,
-            lifeStory: memory.lifeStory,
-            personalityProfile: memory.personalityProfile,
-            speechStyle: memory.speechStyle,
-            catchPhrases: memory.catchPhrases,
-          },
-        });
-        answer = assertSafeMemorialResponse(engineResponse.content.trim(), {
-          memoryName: memory.name,
-          relationship: memory.relationship,
-        });
+          });
+        }
         if (!answer) throw new Error("Provider returned no content");
       } catch {
         try {
@@ -270,7 +280,7 @@ export function createMemoryChatHandler(
         conversationId: claim.conversation.id,
         answer,
       });
-      if (longTermMemoryAccess(userId)) {
+      if (longTermMemoryAccess(userId) && !crisisResponse) {
         try {
           await persistTurn({ externalUserId: userId, memoryId: parsed.memoryId, result });
         } catch {

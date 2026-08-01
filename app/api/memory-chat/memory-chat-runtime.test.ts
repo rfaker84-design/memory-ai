@@ -5,6 +5,7 @@ import { NextRequest } from "next/server";
 
 import type { Conversation, Message } from "../../../features/chat/types";
 import type { Memory } from "../../../features/memory/types";
+import { CRISIS_RESPONSE } from "../../../features/memory-engine/crisis-response";
 import { createMemoryChatHandler } from "./_handler";
 
 process.env.AUTH_ALLOWED_ORIGIN = "http://localhost";
@@ -196,6 +197,46 @@ test("memory-chat rejects an unsafe engine response before it can be persisted",
   assert.deepEqual(await response.json(), { error: "AI_UNAVAILABLE" });
   assert.equal(completeCalls, 0);
   assert.equal(failCalls, 1);
+});
+
+test("memory-chat short-circuits immediate crisis language without a role-model call or durable memory write", async () => {
+  let providerCalls = 0;
+  let persistedCalls = 0;
+  let releasedQuota = 0;
+  let completedAnswer = "";
+  const handler = createMemoryChatHandler(
+    () => ({ async getMemoryForUser() { return memory; } }),
+    () => ({
+      async claim() { return { status: "claimed" as const, conversation }; },
+      async complete(input: { answer: string }) {
+        completedAnswer = input.answer;
+        return { ...result, assistantMessage: { ...assistantMessage, content: input.answer } };
+      },
+      async fail() { throw new Error("fail should not run"); },
+    }),
+    () => ({ async generateReply() { providerCalls += 1; return { content: "unexpected" }; } }),
+    sessionResolver,
+    async () => { persistedCalls += 1; return true; },
+    allowAdmission,
+    () => ({
+      async reserveChatQuota() { return "reserved" as const; },
+      async releaseChatQuota() { releasedQuota += 1; },
+    }),
+    () => true,
+  );
+
+  const response = await handler(request({ memoryId, question: "我不想活了" }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    answer: CRISIS_RESPONSE,
+    reply: CRISIS_RESPONSE,
+    text: CRISIS_RESPONSE,
+    sessionId: conversation.id,
+  });
+  assert.equal(completedAnswer, CRISIS_RESPONSE);
+  assert.equal(providerCalls, 0);
+  assert.equal(persistedCalls, 0);
+  assert.equal(releasedQuota, 1);
 });
 
 test("memory-chat validates Unicode length and dangerous question content before service work", async () => {
