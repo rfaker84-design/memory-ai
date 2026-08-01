@@ -1,6 +1,8 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
+
+import { prepareReportSubmission, type PendingReportSubmission } from "./reportIntakeClient";
 
 type Report = { id: string; category: string; requestedAction: string; status: string; createdAt: string; resolvedAt: string | null };
 
@@ -10,6 +12,7 @@ export function ReportIntake() {
   const [category, setCategory] = useState("rights");
   const [requestedAction, setRequestedAction] = useState("review");
   const [message, setMessage] = useState<string | null>(null);
+  const pendingSubmission = useRef<PendingReportSubmission | null>(null);
 
   const load = async () => {
     const response = await fetch("/api/reports", { credentials: "include", cache: "no-store" });
@@ -21,10 +24,17 @@ export function ReportIntake() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setMessage(null);
-    const response = await fetch("/api/reports", { method: "POST", credentials: "include", headers: { "content-type": "application/json", "idempotency-key": `report-${crypto.randomUUID()}` }, body: JSON.stringify({ category, subjectType: "other", subjectId: null, requestedAction, details }) });
-    const body = await response.json().catch(() => ({})) as { report?: Report; error?: string };
-    if (!response.ok) { setMessage(body.error === "UNAUTHENTICATED" ? "请先登录后再提交。" : "提交失败，请保留请求编号并稍后重试。"); return; }
-    setReports((current) => [body.report!, ...current]); setDetails(""); setMessage("已受理。工单状态会显示在此页面。");
+    const submission = prepareReportSubmission(pendingSubmission.current, { category, requestedAction, details });
+    pendingSubmission.current = submission;
+    try {
+      const response = await fetch("/api/reports", { method: "POST", credentials: "include", headers: { "content-type": "application/json", "idempotency-key": submission.idempotencyKey }, body: JSON.stringify({ category, subjectType: "other", subjectId: null, requestedAction, details }) });
+      const body = await response.json().catch(() => ({})) as { report?: Report; error?: string };
+      if (!response.ok) { setMessage(body.error === "UNAUTHENTICATED" ? "请先登录后再提交。" : "暂时无法确认是否已受理。请勿刷新或修改这份说明；恢复连接后再次提交会安全复用同一请求。"); return; }
+      pendingSubmission.current = null;
+      setReports((current) => [body.report!, ...current]); setDetails(""); setMessage("已受理。工单状态会显示在此页面。");
+    } catch {
+      setMessage("暂时无法确认是否已受理。请勿刷新或修改这份说明；恢复连接后再次提交会安全复用同一请求。");
+    }
   };
 
   return <section className="mt-8 rounded-xl border border-[#d5b172]/25 p-5" aria-labelledby="report-intake-title">
