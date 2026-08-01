@@ -43,6 +43,7 @@ const EXACT_FORMAL_PATHS = new Set([
   "/api/internal/commerce-reconciliation",
   "/api/internal/operations/summary",
   "/api/internal/video-reviews",
+  "/api/internal/report-reviews",
   "/api/internal/video-reconciliation",
   "/api/media/upload",
   "/api/media/local",
@@ -146,7 +147,7 @@ test("video reconciliation is an explicitly audited formal internal route", () =
 
 test("every tracked non-formal Route Handler is a route-level 410", async () => {
   const routes = trackedRoutes();
-  assert.equal(routes.length, 121, "the audit must enumerate the complete tracked API surface");
+  assert.equal(routes.length, 122, "the audit must enumerate the complete tracked API surface");
 
   for (const { file, pathname } of routes) {
     const formal = isFormalApiPath(pathname);

@@ -23,6 +23,18 @@ export class UserReportError extends Error {
 }
 
 export class PostgresUserReportService {
+  async dispose(input: { reportId: string; status: "triaged" | "actioned" | "closed"; disposition: string; reviewer: string }): Promise<UserReport> {
+    return withPostgresTransaction(async (client) => {
+      const row = await client.query<Row>(
+        `UPDATE public.user_reports SET status=$2, disposition=$3, handled_by=$4, resolved_at=CASE WHEN $2 IN ('actioned','closed') THEN NOW() ELSE NULL END, updated_at=NOW()
+          WHERE id=$1::uuid AND status <> 'closed'
+          RETURNING id, category, subject_type, subject_id, requested_action, status, created_at, resolved_at`,
+        [input.reportId, input.status, input.disposition, input.reviewer],
+      );
+      if (!row.rows[0]) throw new UserReportError("SUBJECT_NOT_FOUND");
+      return toReport(row.rows[0]);
+    }, { preserveError: (error) => error instanceof UserReportError });
+  }
   async create(input: { userId: string; externalUserId: string; requestKey: string; category: UserReport["category"]; subjectType: UserReport["subjectType"]; subjectId: string | null; requestedAction: UserReport["requestedAction"]; details: string }): Promise<UserReport> {
     return withPostgresTransaction(async (client) => {
       const reporter = await client.query<{ id: string }>("SELECT id FROM public.users WHERE id=$1::uuid AND external_id=$2 FOR KEY SHARE", [input.userId, input.externalUserId]);
