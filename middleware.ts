@@ -13,6 +13,7 @@ const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const CORS_ALLOWED_METHODS = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
 const CORS_ALLOWED_HEADERS = "Content-Type, Authorization, Idempotency-Key, X-MemoryAI-Staging-Access";
 const STAGING_ACCESS_HEADER = "x-memoryai-staging-access";
+const REQUEST_ID_HEADER = "x-request-id";
 
 const FORMAL_API_PATHS = new Set([
   "/api/auth/send-code",
@@ -85,6 +86,23 @@ function applyCredentialedCors(response: NextResponse, allowedOrigin: string): N
   return response;
 }
 
+function createRequestId(): string {
+  // Never reflect a caller-supplied identifier. A generated opaque value is safe
+  // to expose to the caller and lets support correlate a single API request.
+  return crypto.randomUUID();
+}
+
+function withRequestId(response: NextResponse, requestId: string): NextResponse {
+  response.headers.set(REQUEST_ID_HEADER, requestId);
+  return response;
+}
+
+function nextWithRequestId(request: NextRequest, requestId: string): NextResponse {
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set(REQUEST_ID_HEADER, requestId);
+  return withRequestId(NextResponse.next({ request: { headers: requestHeaders } }), requestId);
+}
+
 function corsFailure(code: "AUTH_ALLOWED_ORIGIN_NOT_CONFIGURED" | "AUTH_ALLOWED_ORIGIN_INVALID" | "ORIGIN_NOT_ALLOWED") {
   const configurationError = code !== "ORIGIN_NOT_ALLOWED";
   return applyAuthNoStore(NextResponse.json(
@@ -107,61 +125,64 @@ function requiresStagingAccessToken(request: NextRequest): boolean {
 }
 
 export function middleware(request: NextRequest) {
+  const requestId = createRequestId();
+  const respond = (response: NextResponse) => withRequestId(response, requestId);
+
   if (
     LEGACY_CHAT_COMMERCE_API_PATHS.has(request.nextUrl.pathname)
     && !isLegacyChatCommerceTestEnvironment()
   ) {
-    return applyAuthNoStore(NextResponse.json(
+    return respond(applyAuthNoStore(NextResponse.json(
       { error: "LEGACY_ROUTE_UNAVAILABLE" },
       { status: 410 },
-    ));
+    )));
   }
 
   if (!isFormalApiPath(request.nextUrl.pathname)) {
-    return applyAuthNoStore(NextResponse.json(
+    return respond(applyAuthNoStore(NextResponse.json(
       { error: "LEGACY_ROUTE_UNAVAILABLE" },
       { status: 410 },
-    ));
+    )));
   }
 
   const browserOrigin = request.headers.get("origin");
   let allowedCorsOrigin: string | undefined;
   if (request.method === "OPTIONS") {
     const result = checkAllowedOrigin(request);
-    if (!result.allowed) return corsFailure(result.code);
-    return applyCredentialedCors(new NextResponse(null, { status: 204 }), browserOrigin!);
+    if (!result.allowed) return respond(corsFailure(result.code));
+    return respond(applyCredentialedCors(new NextResponse(null, { status: 204 }), browserOrigin!));
   }
 
   if (browserOrigin) {
     const result = checkAllowedOrigin(request);
-    if (!result.allowed) return corsFailure(result.code);
+    if (!result.allowed) return respond(corsFailure(result.code));
     allowedCorsOrigin = browserOrigin;
   }
 
   if (requiresStagingAccessToken(request)) {
     try {
       if (!hasValidStagingAccessToken(request.headers.get(STAGING_ACCESS_HEADER))) {
-        return stagingAccessFailure(403, allowedCorsOrigin);
+        return respond(stagingAccessFailure(403, allowedCorsOrigin));
       }
     } catch (error) {
       if (error instanceof StagingRuntimeConfigurationError) {
-        return stagingAccessFailure(503, allowedCorsOrigin);
+        return respond(stagingAccessFailure(503, allowedCorsOrigin));
       }
       throw error;
     }
   }
 
-  if (allowedCorsOrigin) return applyCredentialedCors(NextResponse.next(), allowedCorsOrigin);
+  if (allowedCorsOrigin) return applyCredentialedCors(nextWithRequestId(request, requestId), allowedCorsOrigin);
 
-  if (!MUTATION_METHODS.has(request.method)) return NextResponse.next();
+  if (!MUTATION_METHODS.has(request.method)) return nextWithRequestId(request, requestId);
 
   // This non-production commerce testing callback verifies its own signature.
-  if (request.nextUrl.pathname === "/api/commerce/testing/callbacks") return NextResponse.next();
+  if (request.nextUrl.pathname === "/api/commerce/testing/callbacks") return nextWithRequestId(request, requestId);
 
   const result = checkAllowedOrigin(request);
-  if (result.allowed) return NextResponse.next();
+  if (result.allowed) return nextWithRequestId(request, requestId);
 
-  return corsFailure(result.code);
+  return respond(corsFailure(result.code));
 }
 
 export const config = {

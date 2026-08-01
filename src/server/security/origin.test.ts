@@ -39,6 +39,24 @@ const legacyMutationPaths = [
   "/api/memories-mvp",
 ];
 
+test("API middleware emits a server-generated opaque request ID for pass-through and rejection", () => {
+  const suppliedId = "caller-controlled-request-id";
+  const passThrough = middleware(new NextRequest("https://memoryai.test/api/health", {
+    headers: { "x-request-id": suppliedId },
+  }));
+  const rejected = middleware(new NextRequest("https://memoryai.test/api/unknown", {
+    headers: { "x-request-id": suppliedId },
+  }));
+
+  const passThroughId = passThrough.headers.get("x-request-id");
+  const rejectedId = rejected.headers.get("x-request-id");
+  assert.match(passThroughId ?? "", /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  assert.match(rejectedId ?? "", /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  assert.notEqual(passThroughId, suppliedId);
+  assert.notEqual(rejectedId, suppliedId);
+  assert.equal(rejected.status, 410);
+});
+
 test("every production API mutation is guarded by the shared Origin boundary", async (t) => {
   for (const pathname of mutationPaths) {
     await t.test(pathname, async () => {
