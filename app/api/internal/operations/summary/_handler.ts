@@ -15,7 +15,7 @@ type SummaryReader = Pick<OperationsPostgresDataSource, "summary">;
 function authorized(request: NextRequest): "ok" | "unconfigured" | "denied" {
   const expected = process.env.OPERATIONS_METRICS_ACCESS_TOKEN;
   const supplied = request.headers.get(TOKEN_HEADER);
-  if (!expected || Buffer.byteLength(expected, "utf8") < 32) return "unconfigured";
+  if (!expected || expected !== expected.trim() || Buffer.byteLength(expected, "utf8") < 32) return "unconfigured";
   if (!supplied) return "denied";
   const left = Buffer.from(expected);
   const right = Buffer.from(supplied);

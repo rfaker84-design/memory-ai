@@ -39,20 +39,23 @@ test("operations summary is aggregate-only and requires its independent server t
 
 test("operations summary fails closed on configuration, query shape and database availability", async () => {
   const previous = process.env.OPERATIONS_METRICS_ACCESS_TOKEN;
-  delete process.env.OPERATIONS_METRICS_ACCESS_TOKEN;
   try {
+    delete process.env.OPERATIONS_METRICS_ACCESS_TOKEN;
     const unavailable = await createOperationsSummaryHandler(() => ({ summary: async () => summary }))(request());
     assert.equal(unavailable.status, 503);
     assert.deepEqual(await unavailable.json(), { error: "OPERATIONS_METRICS_UNAVAILABLE" });
+    process.env.OPERATIONS_METRICS_ACCESS_TOKEN = `${token} `;
+    const whitespace = await createOperationsSummaryHandler(() => ({ summary: async () => summary }))(request({ "x-operations-metrics-token": `${token} ` }));
+    assert.equal(whitespace.status, 503);
+    process.env.OPERATIONS_METRICS_ACCESS_TOKEN = token;
+    const invalid = await createOperationsSummaryHandler(() => ({ summary: async () => summary }))(new NextRequest("https://memoryai.test/api/internal/operations/summary?userId=private", { headers: { "x-operations-metrics-token": token } }));
+    assert.equal(invalid.status, 400);
+    const databaseUnavailable = await createOperationsSummaryHandler(() => ({
+      async summary() { throw new DatabaseDependencyError("connection_refused", "ECONNREFUSED"); },
+    }))(request({ "x-operations-metrics-token": token }));
+    assert.equal(databaseUnavailable.status, 503);
+    assert.deepEqual(await databaseUnavailable.json(), { error: "DATABASE_UNAVAILABLE" });
   } finally {
     process.env.OPERATIONS_METRICS_ACCESS_TOKEN = previous;
   }
-  process.env.OPERATIONS_METRICS_ACCESS_TOKEN = token;
-  const invalid = await createOperationsSummaryHandler(() => ({ summary: async () => summary }))(new NextRequest("https://memoryai.test/api/internal/operations/summary?userId=private", { headers: { "x-operations-metrics-token": token } }));
-  assert.equal(invalid.status, 400);
-  const databaseUnavailable = await createOperationsSummaryHandler(() => ({
-    async summary() { throw new DatabaseDependencyError("connection_refused", "ECONNREFUSED"); },
-  }))(request({ "x-operations-metrics-token": token }));
-  assert.equal(databaseUnavailable.status, 503);
-  assert.deepEqual(await databaseUnavailable.json(), { error: "DATABASE_UNAVAILABLE" });
 });
