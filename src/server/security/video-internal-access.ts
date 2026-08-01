@@ -92,6 +92,7 @@ export function authorizeVideoInternalRequest(input: {
   account: string | null;
 }, environment: NodeJS.ProcessEnv = process.env): string | null {
   if (!input.token || !input.account) return null;
+  const candidateToken = input.token;
   let configuration: VideoInternalAccessConfiguration;
   try {
     configuration = getVideoInternalAccessConfiguration(environment);
@@ -103,7 +104,7 @@ export function authorizeVideoInternalRequest(input: {
     : [configuration.reconciliationToken, configuration.previousReconciliationToken];
   const expectedAccount = input.kind === "review" ? configuration.reviewAccount : configuration.reconciliationAccount;
   return input.account === expectedAccount
-    && expectedTokens.filter((token): token is string => token !== null).some((token) => constantTimeEquals(token, input.token))
+    && expectedTokens.filter((token): token is string => token !== null).some((token) => constantTimeEquals(token, candidateToken))
     ? expectedAccount
     : null;
 }
