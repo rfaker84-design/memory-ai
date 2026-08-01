@@ -20,12 +20,18 @@ import {
 } from "@/src/server/auth";
 import { DatabaseDependencyError } from "@/src/server/database";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
+import {
+  assertProductCapabilityEnabled,
+  ProductCapabilityUnavailableError,
+  type ProductCapability,
+} from "@/src/server/runtime/product-capability-gate";
 
 type OrderService = Pick<CommerceService, "createOrder" | "listOrders">;
 type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
 type AdapterFactory = (
   platform: CommercePlatform,
 ) => CommercePaymentAdapter;
+type CapabilityAssertion = (capability: ProductCapability) => void;
 
 const KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
 const PUBLIC_COMMERCE_STATE_CODE = /^[A-Z][A-Z0-9_]{2,127}$/;
@@ -37,6 +43,9 @@ const service = (): OrderService =>
   );
 
 function failure(error: unknown) {
+  if (error instanceof ProductCapabilityUnavailableError) {
+    return json({ error: error.code }, { status: 503 });
+  }
   if (error instanceof CommerceValidationError) {
     return json({ error: "INVALID_COMMERCE_REQUEST" }, { status: 400 });
   }
@@ -66,6 +75,7 @@ export function createCommerceOrdersHandler(
   serviceFactory: () => OrderService = service,
   sessionResolver: SessionResolver = verifyRequestSession,
   adapterFactory: AdapterFactory = createCommercePaymentAdapter,
+  assertCapability: CapabilityAssertion = assertProductCapabilityEnabled,
 ) {
   return {
     GET: async (request: NextRequest) => {
@@ -87,6 +97,7 @@ export function createCommerceOrdersHandler(
         const session = await sessionResolver(request);
         if (!session) return json({ error: "UNAUTHENTICATED" }, { status: 401 });
         requireAllowedOrigin(request);
+        assertCapability("commerce_purchase");
         const requestKey = request.headers.get("idempotency-key");
         if (!requestKey || !KEY_PATTERN.test(requestKey)) {
           return json({ error: "INVALID_IDEMPOTENCY_KEY" }, { status: 400 });

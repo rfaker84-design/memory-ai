@@ -15,6 +15,7 @@ import {
   type OwnerVideoQueuePort,
 } from "../../../../../features/video";
 import { createFirstPresenceVideoHandler } from "./_handler";
+import { ProductCapabilityUnavailableError } from "@/src/server/runtime/product-capability-gate";
 
 process.env.AUTH_ALLOWED_ORIGIN = "https://memoryai.test";
 
@@ -203,6 +204,22 @@ test("POST rejects unauthenticated, missing key, invalid body, and ownership or 
   );
 });
 
+test("video generation kill switch blocks queueing before a durable job is created", async () => {
+  let createCalls = 0;
+  const handler = createFirstPresenceVideoHandler(
+    () => ({
+      async create() { createCalls += 1; throw new Error("must not queue"); },
+      async list() { return []; },
+    }),
+    async () => session,
+    () => { throw new ProductCapabilityUnavailableError("VIDEO_GENERATION_DISABLED"); },
+  );
+  const response = await handler.POST(request("POST", { intent: "initial_preview" }), context());
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "VIDEO_GENERATION_DISABLED" });
+  assert.equal(createCalls, 0);
+});
+
 test("GET returns owner-scoped safe DTOs without provider, object, or internal review data", async () => {
   const handler = createFirstPresenceVideoHandler(
     () => ({
@@ -275,7 +292,8 @@ test("formal owner route preserves session-only identity and persistent worker b
   assert.match(ownerApiSource, /memory_chat_turns[\s\S]*status = 'completed'/);
   assert.match(ownerApiSource, /media_assets[\s\S]*qualityPreflight/);
   assert.match(ownerApiSource, /OwnerVideoInputStagingPort/);
-  assert.match(ownerApiSource, /await this\.inputStaging\.stage/);
+  assert.match(ownerApiSource, /await inputStaging\.stage/);
+  assert.match(ownerApiSource, /await inputStaging\.discard\(\{ jobId \}\)\.catch/);
   assert.match(ownerApiSource, /id, user_id, memory_id, reservation_id, idempotency_key, input_sha256/);
   assert.match(ownerApiSource, /OwnerVideoQueuePort/);
   assert.match(handlerSource, /createFirstPresenceVideoOwnerInputStaging/);

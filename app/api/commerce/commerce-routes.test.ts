@@ -13,6 +13,7 @@ import type {
   CommercePaymentAdapter,
 } from "@/features/commerce";
 import { CommerceStateError } from "@/features/commerce";
+import { ProductCapabilityUnavailableError } from "@/src/server/runtime/product-capability-gate";
 
 process.env.AUTH_ALLOWED_ORIGIN = "https://memoryai.test";
 
@@ -126,6 +127,27 @@ test("orders API never exposes a dynamic commerce state message", async () => {
   );
   assert.equal(response.status, 409);
   assert.deepEqual(await response.json(), { error: "COMMERCE_STATE_CONFLICT" });
+});
+
+test("purchase kill switch blocks order creation after authentication and Origin verification", async () => {
+  let createCalls = 0;
+  const handler = createCommerceOrdersHandler(
+    () => ({
+      async createOrder() { createCalls += 1; throw new Error("must not create an order"); },
+      async listOrders() { return []; },
+    }),
+    async () => session,
+    () => { throw new Error("payment adapter must not be selected"); },
+    () => { throw new ProductCapabilityUnavailableError("COMMERCE_PURCHASES_DISABLED"); },
+  );
+  const response = await handler.POST(new NextRequest("https://memoryai.test/api/commerce/orders", {
+    method: "POST",
+    headers: { origin: "https://memoryai.test", "content-type": "application/json", "idempotency-key": "commerce-kill-switch-0001" },
+    body: JSON.stringify({ productId: "memory_video_49", platform: "web" }),
+  }));
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "COMMERCE_PURCHASES_DISABLED" });
+  assert.equal(createCalls, 0);
 });
 
 test("referral qualification uses verified server device output, not the raw token", async () => {

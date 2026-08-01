@@ -16,6 +16,11 @@ import {
 } from "../../../../../src/server/auth";
 import { DatabaseDependencyError } from "../../../../../src/server/database";
 import { applyAuthNoStore } from "../../../../../src/server/security/auth-cache";
+import {
+  assertProductCapabilityEnabled,
+  ProductCapabilityUnavailableError,
+  type ProductCapability,
+} from "../../../../../src/server/runtime/product-capability-gate";
 
 type Context = { params: Promise<{ id: string }> };
 type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
@@ -23,6 +28,7 @@ type OwnerVideoApiService = Pick<
   FirstPresenceVideoOwnerApiService,
   "create" | "list"
 >;
+type CapabilityAssertion = (capability: ProductCapability) => void;
 
 const KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
 const json = (body: Record<string, unknown>, init?: ResponseInit) =>
@@ -55,6 +61,9 @@ function parseIntent(body: unknown): FirstPresenceVideoIntent | null {
 }
 
 function failure(error: unknown) {
+  if (error instanceof ProductCapabilityUnavailableError) {
+    return json({ error: error.code }, { status: 503 });
+  }
   if (error instanceof FirstPresenceVideoOwnerApiError) {
     const statusByCode: Record<string, number> = {
       INVALID_USER_ID: 400,
@@ -91,6 +100,7 @@ function failure(error: unknown) {
 export function createFirstPresenceVideoHandler(
   serviceFactory: () => OwnerVideoApiService = service,
   sessionResolver: SessionResolver = verifyRequestSession,
+  assertCapability: CapabilityAssertion = assertProductCapabilityEnabled,
 ) {
   return {
     GET: async (request: NextRequest, { params }: Context) => {
@@ -115,6 +125,7 @@ export function createFirstPresenceVideoHandler(
         const session = await sessionResolver(request);
         if (!session) return json({ error: "UNAUTHENTICATED" }, { status: 401 });
         requireAllowedOrigin(request);
+        assertCapability("video_generation");
         const idempotencyKey = request.headers.get("idempotency-key");
         if (!idempotencyKey || !KEY_PATTERN.test(idempotencyKey)) {
           return json({ error: "INVALID_IDEMPOTENCY_KEY" }, { status: 400 });
