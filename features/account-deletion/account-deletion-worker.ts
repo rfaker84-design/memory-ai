@@ -24,6 +24,7 @@ export class PostgresAccountDeletionWorker {
         `UPDATE public.account_deletion_tasks SET status='completed', claimed_at=NULL, completed_at=NOW(), receipt=$2::jsonb, last_error_code=NULL
          WHERE id=$1::uuid AND status='running'`, [task.id, JSON.stringify({ completed: true, kind: task.kind })],
       );
+      await this.refreshRequestStatus(task.deletionRequestId);
       return "completed";
     } catch (error) {
       const code = error instanceof AccountDeletionProviderBlocked ? "PROVIDER_DELETE_BLOCKED" : "DELETE_RETRY";
@@ -41,6 +42,16 @@ export class PostgresAccountDeletionWorker {
 
   private async claim(): Promise<ClaimedTask | null> {
     return withPostgresTransaction(async (client) => {
+      // Holds require a concrete expiry. Once it has elapsed, content deletion
+      // must resume automatically rather than preserving the whole account
+      // indefinitely under an obsolete hold.
+      await client.query(
+        `UPDATE public.account_deletion_requests
+         SET legal_hold=false, legal_hold_reason=NULL, legal_hold_scope=NULL,
+             legal_hold_approved_by=NULL, legal_hold_expires_at=NULL,
+             status='content_pending'
+         WHERE legal_hold AND legal_hold_expires_at <= NOW()`,
+      );
       const selected = await client.query<{ id: string; deletion_request_id: string; user_id: string; kind: TaskKind }>(
         `SELECT t.id, t.deletion_request_id, r.user_id, t.kind
          FROM public.account_deletion_tasks t JOIN public.account_deletion_requests r ON r.id=t.deletion_request_id
@@ -125,5 +136,25 @@ export class PostgresAccountDeletionWorker {
     const remaining = await queryPostgres<{ count: string }>(`SELECT count(*)::text FROM public.account_deletion_tasks WHERE deletion_request_id=$1::uuid AND kind <> 'audit_receipt' AND status <> 'completed'`, [requestId]);
     if (Number(remaining.rows[0]?.count ?? 0) !== 0) throw new Error("ACCOUNT_DELETION_TASKS_PENDING");
     await queryPostgres(`UPDATE public.account_deletion_requests SET status='completed', completed_at=NOW() WHERE id=$1::uuid AND NOT legal_hold`, [requestId]);
+  }
+
+  private async refreshRequestStatus(requestId: string): Promise<void> {
+    await queryPostgres(
+      `UPDATE public.account_deletion_requests r
+       SET status = CASE
+         WHEN r.legal_hold THEN 'legal_hold'
+         WHEN EXISTS (
+           SELECT 1 FROM public.account_deletion_tasks t
+           WHERE t.deletion_request_id=r.id AND t.kind='content_online' AND t.status <> 'completed'
+         ) THEN 'content_pending'
+         WHEN EXISTS (
+           SELECT 1 FROM public.account_deletion_tasks t
+           WHERE t.deletion_request_id=r.id AND t.kind IN ('cos_provider','backup_retention') AND t.status <> 'completed'
+         ) THEN 'provider_pending'
+         ELSE r.status
+       END
+       WHERE r.id=$1::uuid AND r.status <> 'completed'`,
+      [requestId],
+    );
   }
 }

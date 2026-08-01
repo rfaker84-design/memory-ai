@@ -72,6 +72,7 @@ test("Migration 017 PostgreSQL 14 first-run, replay, rollback, concurrent deleti
       service.request({ userId: user.id, externalUserId: "pg14-concurrent-delete", receiptToken: "b".repeat(43) }),
     ]);
     assert.equal(first.requestId, replay.requestId);
+    assert.equal(first.status, "content_pending");
     assert.equal((await target.query("SELECT count(*)::int AS count FROM account_deletion_requests WHERE user_id=$1", [user.id])).rows[0]?.count, 1);
     assert.equal((await target.query("SELECT count(*)::int AS count FROM auth_session_invalidations WHERE user_id=$1", [user.id])).rows[0]?.count, 1);
     const schedule = await target.query<{ kind: string; next_attempt_at: Date; content_delete_after: Date; provider_delete_after: Date; backup_expire_after: Date }>(
@@ -101,11 +102,29 @@ test("Migration 017 PostgreSQL 14 first-run, replay, rollback, concurrent deleti
     const recovered = await target.query<{ status: string; attempt_count: number; claimed_at: Date | null }>("SELECT status, attempt_count, claimed_at FROM account_deletion_tasks WHERE deletion_request_id=$1 AND kind='revoke_sessions'", [first.requestId]);
     assert.deepEqual(recovered.rows[0] && { status: recovered.rows[0].status, attemptCount: recovered.rows[0].attempt_count, claimedAt: recovered.rows[0].claimed_at }, { status: "completed", attemptCount: 1, claimedAt: null });
 
-    await target.query("UPDATE account_deletion_requests SET legal_hold=true, legal_hold_reason='open-dispute', legal_hold_scope=ARRAY['refund_dispute'], legal_hold_approved_by='compliance-approver', legal_hold_expires_at=NOW()+INTERVAL '1 day' WHERE id=$1", [first.requestId]);
+    await target.query("UPDATE account_deletion_requests SET status='legal_hold', legal_hold=true, legal_hold_reason='open-dispute', legal_hold_scope=ARRAY['refund_dispute'], legal_hold_approved_by='compliance-approver', legal_hold_expires_at=NOW()+INTERVAL '1 day' WHERE id=$1", [first.requestId]);
     await target.query("UPDATE account_deletion_tasks SET status='retry', next_attempt_at=NOW() WHERE deletion_request_id=$1 AND kind='content_online'", [first.requestId]);
     await target.query("UPDATE account_deletion_tasks SET status='completed', completed_at=NOW(), claimed_at=NULL WHERE deletion_request_id=$1", [guardianRequest.requestId]);
     assert.equal(await new PostgresAccountDeletionWorker().runOnce(), "idle");
     assert.equal((await target.query("SELECT status FROM account_deletion_tasks WHERE deletion_request_id=$1 AND kind='content_online'", [first.requestId])).rows[0]?.status, "retry");
+    await target.query("UPDATE account_deletion_requests SET legal_hold_expires_at=NOW()-INTERVAL '1 second' WHERE id=$1", [first.requestId]);
+    const resumedWorker = new PostgresAccountDeletionWorker();
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const result = await resumedWorker.runOnce();
+      assert.notEqual(result, "retry");
+      if ((await target.query("SELECT status FROM account_deletion_tasks WHERE deletion_request_id=$1 AND kind='content_online'", [first.requestId])).rows[0]?.status === "completed") break;
+    }
+    assert.equal((await target.query("SELECT status FROM account_deletion_tasks WHERE deletion_request_id=$1 AND kind='content_online'", [first.requestId])).rows[0]?.status, "completed");
+    assert.deepEqual((await target.query("SELECT legal_hold, status FROM account_deletion_requests WHERE id=$1", [first.requestId])).rows[0], { legal_hold: false, status: "content_pending" });
+
+    const progressUser = (await target.query<{ id: string }>("INSERT INTO users(external_id) VALUES ('pg14-progress-delete') RETURNING id")).rows[0]!;
+    const progressRequest = await service.request({ userId: progressUser.id, externalUserId: "pg14-progress-delete", receiptToken: "e".repeat(43) });
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      await resumedWorker.runOnce();
+      if ((await target.query("SELECT status FROM account_deletion_tasks WHERE deletion_request_id=$1 AND kind='content_online'", [progressRequest.requestId])).rows[0]?.status === "completed") break;
+    }
+    assert.equal((await target.query("SELECT status FROM account_deletion_tasks WHERE deletion_request_id=$1 AND kind='content_online'", [progressRequest.requestId])).rows[0]?.status, "completed");
+    assert.equal((await target.query("SELECT status FROM account_deletion_requests WHERE id=$1", [progressRequest.requestId])).rows[0]?.status, "provider_pending");
 
     await closePostgresPool();
     closePostgresPool = undefined;

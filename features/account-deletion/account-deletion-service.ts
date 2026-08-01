@@ -111,7 +111,7 @@ export class PostgresAccountDeletionService {
           `INSERT INTO public.account_deletion_requests (
              user_id, status, requested_at, content_delete_after, provider_delete_after, backup_expire_after,
              receipt_access_hash, receipt_access_expires_at, guardian_confirmed_at, audit_payload
-           ) VALUES ($1::uuid, 'requested', $2::timestamptz, $3::timestamptz, $4::timestamptz, $5::timestamptz, $6, $7::timestamptz, $8::timestamptz, $9::jsonb)
+           ) VALUES ($1::uuid, 'content_pending', $2::timestamptz, $3::timestamptz, $4::timestamptz, $5::timestamptz, $6, $7::timestamptz, $8::timestamptz, $9::jsonb)
            RETURNING id, status, requested_at, content_delete_after, provider_delete_after, backup_expire_after, legal_hold, completed_at`,
           [input.userId, now, schedule.content, schedule.provider, schedule.backup, createHash("sha256").update(input.receiptToken).digest("hex"), schedule.backup, guardianConfirmedAt, JSON.stringify({ policy: "account-deletion-v1", requestedBy: "reauthenticated-session" })],
         );
