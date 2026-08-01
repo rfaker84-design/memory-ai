@@ -88,6 +88,7 @@ export function CreateMemoryExperience() {
     submitting.current = true; setError("");
     try {
       setStatus("submitting");
+      await recordTrustConsent("adult_eligibility");
       await recordTrustConsent("memory_profile");
       const fragments = [
         ["personality", draft.personality], ["catch_phrase", draft.catchPhrases], ["shared_experience", draft.sharedExperiences],

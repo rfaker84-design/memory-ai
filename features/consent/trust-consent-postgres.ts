@@ -3,6 +3,7 @@ import { queryPostgres } from "@/src/server/database";
 export const TRUST_CONSENT_VERSION = "commercial-trust-v1";
 
 export type TrustConsentType =
+  | "adult_eligibility"
   | "memory_profile"
   | "media_asset"
   | "commercial_use";
@@ -59,4 +60,21 @@ export async function hasApprovedMemoryProfileConsent(
   );
 
   return Boolean(result.rows[0]);
+}
+
+/** Both records are server-persisted before a TA can be created. This is an
+ * adult self-attestation, not government identity or guardian verification. */
+export async function hasApprovedMemoryCreationConsents(externalUserId: string): Promise<boolean> {
+  const result = await queryPostgres(
+    `SELECT count(DISTINCT consent.consent_type) AS count
+       FROM consent_records consent
+       INNER JOIN users account ON account.id = consent.user_id
+      WHERE account.external_id = $1
+        AND consent.consent_type IN ('memory_profile', 'adult_eligibility')
+        AND consent.status = 'approved'
+        AND consent.memory_id IS NULL
+        AND consent.metadata ->> 'version' = $2`,
+    [externalUserId, TRUST_CONSENT_VERSION],
+  );
+  return Number(result.rows[0]?.count ?? 0) === 2;
 }

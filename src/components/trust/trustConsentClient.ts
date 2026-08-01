@@ -1,4 +1,4 @@
-export type TrustConsentType = "memory_profile" | "media_asset" | "commercial_use";
+export type TrustConsentType = "adult_eligibility" | "memory_profile" | "media_asset" | "commercial_use";
 
 export class TrustConsentRequestError extends Error {
   constructor(readonly code: string) {

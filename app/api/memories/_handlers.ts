@@ -18,7 +18,7 @@ import {
   AuthConfigurationError,
   requireAllowedOrigin,
 } from "../../../src/server/auth";
-import { hasApprovedMemoryProfileConsent } from "../../../features/consent/trust-consent-postgres";
+import { hasApprovedMemoryCreationConsents } from "../../../features/consent/trust-consent-postgres";
 
 import { resolveSessionOwner } from "./_session-user-boundary";
 
@@ -73,7 +73,7 @@ export function createMemoriesHandlers(
   memoryServiceFactory: MemoryServiceFactory = createMemoryService,
   auditServiceFactory: AuditServiceFactory = createAuditService,
   sessionOwnerResolver: typeof resolveSessionOwner = resolveSessionOwner,
-  memoryProfileConsentVerifier: MemoryProfileConsentVerifier = hasApprovedMemoryProfileConsent,
+  memoryProfileConsentVerifier: MemoryProfileConsentVerifier = hasApprovedMemoryCreationConsents,
 ) {
   return {
     async GET(req: NextRequest) {
@@ -104,7 +104,7 @@ export function createMemoriesHandlers(
         const userId = owner.externalUserId;
         if (!(await memoryProfileConsentVerifier(userId))) {
           return NextResponse.json(
-            { error: "MEMORY_CONSENT_REQUIRED" },
+            { error: "MEMORY_CREATION_CONSENT_REQUIRED" },
             { status: 403 }
           );
         }

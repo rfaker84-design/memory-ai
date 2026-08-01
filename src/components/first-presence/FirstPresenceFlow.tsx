@@ -517,6 +517,7 @@ export function FirstPresenceFlow({
     setStage("creating");
 
     try {
+      await recordTrustConsent("adult_eligibility");
       await recordTrustConsent("memory_profile");
       idempotencyKey.current ||= clientIdempotencyKey();
       if (!writeCreationRecovery({

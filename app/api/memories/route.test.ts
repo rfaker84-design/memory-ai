@@ -131,6 +131,6 @@ test("a direct Memory API request cannot bypass required profile consent", async
 
   const response = await handlers.POST(request("memory-consent-required"));
   assert.equal(response.status, 403);
-  assert.deepEqual(await response.json(), { error: "MEMORY_CONSENT_REQUIRED" });
+  assert.deepEqual(await response.json(), { error: "MEMORY_CREATION_CONSENT_REQUIRED" });
   assert.equal(createCalls, 0);
 });

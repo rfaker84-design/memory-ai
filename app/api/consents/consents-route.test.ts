@@ -23,6 +23,14 @@ test("records a session-bound trust acknowledgement without client identity", as
   assert.deepEqual(written, { externalUserId: "phone:13800138000", consentType: "memory_profile", memoryId: null, requestKey: "consent-1234567890abcd" });
 });
 
+test("records the adult self-attestation as a distinct account-level consent", async () => {
+  let written: unknown;
+  const handler = createConsentsHandler(async (input) => { written = input; }, session);
+  const response = await handler(request({ consentType: "adult_eligibility" }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(written, { externalUserId: "phone:13800138000", consentType: "adult_eligibility", memoryId: null, requestKey: "consent-1234567890abcd" });
+});
+
 test("requires a memory for media and commerce acknowledgement", async () => {
   const handler = createConsentsHandler(async () => {}, session);
   const response = await handler(request({ consentType: "commercial_use" }));
