@@ -6,13 +6,15 @@ async function main(): Promise<void> {
     throw new Error("ACCOUNT_DELETION_WORKER_DISABLED");
   }
   const worker = new PostgresAccountDeletionWorker();
-  let processed = 0;
+  let completed = 0;
+  let retry = 0;
   for (;;) {
     const result = await worker.runOnce();
     if (result === "idle") break;
-    processed += 1;
+    if (result === "completed") completed += 1;
+    else retry += 1;
   }
-  console.log(`ACCOUNT_DELETION_WORKER processed=${processed}`);
+  console.log(JSON.stringify({ event: "account_deletion_worker_batch", completed, retry }));
 }
 
 main().catch((error) => {
