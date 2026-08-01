@@ -228,6 +228,25 @@ test("referral qualification uses verified server device output, not the raw tok
   assert.doesNotMatch(JSON.stringify(calls[0]), /signed-device-attestation/);
 });
 
+test("referral qualification fails closed before any ledger write without a device attestation verifier", async () => {
+  let calls = 0;
+  const handler = createReferralQualificationHandler(
+    () => ({ qualifyReferral: async () => { calls += 1; throw new Error("must not qualify"); } }),
+    async () => session,
+  );
+  const response = await handler(new NextRequest(
+    "https://memoryai.test/api/commerce/referrals/qualifications",
+    {
+      method: "POST",
+      headers: { origin: "https://memoryai.test", "content-type": "application/json", "idempotency-key": "referral-unconfigured-device-0001" },
+      body: JSON.stringify({ code: "ABCDEFGH23", deviceAttestation: "untrusted-client-value" }),
+    },
+  ));
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "DEVICE_ATTESTATION_NOT_CONFIGURED" });
+  assert.equal(calls, 0);
+});
+
 test("test callback requires HMAC, is duplicate-safe, and disappears in production", async () => {
   const secret = "test-callback-secret-with-at-least-32-bytes";
   const rawBody = JSON.stringify({
