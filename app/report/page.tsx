@@ -1,4 +1,5 @@
 import { refundPolicy } from "@/src/components/payment/refundPolicy";
+import { ReportIntake } from "@/src/components/report/ReportIntake";
 
 export default function ReportPage() {
   return (
@@ -25,6 +26,7 @@ export default function ReportPage() {
 {"\n"}{refundPolicy.manualReview}
 {"\n"}{refundPolicy.entitlementEnd}
         </p>
+        <ReportIntake />
       </div>
     </main>
   );
