@@ -5,6 +5,7 @@ const path = require("node:path");
 const MANIFEST_FILE = "standalone-manifest.json";
 const LAUNCHER_FILE = "run-standalone-from-manifest.cjs";
 const LAYOUT_FILE = "standalone-runtime-layout.cjs";
+const RUNTIME_CONTRACT_FILE = "production-runtime-contract.cjs";
 
 function fail(code, detail) {
   const error = new Error(`${code}:${detail}`);
@@ -67,6 +68,10 @@ function packageStandaloneRuntime({ standaloneDirectory, outputDirectory, public
   cpSync(staticDirectory, path.join(applicationDirectory, ".next", "static"), { recursive: true });
   cpSync(path.join(__dirname, LAUNCHER_FILE), path.join(outputDirectory, LAUNCHER_FILE));
   cpSync(path.join(__dirname, LAYOUT_FILE), path.join(outputDirectory, LAYOUT_FILE));
+  cpSync(
+    path.join(__dirname, "../../src/server/auth/production-runtime-contract.cjs"),
+    path.join(outputDirectory, RUNTIME_CONTRACT_FILE),
+  );
   writeFileSync(
     path.join(outputDirectory, MANIFEST_FILE),
     `${JSON.stringify({ version: 1, serverEntry }, null, 2)}\n`,
@@ -86,6 +91,7 @@ function assertManifestEntryResolves(runtimeDirectory) {
 module.exports = {
   LAUNCHER_FILE,
   LAYOUT_FILE,
+  RUNTIME_CONTRACT_FILE,
   MANIFEST_FILE,
   assertManifestEntryResolves,
   discoverStandaloneEntry,

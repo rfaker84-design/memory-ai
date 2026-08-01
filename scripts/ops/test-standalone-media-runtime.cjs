@@ -50,6 +50,17 @@ async function waitForServer(port, child) {
   throw lastError ?? new Error("standalone did not start");
 }
 
+async function waitForExit(child) {
+  if (child.exitCode !== null) return child.exitCode;
+  return await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("standalone did not fail fast")), 5000);
+    child.once("exit", (code) => {
+      clearTimeout(timeout);
+      resolve(code);
+    });
+  });
+}
+
 function startStandalone(port, environment) {
   const output = [];
   const child = spawn(process.execPath, ["run-standalone-from-manifest.cjs"], {
@@ -100,11 +111,8 @@ async function main() {
     // Override any host-inherited value so the negative path remains isolated.
     incompleteEnvironment.DEPLOYMENT_ENV = "";
     incomplete = startStandalone(incompletePort, incompleteEnvironment);
-    await waitForServer(incompletePort, incomplete.child);
-    const denied = await request(incompletePort, "/_next/image?url=%2Ficon-192.png&w=64&q=75");
-    assert.equal(denied.statusCode, 500, "incomplete production staging contract must fail closed");
+    assert.notEqual(await waitForExit(incomplete.child), 0, "incomplete contract must exit before readiness");
     assert.match(incomplete.output(), /DEPLOYMENT_ENV_INVALID/);
-    await stopChild(incomplete.child);
     incomplete = undefined;
 
     const port = await freePort();
