@@ -188,7 +188,7 @@ function assertProductionRuntimeContract(environment = process.env) {
 
   const deployment = environment.DEPLOYMENT_ENV && environment.DEPLOYMENT_ENV.trim();
   if (deployment !== "production" && deployment !== "staging") throw failure("DEPLOYMENT_ENV_INVALID");
-  if (environment.ACCOUNT_DELETION_ENABLED === "true") {
+  if (environment.ACCOUNT_DELETION_ENABLED === "true" || environment.ACCOUNT_DATA_EXPORT_ENABLED === "true") {
     requireExact(environment, "AUTH_SESSION_REVOCATION_ENFORCED", "true", "AUTH_SESSION_REVOCATION_NOT_ENFORCED");
   }
   if (deployment === "staging") return requireStagingContract(environment);

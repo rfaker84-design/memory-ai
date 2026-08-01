@@ -110,14 +110,17 @@ test("production rejects every staging-only capability even when its other setti
   }
 });
 
-test("account deletion cannot be enabled without session revocation enforcement", () => {
-  assert.throws(
-    () => assertProductionAuthConfiguration({ ...productionEnvironment, ACCOUNT_DELETION_ENABLED: "true" }),
-    (error: unknown) => error instanceof ProductionAuthConfigurationError && error.code === "AUTH_SESSION_REVOCATION_ENFORCED_NOT_CONFIGURED",
-  );
+test("account deletion and data export cannot be enabled without session revocation enforcement", () => {
+  for (const capability of ["ACCOUNT_DELETION_ENABLED", "ACCOUNT_DATA_EXPORT_ENABLED"] as const) {
+    assert.throws(
+      () => assertProductionAuthConfiguration({ ...productionEnvironment, [capability]: "true" }),
+      (error: unknown) => error instanceof ProductionAuthConfigurationError && error.code === "AUTH_SESSION_REVOCATION_ENFORCED_NOT_CONFIGURED",
+    );
+  }
   assert.doesNotThrow(() => assertProductionAuthConfiguration({
     ...productionEnvironment,
     ACCOUNT_DELETION_ENABLED: "true",
+    ACCOUNT_DATA_EXPORT_ENABLED: "true",
     AUTH_SESSION_REVOCATION_ENFORCED: "true",
   }));
 });
