@@ -96,6 +96,23 @@ function requireVerificationPepperRotationContract(environment) {
   }
 }
 
+function requireInternalControlTokenRotation(environment, name) {
+  const current = requiredSecret(environment, name, MINIMUM_VIDEO_TOKEN_BYTES);
+  const previous = environment[`${name}_PREVIOUS`];
+  const validUntil = environment[`${name}_PREVIOUS_VALID_UNTIL`];
+  if (!previous && !validUntil) return;
+  const expiry = Date.parse(validUntil || "");
+  if (!previous || !validUntil
+    || previous !== previous.trim()
+    || Buffer.byteLength(previous, "utf8") < MINIMUM_VIDEO_TOKEN_BYTES
+    || previous === current
+    || !Number.isFinite(expiry)
+    || expiry <= Date.now()
+    || expiry - Date.now() > 15 * 60 * 1000) {
+    throw failure(`${name}_PREVIOUS_CONFIGURATION_INVALID`);
+  }
+}
+
 function requireVideoInternalAccess(environment) {
   requireExact(environment, "YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED", "true");
   requireExact(environment, "YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED", "true");
@@ -164,7 +181,7 @@ function assertProductionRuntimeContract(environment = process.env) {
   requireVerificationPepperRotationContract(environment);
   requiredSecret(environment, "SESSION_SECRET", 32);
   requireSessionRotationContract(environment);
-  requiredSecret(environment, "REFUND_REVIEW_ACCESS_TOKEN", 48);
+  requireInternalControlTokenRotation(environment, "REFUND_REVIEW_ACCESS_TOKEN");
   requireEnabled(environment, "AUTH_TRUST_NGINX_PROXY", "AUTH_TRUST_NGINX_PROXY_NOT_CONFIGURED");
   requireEnabled(environment, "AUTH_PROXY_LOOPBACK_ONLY", "AUTH_PROXY_LOOPBACK_CONTRACT_NOT_CONFIGURED");
   requireVideoInternalAccess(environment);

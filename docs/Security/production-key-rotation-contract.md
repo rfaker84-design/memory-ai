@@ -27,7 +27,7 @@ runtime contract.
 | External provider credential | LLM, Tencent cloud/COS, SMS, WeChat, payment | Provider-side replacement, least-privilege validation, then revoke the old credential. No application dual-read assumption. |
 | HMAC identity pepper | phone/request-IP/challenge digest | Requires a versioned database migration and bounded dual-lookup/verification. Do not overwrite in place. |
 | Session signing key | `SESSION_SECRET` | New sessions sign only with the active version; verification may accept one prior version until the session TTL plus clock tolerance expires, then revoke it. |
-| Internal control token | video review/reconciliation and refund-review tokens | Rotate one control plane at a time with a short overlap, distinct values, caller deployment, audit, and explicit old-token revocation. |
+| Internal control token | video review/reconciliation, refund review, and Commerce reconciliation tokens | Rotate one control plane at a time with one prior value for no more than 15 minutes, then record and explicitly revoke it. |
 | Short-lived media signing key | staging media signing secret | Introduce a dual verifier only for the maximum signed URL TTL plus clock allowance; new URLs use the active key. |
 
 ## Required evidence before a production rotation

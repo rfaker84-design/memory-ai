@@ -65,6 +65,28 @@ test("internal review accepts only strict approve or reject input and never uses
   }
 });
 
+test("internal review accepts only a short-lived previous control token during rotation", async () => {
+  const keys = ["REFUND_REVIEW_ACCESS_TOKEN", "REFUND_REVIEW_ACCESS_TOKEN_PREVIOUS", "REFUND_REVIEW_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL"] as const;
+  const saved = new Map(keys.map((key) => [key, process.env[key]]));
+  const prior = "p".repeat(48);
+  try {
+    Object.assign(process.env, {
+      REFUND_REVIEW_ACCESS_TOKEN: token,
+      REFUND_REVIEW_ACCESS_TOKEN_PREVIOUS: prior,
+      REFUND_REVIEW_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const handler = createRefundReviewsHandler(() => ({ reviewManualRefund: async () => refund }));
+    assert.equal((await handler(new NextRequest("https://memoryai.test/api/internal/refund-reviews", { method: "POST", headers: { "content-type": "application/json", "x-refund-review-access-token": prior }, body: JSON.stringify({ refundId, action: "approve" }) }))).status, 202);
+    process.env.REFUND_REVIEW_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL = new Date(Date.now() - 1_000).toISOString();
+    assert.equal((await handler(new NextRequest("https://memoryai.test/api/internal/refund-reviews", { method: "POST", headers: { "content-type": "application/json", "x-refund-review-access-token": prior }, body: JSON.stringify({ refundId, action: "approve" }) }))).status, 401);
+  } finally {
+    for (const key of keys) {
+      const value = saved.get(key);
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  }
+});
+
 test("operator review rejects session substitutes and malformed bodies without exposing its access token", async () => {
   const previous = process.env.REFUND_REVIEW_ACCESS_TOKEN;
   const secret = "review-access-token-must-never-appear-in-output-000001";

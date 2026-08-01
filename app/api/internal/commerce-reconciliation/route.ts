@@ -1,5 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
-
 import { NextRequest, NextResponse } from "next/server";
 
 import {
@@ -8,25 +6,18 @@ import {
   CommerceService,
 } from "@/features/commerce";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
+import { hasValidInternalAccessToken } from "@/src/server/security/internal-access-token";
 
 const TOKEN_HEADER = "x-commerce-reconciliation-access-token";
 const json = (body: Record<string, unknown>, init?: ResponseInit) =>
   applyAuthNoStore(NextResponse.json(body, init));
 
 function authorized(request: NextRequest): boolean {
-  const expected = process.env.COMMERCE_RECONCILIATION_ACCESS_TOKEN;
-  const supplied = request.headers.get(TOKEN_HEADER);
-  if (
-    !expected
-    || expected !== expected.trim()
-    || Buffer.byteLength(expected, "utf8") < 48
-    || !supplied
-  ) {
-    return false;
-  }
-  const left = Buffer.from(expected);
-  const right = Buffer.from(supplied);
-  return left.length === right.length && timingSafeEqual(left, right);
+  return hasValidInternalAccessToken({
+    candidate: request.headers.get(TOKEN_HEADER),
+    currentName: "COMMERCE_RECONCILIATION_ACCESS_TOKEN",
+    minimumBytes: 48,
+  });
 }
 
 export async function GET(request: NextRequest) {

@@ -1,5 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
-
 import { NextRequest, NextResponse } from "next/server";
 
 import {
@@ -14,6 +12,7 @@ import {
 } from "@/features/payment";
 import { DatabaseDependencyError } from "@/src/server/database";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
+import { hasValidInternalAccessToken } from "@/src/server/security/internal-access-token";
 
 type ReviewService = Pick<PaymentService, "reviewManualRefund">;
 const TOKEN_HEADER = "x-refund-review-access-token";
@@ -22,12 +21,11 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const json = (body: Record<string, unknown>, init?: ResponseInit) => applyAuthNoStore(NextResponse.json(body, init));
 
 function authorized(request: NextRequest): boolean {
-  const expected = process.env.REFUND_REVIEW_ACCESS_TOKEN;
-  const supplied = request.headers.get(TOKEN_HEADER);
-  if (!expected || expected !== expected.trim() || Buffer.byteLength(expected, "utf8") < MINIMUM_TOKEN_BYTES || !supplied) return false;
-  const left = Buffer.from(expected);
-  const right = Buffer.from(supplied);
-  return left.length === right.length && timingSafeEqual(left, right);
+  return hasValidInternalAccessToken({
+    candidate: request.headers.get(TOKEN_HEADER),
+    currentName: "REFUND_REVIEW_ACCESS_TOKEN",
+    minimumBytes: MINIMUM_TOKEN_BYTES,
+  });
 }
 
 function failure(error: unknown): NextResponse {

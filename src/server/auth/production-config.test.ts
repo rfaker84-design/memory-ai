@@ -144,6 +144,26 @@ test("production startup rejects incomplete or expired session rotation configur
   }
 });
 
+test("production startup rejects incomplete, expired, or overlong refund-review token rotation", () => {
+  for (const override of [
+    { REFUND_REVIEW_ACCESS_TOKEN_PREVIOUS: "p".repeat(48) },
+    {
+      REFUND_REVIEW_ACCESS_TOKEN_PREVIOUS: "p".repeat(48),
+      REFUND_REVIEW_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL: new Date(Date.now() - 1_000).toISOString(),
+    },
+    {
+      REFUND_REVIEW_ACCESS_TOKEN_PREVIOUS: "p".repeat(48),
+      REFUND_REVIEW_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL: new Date(Date.now() + 15 * 60 * 1000 + 1).toISOString(),
+    },
+  ]) {
+    assert.throws(
+      () => assertProductionAuthConfiguration({ ...productionEnvironment, ...override }),
+      (error: unknown) => error instanceof ProductionAuthConfigurationError
+        && error.code === "REFUND_REVIEW_ACCESS_TOKEN_PREVIOUS_CONFIGURATION_INVALID",
+    );
+  }
+});
+
 test("production startup rejects incomplete, too-short and expired verification pepper rotation configuration", () => {
   for (const override of [
     { AUTH_VERIFICATION_PEPPER_PREVIOUS: "p".repeat(32) },
