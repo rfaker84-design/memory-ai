@@ -116,6 +116,20 @@ function requireStagingContract(environment) {
   }
   requiredSecret(environment, "STAGING_ACCESS_TOKEN", 48);
   requiredSecret(environment, "STAGING_MEDIA_SIGNING_SECRET", 32);
+  const previousMediaSecret = environment.STAGING_MEDIA_SIGNING_SECRET_PREVIOUS;
+  const previousMediaValidUntil = environment.STAGING_MEDIA_SIGNING_SECRET_PREVIOUS_VALID_UNTIL;
+  if (previousMediaSecret || previousMediaValidUntil) {
+    const expiry = Date.parse(previousMediaValidUntil || "");
+    if (!previousMediaSecret || !previousMediaValidUntil
+      || previousMediaSecret !== previousMediaSecret.trim()
+      || Buffer.byteLength(previousMediaSecret, "utf8") < 32
+      || previousMediaSecret === environment.STAGING_MEDIA_SIGNING_SECRET
+      || !Number.isFinite(expiry)
+      || expiry <= Date.now()
+      || expiry - Date.now() > 900_000) {
+      throw failure("STAGING_MEDIA_SIGNING_SECRET_PREVIOUS_INVALID");
+    }
+  }
 }
 
 function assertProductionRuntimeContract(environment = process.env) {

@@ -42,3 +42,26 @@ test("staging runtime fails closed for production-shaped database, origin, provi
     );
   }
 });
+
+test("staging media signing rotation permits one short bounded previous key", () => {
+  const now = new Date("2026-08-01T00:00:00.000Z");
+  const valid = {
+    ...stagingEnvironment,
+    STAGING_MEDIA_SIGNING_SECRET_PREVIOUS: "p".repeat(32),
+    STAGING_MEDIA_SIGNING_SECRET_PREVIOUS_VALID_UNTIL: new Date(now.getTime() + 900_000).toISOString(),
+  };
+  assert.equal(getStagingRuntimeConfiguration(valid, now).previousMediaSigningSecret, "p".repeat(32));
+  for (const override of [
+    { STAGING_MEDIA_SIGNING_SECRET_PREVIOUS: "p".repeat(32) },
+    {
+      STAGING_MEDIA_SIGNING_SECRET_PREVIOUS: "p".repeat(32),
+      STAGING_MEDIA_SIGNING_SECRET_PREVIOUS_VALID_UNTIL: new Date(now.getTime() + 901_000).toISOString(),
+    },
+  ]) {
+    assert.throws(
+      () => getStagingRuntimeConfiguration({ ...stagingEnvironment, ...override }, now),
+      (error: unknown) => error instanceof StagingRuntimeConfigurationError
+        && error.code === "STAGING_MEDIA_SIGNING_SECRET_PREVIOUS_INVALID",
+    );
+  }
+});

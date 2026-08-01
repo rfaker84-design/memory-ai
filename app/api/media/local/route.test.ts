@@ -6,7 +6,7 @@ import test from "node:test";
 
 import { NextRequest } from "next/server";
 
-import { createStagingMediaUrl } from "@/src/server/runtime/staging-media";
+import { createStagingMediaUrl, verifyStagingMediaUrl } from "@/src/server/runtime/staging-media";
 import { StagingLocalMediaStorage } from "@/src/server/storage/staging-local-media-storage";
 
 import { GET } from "./route";
@@ -50,4 +50,38 @@ test("staging local-media route requires a short-lived signature and reads only 
     }
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("staging media verifier accepts a prior signing key only during its bounded overlap", () => {
+  const key = "media/phone:test/11111111-1111-4111-8111-111111111111/image/22222222-2222-4222-8222-222222222222.jpg";
+  const base: NodeJS.ProcessEnv = {
+    NODE_ENV: "production",
+    DEPLOYMENT_ENV: "staging",
+    DATABASE_URL: "postgresql://staging:secret@127.0.0.1:5432/memoryai_staging",
+    STAGING_DATABASE_ISOLATION: "isolated",
+    STAGING_DATABASE_NAME: "memoryai_staging",
+    STAGING_DATA_SOURCE: "empty",
+    AUTH_ALLOWED_ORIGIN: "https://app.staging.yijianmemory.cn",
+    STAGING_ACCESS_TOKEN: "a".repeat(48),
+    STAGING_FIXED_SMS_CODE: "246810",
+    STAGING_FIXED_SMS_PHONES: "+8613800013800,+8613900013900",
+    STAGING_MEDIA_ROOT: "/var/lib/memoryai-staging/media",
+    LLM_PROVIDER: "mock",
+    TTS_PROVIDER: "mock",
+  };
+  const oldUrl = new URL(createStagingMediaUrl(key, 300, {
+    ...base,
+    STAGING_MEDIA_SIGNING_SECRET: "p".repeat(32),
+  }));
+  const rotated = {
+    ...base,
+    STAGING_MEDIA_SIGNING_SECRET: "m".repeat(32),
+    STAGING_MEDIA_SIGNING_SECRET_PREVIOUS: "p".repeat(32),
+    STAGING_MEDIA_SIGNING_SECRET_PREVIOUS_VALID_UNTIL: new Date(Date.now() + 900_000).toISOString(),
+  };
+  assert.equal(verifyStagingMediaUrl({
+    key: oldUrl.searchParams.get("key"),
+    expires: oldUrl.searchParams.get("expires"),
+    signature: oldUrl.searchParams.get("signature"),
+  }, rotated), key);
 });

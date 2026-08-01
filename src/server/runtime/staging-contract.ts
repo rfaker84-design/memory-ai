@@ -3,6 +3,7 @@ export const STAGING_API_ORIGIN = "https://api.staging.yijianmemory.cn";
 
 const MIN_STAGING_ACCESS_TOKEN_BYTES = 48;
 const MIN_STAGING_MEDIA_SIGNING_SECRET_BYTES = 32;
+const MAX_STAGING_MEDIA_PREVIOUS_SECRET_WINDOW_SECONDS = 900;
 
 export class StagingRuntimeConfigurationError extends Error {
   constructor(public readonly code: string) {
@@ -18,6 +19,7 @@ export type StagingRuntimeConfiguration = Readonly<{
   fixedSmsPhones: readonly [string, string];
   mediaRoot: string;
   mediaSigningSecret: string;
+  previousMediaSigningSecret: string | null;
 }>;
 
 function required(environment: NodeJS.ProcessEnv, name: string): string {
@@ -90,6 +92,24 @@ function parseMediaRoot(environment: NodeJS.ProcessEnv): string {
   return root;
 }
 
+function parsePreviousMediaSigningSecret(environment: NodeJS.ProcessEnv, now: Date): string | null {
+  const previous = environment.STAGING_MEDIA_SIGNING_SECRET_PREVIOUS;
+  const validUntil = environment.STAGING_MEDIA_SIGNING_SECRET_PREVIOUS_VALID_UNTIL;
+  if (!previous && !validUntil) return null;
+  if (!previous || !validUntil || previous !== previous.trim()
+    || new TextEncoder().encode(previous).length < MIN_STAGING_MEDIA_SIGNING_SECRET_BYTES
+    || previous === environment.STAGING_MEDIA_SIGNING_SECRET) {
+    throw new StagingRuntimeConfigurationError("STAGING_MEDIA_SIGNING_SECRET_PREVIOUS_INVALID");
+  }
+  const expiry = Date.parse(validUntil);
+  const remainingMilliseconds = expiry - now.getTime();
+  if (!Number.isFinite(expiry) || remainingMilliseconds <= 0
+    || remainingMilliseconds > MAX_STAGING_MEDIA_PREVIOUS_SECRET_WINDOW_SECONDS * 1000) {
+    throw new StagingRuntimeConfigurationError("STAGING_MEDIA_SIGNING_SECRET_PREVIOUS_INVALID");
+  }
+  return previous;
+}
+
 /** True only for the intentional production-built staging runtime. */
 export function isStagingRuntime(environment: NodeJS.ProcessEnv = process.env): boolean {
   return environment.NODE_ENV === "production" && environment.DEPLOYMENT_ENV === "staging";
@@ -97,6 +117,7 @@ export function isStagingRuntime(environment: NodeJS.ProcessEnv = process.env): 
 
 export function getStagingRuntimeConfiguration(
   environment: NodeJS.ProcessEnv = process.env,
+  now: Date = new Date(),
 ): StagingRuntimeConfiguration {
   if (!isStagingRuntime(environment)) {
     throw new StagingRuntimeConfigurationError("STAGING_RUNTIME_NOT_ENABLED");
@@ -124,6 +145,7 @@ export function getStagingRuntimeConfiguration(
       "STAGING_MEDIA_SIGNING_SECRET",
       MIN_STAGING_MEDIA_SIGNING_SECRET_BYTES,
     ),
+    previousMediaSigningSecret: parsePreviousMediaSigningSecret(environment, now),
   });
 }
 

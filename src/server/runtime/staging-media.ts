@@ -49,8 +49,11 @@ export function verifyStagingMediaUrl(
   if (!Number.isSafeInteger(expiresAt) || expiresAt <= Math.floor(Date.now() / 1000)) return null;
 
   const configuration = getStagingRuntimeConfiguration(environment);
-  const expected = Buffer.from(signature(configuration.mediaSigningSecret, key, expiresAt));
   const candidate = Buffer.from(input.signature);
-  if (candidate.length !== expected.length || !timingSafeEqual(candidate, expected)) return null;
-  return key;
+  for (const secret of [configuration.mediaSigningSecret, configuration.previousMediaSigningSecret]) {
+    if (!secret) continue;
+    const expected = Buffer.from(signature(secret, key, expiresAt));
+    if (candidate.length === expected.length && timingSafeEqual(candidate, expected)) return key;
+  }
+  return null;
 }
