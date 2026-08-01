@@ -493,6 +493,30 @@ test("enforced revocation rejects an otherwise valid JWT jti", async () => {
   }
 });
 
+test("enforced revocation receives the authenticated user and issued-at boundary for user-wide invalidation", async () => {
+  const original = process.env.AUTH_SESSION_REVOCATION_ENFORCED;
+  process.env.AUTH_SESSION_REVOCATION_ENFORCED = "true";
+  try {
+    const now = new Date();
+    const token = await issueSession({
+      userId: "00000000-0000-4000-8000-000000000001",
+      externalUserId: "phone:user-wide-revocation",
+      now,
+    });
+    let lookup: { jti: string; userId: string; issuedAt: string } | null = null;
+    const verified = await verifySessionToken(token, async (input) => { lookup = input; return false; });
+    assert.equal(verified?.authenticatedAt, new Date(Math.floor(now.getTime() / 1000) * 1000).toISOString());
+    assert.deepEqual(lookup && { userId: lookup.userId, issuedAt: lookup.issuedAt }, {
+      userId: "00000000-0000-4000-8000-000000000001",
+      issuedAt: new Date(Math.floor(now.getTime() / 1000) * 1000).toISOString(),
+    });
+    assert.match(lookup?.jti ?? "", /^[0-9a-f-]{36}$/i);
+  } finally {
+    if (original === undefined) delete process.env.AUTH_SESSION_REVOCATION_ENFORCED;
+    else process.env.AUTH_SESSION_REVOCATION_ENFORCED = original;
+  }
+});
+
 async function signSessionClaims(claims: Record<string, unknown>): Promise<string> {
   return new SignJWT(claims)
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
