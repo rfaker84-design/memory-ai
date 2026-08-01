@@ -16,6 +16,10 @@ export class FinancialArchiveConfigurationError extends Error {
   }
 }
 
+export class FinancialArchiveRefundPendingError extends Error {
+  constructor() { super("FINANCIAL_ARCHIVE_REFUND_PENDING"); }
+}
+
 type FinancialRecordsRow = { records: Record<string, unknown> };
 
 function required(environment: Environment, name: string): string {
@@ -137,6 +141,17 @@ export async function archiveFinancialRecords(input: { deletionRequestId: string
 
 export async function purgeLiveFinancialProductRecords(userId: string): Promise<void> {
   await withPostgresTransaction(async (client) => {
+    const pendingRefunds = await client.query<{ count: string }>(
+      `SELECT (
+         (SELECT count(*) FROM public.refund_requests
+          WHERE user_id=$1::uuid AND status IN ('processing','requested','manual_review'))
+         +
+         (SELECT count(*) FROM public.commerce_refund_requests
+          WHERE user_id=$1::uuid AND status IN ('manual_review','requested'))
+       )::text AS count`,
+      [userId],
+    );
+    if (Number(pendingRefunds.rows[0]?.count ?? 0) !== 0) throw new FinancialArchiveRefundPendingError();
     for (const statement of [
       "DELETE FROM public.payment_callback_events WHERE order_id IN (SELECT id FROM public.payment_orders WHERE user_id=$1::uuid)",
       "DELETE FROM public.memory_entitlement_usages WHERE user_id=$1::uuid",
@@ -153,5 +168,5 @@ export async function purgeLiveFinancialProductRecords(userId: string): Promise<
       "DELETE FROM public.commerce_referral_codes WHERE inviter_user_id=$1::uuid",
       "DELETE FROM public.payment_orders WHERE user_id=$1::uuid",
     ]) await client.query(statement, [userId]);
-  });
+  }, { preserveError: (error) => error instanceof FinancialArchiveRefundPendingError });
 }

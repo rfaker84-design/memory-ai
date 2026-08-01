@@ -1,7 +1,7 @@
 import { queryPostgres, withPostgresTransaction } from "@/src/server/database";
 import { createMediaStorage } from "@/src/server/storage";
 import { createVideoArtifactStorageFromEnvironment } from "@/features/video/video-artifact-storage";
-import { archiveFinancialRecords, purgeLiveFinancialProductRecords } from "./financial-archive";
+import { archiveFinancialRecords, FinancialArchiveRefundPendingError, purgeLiveFinancialProductRecords } from "./financial-archive";
 
 type TaskKind = "revoke_sessions" | "content_online" | "cos_provider" | "backup_retention" | "financial_archive" | "audit_receipt";
 type ClaimedTask = { id: string; deletionRequestId: string; userId: string; kind: TaskKind };
@@ -28,7 +28,11 @@ export class PostgresAccountDeletionWorker {
       await this.refreshRequestStatus(task.deletionRequestId);
       return "completed";
     } catch (error) {
-      const code = error instanceof AccountDeletionProviderBlocked ? "PROVIDER_DELETE_BLOCKED" : "DELETE_RETRY";
+      const code = error instanceof AccountDeletionProviderBlocked
+        ? "PROVIDER_DELETE_BLOCKED"
+        : error instanceof FinancialArchiveRefundPendingError
+          ? "FINANCIAL_ARCHIVE_REFUND_PENDING"
+          : "DELETE_RETRY";
       // A missing provider deletion capability is not a completed deletion.
       // Keep the task durable and retryable so a later approved adapter can
       // resume it without recreating the customer request.

@@ -68,15 +68,24 @@ test("Financial archive is a separate PG14 database, keeps only minimum payment 
       "INSERT INTO public.memories(user_id,name,idempotency_key,creation_idempotency_key) VALUES ($1,'archive gate memory',$2,$3) RETURNING id",
       [user.id, "a".repeat(64), "financial-archive-memory-key"],
     )).rows[0]!;
-    await app.query(
+    const order = (await app.query<{ id: string }>(
       `INSERT INTO public.payment_orders
        (user_id,memory_id,order_no,request_key,product_id,amount_fen,duration_days,chat_quota,status,expires_at)
-       VALUES ($1,$2,'YM20260801000000ABCDEF123456','financial-archive-order-key','memory_video_49',4900,30,100,'pending',NOW()+INTERVAL '1 day')`,
+       VALUES ($1,$2,'YM20260801000000ABCDEF123456','financial-archive-order-key','memory_video_49',4900,30,100,'pending',NOW()+INTERVAL '1 day') RETURNING id`,
       [user.id, memory.id],
+    )).rows[0]!;
+    await app.query(
+      `INSERT INTO public.refund_requests
+       (user_id,memory_id,order_id,request_key,reason,merchant_refund_no,status,eligibility)
+       VALUES ($1,$2,$3,'financial-archive-refund-key','unused_purchase','YR20260801000000ABCDEF123456','processing','eligible')`,
+      [user.id, memory.id, order.id],
     );
     const requestId = randomUUID();
     await archiveFinancialRecords({ deletionRequestId: requestId, userId: user.id });
     await archiveFinancialRecords({ deletionRequestId: requestId, userId: user.id });
+    await assert.rejects(purgeLiveFinancialProductRecords(user.id), /FINANCIAL_ARCHIVE_REFUND_PENDING/);
+    assert.equal((await app.query("SELECT count(*)::int AS count FROM public.payment_orders WHERE user_id=$1", [user.id])).rows[0]?.count, 1);
+    await app.query("UPDATE public.refund_requests SET status='succeeded', resolved_at=NOW() WHERE user_id=$1", [user.id]);
     await purgeLiveFinancialProductRecords(user.id);
     assert.equal((await app.query("SELECT count(*)::int AS count FROM public.payment_orders WHERE user_id=$1", [user.id])).rows[0]?.count, 0);
     const checkedArchive = new Client({ connectionString: archiveUrl });
