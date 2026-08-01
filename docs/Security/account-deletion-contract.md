@@ -31,6 +31,14 @@ The candidate policy is configurable, not hard-coded as a legal conclusion:
   separate minimum-necessary archive. They must not restore photos, chat text,
   voice or generated media to product access.
 
+Operational logs and deletion audit receipts are also separate from content:
+they retain only the minimum request, status, timestamp and redacted failure or
+receipt facts needed for security, support and legal accountability. They must
+never contain chat bodies, photographs, voice bytes, object keys, provider URLs
+or customer-visible deletion-receipt secrets. The final retention periods for
+financial, complaint and accounting records remain a China mainland
+lawyer-and-accountant launch gate.
+
 Legal holds are scoped exceptions, never a blanket bypass: the request must
 name the reason, covered scope, approving operator and expiry. When a hold
 expires it is reviewed and the normal worker queue resumes.
@@ -55,3 +63,8 @@ The final production retention periods for finance, disputes and accounting
 records remain subject to China mainland lawyer and accountant review. That is
 a launch gate, not permission to use retained records for product features,
 training or generation.
+
+Vidu completed-artifact deletion is a separate vendor action: until Vidu
+provides a documented deletion route or human-process receipt, the worker must
+keep the provider task pending or blocked and must not report the account
+deletion as complete.
