@@ -29,6 +29,7 @@ const FORMAL_API_PATHS = new Set([
   "/api/memories/recovery",
   "/api/memory-chat",
   "/api/consents",
+  "/api/account/deletion",
   "/api/business-events",
   "/api/business-metrics/funnel",
   "/api/payments/orders",

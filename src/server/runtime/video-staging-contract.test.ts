@@ -99,6 +99,27 @@ test("review and reconciliation access require distinct strong tokens, flags, an
   }, environment), null);
 });
 
+test("internal video token rotation accepts only its own bounded previous token", () => {
+  const environment = stagingEnvironment({
+    VIDEO_REVIEW_ACCESS_TOKEN_PREVIOUS: "previous-review-A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0Uv",
+    VIDEO_REVIEW_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL: new Date(Date.now() + 9 * 60 * 1000).toISOString(),
+  });
+  assert.equal(authorizeVideoInternalRequest({
+    kind: "review",
+    token: environment.VIDEO_REVIEW_ACCESS_TOKEN_PREVIOUS!,
+    account: environment.YIJIAN_VIDEO_REVIEW_ACCOUNT!,
+  }, environment), environment.YIJIAN_VIDEO_REVIEW_ACCOUNT);
+  assert.equal(authorizeVideoInternalRequest({
+    kind: "reconciliation",
+    token: environment.VIDEO_REVIEW_ACCESS_TOKEN_PREVIOUS!,
+    account: environment.YIJIAN_VIDEO_RECONCILIATION_ACCOUNT!,
+  }, environment), null);
+  assert.throws(() => getVideoInternalAccessConfiguration({
+    ...environment,
+    VIDEO_REVIEW_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL: new Date(Date.now() + 16 * 60 * 1000).toISOString(),
+  }));
+});
+
 test("worker startup validation is configuration-only and does not create a job or call Vidu", () => {
   const environment = stagingEnvironment();
   const originalFetch = globalThis.fetch;

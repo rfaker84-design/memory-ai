@@ -18,11 +18,14 @@ CREATE TABLE IF NOT EXISTS public.account_deletion_requests (
   legal_hold_approved_by TEXT,
   legal_hold_expires_at TIMESTAMPTZ,
   guardian_confirmed_at TIMESTAMPTZ,
+  receipt_access_hash TEXT NOT NULL,
+  receipt_access_expires_at TIMESTAMPTZ NOT NULL,
   requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   completed_at TIMESTAMPTZ,
   audit_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
   CONSTRAINT ck_account_deletion_status CHECK (status IN ('requested','content_pending','provider_pending','legal_hold','completed','failed')),
   CONSTRAINT ck_account_deletion_schedule CHECK (content_delete_after >= requested_at AND provider_delete_after >= content_delete_after AND backup_expire_after >= provider_delete_after),
+  CONSTRAINT ck_account_deletion_receipt_expiry CHECK (receipt_access_expires_at >= requested_at AND receipt_access_expires_at <= backup_expire_after),
   CONSTRAINT ck_account_deletion_hold CHECK (
     (legal_hold AND legal_hold_reason IS NOT NULL AND legal_hold_scope IS NOT NULL
       AND cardinality(legal_hold_scope) > 0 AND legal_hold_approved_by IS NOT NULL
@@ -61,4 +64,16 @@ CREATE TABLE IF NOT EXISTS public.auth_session_revocations (
   CONSTRAINT ck_auth_session_revocation_reason CHECK (reason IN ('account_deletion','logout_all','security_incident'))
 );
 CREATE INDEX IF NOT EXISTS idx_auth_session_revocations_expiry ON public.auth_session_revocations (expires_at);
+
+-- A per-token revocation cannot invalidate other active devices.  This user-wide
+-- tombstone makes every session issued at or before invalid_before unusable at
+-- every authentication entry point, while keeping the audit record minimal.
+CREATE TABLE IF NOT EXISTS public.auth_session_invalidations (
+  user_id UUID PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
+  invalid_before TIMESTAMPTZ NOT NULL,
+  invalidated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  reason TEXT NOT NULL,
+  CONSTRAINT ck_auth_session_invalidation_reason CHECK (reason IN ('account_deletion','logout_all','security_incident')),
+  CONSTRAINT ck_auth_session_invalidation_time CHECK (invalid_before <= invalidated_at + INTERVAL '5 minutes')
+);
 COMMIT;

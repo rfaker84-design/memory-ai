@@ -110,6 +110,18 @@ test("production rejects every staging-only capability even when its other setti
   }
 });
 
+test("account deletion cannot be enabled without session revocation enforcement", () => {
+  assert.throws(
+    () => assertProductionAuthConfiguration({ ...productionEnvironment, ACCOUNT_DELETION_ENABLED: "true" }),
+    (error: unknown) => error instanceof ProductionAuthConfigurationError && error.code === "AUTH_SESSION_REVOCATION_ENFORCED_NOT_CONFIGURED",
+  );
+  assert.doesNotThrow(() => assertProductionAuthConfiguration({
+    ...productionEnvironment,
+    ACCOUNT_DELETION_ENABLED: "true",
+    AUTH_SESSION_REVOCATION_ENFORCED: "true",
+  }));
+});
+
 test("production startup rejects incomplete or expired session rotation configuration", () => {
   for (const override of [
     { SESSION_SECRET_PREVIOUS: "p".repeat(32) },

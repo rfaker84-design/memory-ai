@@ -16,10 +16,12 @@ import { isSessionRevoked } from "./session-revocation";
 export type AuthSession = {
   userId: string;
   externalUserId: string;
+  /** Present for JWT-backed sessions; injected test and legacy adapters may omit it. */
+  authenticatedAt?: string;
   expiresAt: string;
 };
 
-type SessionRevocationLookup = (input: { jti: string; userId: string }) => Promise<boolean>;
+type SessionRevocationLookup = (input: { jti: string; userId: string; issuedAt: string }) => Promise<boolean>;
 
 export async function issueSession(input: {
   userId: string;
@@ -84,11 +86,12 @@ export async function verifySessionToken(token: string, revoked: SessionRevocati
       return null;
     }
     if (process.env.AUTH_SESSION_REVOCATION_ENFORCED === "true") {
-      if (typeof jti !== "string" || !/^[0-9a-f-]{36}$/i.test(jti) || await revoked({ jti, userId: sub })) return null;
+      if (typeof jti !== "string" || !/^[0-9a-f-]{36}$/i.test(jti) || await revoked({ jti, userId: sub, issuedAt: new Date(iat * 1000).toISOString() })) return null;
     }
     return {
       userId: sub,
       externalUserId,
+      authenticatedAt: new Date(iat * 1000).toISOString(),
       expiresAt: new Date(exp * 1000).toISOString(),
     };
   } catch (error) {
