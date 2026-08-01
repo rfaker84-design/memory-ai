@@ -5,7 +5,7 @@ import { NextRequest } from "next/server";
 
 import { createBusinessFunnelHandler } from "./_handler";
 
-const report = { from: "2026-07-01T00:00:00.000Z", to: "2026-07-02T00:00:00.000Z", steps: [] };
+const report = { from: "2026-07-01T00:00:00.000Z", to: "2026-07-02T00:00:00.000Z", minimumCohortSize: 5, steps: [] };
 
 test("business funnel aggregation requires a server-only token and returns only aggregates", async () => {
   process.env.BUSINESS_METRICS_ACCESS_TOKEN = "a".repeat(32);

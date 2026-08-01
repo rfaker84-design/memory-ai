@@ -3,6 +3,7 @@ import { queryPostgres, withPostgresTransaction } from "@/src/server/database";
 import { BUSINESS_FUNNEL_STEPS, type BusinessFunnelReport, type ClientViewEvent } from "./types";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export const BUSINESS_METRICS_MINIMUM_COHORT_SIZE = 5;
 
 function validDate(value: Date): Date {
   if (Number.isNaN(value.getTime())) throw new Error("INVALID_TIME_RANGE");
@@ -12,6 +13,32 @@ function validDate(value: Date): Date {
 function validMemoryId(value: string): string {
   if (!UUID_PATTERN.test(value)) throw new Error("INVALID_MEMORY_ID");
   return value;
+}
+
+export function aggregateFunnelReport(input: {
+  from: Date;
+  to: Date;
+  counts: ReadonlyMap<string, number>;
+}): BusinessFunnelReport {
+  const loginCount = input.counts.get("login_completed") ?? 0;
+  const visibleLoginCount = loginCount === 0 || loginCount >= BUSINESS_METRICS_MINIMUM_COHORT_SIZE
+    ? loginCount
+    : null;
+  let previous: number | null = null;
+  return {
+    from: input.from.toISOString(),
+    to: input.to.toISOString(),
+    minimumCohortSize: BUSINESS_METRICS_MINIMUM_COHORT_SIZE,
+    steps: BUSINESS_FUNNEL_STEPS.map((event) => {
+      const rawUsers = input.counts.get(event) ?? 0;
+      const suppressed = rawUsers > 0 && rawUsers < BUSINESS_METRICS_MINIMUM_COHORT_SIZE;
+      const users = suppressed ? null : rawUsers;
+      const conversionFromPrevious = previous === null || previous === 0 || users === null ? null : users / previous;
+      const conversionFromLogin = visibleLoginCount === null || visibleLoginCount === 0 || users === null ? null : users / visibleLoginCount;
+      previous = users;
+      return { event, users, suppressed, conversionFromPrevious, conversionFromLogin };
+    }),
+  };
 }
 
 export class BusinessMetricsPostgresDataSource {
@@ -48,18 +75,6 @@ export class BusinessMetricsPostgresDataSource {
       [start, end],
     );
     const counts = new Map(result.rows.map((row) => [row.event_type, Number(row.users)]));
-    const login = counts.get("login_completed") ?? 0;
-    let previous: number | null = null;
-    return {
-      from: start.toISOString(),
-      to: end.toISOString(),
-      steps: BUSINESS_FUNNEL_STEPS.map((event) => {
-        const users = counts.get(event) ?? 0;
-        const conversionFromPrevious = previous === null || previous === 0 ? null : users / previous;
-        const conversionFromLogin = login === 0 ? null : users / login;
-        previous = users;
-        return { event, users, conversionFromPrevious, conversionFromLogin };
-      }),
-    };
+    return aggregateFunnelReport({ from: start, to: end, counts });
   }
 }

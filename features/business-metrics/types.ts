@@ -14,7 +14,9 @@ export type ClientViewEvent = Extract<BusinessFunnelStep, "first_greeting_viewed
 
 export type FunnelStepMetric = {
   event: BusinessFunnelStep;
-  users: number;
+  /** Null means a non-zero cohort below the report's privacy threshold. */
+  users: number | null;
+  suppressed: boolean;
   conversionFromPrevious: number | null;
   conversionFromLogin: number | null;
 };
@@ -22,5 +24,6 @@ export type FunnelStepMetric = {
 export type BusinessFunnelReport = {
   from: string;
   to: string;
+  minimumCohortSize: number;
   steps: FunnelStepMetric[];
 };
