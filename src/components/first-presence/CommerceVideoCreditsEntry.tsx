@@ -3,15 +3,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  clearCommerceVideoOrderRecovery,
+  CommerceVideoOrderRecovery,
   CommerceVideoEntryError,
   CommerceReferralStatus,
   CommerceVideoProduct,
   commercePlatform,
   createCommerceVideoOrder,
+  createCommerceVideoOrderIdempotencyKey,
   createReferralCode,
   loadCommerceCreditBalance,
   loadCommerceVideoProducts,
   loadReferralStatus,
+  readCommerceVideoOrderRecovery,
+  writeCommerceVideoOrderRecovery,
 } from "./commerceVideoCreditsClient";
 import {
   resolveCommerceVideoCreditsBalanceState,
@@ -54,6 +59,7 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
   });
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [commercialAccepted, setCommercialAccepted] = useState(false);
+  const [orderRecovery, setOrderRecovery] = useState<CommerceVideoOrderRecovery | null>(null);
   const balanceAttempt = useRef(0);
 
   const refreshBalance = useCallback(async () => {
@@ -72,6 +78,8 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
 
   useEffect(() => {
     setCommercialAccepted(false);
+    const recovery = readCommerceVideoOrderRecovery();
+    setOrderRecovery(recovery?.memoryId === memoryId ? recovery : null);
   }, [memoryId]);
 
   useEffect(() => {
@@ -131,7 +139,25 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
     setNotice("");
     try {
       await recordTrustConsent("commercial_use", memoryId);
-      const result = await createCommerceVideoOrder(memoryId, product.id, platform);
+      const recovery = orderRecovery
+        && orderRecovery.memoryId === memoryId
+        && orderRecovery.productId === product.id
+        && orderRecovery.platform === platform
+        ? orderRecovery
+        : {
+          memoryId,
+          productId: product.id,
+          platform,
+          idempotencyKey: createCommerceVideoOrderIdempotencyKey(),
+        };
+      if (!writeCommerceVideoOrderRecovery(recovery)) {
+        setNotice("当前浏览器无法安全保留订单恢复标识，尚未提交影像额度订单；请恢复后再试。");
+        return;
+      }
+      setOrderRecovery(recovery);
+      const result = await createCommerceVideoOrder(memoryId, product.id, platform, fetch, recovery.idempotencyKey);
+      clearCommerceVideoOrderRecovery();
+      setOrderRecovery(null);
       const checkout = result.checkout as { kind?: string } | undefined;
       if (checkout?.kind === "test_callback_required") {
         setNotice("测试订单已创建，需由受控测试回调完成；不会发起真实扣款。");

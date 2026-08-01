@@ -3,12 +3,16 @@ import test from "node:test";
 
 import {
   availableVideoCredits,
+  clearCommerceVideoOrderRecovery,
+  COMMERCE_VIDEO_ORDER_RECOVERY_STORAGE_KEY,
   commercePlatform,
   createCommerceVideoOrder,
   createReferralCode,
   loadCommerceCreditBalance,
   loadCommerceVideoProducts,
   loadReferralStatus,
+  readCommerceVideoOrderRecovery,
+  writeCommerceVideoOrderRecovery,
 } from "./commerceVideoCreditsClient";
 import { listCommerceProducts } from "../../../features/commerce";
 
@@ -78,6 +82,33 @@ test("video-credit entry creates only server-priced Commerce orders and referral
     platform: "android",
   });
   assert.equal((JSON.parse(String(calls[1].init?.body)) as Record<string, unknown>).amountFen, undefined);
+});
+
+test("video-credit order recovery only reuses the exact memory, product, platform, and idempotency key", async () => {
+  const values = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); },
+    removeItem: (key: string) => { values.delete(key); },
+  };
+  const recovery = {
+    memoryId: "00000000-0000-4000-8000-000000000001",
+    productId: "memory_video_49" as const,
+    platform: "android" as const,
+    idempotencyKey: "commerce-video-order-recovery-key-0001",
+  };
+  assert.equal(writeCommerceVideoOrderRecovery(recovery, storage), true);
+  assert.deepEqual(readCommerceVideoOrderRecovery(storage), recovery);
+  let suppliedKey = "";
+  await createCommerceVideoOrder(recovery.memoryId, recovery.productId, recovery.platform, (async (_input, init) => {
+    suppliedKey = String((init?.headers as Record<string, string>)["Idempotency-Key"]);
+    return response({ order: { orderNo: "YC0001" }, checkout: { kind: "test_callback_required" } }, 201);
+  }) as typeof fetch, recovery.idempotencyKey);
+  assert.equal(suppliedKey, recovery.idempotencyKey);
+  values.set(COMMERCE_VIDEO_ORDER_RECOVERY_STORAGE_KEY, JSON.stringify({ ...recovery, platform: "forged" }));
+  assert.equal(readCommerceVideoOrderRecovery(storage), null);
+  assert.equal(values.has(COMMERCE_VIDEO_ORDER_RECOVERY_STORAGE_KEY), false);
+  assert.equal(clearCommerceVideoOrderRecovery(storage), true);
 });
 
 test("iOS remains explicitly reserved for StoreKit and other platforms stay distinct", () => {
