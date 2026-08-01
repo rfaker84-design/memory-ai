@@ -46,7 +46,7 @@
     "test:auth": "tsx --test src/server/auth/auth.test.ts src/server/auth/auth-response-cache.test.ts src/server/auth/production-config.test.ts src/server/auth/sms/tencent-sms-verification-provider.test.ts src/server/auth/wechat/wechat-auth.test.ts app/api/auth/wechat/wechat-auth-route.test.ts app/login/login-entry.test.ts && npm run test:auth-migration",
     "test:security-routes": "tsx --test scripts/security/source-audit-files.test.ts src/server/security/origin.test.ts app/api/api-policy.test.ts app/api/legacy-route-security.test.ts app/api/legacy-chat-commerce-quarantine.test.ts src/components/auth/client-identity-storage.test.ts nginx/memoryai-observability-contract.test.ts",
     "test:workspace-boundary": "tsx --test scripts/security/workspace-boundary.test.ts",
-    "test:startup-contract": "node --test scripts/security/production-startup-contract.test.cjs",
+    "test:startup-contract": "node --test scripts/security/production-startup-contract.test.cjs scripts/security/release-documentation-contract.test.cjs",
     "test:hydration": "tsx --test app/layout.hydration.test.tsx src/components/memory-ui/accessibility-contract.test.ts",
     "test:staging-runtime": "tsx --test src/server/runtime/staging-contract.test.ts src/server/runtime/video-staging-contract.test.ts src/server/auth/sms/staging-fixed-sms-verification-provider.test.ts src/server/auth/staging-fixed-sms-challenge-contract.test.ts src/server/storage/staging-local-media-storage.test.ts app/api/media/local/route.test.ts services/llm/formal-llm-provider.test.ts",
     "verify:staging-runtime": "tsx scripts/security/verify-staging-runtime.ts",
