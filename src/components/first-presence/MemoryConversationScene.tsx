@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useId, useRef, useState } from "reac
 import { MemoryAvatar, MemoryButton } from "../memory-ui";
 import { recordBusinessView } from "../business-metrics/businessMetricsClient";
 import { CommerceVideoCreditsEntry } from "./CommerceVideoCreditsEntry";
+import { AiGeneratedLabel } from "../safety/AiGeneratedLabel";
 import {
   completedConversationRounds,
   hasPersistedFirstGreeting,
@@ -210,6 +211,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
         <p className={styles.eyebrow}>回到这段记忆里</p>
         <h1 id={titleId}>第一句之后，慢慢说。</h1>
         <p className={styles.intro}>离开再回来，你们说过的话仍会留在这里。</p>
+        <AiGeneratedLabel />
 
         {status && <p className={styles.status} role="status" aria-live="polite">{status}</p>}
         {notice && <p className={styles.alert} role="alert">{notice}</p>}
