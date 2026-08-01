@@ -183,3 +183,21 @@ test("empty provider output is not persisted as a greeting", async () => {
   assert.equal(store.completions, 0);
   assert.equal(store.saved, undefined);
 });
+
+test("unsafe first greeting is not persisted and releases the claim", async () => {
+  const store = greetingStore();
+  const provider: LLMProvider = {
+    async generate() {
+      return { content: "我是Saved relative，我已经复活。", finishReason: "stop" };
+    },
+  };
+
+  await assert.rejects(
+    new FirstGreetingService(store.chat, provider).create(input()),
+    FirstGreetingProviderError
+  );
+  assert.equal(store.completions, 0);
+  assert.equal(store.failures, 1);
+  assert.equal(store.saved, undefined);
+  assert.equal(store.state, "failed");
+});

@@ -12,6 +12,7 @@ import {
   persistChatTurnLongTermMemory,
 } from "../../../features/long-term-memory";
 import { MemoryEngineService } from "../../../features/memory-engine/memory-engine-service";
+import { assertSafeMemorialResponse } from "../../../features/memory-engine/response-pipeline";
 import { MemoryValidationError } from "../../../features/memory/errors";
 import { MemoryPostgresDataSource } from "../../../features/memory/memory-postgres-datasource";
 import { MemoryRepository } from "../../../features/memory/memory-repository";
@@ -249,7 +250,10 @@ export function createMemoryChatHandler(
             catchPhrases: memory.catchPhrases,
           },
         });
-        answer = engineResponse.content.trim();
+        answer = assertSafeMemorialResponse(engineResponse.content.trim(), {
+          memoryName: memory.name,
+          relationship: memory.relationship,
+        });
         if (!answer) throw new Error("Provider returned no content");
       } catch {
         try {

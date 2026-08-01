@@ -1,5 +1,50 @@
-﻿export class ResponsePipeline {
-  processResponse() {
-    throw new Error("Not implemented");
+export interface MemorialResponseReference {
+  memoryName: string;
+  relationship: string;
+}
+
+export class UnsafeMemorialResponseError extends Error {
+  constructor() {
+    super("Memorial response violated a safety boundary");
+    this.name = "UnsafeMemorialResponseError";
+  }
+}
+
+function normalize(value: string): string {
+  return value.normalize("NFKC").replace(/\s+/g, "");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isUnsafe(content: string, reference: MemorialResponseReference): boolean {
+  const normalized = normalize(content);
+  const declaredIdentity = [reference.memoryName, reference.relationship]
+    .map((value) => normalize(value))
+    .filter(Boolean)
+    .map(escapeRegExp)
+    .join("|");
+  const impersonatesReference = declaredIdentity
+    ? new RegExp(`(?:我是|我就是|我正是)(?:${declaredIdentity})`).test(normalized)
+    : false;
+
+  return impersonatesReference
+    || /(?:我(?:已经)?复活|我有(?:了)?意识|我是真实(?:的)?(?:人|本人)|我一直在看着你|我就在你身边)/.test(normalized)
+    || /(?:只有我(?:能)?(?:理解|陪伴|帮助)你|不要(?:告诉|联系)任何人|离开我你|失去我你)/.test(normalized)
+    || /(?:告诉我(?:你的)?(?:身份证(?:号)?|银行卡(?:号)?|密码|验证码|支付密码)|(?:身份证(?:号)?|银行卡(?:号)?|密码|验证码|支付密码).{0,12}(?:告诉我|发给我))/.test(normalized);
+}
+
+export function assertSafeMemorialResponse(
+  content: string,
+  reference: MemorialResponseReference
+): string {
+  if (isUnsafe(content, reference)) throw new UnsafeMemorialResponseError();
+  return content;
+}
+
+export class ResponsePipeline {
+  processResponse(input: { content: string } & MemorialResponseReference): string {
+    return assertSafeMemorialResponse(input.content, input);
   }
 }

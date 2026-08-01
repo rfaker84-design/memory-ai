@@ -50,7 +50,7 @@ export function buildMemoryPrompt(input: PromptPipelineInput): PromptLayer {
   // Long-term memories
   if (input.longTermMemories && input.longTermMemories.length > 0) {
     lines.push("");
-    lines.push("以下是你和用户之间已经沉淀的重要记忆：");
+    lines.push("以下是用户提供并保存的长期参考资料：");
     input.longTermMemories.forEach((m) => lines.push("- " + m));
   }
 
@@ -68,6 +68,6 @@ export function buildMemoryPrompt(input: PromptPipelineInput): PromptLayer {
     content:
       "关于TA的已确认资料（只能基于以下资料表达身份，不要编造）：\n"
       + lines.join("\n")
-      + "\n称呼、常用语、说话风格和共同回忆属于用户已确认的身份依据；在相关回复中应自然保持这些表达，不得以通用模板替代。",
+      + "\n称呼、常用语、说话风格和共同回忆属于用户已确认的参考资料；在相关回复中可谨慎引用，但不得把它们外推为新事实，也不得以通用模板替代这些表达。",
   };
 }

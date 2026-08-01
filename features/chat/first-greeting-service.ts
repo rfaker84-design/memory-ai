@@ -4,6 +4,7 @@ import type { LLMMessage } from "../../services/llm/types";
 import type { Memory } from "../memory/types";
 import type { ChatService } from "./chat-service";
 import type { Message } from "./types";
+import { ResponsePipeline } from "../memory-engine/response-pipeline";
 
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
 
@@ -92,7 +93,8 @@ export class FirstGreetingService {
       ChatService,
       "claimFirstGreeting" | "completeFirstGreeting" | "failFirstGreeting"
     >,
-    private readonly provider: LLMProvider = resolveProvider()
+    private readonly provider: LLMProvider = resolveProvider(),
+    private readonly responsePipeline = new ResponsePipeline()
   ) {}
 
   async create(input: CreateFirstGreetingInput): Promise<FirstGreetingResult> {
@@ -122,7 +124,11 @@ export class FirstGreetingService {
       const response = await this.provider.generate({
         messages: buildFirstGreetingPrompt(input.memory),
       });
-      content = response.content.trim();
+      content = this.responsePipeline.processResponse({
+        content: response.content.trim(),
+        memoryName: input.memory.name,
+        relationship: input.memory.relationship,
+      });
       if (!content) {
         throw new FirstGreetingProviderError("First greeting provider returned no content");
       }

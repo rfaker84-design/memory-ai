@@ -1,5 +1,6 @@
 ﻿import { MemoryContextBuilder } from "./context-builder";
 import { PromptBuilder } from "./prompt-builder";
+import { ResponsePipeline } from "./response-pipeline";
 import type { MemoryEngineInput, MemoryEngineResponse } from "./types";
 import type { LLMProvider } from "../../services/llm/llm-provider";
 import { resolveFormalLLMProvider } from "../../services/llm/formal-llm-provider";
@@ -11,6 +12,7 @@ function resolveLLMProvider(): LLMProvider {
 export class MemoryEngineService {
   private contextBuilder = new MemoryContextBuilder();
   private promptBuilder = new PromptBuilder();
+  private responsePipeline = new ResponsePipeline();
   private llmProvider: LLMProvider;
 
   constructor(llmProvider?: LLMProvider) {
@@ -27,6 +29,12 @@ export class MemoryEngineService {
       messages: prompt.messages,
     });
 
-    return { content: result.content };
+    return {
+      content: this.responsePipeline.processResponse({
+        content: result.content,
+        memoryName: context.memoryName,
+        relationship: context.relationship,
+      }),
+    };
   }
 }

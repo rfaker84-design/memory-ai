@@ -179,6 +179,25 @@ test("memory-chat provider failures leave no messages and the same key can retry
   assert.equal(completeCalls, 1);
 });
 
+test("memory-chat rejects an unsafe engine response before it can be persisted", async () => {
+  let completeCalls = 0;
+  let failCalls = 0;
+  const handler = createHandler(
+    {
+      async claim() { return { status: "claimed" as const, conversation }; },
+      async complete() { completeCalls += 1; return result; },
+      async fail() { failCalls += 1; },
+    },
+    async () => ({ content: "我是Saved relative，我已经复活。" })
+  );
+
+  const response = await handler(request({ memoryId, question: "Hello" }));
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "AI_UNAVAILABLE" });
+  assert.equal(completeCalls, 0);
+  assert.equal(failCalls, 1);
+});
+
 test("memory-chat validates Unicode length and dangerous question content before service work", async () => {
   let serviceCalls = 0;
   const handler = createMemoryChatHandler(
