@@ -30,7 +30,8 @@ export default function MobileAppShell({ children }:{ children:React.ReactNode }
 
   return (
     <div style={{ display:"flex",flexDirection:"column",minHeight:"100dvh",background:T.colors.bg }}>
-      <main style={{ flex:1,paddingBottom:"calc(var(--nav-height,64px) + env(safe-area-inset-bottom,0px) + 12px)",overflowY:"auto",WebkitOverflowScrolling:"touch" }}>{children}</main>
+      <a className="skip-link" href="#main-content">跳至主要内容</a>
+      <main id="main-content" tabIndex={-1} style={{ flex:1,paddingBottom:"calc(var(--nav-height,64px) + env(safe-area-inset-bottom,0px) + 12px)",overflowY:"auto",WebkitOverflowScrolling:"touch" }}>{children}</main>
       <Footer />
       <nav style={{
         position:"fixed",bottom:0,left:0,right:0,zIndex:50,
