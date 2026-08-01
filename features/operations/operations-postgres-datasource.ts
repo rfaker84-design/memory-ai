@@ -5,6 +5,7 @@ export type OperationsSummary = {
   video: {
     active: number;
     submissionUncertain: number;
+    qualityPending: number;
     manualReview: number;
   };
   commerce: {
@@ -20,6 +21,7 @@ export type OperationsSummary = {
 type SummaryRow = {
   video_active: string;
   video_submission_uncertain: string;
+  video_quality_pending: string;
   video_manual_review: string;
   commerce_pending_orders: string;
   commerce_refunds_awaiting_resolution: string;
@@ -43,7 +45,9 @@ export class OperationsPostgresDataSource {
         (SELECT count(*)::text FROM public.video_generation_jobs
           WHERE status = 'submission_uncertain') AS video_submission_uncertain,
         (SELECT count(*)::text FROM public.video_generation_jobs
-          WHERE status = 'manual_review_required' OR quality_status = 'pending') AS video_manual_review,
+          WHERE status = 'quality_pending') AS video_quality_pending,
+        (SELECT count(*)::text FROM public.video_generation_jobs
+          WHERE status = 'manual_review_required') AS video_manual_review,
         (SELECT count(*)::text FROM public.commerce_orders
           WHERE status = 'pending') AS commerce_pending_orders,
         (SELECT count(*)::text FROM public.commerce_refund_requests
@@ -62,6 +66,7 @@ export class OperationsPostgresDataSource {
       video: {
         active: count(row.video_active),
         submissionUncertain: count(row.video_submission_uncertain),
+        qualityPending: count(row.video_quality_pending),
         manualReview: count(row.video_manual_review),
       },
       commerce: {

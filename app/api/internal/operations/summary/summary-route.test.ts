@@ -10,7 +10,7 @@ import { createOperationsSummaryHandler } from "./_handler";
 const token = "o".repeat(32);
 const summary = {
   observedAt: "2026-08-02T00:00:00.000Z",
-  video: { active: 1, submissionUncertain: 2, manualReview: 3 },
+  video: { active: 1, submissionUncertain: 2, qualityPending: 3, manualReview: 4 },
   commerce: { pendingOrders: 4, refundsAwaitingResolution: 5 },
   accountDeletion: { runnableTasks: 6, failedTasks: 7 },
 };
