@@ -42,6 +42,7 @@
     "test:video-postgres": "tsx --test features/video/first-presence-video-postgres.integration.test.ts",
     "test:account-deletion-postgres": "tsx --test features/account-deletion/account-deletion-postgres14.integration.test.ts",
     "test:financial-archive-postgres": "tsx --test features/account-deletion/financial-archive-postgres14.integration.test.ts",
+    "test:reports-postgres": "tsx --test features/reports/user-report-postgres14.integration.test.ts",
     "test:auth": "tsx --test src/server/auth/auth.test.ts src/server/auth/auth-response-cache.test.ts src/server/auth/production-config.test.ts src/server/auth/sms/tencent-sms-verification-provider.test.ts src/server/auth/wechat/wechat-auth.test.ts app/api/auth/wechat/wechat-auth-route.test.ts app/login/login-entry.test.ts && npm run test:auth-migration",
     "test:security-routes": "tsx --test scripts/security/source-audit-files.test.ts src/server/security/origin.test.ts app/api/api-policy.test.ts app/api/legacy-route-security.test.ts app/api/legacy-chat-commerce-quarantine.test.ts src/components/auth/client-identity-storage.test.ts nginx/memoryai-observability-contract.test.ts",
     "test:workspace-boundary": "tsx --test scripts/security/workspace-boundary.test.ts",

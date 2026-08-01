@@ -27,7 +27,11 @@ CREATE TABLE IF NOT EXISTS public.user_reports (
   CONSTRAINT ck_user_reports_requested_action CHECK (requested_action IN ('review','remove_content','refund','account_help','other')),
   CONSTRAINT ck_user_reports_details CHECK (char_length(details) BETWEEN 1 AND 2000),
   CONSTRAINT ck_user_reports_status CHECK (status IN ('received','triaged','actioned','closed')),
-  CONSTRAINT ck_user_reports_resolution CHECK ((status IN ('received','triaged') AND resolved_at IS NULL AND disposition IS NULL) OR (status IN ('actioned','closed') AND resolved_at IS NOT NULL AND disposition IS NOT NULL))
+  CONSTRAINT ck_user_reports_resolution CHECK (
+    (status = 'received' AND resolved_at IS NULL AND disposition IS NULL)
+    OR (status = 'triaged' AND resolved_at IS NULL AND disposition IS NOT NULL)
+    OR (status IN ('actioned','closed') AND resolved_at IS NOT NULL AND disposition IS NOT NULL)
+  )
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_reports_reporter_created ON public.user_reports (reporter_user_id, created_at DESC);

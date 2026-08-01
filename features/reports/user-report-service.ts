@@ -15,6 +15,13 @@ export type UserReport = {
   resolvedAt: string | null;
 };
 
+const OWNED_SUBJECT_TABLES = {
+  memory: "memories",
+  media: "media_assets",
+  video: "video_generation_jobs",
+  payment: "payment_orders",
+} as const;
+
 type Row = { id: string; category: UserReport["category"]; subject_type: UserReport["subjectType"]; subject_id: string | null; requested_action: UserReport["requestedAction"]; status: UserReport["status"]; created_at: Date; resolved_at: Date | null };
 const toReport = (row: Row): UserReport => ({ id: row.id, category: row.category, subjectType: row.subject_type, subjectId: row.subject_id, requestedAction: row.requested_action, status: row.status, createdAt: row.created_at.toISOString(), resolvedAt: row.resolved_at?.toISOString() ?? null });
 
@@ -39,10 +46,15 @@ export class PostgresUserReportService {
     return withPostgresTransaction(async (client) => {
       const reporter = await client.query<{ id: string }>("SELECT id FROM public.users WHERE id=$1::uuid AND external_id=$2 FOR KEY SHARE", [input.userId, input.externalUserId]);
       if (reporter.rowCount !== 1) throw new UserReportError("REPORTER_NOT_FOUND");
-      if (input.subjectType === "memory") {
-        const subject = await client.query("SELECT 1 FROM public.memories WHERE id=$1::uuid AND user_id=$2::uuid FOR KEY SHARE", [input.subjectId, input.userId]);
+      const subjectTable = OWNED_SUBJECT_TABLES[input.subjectType as keyof typeof OWNED_SUBJECT_TABLES];
+      if (subjectTable) {
+        // The table name comes only from this closed mapping.  A report must
+        // never become a cross-owner probe for opaque media, video, or order
+        // identifiers supplied by a client.
+        const subject = await client.query(`SELECT 1 FROM public.${subjectTable} WHERE id=$1::uuid AND user_id=$2::uuid FOR KEY SHARE`, [input.subjectId, input.userId]);
         if (subject.rowCount !== 1) throw new UserReportError("SUBJECT_NOT_FOUND");
       }
+      if (input.subjectType === "account" && input.subjectId !== input.userId) throw new UserReportError("SUBJECT_NOT_FOUND");
       const row = await client.query<Row>(
         `INSERT INTO public.user_reports (reporter_user_id, request_key, category, subject_type, subject_id, requested_action, details)
          VALUES ($1::uuid,$2,$3,$4,$5::uuid,$6,$7)
