@@ -25,5 +25,6 @@ test("017 keeps deletion retention, legal hold, task recovery and session revoca
   assert.match(migration, /receipt_access_expires_at/);
   assert.match(migration, /ux_account_deletion_object_locator/);
   assert.match(migration, /provider_task/);
+  assert.match(migration, /ALTER TABLE public\.memories ADD COLUMN IF NOT EXISTS deleted_at/);
   assert.doesNotMatch(runner, /017_account_deletion_and_session_revocation/);
 });

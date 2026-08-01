@@ -5,6 +5,11 @@ SET LOCAL lock_timeout = '2s';
 SET LOCAL statement_timeout = '15min';
 SET LOCAL search_path = pg_catalog, public;
 
+-- Payment/refund records retain a memory foreign key.  Logical deletion makes
+-- the content unavailable without breaking those statutory records.
+ALTER TABLE public.memories ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_memories_active_owner ON public.memories (user_id, created_at DESC) WHERE deleted_at IS NULL;
+
 CREATE TABLE IF NOT EXISTS public.account_deletion_requests (
   id UUID PRIMARY KEY DEFAULT pg_catalog.gen_random_uuid(),
   user_id UUID NOT NULL UNIQUE REFERENCES public.users(id) ON DELETE RESTRICT,

@@ -75,7 +75,16 @@ export class PostgresAccountDeletionWorker {
         "DELETE FROM public.video_generation_jobs WHERE user_id=$1::uuid",
         "DELETE FROM public.provider_jobs WHERE user_id=$1::uuid",
         "DELETE FROM public.media_assets WHERE user_id=$1::uuid",
-        "DELETE FROM public.memories WHERE user_id=$1::uuid",
+        `UPDATE public.memories SET
+          name='已删除', relationship='', life_story=NULL, personality_profile=NULL,
+          speech_style=NULL, catch_phrases=NULL, photo_url=NULL, personality_tags=NULL,
+          birth_year=NULL, death_year=NULL, values_belief=NULL, personality_type=NULL,
+          voice_sample_url=NULL, voice_provider=NULL, voice_model_id=NULL,
+          voice_model_url=NULL, voice_clone_status=NULL, voice_training_status=NULL,
+          voice_clone_error=NULL, avatar_video_url=NULL, avatar_status=NULL,
+          avatar_job_id=NULL, avatar_provider=NULL, avatar_error=NULL,
+          metadata='{}'::jsonb, deleted_at=NOW(), updated_at=NOW()
+         WHERE user_id=$1::uuid`,
         "UPDATE public.users SET profile='{}'::jsonb, updated_at=NOW() WHERE id=$1::uuid",
       ]) await client.query(statement, [userId]);
     });

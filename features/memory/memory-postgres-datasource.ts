@@ -247,6 +247,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
           FROM memories m
           JOIN users u ON u.id = m.user_id
           WHERE m.user_id = $1
+            AND m.deleted_at IS NULL
             AND (m.creation_idempotency_key = $2 OR m.idempotency_key = $3)
           ORDER BY (m.creation_idempotency_key = $2) DESC
           LIMIT 1
@@ -258,7 +259,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
       if (existing.rows[0]) return { row: existing.rows[0], created: false };
 
       const count = await client.query<{ count: string }>(
-        "SELECT COUNT(*)::text AS count FROM memories WHERE user_id = $1",
+        "SELECT COUNT(*)::text AS count FROM memories WHERE user_id = $1 AND deleted_at IS NULL",
         [userId]
       );
       if (Number(count.rows[0]?.count ?? 0) >= 3) {
@@ -361,7 +362,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
         SELECT ${MEMORY_COLUMNS}
         FROM memories m
         JOIN users u ON u.id = m.user_id
-        WHERE m.id = $1
+        WHERE m.id = $1 AND m.deleted_at IS NULL
         LIMIT 1
       `,
       [memoryId]
@@ -378,7 +379,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
         SELECT ${MEMORY_COLUMNS}
         FROM memories m
         JOIN users u ON u.id = m.user_id
-        WHERE m.id = $1 AND u.external_id = $2
+        WHERE m.id = $1 AND u.external_id = $2 AND m.deleted_at IS NULL
         LIMIT 1
       `,
       [memoryId, externalId]
@@ -403,6 +404,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
         JOIN users u ON u.id = m.user_id
         WHERE u.external_id = $1
           AND m.creation_idempotency_key = $2
+          AND m.deleted_at IS NULL
         LIMIT 1
       `,
       [externalId, idempotencyKey]
