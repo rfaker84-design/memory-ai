@@ -29,6 +29,11 @@ export default function Footer() {
           ICP备案号待填写
         </a>
       </p>
+      <p style={{ margin: "8px 0 0", fontSize: 11, letterSpacing: "0.03em" }}>
+        <Link href="/help" style={{ color: "#8a8078", textDecoration: "underline" }}>帮助与安全说明</Link>
+        <span aria-hidden="true" style={{ color: "#a09890", padding: "0 8px" }}>·</span>
+        <Link href="/report" style={{ color: "#8a8078", textDecoration: "underline" }}>投诉、退款与数据删除</Link>
+      </p>
     </footer>
   );
 }

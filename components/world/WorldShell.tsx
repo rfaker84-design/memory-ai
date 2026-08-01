@@ -478,6 +478,7 @@ function HomeOverlay({ onLoginSuccess, onPreview }: { onLoginSuccess: () => void
             <p id="login-account-note" className={homeLoginStyles.accountNote}>
               未注册的手机号验证后将自动创建忆见账号
             </p>
+            <a href="/help" className={homeLoginStyles.legalLink}>帮助与安全说明</a>
             {process.env.NODE_ENV !== "production" && onPreview && (
               <button type="button" onClick={onPreview} className={homeLoginStyles.previewButton}>开发视觉预览</button>
             )}
