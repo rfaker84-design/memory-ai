@@ -45,9 +45,11 @@ export function assertIsolatedArchiveDatabase(environment: Environment): string 
   try {
     const app = new URL(applicationUrl);
     const archive = new URL(archiveUrl);
-    if (!(["postgres:", "postgresql:"] as const).includes(app.protocol as "postgres:" | "postgresql:")
-      || !(["postgres:", "postgresql:"] as const).includes(archive.protocol as "postgres:" | "postgresql:")
-      || (app.hostname === archive.hostname && app.port === archive.port && app.pathname === archive.pathname)) {
+    const postgresProtocols = new Set(["postgres:", "postgresql:"]);
+    const sameDatabase = app.hostname.toLowerCase() === archive.hostname.toLowerCase()
+      && (app.port || "5432") === (archive.port || "5432")
+      && app.pathname === archive.pathname;
+    if (!postgresProtocols.has(app.protocol) || !postgresProtocols.has(archive.protocol) || sameDatabase) {
       throw new FinancialArchiveConfigurationError("FINANCIAL_ARCHIVE_DATABASE_NOT_ISOLATED");
     }
   } catch (error) {

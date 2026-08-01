@@ -23,3 +23,11 @@ test("financial archive rejects a shared database even when URL schemes differ",
     ACCOUNT_DELETION_FINANCIAL_ARCHIVE_HMAC_KEY: key,
   }), (error: unknown) => error instanceof FinancialArchiveConfigurationError && error.code === "FINANCIAL_ARCHIVE_DATABASE_NOT_ISOLATED");
 });
+
+test("financial archive treats an omitted PostgreSQL default port as the same database", () => {
+  assert.throws(() => assertIsolatedArchiveDatabase({
+    DATABASE_URL: "postgres://postgres@127.0.0.1/application",
+    ACCOUNT_DELETION_FINANCIAL_ARCHIVE_DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/application",
+    ACCOUNT_DELETION_FINANCIAL_ARCHIVE_HMAC_KEY: key,
+  }), (error: unknown) => error instanceof FinancialArchiveConfigurationError && error.code === "FINANCIAL_ARCHIVE_DATABASE_NOT_ISOLATED");
+});
