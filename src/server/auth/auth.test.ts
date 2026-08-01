@@ -19,8 +19,12 @@ import { AuthService } from "./auth-service";
 import { AUTH_POLICY, AUTH_SESSION_COOKIE } from "./config";
 import {
   AuthConfigurationError,
+  digestVerificationCodeCandidates,
   generateVerificationCode,
+  hashPhoneCandidates,
+  hashRequestIpCandidates,
   sessionSecret,
+  verificationPepperKeyRing,
   verificationDigestsEqual,
 } from "./crypto";
 import { issueSession, verifySessionToken } from "./session";
@@ -61,20 +65,25 @@ class InMemoryAuthRepository implements AuthRepositoryPort {
   async verifyAndConsume(input: {
     challengeId: string;
     phoneHash: string;
+    phoneHashCandidates?: readonly string[];
     candidateDigest: string;
+    candidateDigests?: readonly string[];
     externalUserId: string;
+    externalUserIdCandidates?: readonly string[];
     now: Date;
   }): Promise<ChallengeVerifyResult> {
     const challenge = this.challenge;
+    const phoneHashes = input.phoneHashCandidates ?? [input.phoneHash];
+    const candidateDigests = input.candidateDigests ?? [input.candidateDigest];
     if (
       !challenge
       || challenge.challengeId !== input.challengeId
-      || challenge.phoneHash !== input.phoneHash
+      || !phoneHashes.includes(challenge.phoneHash)
       || challenge.consumed
       || challenge.expiresAt <= input.now
       || challenge.attempts >= AUTH_POLICY.maxAttempts
     ) return { status: "invalid" };
-    if (!verificationDigestsEqual(challenge.codeDigest, input.candidateDigest)) {
+    if (!candidateDigests.some((candidate) => verificationDigestsEqual(challenge.codeDigest, candidate))) {
       challenge.attempts += 1;
       return { status: "invalid" };
     }
@@ -476,6 +485,120 @@ test("session key rotation signs with current kid and accepts only a bounded pre
       const value = saved.get(key);
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
+    }
+  }
+});
+
+test("verification pepper rotation exposes current-first dual hashes only during a bounded overlap", () => {
+  const now = new Date("2026-08-01T00:00:00.000Z");
+  const environment = {
+    AUTH_VERIFICATION_PEPPER: "c".repeat(32),
+    AUTH_VERIFICATION_PEPPER_KID: "current-v2",
+    AUTH_VERIFICATION_PEPPER_PREVIOUS: "p".repeat(32),
+    AUTH_VERIFICATION_PEPPER_PREVIOUS_KID: "previous-v1",
+    AUTH_VERIFICATION_PEPPER_PREVIOUS_VALID_UNTIL: new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000).toISOString(),
+  } as unknown as NodeJS.ProcessEnv;
+  assert.deepEqual(verificationPepperKeyRing(environment, now).current.id, "current-v2");
+  const phone = hashPhoneCandidates("+8613800000000", environment, now);
+  const ip = hashRequestIpCandidates("127.0.0.1", environment, now);
+  const digests = digestVerificationCodeCandidates("00000000-0000-4000-8000-000000000001", "246810", environment, now);
+  assert.equal(phone.length, 2);
+  assert.equal(ip.length, 2);
+  assert.equal(digests.length, 2);
+  assert.notEqual(phone[0], phone[1]);
+  assert.notEqual(ip[0], ip[1]);
+  assert.notEqual(digests[0], digests[1]);
+  assert.throws(
+    () => verificationPepperKeyRing({ ...environment, AUTH_VERIFICATION_PEPPER_PREVIOUS_VALID_UNTIL: new Date(now.getTime() - 1).toISOString() }, now),
+    (error: unknown) => error instanceof AuthConfigurationError && error.code === "AUTH_VERIFICATION_PEPPER_PREVIOUS_CONFIGURATION_INVALID",
+  );
+});
+
+test("verification pepper overlap verifies a challenge persisted with the previous pepper and issues the current identity", async () => {
+  const now = new Date("2026-08-01T00:00:00.000Z");
+  const environment = {
+    AUTH_VERIFICATION_PEPPER: "c".repeat(32),
+    AUTH_VERIFICATION_PEPPER_KID: "current-v2",
+    AUTH_VERIFICATION_PEPPER_PREVIOUS: "p".repeat(32),
+    AUTH_VERIFICATION_PEPPER_PREVIOUS_KID: "previous-v1",
+    AUTH_VERIFICATION_PEPPER_PREVIOUS_VALID_UNTIL: new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000).toISOString(),
+  } as unknown as NodeJS.ProcessEnv;
+  const names = Object.keys(environment) as Array<keyof NodeJS.ProcessEnv>;
+  const previous = new Map(names.map((name) => [name, process.env[name]]));
+  try {
+    Object.assign(process.env, environment);
+    const challengeId = "00000000-0000-4000-8000-000000000001";
+    const phone = "+8613800000000";
+    const code = "246810";
+    const repository = new InMemoryAuthRepository();
+    const previousPhoneHash = hashPhoneCandidates(phone)[1]!;
+    const previousCodeDigest = digestVerificationCodeCandidates(challengeId, code)[1]!;
+    repository.challenge = {
+      challengeId,
+      phoneHash: previousPhoneHash,
+      phoneHashCandidates: [previousPhoneHash],
+      codeDigest: previousCodeDigest,
+      purpose: "sign_in",
+      expiresAt: new Date(now.getTime() + 60_000),
+      resendAfter: now,
+      requestIpHash: hashRequestIpCandidates("127.0.0.1")[1]!,
+      requestIpHashCandidates: [],
+      attempts: 0,
+      consumed: false,
+    };
+    const verified = await new AuthService(repository, new FakeSmsVerificationProvider(), AUTH_POLICY, () => now).verifyCode({ phone, code, challengeId });
+    assert.equal(verified.status, "verified");
+    if (verified.status === "verified") {
+      assert.equal(verified.user.externalUserId, `phone:${hashPhoneCandidates(phone)[0]!}`);
+    }
+    assert.equal(repository.challenge.consumed, true);
+  } finally {
+    for (const name of names) {
+      const value = previous.get(name);
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+});
+
+test("verification pepper overlap resolves a pre-rotation session to its canonical owner identity", async () => {
+  const names = [
+    "AUTH_VERIFICATION_PEPPER_KID",
+    "AUTH_VERIFICATION_PEPPER_PREVIOUS",
+    "AUTH_VERIFICATION_PEPPER_PREVIOUS_KID",
+    "AUTH_VERIFICATION_PEPPER_PREVIOUS_VALID_UNTIL",
+  ] as const;
+  const previous = new Map(names.map((name) => [name, process.env[name]]));
+  try {
+    Object.assign(process.env, {
+      AUTH_VERIFICATION_PEPPER_KID: "current-v2",
+      AUTH_VERIFICATION_PEPPER_PREVIOUS: "p".repeat(32),
+      AUTH_VERIFICATION_PEPPER_PREVIOUS_KID: "previous-v1",
+      AUTH_VERIFICATION_PEPPER_PREVIOUS_VALID_UNTIL: new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    const token = await issueSession({
+      userId: "00000000-0000-4000-8000-000000000001",
+      externalUserId: "phone:previous-hash",
+    });
+    const observed: { input?: { userId: string; externalUserId: string } } = {};
+    const verified = await verifySessionToken(
+      token,
+      async () => false,
+      async (input) => {
+        observed.input = input;
+        return "phone:current-hash";
+      },
+    );
+    assert.deepEqual(observed.input, {
+      userId: "00000000-0000-4000-8000-000000000001",
+      externalUserId: "phone:previous-hash",
+    });
+    assert.equal(verified?.externalUserId, "phone:current-hash");
+  } finally {
+    for (const name of names) {
+      const value = previous.get(name);
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
     }
   }
 });

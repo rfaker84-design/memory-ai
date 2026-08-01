@@ -139,6 +139,35 @@ test("production startup rejects incomplete or expired session rotation configur
   }
 });
 
+test("production startup rejects incomplete, too-short and expired verification pepper rotation configuration", () => {
+  for (const override of [
+    { AUTH_VERIFICATION_PEPPER_PREVIOUS: "p".repeat(32) },
+    {
+      AUTH_VERIFICATION_PEPPER_PREVIOUS: "p".repeat(32),
+      AUTH_VERIFICATION_PEPPER_PREVIOUS_KID: "previous-v1",
+      AUTH_VERIFICATION_PEPPER_PREVIOUS_VALID_UNTIL: new Date(Date.now() + 60_000).toISOString(),
+    },
+    {
+      AUTH_VERIFICATION_PEPPER_PREVIOUS: "p".repeat(32),
+      AUTH_VERIFICATION_PEPPER_PREVIOUS_KID: "previous-v1",
+      AUTH_VERIFICATION_PEPPER_PREVIOUS_VALID_UNTIL: new Date(Date.now() - 1_000).toISOString(),
+    },
+  ]) {
+    assert.throws(
+      () => assertProductionAuthConfiguration({ ...productionEnvironment, ...override }),
+      (error: unknown) => error instanceof ProductionAuthConfigurationError
+        && error.code === "AUTH_VERIFICATION_PEPPER_PREVIOUS_CONFIGURATION_INVALID",
+    );
+  }
+  assert.doesNotThrow(() => assertProductionAuthConfiguration({
+    ...productionEnvironment,
+    AUTH_VERIFICATION_PEPPER_KID: "current-v2",
+    AUTH_VERIFICATION_PEPPER_PREVIOUS: "q".repeat(32),
+    AUTH_VERIFICATION_PEPPER_PREVIOUS_KID: "previous-v1",
+    AUTH_VERIFICATION_PEPPER_PREVIOUS_VALID_UNTIL: new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toISOString(),
+  }));
+});
+
 test("production instrumentation invokes the startup gate before serving requests", async () => {
   const keys = Object.keys(productionEnvironment);
   const previous = new Map(keys.map((key) => [key, process.env[key]]));

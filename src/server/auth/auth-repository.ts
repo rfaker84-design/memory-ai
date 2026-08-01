@@ -14,11 +14,14 @@ export type AuthUser = {
 export type NewChallenge = {
   challengeId: string;
   phoneHash: string;
+  /** Current-first hashes during a bounded pepper overlap. */
+  phoneHashCandidates?: readonly string[];
   codeDigest: string;
   purpose: "sign_in";
   expiresAt: Date;
   resendAfter: Date;
   requestIpHash: string;
+  requestIpHashCandidates?: readonly string[];
 };
 
 export type ChallengeCreateResult = "created" | "rate_limited";
@@ -33,8 +36,11 @@ export interface AuthRepositoryPort {
   verifyAndConsume(input: {
     challengeId: string;
     phoneHash: string;
+    phoneHashCandidates?: readonly string[];
     candidateDigest: string;
+    candidateDigests?: readonly string[];
     externalUserId: string;
+    externalUserIdCandidates?: readonly string[];
     now: Date;
   }): Promise<ChallengeVerifyResult>;
 }
@@ -50,8 +56,10 @@ type ChallengeRow = {
 export class AuthPostgresRepository implements AuthRepositoryPort {
   async createChallenge(input: NewChallenge, policy: AuthPolicy): Promise<ChallengeCreateResult> {
     return withPostgresTransaction(async (client) => {
-      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [input.phoneHash]);
-      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 1))", [input.requestIpHash]);
+      const phoneHashes = [...new Set(input.phoneHashCandidates?.length ? input.phoneHashCandidates : [input.phoneHash])];
+      const requestIpHashes = [...new Set(input.requestIpHashCandidates?.length ? input.requestIpHashCandidates : [input.requestIpHash])];
+      for (const hash of [...phoneHashes].sort()) await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [hash]);
+      for (const hash of [...requestIpHashes].sort()) await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 1))", [hash]);
       await this.cleanupExpired(client, policy);
 
       const limits = await client.query<{
@@ -63,15 +71,15 @@ export class AuthPostgresRepository implements AuthRepositoryPort {
         SELECT
           EXISTS (
             SELECT 1 FROM public.auth_verification_challenges
-            WHERE phone_hash = $1 AND resend_after > NOW()
+            WHERE phone_hash = ANY($1::char(64)[]) AND resend_after > NOW()
           ) AS resend_blocked,
           (SELECT count(*)::text FROM public.auth_verification_challenges
-            WHERE phone_hash = $1 AND created_at > NOW() - INTERVAL '1 hour') AS phone_hour,
+            WHERE phone_hash = ANY($1::char(64)[]) AND created_at > NOW() - INTERVAL '1 hour') AS phone_hour,
           (SELECT count(*)::text FROM public.auth_verification_challenges
-            WHERE phone_hash = $1 AND created_at > NOW() - INTERVAL '24 hours') AS phone_day,
+            WHERE phone_hash = ANY($1::char(64)[]) AND created_at > NOW() - INTERVAL '24 hours') AS phone_day,
           (SELECT count(*)::text FROM public.auth_verification_challenges
-            WHERE request_ip_hash = $2 AND created_at > NOW() - INTERVAL '1 hour') AS ip_hour
-      `, [input.phoneHash, input.requestIpHash]);
+            WHERE request_ip_hash = ANY($2::char(64)[]) AND created_at > NOW() - INTERVAL '1 hour') AS ip_hour
+      `, [phoneHashes, requestIpHashes]);
       const row = limits.rows[0];
       if (
         row.resend_blocked
@@ -121,17 +129,23 @@ export class AuthPostgresRepository implements AuthRepositoryPort {
   async verifyAndConsume(input: {
     challengeId: string;
     phoneHash: string;
+    phoneHashCandidates?: readonly string[];
     candidateDigest: string;
+    candidateDigests?: readonly string[];
     externalUserId: string;
+    externalUserIdCandidates?: readonly string[];
     now: Date;
   }): Promise<ChallengeVerifyResult> {
     return withPostgresTransaction(async (client) => {
+      const phoneHashes = [...new Set(input.phoneHashCandidates?.length ? input.phoneHashCandidates : [input.phoneHash])];
+      const candidateDigests = [...new Set(input.candidateDigests?.length ? input.candidateDigests : [input.candidateDigest])];
+      const externalUserIds = [...new Set(input.externalUserIdCandidates?.length ? input.externalUserIdCandidates : [input.externalUserId])];
       const result = await client.query<ChallengeRow>(`
         SELECT code_digest, attempts, max_attempts, expires_at, consumed_at
         FROM public.auth_verification_challenges
-        WHERE challenge_id = $1 AND phone_hash = $2 AND purpose = 'sign_in'
+        WHERE challenge_id = $1 AND phone_hash = ANY($2::char(64)[]) AND purpose = 'sign_in'
         FOR UPDATE
-      `, [input.challengeId, input.phoneHash]);
+      `, [input.challengeId, phoneHashes]);
       const challenge = result.rows[0];
       if (
         !challenge
@@ -140,7 +154,12 @@ export class AuthPostgresRepository implements AuthRepositoryPort {
         || challenge.attempts >= challenge.max_attempts
       ) return { status: "invalid" };
 
-      if (!verificationDigestsEqual(challenge.code_digest, input.candidateDigest)) {
+      let digestMatches = false;
+      for (const candidate of candidateDigests) {
+        const matches = verificationDigestsEqual(challenge.code_digest, candidate);
+        digestMatches = digestMatches || matches;
+      }
+      if (!digestMatches) {
         await client.query(`
           UPDATE public.auth_verification_challenges
           SET attempts = LEAST(attempts + 1, max_attempts), updated_at = $2
@@ -160,16 +179,22 @@ export class AuthPostgresRepository implements AuthRepositoryPort {
       `, [input.challengeId, input.now]);
       if (consumed.rowCount !== 1) return { status: "invalid" };
 
-      const user = await client.query<{
+      const matchedUsers = await client.query<{
         id: string;
         external_id: string;
         created_at: Date;
-      }>(`
-        INSERT INTO public.users (external_id, profile)
-        VALUES ($1, '{}'::jsonb)
-        ON CONFLICT (external_id) DO UPDATE SET updated_at = NOW()
-        RETURNING id, external_id, created_at
-      `, [input.externalUserId]);
+      }>(`SELECT id, external_id, created_at FROM public.users WHERE external_id = ANY($1::text[]) FOR UPDATE`, [externalUserIds]);
+      if (matchedUsers.rows.length > 1) throw new Error("AUTH_IDENTITY_PEPPER_COLLISION");
+      const currentExternalUserId = input.externalUserId;
+      const user = matchedUsers.rows[0]
+        ? await client.query<{ id: string; external_id: string; created_at: Date }>(
+          `UPDATE public.users SET external_id=$2, updated_at=NOW() WHERE id=$1::uuid RETURNING id, external_id, created_at`,
+          [matchedUsers.rows[0].id, currentExternalUserId],
+        )
+        : await client.query<{ id: string; external_id: string; created_at: Date }>(
+          `INSERT INTO public.users (external_id, profile) VALUES ($1, '{}'::jsonb) RETURNING id, external_id, created_at`,
+          [currentExternalUserId],
+        );
       await client.query(
         `INSERT INTO public.business_funnel_events (user_id, event_type, event_key)
          VALUES ($1, 'login_completed', $2)

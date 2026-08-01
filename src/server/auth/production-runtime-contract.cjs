@@ -72,6 +72,28 @@ function requireSessionRotationContract(environment) {
   }
 }
 
+function requireVerificationPepperRotationContract(environment) {
+  const currentId = environment.AUTH_VERIFICATION_PEPPER_KID && environment.AUTH_VERIFICATION_PEPPER_KID.trim() || "current";
+  if (!/^[A-Za-z0-9_-]{1,32}$/.test(currentId)) throw failure("AUTH_VERIFICATION_PEPPER_KID_INVALID");
+  const previous = environment.AUTH_VERIFICATION_PEPPER_PREVIOUS;
+  const previousId = environment.AUTH_VERIFICATION_PEPPER_PREVIOUS_KID;
+  const validUntil = environment.AUTH_VERIFICATION_PEPPER_PREVIOUS_VALID_UNTIL;
+  if (!previous && !previousId && !validUntil) return;
+  const expiry = Date.parse(validUntil || "");
+  const overlap = expiry - Date.now();
+  if (!previous || !previousId || !validUntil
+    || previous !== previous.trim()
+    || Buffer.byteLength(previous, "utf8") < 32
+    || previous === environment.AUTH_VERIFICATION_PEPPER
+    || !/^[A-Za-z0-9_-]{1,32}$/.test(previousId)
+    || previousId === currentId
+    || !Number.isFinite(expiry)
+    || overlap < (7 * 24 * 60 * 60 + 30) * 1000
+    || overlap > 180 * 24 * 60 * 60 * 1000) {
+    throw failure("AUTH_VERIFICATION_PEPPER_PREVIOUS_CONFIGURATION_INVALID");
+  }
+}
+
 function requireVideoInternalAccess(environment) {
   requireExact(environment, "YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED", "true");
   requireExact(environment, "YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED", "true");
@@ -137,6 +159,7 @@ function assertProductionRuntimeContract(environment = process.env) {
 
   requirePostgresUrl(environment);
   requiredSecret(environment, "AUTH_VERIFICATION_PEPPER", 32);
+  requireVerificationPepperRotationContract(environment);
   requiredSecret(environment, "SESSION_SECRET", 32);
   requireSessionRotationContract(environment);
   requiredSecret(environment, "REFUND_REVIEW_ACCESS_TOKEN", 48);

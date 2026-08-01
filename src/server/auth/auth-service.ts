@@ -8,9 +8,10 @@ import type {
 import { AUTH_POLICY, type AuthPolicy } from "./config";
 import {
   digestVerificationCode,
+  digestVerificationCodeCandidates,
   generateVerificationCode,
-  hashPhone,
-  hashRequestIp,
+  hashPhoneCandidates,
+  hashRequestIpCandidates,
 } from "./crypto";
 import { normalizeChinaPhone } from "./phone";
 
@@ -37,15 +38,19 @@ export class AuthService {
     const code = this.smsProvider.prepareVerificationCode?.(phoneE164)
       ?? this.smsProvider.createVerificationCode?.()
       ?? generateVerificationCode();
-    const phoneHash = hashPhone(phoneE164);
+    const phoneHashCandidates = hashPhoneCandidates(phoneE164);
+    const requestIpHashCandidates = hashRequestIpCandidates(requestIp);
+    const phoneHash = phoneHashCandidates[0]!;
     const created = await this.repository.createChallenge({
       challengeId,
       phoneHash,
+      phoneHashCandidates,
       codeDigest: digestVerificationCode(challengeId, code),
       purpose: "sign_in",
       expiresAt: new Date(now.getTime() + this.policy.codeTtlSeconds * 1000),
       resendAfter: new Date(now.getTime() + this.policy.resendSeconds * 1000),
-      requestIpHash: hashRequestIp(requestIp),
+      requestIpHash: requestIpHashCandidates[0]!,
+      requestIpHashCandidates,
     }, this.policy);
     if (created === "rate_limited") return { status: "rate_limited" };
 
@@ -77,12 +82,17 @@ export class AuthService {
     if (!phoneE164 || !/^[0-9a-f-]{36}$/i.test(input.challengeId) || !/^\d{6}$/.test(input.code)) {
       return { status: "invalid" };
     }
-    const phoneHash = hashPhone(phoneE164);
+    const phoneHashCandidates = hashPhoneCandidates(phoneE164);
+    const candidateDigests = digestVerificationCodeCandidates(input.challengeId, input.code);
+    const phoneHash = phoneHashCandidates[0]!;
     return this.repository.verifyAndConsume({
       challengeId: input.challengeId,
       phoneHash,
-      candidateDigest: digestVerificationCode(input.challengeId, input.code),
+      phoneHashCandidates,
+      candidateDigest: candidateDigests[0]!,
+      candidateDigests,
       externalUserId: `phone:${phoneHash}`,
+      externalUserIdCandidates: phoneHashCandidates.map((candidate) => `phone:${candidate}`),
       now: this.now(),
     });
   }

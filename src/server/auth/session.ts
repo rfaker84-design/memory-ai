@@ -10,7 +10,8 @@ import {
   AUTH_SESSION_COOKIE,
   AUTH_SESSION_ISSUER,
 } from "./config";
-import { AuthConfigurationError, sessionSigningKeyRing } from "./crypto";
+import { queryPostgres } from "../database/postgres";
+import { AuthConfigurationError, sessionSigningKeyRing, verificationPepperKeyRing } from "./crypto";
 import { isSessionRevoked } from "./session-revocation";
 
 export type AuthSession = {
@@ -22,6 +23,23 @@ export type AuthSession = {
 };
 
 type SessionRevocationLookup = (input: { jti: string; userId: string; issuedAt: string }) => Promise<boolean>;
+type SessionExternalUserIdLookup = (input: { userId: string; externalUserId: string }) => Promise<string | null>;
+
+function hasVerificationPepperOverlapConfiguration(environment: NodeJS.ProcessEnv = process.env): boolean {
+  return [
+    environment.AUTH_VERIFICATION_PEPPER_PREVIOUS,
+    environment.AUTH_VERIFICATION_PEPPER_PREVIOUS_KID,
+    environment.AUTH_VERIFICATION_PEPPER_PREVIOUS_VALID_UNTIL,
+  ].some((value) => value !== undefined && value !== "");
+}
+
+async function resolveCanonicalExternalUserId(input: { userId: string; externalUserId: string }): Promise<string | null> {
+  const result = await queryPostgres<{ external_id: string }>(
+    "SELECT external_id FROM public.users WHERE id=$1::uuid",
+    [input.userId],
+  );
+  return result.rows[0]?.external_id ?? null;
+}
 
 export async function issueSession(input: {
   userId: string;
@@ -41,7 +59,11 @@ export async function issueSession(input: {
     .sign(keyRing.current.secret);
 }
 
-export async function verifySessionToken(token: string, revoked: SessionRevocationLookup = isSessionRevoked): Promise<AuthSession | null> {
+export async function verifySessionToken(
+  token: string,
+  revoked: SessionRevocationLookup = isSessionRevoked,
+  resolveExternalUserId: SessionExternalUserIdLookup = resolveCanonicalExternalUserId,
+): Promise<AuthSession | null> {
   try {
     const keyRing = sessionSigningKeyRing();
     const protectedHeader = decodeProtectedHeader(token);
@@ -88,9 +110,17 @@ export async function verifySessionToken(token: string, revoked: SessionRevocati
     if (process.env.AUTH_SESSION_REVOCATION_ENFORCED === "true") {
       if (typeof jti !== "string" || !/^[0-9a-f-]{36}$/i.test(jti) || await revoked({ jti, userId: sub, issuedAt: new Date(iat * 1000).toISOString() })) return null;
     }
+    let canonicalExternalUserId = externalUserId;
+    if (hasVerificationPepperOverlapConfiguration()) {
+      // Validate the complete overlap contract before any compatibility lookup.
+      verificationPepperKeyRing();
+      const resolved = await resolveExternalUserId({ userId: sub, externalUserId });
+      if (!resolved) return null;
+      canonicalExternalUserId = resolved;
+    }
     return {
       userId: sub,
-      externalUserId,
+      externalUserId: canonicalExternalUserId,
       authenticatedAt: new Date(iat * 1000).toISOString(),
       expiresAt: new Date(exp * 1000).toISOString(),
     };
