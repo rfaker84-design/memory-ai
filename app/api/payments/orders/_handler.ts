@@ -22,12 +22,18 @@ import {
 } from "@/src/server/auth";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 import { DatabaseDependencyError } from "@/src/server/database";
+import { hasApprovedMemoryConsent } from "@/features/consent/trust-consent-postgres";
 
 type OrderService = Pick<PaymentService, "createCheckout" | "listOrders">;
 type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
 type ProductLoader = typeof loadMemoryExperienceProduct;
 type Provider = CheckoutProvider & { assertConfigured?: () => void };
 type LegacyAccountAccess = (externalUserId: string) => boolean;
+type CommercialConsentVerifier = (input: {
+  externalUserId: string;
+  consentType: "commercial_use";
+  memoryId: string;
+}) => Promise<boolean>;
 
 const KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
 const service = (): OrderService => new PaymentService(new PaymentRepository(new PaymentPostgresDataSource()));
@@ -58,6 +64,7 @@ export function createPaymentOrdersHandler(
   providerFactory: () => Provider = getWeChatPayProvider,
   productLoader: ProductLoader = loadMemoryExperienceProduct,
   legacyAccountAccess: LegacyAccountAccess = isLegacyChatCommerceTestAccount,
+  commercialConsentVerifier: CommercialConsentVerifier = hasApprovedMemoryConsent,
 ) {
   return {
     GET: async (request: NextRequest) => {
@@ -85,6 +92,13 @@ export function createPaymentOrdersHandler(
         }
         const id = memoryId(body.memoryId);
         if (!id) return json({ error: "INVALID_PAYMENT_REQUEST" }, { status: 400 });
+        if (!(await commercialConsentVerifier({
+          externalUserId: session.externalUserId,
+          consentType: "commercial_use",
+          memoryId: id,
+        }))) {
+          return json({ error: "COMMERCIAL_CONSENT_REQUIRED" }, { status: 403 });
+        }
         const provider = providerFactory();
         provider.assertConfigured?.();
         const order = await serviceFactory().createCheckout({

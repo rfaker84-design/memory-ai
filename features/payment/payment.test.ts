@@ -118,6 +118,7 @@ test("orders API uses only session owner, an idempotency key, and a memory id", 
     () => ({ assertConfigured: () => undefined, createH5Checkout: async () => ({ prepayId: null, paymentUrl: "https://pay.example.test/h5" }) }),
     () => product,
     () => true,
+    async () => true,
   );
   const response = await handler.POST(new NextRequest("https://memoryai.test/api/payments/orders", {
     method: "POST", headers: {
@@ -132,6 +133,29 @@ test("orders API uses only session owner, an idempotency key, and a memory id", 
     body: JSON.stringify({ memoryId, amountFen: 1 }),
   }));
   assert.equal(bad.status, 400);
+});
+
+test("legacy checkout rejects a direct request without TA-bound commercial consent", async () => {
+  let createCalls = 0;
+  const handler = createPaymentOrdersHandler(
+    () => ({
+      async createCheckout() { createCalls += 1; throw new Error("must not create checkout"); },
+      async listOrders() { return []; },
+    }),
+    async () => user,
+    () => ({ assertConfigured: () => undefined, createH5Checkout: async () => ({ prepayId: null, paymentUrl: "https://pay.example.test/h5" }) }),
+    () => product,
+    () => true,
+    async () => false,
+  );
+  const response = await handler.POST(new NextRequest("https://memoryai.test/api/payments/orders", {
+    method: "POST",
+    headers: { origin: "https://memoryai.test", "x-real-ip": "127.0.0.1", "content-type": "application/json", "idempotency-key": "payment-consent-required-0001" },
+    body: JSON.stringify({ memoryId }),
+  }));
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: "COMMERCIAL_CONSENT_REQUIRED" });
+  assert.equal(createCalls, 0);
 });
 
 test("signed WeChat callback is delegated once and duplicate success still acknowledges WeChat", async () => {
