@@ -94,7 +94,10 @@ function rejectStagingCapabilities(environment: NodeJS.ProcessEnv): void {
   if (stagingVariable) {
     throw new ProductionAuthConfigurationError("STAGING_CAPABILITY_FORBIDDEN");
   }
-  if (environment.STORAGE_PROVIDER?.trim() === "local") {
+  if (
+    environment.STORAGE_PROVIDER?.trim() === "local"
+    || environment.MEDIA_STORAGE_PROVIDER?.trim() === "local"
+  ) {
     throw new ProductionAuthConfigurationError("STAGING_CAPABILITY_FORBIDDEN");
   }
   if (environment.VIDEO_ARTIFACT_STORAGE_PROVIDER?.trim() === "local-staging") {

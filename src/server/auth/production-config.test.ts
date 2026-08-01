@@ -90,6 +90,7 @@ test("production rejects every staging-only capability even when its other setti
     { STAGING_FIXED_SMS_CODE: "246810" },
     { STAGING_MEDIA_ROOT: "/var/lib/memoryai-staging/media" },
     { STORAGE_PROVIDER: "local" },
+    { MEDIA_STORAGE_PROVIDER: "local" },
   ]) {
     assert.throws(
       () => assertProductionAuthConfiguration({ ...productionEnvironment, ...override }),
