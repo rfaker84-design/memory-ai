@@ -26,6 +26,7 @@ import {
   writeCreationRecovery,
 } from "./creationRecoveryClient";
 import styles from "./FirstPresenceFlow.module.css";
+import { AiGeneratedLabel } from "../safety/AiGeneratedLabel";
 
 type EntryStage = "create" | "login-phone" | "preview-create";
 type FlowStage =
@@ -713,6 +714,7 @@ export function FirstPresenceFlow({
             </div>
           )}
           {previewMode && <span className={styles.previewNotice}>开发预览 · 内容不保存</span>}
+          <AiGeneratedLabel compact />
         </header>
 
         <main className={styles.main} aria-labelledby={titleId}>
