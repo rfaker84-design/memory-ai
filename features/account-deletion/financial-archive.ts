@@ -39,13 +39,14 @@ function archiveRetentionDays(environment: Environment): number {
   return days;
 }
 
-function assertIsolatedArchiveDatabase(environment: Environment): string {
+export function assertIsolatedArchiveDatabase(environment: Environment): string {
   const applicationUrl = required(environment, "DATABASE_URL");
   const archiveUrl = required(environment, "ACCOUNT_DELETION_FINANCIAL_ARCHIVE_DATABASE_URL");
   try {
     const app = new URL(applicationUrl);
     const archive = new URL(archiveUrl);
-    if (app.protocol !== "postgresql:" || archive.protocol !== "postgresql:"
+    if (!(["postgres:", "postgresql:"] as const).includes(app.protocol as "postgres:" | "postgresql:")
+      || !(["postgres:", "postgresql:"] as const).includes(archive.protocol as "postgres:" | "postgresql:")
       || (app.hostname === archive.hostname && app.port === archive.port && app.pathname === archive.pathname)) {
       throw new FinancialArchiveConfigurationError("FINANCIAL_ARCHIVE_DATABASE_NOT_ISOLATED");
     }
