@@ -446,7 +446,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
           `SELECT m.id
            FROM memories m
            JOIN users u ON u.id = m.user_id
-           WHERE m.id = $1 AND u.external_id = $2
+           WHERE m.id = $1 AND u.external_id = $2 AND m.deleted_at IS NULL
            FOR UPDATE`,
           [memoryId, externalUserId]
         );
@@ -503,7 +503,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
             SELECT ${MEMORY_COLUMNS}
             FROM memories m
             JOIN users u ON u.id = m.user_id
-            WHERE m.id = $1${externalUserId ? " AND u.external_id = $2" : ""}
+            WHERE m.id = $1 AND m.deleted_at IS NULL${externalUserId ? " AND u.external_id = $2" : ""}
             LIMIT 1
           `,
           externalUserId ? [memoryId, externalUserId] : [memoryId]
@@ -518,6 +518,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
               UPDATE memories
               SET ${assignments.join(", ")}, updated_at = NOW()
               WHERE id = $${memoryIdParameter}
+                AND deleted_at IS NULL
                 ${
                   externalUserId
                     ? `AND user_id = (
@@ -579,7 +580,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
         `SELECT m.id
          FROM memories m
          JOIN users u ON u.id = m.user_id
-         WHERE m.id = $1 AND u.external_id = $2
+         WHERE m.id = $1 AND u.external_id = $2 AND m.deleted_at IS NULL
          FOR UPDATE`,
         [memoryId, externalId]
       );
@@ -609,6 +610,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
          WHERE m.id = $1
            AND m.user_id = u.id
            AND u.external_id = $2
+           AND m.deleted_at IS NULL
          RETURNING m.id`,
         [memoryId, externalId]
       );
@@ -623,7 +625,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
         SELECT ${MEMORY_COLUMNS}
         FROM memories m
         JOIN users u ON u.id = m.user_id
-        WHERE u.external_id = $1
+        WHERE u.external_id = $1 AND m.deleted_at IS NULL
         ORDER BY m.created_at DESC
       `,
       [externalId]
