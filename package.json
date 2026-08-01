@@ -15,6 +15,7 @@
     "verify:postgres-architecture": "node scripts/verify-postgresql-architecture.cjs",
     "migration:export": "tsx scripts/migration/export-supabase-data.ts",
     "migration:import": "tsx scripts/migration/import-postgresql-data.ts",
+    "worker:account-deletion": "tsx scripts/ops/run-account-deletion-worker.ts",
     "migration:verify": "tsx scripts/migration/verify-migration.ts",
     "test:create-flow": "tsx --test src/components/create-memory/createMemoryLogic.test.ts",
     "test:memory-item": "tsx --test features/memory/memory-limit.test.ts app/api/memories/memory-item-route.test.ts app/api/memories/memory-collection-auth.test.ts app/api/memories/route.test.ts app/api/memories/recovery/memory-recovery-route.test.ts",
