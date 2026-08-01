@@ -21,39 +21,53 @@ export function AccountDeletionPanel() {
   const [progress, setProgress] = useState<Progress | null>(null);
   const [loading, setLoading] = useState(true);
   const [confirming, setConfirming] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const load = async () => {
-    const response = await fetch("/api/account/deletion", { credentials: "include", cache: "no-store" });
-    const body = await response.json().catch(() => ({})) as { deletion?: Progress; error?: string };
-    if (response.ok) setProgress(body.deletion ?? null);
-    else if (body.error !== "UNAUTHENTICATED") setMessage(body.error ?? "无法获取注销状态");
-    setLoading(false);
+    try {
+      const response = await fetch("/api/account/deletion", { credentials: "include", cache: "no-store" });
+      const body = await response.json().catch(() => ({})) as { deletion?: Progress; error?: string };
+      if (response.ok) setProgress(body.deletion ?? null);
+      else if (body.error !== "UNAUTHENTICATED") setMessage(body.error ?? "无法获取注销状态");
+    } catch {
+      setMessage("暂时无法读取注销状态，请检查网络后重试。");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { void load(); }, []);
 
   const submit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
     setMessage(null);
-    const response = await fetch("/api/account/deletion", {
-      method: "POST",
-      credentials: "include",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ confirmation: "DELETE_ACCOUNT" }),
-    });
-    const body = await response.json().catch(() => ({})) as { deletion?: Progress; error?: string };
-    if (response.status === 403 && body.error === "REAUTH_REQUIRED") {
-      setMessage("为保护你的账户，请重新完成短信登录后，在 5 分钟内返回此页确认注销。");
+    try {
+      const response = await fetch("/api/account/deletion", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ confirmation: "DELETE_ACCOUNT" }),
+      });
+      const body = await response.json().catch(() => ({})) as { deletion?: Progress; error?: string };
+      if (response.status === 403 && body.error === "REAUTH_REQUIRED") {
+        setMessage("为保护你的账户，请重新完成短信登录后，在 5 分钟内返回此页确认注销。");
+        setConfirming(false);
+        return;
+      }
+      if (!response.ok) {
+        setMessage(body.error ?? "提交注销申请失败，请稍后重试。");
+        return;
+      }
+      setProgress(body.deletion ?? null);
       setConfirming(false);
-      return;
+      setMessage("注销申请已受理。你已退出登录；本页会使用仅限注销进度的回执 Cookie 显示后续状态。");
+    } catch {
+      setMessage("暂时无法提交注销申请，请检查网络后重试。不会创建第二份注销申请。");
+    } finally {
+      setSubmitting(false);
     }
-    if (!response.ok) {
-      setMessage(body.error ?? "提交注销申请失败，请稍后重试。");
-      return;
-    }
-    setProgress(body.deletion ?? null);
-    setConfirming(false);
-    setMessage("注销申请已受理。你已退出登录；本页会使用仅限注销进度的回执 Cookie 显示后续状态。");
   };
 
   if (loading) return <main><p>正在读取账户注销状态…</p></main>;
@@ -80,6 +94,6 @@ export function AccountDeletionPanel() {
       <li>支付、退款、发票、投诉和法定审计记录不会与内容资料混存。</li>
     </ul>
     {message ? <p role="status">{message}</p> : null}
-    {confirming ? <section aria-label="注销确认"><p>请确认：你理解注销后无法恢复内容，且将立即退出所有设备。</p><button type="button" onClick={() => void submit()}>确认注销账户</button><button type="button" onClick={() => setConfirming(false)}>取消</button></section> : <button type="button" onClick={() => setConfirming(true)}>申请注销</button>}
+    {confirming ? <section aria-label="注销确认"><p>请确认：你理解注销后无法恢复内容，且将立即退出所有设备。</p><button type="button" disabled={submitting} onClick={() => void submit()}>{submitting ? "正在提交…" : "确认注销账户"}</button><button type="button" disabled={submitting} onClick={() => setConfirming(false)}>取消</button></section> : <button type="button" onClick={() => setConfirming(true)}>申请注销</button>}
   </main>;
 }
