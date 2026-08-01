@@ -1,0 +1,57 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { NextRequest } from "next/server";
+
+import { DatabaseDependencyError } from "@/src/server/database";
+
+import { createOperationsSummaryHandler } from "./_handler";
+
+const token = "o".repeat(32);
+const summary = {
+  observedAt: "2026-08-02T00:00:00.000Z",
+  video: { active: 1, submissionUncertain: 2, manualReview: 3 },
+  commerce: { pendingOrders: 4, refundsAwaitingResolution: 5 },
+  accountDeletion: { runnableTasks: 6, failedTasks: 7 },
+};
+
+function request(headers?: Record<string, string>) {
+  return new NextRequest("https://memoryai.test/api/internal/operations/summary", { headers });
+}
+
+test("operations summary is aggregate-only and requires its independent server token", async () => {
+  process.env.OPERATIONS_METRICS_ACCESS_TOKEN = token;
+  let called = false;
+  const handler = createOperationsSummaryHandler(() => ({
+    async summary() { called = true; return summary; },
+  }));
+
+  assert.equal((await handler(request())).status, 401);
+  assert.equal(called, false);
+  const response = await handler(request({ "x-operations-metrics-token": token }));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.deepEqual(body, { summary });
+  assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0");
+  assert.doesNotMatch(JSON.stringify(body), /userId|memoryId|providerTask|objectKey/);
+});
+
+test("operations summary fails closed on configuration, query shape and database availability", async () => {
+  const previous = process.env.OPERATIONS_METRICS_ACCESS_TOKEN;
+  delete process.env.OPERATIONS_METRICS_ACCESS_TOKEN;
+  try {
+    const unavailable = await createOperationsSummaryHandler(() => ({ summary: async () => summary }))(request());
+    assert.equal(unavailable.status, 503);
+    assert.deepEqual(await unavailable.json(), { error: "OPERATIONS_METRICS_UNAVAILABLE" });
+  } finally {
+    process.env.OPERATIONS_METRICS_ACCESS_TOKEN = previous;
+  }
+  process.env.OPERATIONS_METRICS_ACCESS_TOKEN = token;
+  const invalid = await createOperationsSummaryHandler(() => ({ summary: async () => summary }))(new NextRequest("https://memoryai.test/api/internal/operations/summary?userId=private", { headers: { "x-operations-metrics-token": token } }));
+  assert.equal(invalid.status, 400);
+  const databaseUnavailable = await createOperationsSummaryHandler(() => ({
+    async summary() { throw new DatabaseDependencyError("connection_refused", "ECONNREFUSED"); },
+  }))(request({ "x-operations-metrics-token": token }));
+  assert.equal(databaseUnavailable.status, 503);
+  assert.deepEqual(await databaseUnavailable.json(), { error: "DATABASE_UNAVAILABLE" });
+});

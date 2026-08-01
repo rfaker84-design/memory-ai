@@ -48,6 +48,7 @@ const FORMAL_API_PATHS = new Set([
   "/api/commerce/referrals/qualifications",
   "/api/commerce/testing/callbacks",
   "/api/internal/commerce-reconciliation",
+  "/api/internal/operations/summary",
   "/api/internal/video-reviews",
   "/api/internal/video-reconciliation",
   "/api/media/upload",
