@@ -90,9 +90,13 @@ export class PostgresAccountDeletionWorker {
         "DELETE FROM public.memory_first_greetings WHERE user_id=$1::uuid",
         "DELETE FROM public.messages WHERE user_id=$1::uuid",
         "DELETE FROM public.conversations WHERE user_id=$1::uuid",
+        "DELETE FROM public.business_funnel_events WHERE user_id=$1::uuid",
+        "DELETE FROM public.commerce_photo_remedies WHERE user_id=$1::uuid",
         "DELETE FROM public.video_generation_jobs WHERE user_id=$1::uuid",
         "DELETE FROM public.provider_jobs WHERE user_id=$1::uuid",
         "DELETE FROM public.media_assets WHERE user_id=$1::uuid",
+        "DELETE FROM public.auth_external_identities WHERE user_id=$1::uuid",
+        "DELETE FROM public.auth_oauth_states WHERE link_user_id=$1::uuid",
         `UPDATE public.consent_records
          SET memory_id=NULL, owner_name=NULL, relationship_to_owner=NULL,
              proof_key=NULL, notes=NULL,

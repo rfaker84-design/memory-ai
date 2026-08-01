@@ -7,6 +7,7 @@ import type { AuthUser } from "../auth-repository";
 export type CreateWeChatStateResult = "created" | "collision";
 export type ResolveWeChatIdentityResult =
   | { status: "resolved"; user: AuthUser }
+  | { status: "account_deletion_pending" }
   | { status: "conflict" };
 
 export interface WeChatAuthRepositoryPort {
@@ -122,6 +123,14 @@ export class WeChatAuthPostgresRepository implements WeChatAuthRepositoryPort {
         : undefined;
       if (primary) {
         if (fallback && fallback.id !== primary.id) return { status: "conflict" };
+        if (process.env.ACCOUNT_DELETION_ENABLED === "true") {
+          const deletion = await client.query(
+            `SELECT 1 FROM public.account_deletion_requests
+             WHERE user_id=$1::uuid AND status <> 'failed' FOR KEY SHARE`,
+            [primary.id],
+          );
+          if (deletion.rowCount !== 0) return { status: "account_deletion_pending" };
+        }
         await this.recordLogin(client, primary.id);
         return { status: "resolved", user: mapUser(primary) };
       }

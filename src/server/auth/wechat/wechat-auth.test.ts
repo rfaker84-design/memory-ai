@@ -145,6 +145,19 @@ test("ordinary WeChat login never binds a residual phone Session user", async ()
   assert.equal(repository.users.size, 2);
 });
 
+test("a WeChat identity with an active deletion request cannot mint a new Session", async () => {
+  const repository: WeChatAuthRepositoryPort = {
+    async createState() { return "created"; },
+    async consumeState() { return true; },
+    async resolveIdentity() { return { status: "account_deletion_pending" }; },
+  };
+  const service = new WeChatAuthService(repository, new FakeProvider(), () => new Date("2026-07-25T00:00:00.000Z"), sequentialStates());
+  await assert.rejects(
+    service.complete({ state: "a".repeat(43), code: "deleted-account" }),
+    (error: unknown) => error instanceof WeChatAuthError && error.code === "WECHAT_AUTH_ACCOUNT_DELETION_PENDING",
+  );
+});
+
 test("UnionID is deterministic primary and OpenID fallback is scoped by provider and AppID", () => {
   const common = {
     openId: "same-open-id",

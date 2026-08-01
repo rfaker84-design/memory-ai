@@ -11,6 +11,9 @@ test("account deletion worker has exclusive claim, retry and redacted batch obse
   assert.match(worker, /ACCOUNT_DELETION_PROVIDER_DELETE_NOT_CONFIGURED/);
   assert.match(worker, /DELETE FROM public\.memory_fragments/);
   assert.match(worker, /DELETE FROM public\.long_term_memories/);
+  assert.match(worker, /DELETE FROM public\.video_generation_jobs/);
+  assert.match(worker, /DELETE FROM public\.business_funnel_events/);
+  assert.match(worker, /DELETE FROM public\.auth_external_identities/);
   assert.match(worker, /UPDATE public\.consent_records/);
   assert.match(worker, /UPDATE public\.audit_logs/);
   const entrypoint = readFileSync("scripts/ops/run-account-deletion-worker.ts", "utf8");

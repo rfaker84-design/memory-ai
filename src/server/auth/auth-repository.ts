@@ -27,6 +27,7 @@ export type NewChallenge = {
 export type ChallengeCreateResult = "created" | "rate_limited";
 export type ChallengeVerifyResult =
   | { status: "verified"; user: AuthUser }
+  | { status: "account_deletion_pending" }
   | { status: "invalid" };
 
 export interface AuthRepositoryPort {
@@ -185,6 +186,17 @@ export class AuthPostgresRepository implements AuthRepositoryPort {
         created_at: Date;
       }>(`SELECT id, external_id, created_at FROM public.users WHERE external_id = ANY($1::text[]) FOR UPDATE`, [externalUserIds]);
       if (matchedUsers.rows.length > 1) throw new Error("AUTH_IDENTITY_PEPPER_COLLISION");
+      if (matchedUsers.rows[0] && process.env.ACCOUNT_DELETION_ENABLED === "true") {
+        const deletion = await client.query(
+          `SELECT 1 FROM public.account_deletion_requests
+           WHERE user_id=$1::uuid AND status <> 'failed' FOR KEY SHARE`,
+          [matchedUsers.rows[0].id],
+        );
+        // The SMS challenge is deliberately consumed before this check. It
+        // must not become a reusable capability if a deleted account is
+        // targeted repeatedly, and the route returns a non-enumerating error.
+        if (deletion.rowCount !== 0) return { status: "account_deletion_pending" };
+      }
       const currentExternalUserId = input.externalUserId;
       const user = matchedUsers.rows[0]
         ? await client.query<{ id: string; external_id: string; created_at: Date }>(

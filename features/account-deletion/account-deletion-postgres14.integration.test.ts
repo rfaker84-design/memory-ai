@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 import pg from "pg";
@@ -59,9 +60,10 @@ test("Migration 017 PostgreSQL 14 first-run, replay, rollback, concurrent deleti
     process.env.DATABASE_URL = targetUrl;
     process.env.DATABASE_SSL = "false";
     process.env.DATABASE_POOL_MAX = "4";
-    const [{ PostgresAccountDeletionService, AccountDeletionError }, { PostgresAccountDeletionWorker }, database] = await Promise.all([
+    const [{ PostgresAccountDeletionService, AccountDeletionError }, { PostgresAccountDeletionWorker }, { AuthPostgresRepository }, database] = await Promise.all([
       import("./account-deletion-service"),
       import("./account-deletion-worker"),
+      import("@/src/server/auth/auth-repository"),
       import("@/src/server/database"),
     ]);
     closePostgresPool = database.closePostgresPool;
@@ -75,6 +77,32 @@ test("Migration 017 PostgreSQL 14 first-run, replay, rollback, concurrent deleti
     assert.equal(first.status, "content_pending");
     assert.equal((await target.query("SELECT count(*)::int AS count FROM account_deletion_requests WHERE user_id=$1", [user.id])).rows[0]?.count, 1);
     assert.equal((await target.query("SELECT count(*)::int AS count FROM auth_session_invalidations WHERE user_id=$1", [user.id])).rows[0]?.count, 1);
+    // A fresh SMS challenge must not mint a new Session for a user who has
+    // already requested deletion. This uses the real PG repository rather
+    // than merely checking that an old JWT was revoked.
+    process.env.ACCOUNT_DELETION_ENABLED = "true";
+    const challengeId = randomUUID();
+    const auth = new AuthPostgresRepository();
+    assert.equal(await auth.createChallenge({
+      challengeId,
+      phoneHash: "a".repeat(64),
+      codeDigest: "b".repeat(64),
+      purpose: "sign_in",
+      expiresAt: new Date(Date.now() + 60_000),
+      resendAfter: new Date(Date.now() + 1_000),
+      requestIpHash: "c".repeat(64),
+    }, {
+      codeTtlSeconds: 300, resendSeconds: 60, phoneHourlyLimit: 100, phoneDailyLimit: 100,
+      ipHourlyLimit: 100, maxAttempts: 5, sessionTtlSeconds: 3600,
+      sessionClockToleranceSeconds: 30, cleanupRetentionDays: 7, cleanupBatchSize: 200,
+    }), "created");
+    assert.deepEqual(await auth.verifyAndConsume({
+      challengeId,
+      phoneHash: "a".repeat(64),
+      candidateDigest: "b".repeat(64),
+      externalUserId: "pg14-concurrent-delete",
+      now: new Date(),
+    }), { status: "account_deletion_pending" });
     const schedule = await target.query<{ kind: string; next_attempt_at: Date; content_delete_after: Date; provider_delete_after: Date; backup_expire_after: Date }>(
       `SELECT t.kind, t.next_attempt_at, r.content_delete_after, r.provider_delete_after, r.backup_expire_after
        FROM account_deletion_tasks t JOIN account_deletion_requests r ON r.id=t.deletion_request_id

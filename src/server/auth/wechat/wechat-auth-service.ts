@@ -58,6 +58,9 @@ export class WeChatAuthService {
     if (resolved.status === "conflict") {
       throw new WeChatAuthError("WECHAT_AUTH_ACCOUNT_CONFLICT");
     }
+    if (resolved.status === "account_deletion_pending") {
+      throw new WeChatAuthError("WECHAT_AUTH_ACCOUNT_DELETION_PENDING");
+    }
     return resolved.user;
   }
 
