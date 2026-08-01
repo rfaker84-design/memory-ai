@@ -503,8 +503,10 @@ test("enforced revocation receives the authenticated user and issued-at boundary
       externalUserId: "phone:user-wide-revocation",
       now,
     });
-    let lookup: { jti: string; userId: string; issuedAt: string } | null = null;
-    const verified = await verifySessionToken(token, async (input) => { lookup = input; return false; });
+    const observed: { lookup?: { jti: string; userId: string; issuedAt: string } } = {};
+    const verified = await verifySessionToken(token, async (input) => { observed.lookup = input; return false; });
+    assert.ok(observed.lookup);
+    const lookup = observed.lookup;
     assert.equal(verified?.authenticatedAt, new Date(Math.floor(now.getTime() / 1000) * 1000).toISOString());
     assert.deepEqual(lookup && { userId: lookup.userId, issuedAt: lookup.issuedAt }, {
       userId: "00000000-0000-4000-8000-000000000001",
