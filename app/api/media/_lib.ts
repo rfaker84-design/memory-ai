@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { MediaPostgresDataSource, MediaRepository, MediaService, MediaServiceError, MediaValidationError } from "../../../features/media";
 import { requireAllowedOrigin, verifyRequestSession } from "../../../src/server/auth";
+import { DatabaseDependencyError } from "../../../src/server/database";
 import { createMediaStorage } from "../../../src/server/storage";
 
 export function safeMediaAsset(asset: {
@@ -43,6 +44,10 @@ export function mediaService(): MediaService {
 }
 
 export function mediaError(error: unknown): NextResponse {
+  if (error instanceof DatabaseDependencyError) {
+    console.error("[media] database request failed", { category: error.category });
+    return NextResponse.json({ error: "DATABASE_UNAVAILABLE" }, { status: 503 });
+  }
   if (error instanceof MediaValidationError || error instanceof MediaServiceError) {
     return NextResponse.json({ error: error.code }, { status: error.httpStatus });
   }

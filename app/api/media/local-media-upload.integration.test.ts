@@ -141,6 +141,11 @@ test(
           [userId, "a".repeat(64), "local-media-gate-creation-key"],
         );
         memoryId = memory.rows[0].id;
+        await client.query(
+          `INSERT INTO consent_records (user_id, memory_id, consent_type, status, notes, metadata)
+           VALUES ($1, $2, 'media_asset', 'approved', 'commercial-trust-v1', $3::jsonb)`,
+          [userId, memoryId, JSON.stringify({ version: "commercial-trust-v1" })],
+        );
       } finally {
         await client.end();
       }

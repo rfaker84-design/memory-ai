@@ -10,6 +10,8 @@ import { MediaType, type MediaAsset, type ReserveMediaInput } from "../../featur
 import type { MediaStorage, StoreMediaInput } from "../../src/server/storage";
 import { NextRequest } from "next/server";
 import { POST as uploadRoute } from "../../app/api/media/upload/route";
+import { DatabaseDependencyError } from "../../src/server/database";
+import { mediaError } from "../../app/api/media/_lib";
 
 const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0, 1]);
 const wav = Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WAVEfmt ")]);
@@ -88,3 +90,8 @@ test("portrait selection is TA-bound and signed media responses do not expose ow
   assert.doesNotMatch(JSON.stringify(safeAsset), /owner-a|ta-a|storageKey|media\//);
 });
 test("upload route rejects unauthenticated access", async () => { const response=await uploadRoute(new NextRequest("http://localhost/api/media/upload",{method:"POST"})); assert.equal(response.status,401); });
+test("media database dependency failures are retryable and do not expose details", async () => {
+  const response = mediaError(new DatabaseDependencyError("connection_refused", "ECONNREFUSED"));
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "DATABASE_UNAVAILABLE" });
+});
