@@ -11,12 +11,15 @@ import {
   AUTH_SESSION_ISSUER,
 } from "./config";
 import { AuthConfigurationError, sessionSigningKeyRing } from "./crypto";
+import { isSessionRevoked } from "./session-revocation";
 
 export type AuthSession = {
   userId: string;
   externalUserId: string;
   expiresAt: string;
 };
+
+type SessionRevocationLookup = (input: { jti: string; userId: string }) => Promise<boolean>;
 
 export async function issueSession(input: {
   userId: string;
@@ -36,7 +39,7 @@ export async function issueSession(input: {
     .sign(keyRing.current.secret);
 }
 
-export async function verifySessionToken(token: string): Promise<AuthSession | null> {
+export async function verifySessionToken(token: string, revoked: SessionRevocationLookup = isSessionRevoked): Promise<AuthSession | null> {
   try {
     const keyRing = sessionSigningKeyRing();
     const protectedHeader = decodeProtectedHeader(token);
@@ -61,7 +64,7 @@ export async function verifySessionToken(token: string): Promise<AuthSession | n
       }
     }
     if (!verified) return null;
-    const { sub, externalUserId, iat, exp } = verified.payload;
+    const { sub, externalUserId, iat, exp, jti } = verified.payload;
     const nowSeconds = Math.floor(Date.now() / 1000);
     if (
       typeof sub !== "string"
@@ -79,6 +82,9 @@ export async function verifySessionToken(token: string): Promise<AuthSession | n
       || exp - iat > AUTH_POLICY.sessionTtlSeconds
     ) {
       return null;
+    }
+    if (process.env.AUTH_SESSION_REVOCATION_ENFORCED === "true") {
+      if (typeof jti !== "string" || !/^[0-9a-f-]{36}$/i.test(jti) || await revoked({ jti, userId: sub })) return null;
     }
     return {
       userId: sub,

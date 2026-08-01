@@ -480,6 +480,19 @@ test("session key rotation signs with current kid and accepts only a bounded pre
   }
 });
 
+test("enforced revocation rejects an otherwise valid JWT jti", async () => {
+  const previous = process.env.AUTH_SESSION_REVOCATION_ENFORCED;
+  try {
+    process.env.AUTH_SESSION_REVOCATION_ENFORCED = "true";
+    const token = await issueSession({ userId: "00000000-0000-4000-8000-000000000001", externalUserId: "phone:revoked" });
+    assert.equal(await verifySessionToken(token, async () => true), null);
+    assert.ok(await verifySessionToken(token, async () => false));
+  } finally {
+    if (previous === undefined) delete process.env.AUTH_SESSION_REVOCATION_ENFORCED;
+    else process.env.AUTH_SESSION_REVOCATION_ENFORCED = previous;
+  }
+});
+
 async function signSessionClaims(claims: Record<string, unknown>): Promise<string> {
   return new SignJWT(claims)
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
