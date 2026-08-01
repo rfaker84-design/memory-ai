@@ -1,6 +1,7 @@
 import { queryPostgres, withPostgresTransaction } from "@/src/server/database";
 import { createMediaStorage } from "@/src/server/storage";
 import { createVideoArtifactStorageFromEnvironment } from "@/features/video/video-artifact-storage";
+import { archiveFinancialRecords, purgeLiveFinancialProductRecords } from "./financial-archive";
 
 type TaskKind = "revoke_sessions" | "content_online" | "cos_provider" | "backup_retention" | "financial_archive" | "audit_receipt";
 type ClaimedTask = { id: string; deletionRequestId: string; userId: string; kind: TaskKind };
@@ -59,7 +60,17 @@ export class PostgresAccountDeletionWorker {
            (t.status IN ('pending','retry') AND t.next_attempt_at <= NOW())
            OR (t.status='running' AND t.claimed_at < NOW() - INTERVAL '10 minutes')
          ) AND NOT r.legal_hold
-         ORDER BY t.next_attempt_at, t.id FOR UPDATE SKIP LOCKED LIMIT 1`,
+         ORDER BY t.next_attempt_at,
+           CASE t.kind
+             WHEN 'revoke_sessions' THEN 1
+             WHEN 'content_online' THEN 2
+             WHEN 'financial_archive' THEN 3
+             WHEN 'cos_provider' THEN 4
+             WHEN 'backup_retention' THEN 5
+             WHEN 'audit_receipt' THEN 6
+             ELSE 99
+           END,
+           t.id FOR UPDATE SKIP LOCKED LIMIT 1`,
       );
       const row = selected.rows[0];
       if (!row) return null;
@@ -73,7 +84,10 @@ export class PostgresAccountDeletionWorker {
     if (task.kind === "content_online") return this.deleteOnlineContent(task.userId);
     if (task.kind === "cos_provider") return this.deleteExternalObjects(task.deletionRequestId);
     if (task.kind === "backup_retention") return this.verifyBackupTombstone(task.deletionRequestId);
-    if (task.kind === "financial_archive") return;
+    if (task.kind === "financial_archive") {
+      await archiveFinancialRecords({ deletionRequestId: task.deletionRequestId, userId: task.userId });
+      return purgeLiveFinancialProductRecords(task.userId);
+    }
     if (task.kind === "audit_receipt") return this.completeWhenAllTasksTerminal(task.deletionRequestId);
   }
 

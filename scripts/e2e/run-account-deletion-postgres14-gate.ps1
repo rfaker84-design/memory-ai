@@ -49,7 +49,10 @@ try {
   [Environment]::SetEnvironmentVariable("DATABASE_POOL_MAX", "4", "Process")
   [Environment]::SetEnvironmentVariable("NODE_ENV", "test", "Process")
   Push-Location $projectRoot
-  try { npm.cmd run test:account-deletion-postgres; if ($LASTEXITCODE -ne 0) { throw "ACCOUNT_DELETION_PG14_INTEGRATION_GATE_FAILED=$LASTEXITCODE" } }
+  try {
+    npm.cmd run test:account-deletion-postgres; if ($LASTEXITCODE -ne 0) { throw "ACCOUNT_DELETION_PG14_INTEGRATION_GATE_FAILED=$LASTEXITCODE" }
+    npm.cmd run test:financial-archive-postgres; if ($LASTEXITCODE -ne 0) { throw "ACCOUNT_DELETION_FINANCIAL_ARCHIVE_PG14_GATE_FAILED=$LASTEXITCODE" }
+  }
   finally { Pop-Location }
   "ACCOUNT_DELETION_PG14_PASS version=$version port=$port database=$database migrations=17"
 } finally {
