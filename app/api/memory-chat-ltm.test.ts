@@ -14,7 +14,7 @@ test("formal chat path uses PostgreSQL LTM only after both messages persist", ()
   assert.ok(handler.indexOf("const result = await turnService.complete") < handler.indexOf("await persistTurn"));
   assert.match(handler, /console\.warn\("\[memory-chat\] LTM_WRITE_FAILED"\)/);
   assert.match(handler, /canAccessInternalBeta\("long-term-memory", externalUserId\)/);
-  assert.match(handler, /if \(longTermMemoryAccess\(userId\)\)/);
+  assert.match(handler, /if \(longTermMemoryAccess\(userId\) && !crisisResponse\)/);
   assert.doesNotMatch(handler, /supabase/i);
   assert.match(contextBuilder, /LongTermMemoryPostgresDataSource/);
   assert.match(contextBuilder, /canAccessInternalBeta\("long-term-memory", input\.userId\)/);
