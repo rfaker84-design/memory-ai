@@ -56,16 +56,16 @@ The remaining existing server-side auth/proxy secrets remain mandatory:
 
 ## Pre-start and startup
 
-From a workspace with all secrets injected by a staging secret manager:
+From a completed, manifest-directed staging artifact with all secrets injected
+by a staging secret manager (not from a source checkout):
 
 ```powershell
-npm run build
-npm run verify:staging-runtime
-npm run start:staging
+node run-standalone-from-manifest.cjs
 ```
 
-`start:staging` uses `next start`, never `next dev`. Next instrumentation repeats
-the same contract at runtime before serving requests. Any missing, production-
-shaped, or staging-only-on-production variable fails closed.
+The launcher validates the same contract before loading Next or binding a
+listener; instrumentation repeats it at runtime. Any missing, production-
+shaped, or staging-only-on-production variable fails closed. `npm run
+start:staging` is retired and intentionally fails from a source checkout.
 
 No values from this document are real credentials. Do not commit a `.env` file.
