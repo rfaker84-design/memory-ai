@@ -3,6 +3,7 @@ import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 
 import { getVideoArtifactStorageConfiguration } from "../../src/server/runtime/video-staging-contract";
+import { FfmpegAiContentMarker, type AiContentMarker } from "./ai-content-marking";
 
 import { SecureVideoDownloader } from "./first-presence-media-inspection";
 
@@ -39,6 +40,7 @@ export type LocalStagingVideoArtifactStorageOptions = {
   signingSecret: string;
   playbackBaseUrl: string;
   downloader?: Pick<SecureVideoDownloader, "download">;
+  aiContentMarker?: AiContentMarker;
 };
 
 function assertJobId(jobId: string): void {
@@ -72,6 +74,7 @@ export class LocalStagingVideoArtifactStorage implements VideoArtifactStoragePor
   private readonly secret: Buffer;
   private readonly playbackBaseUrl: URL;
   private readonly downloader: Pick<SecureVideoDownloader, "download">;
+  private readonly aiContentMarker: AiContentMarker | undefined;
 
   constructor(options: LocalStagingVideoArtifactStorageOptions, authorization?: symbol) {
     if (process.env.NODE_ENV === "production" && authorization !== PRODUCTION_STAGING_CONSTRUCTOR) {
@@ -84,6 +87,7 @@ export class LocalStagingVideoArtifactStorage implements VideoArtifactStoragePor
     this.secret = Buffer.from(options.signingSecret, "utf8");
     this.playbackBaseUrl = new URL(options.playbackBaseUrl);
     this.downloader = options.downloader ?? new SecureVideoDownloader();
+    this.aiContentMarker = options.aiContentMarker;
   }
 
   async stageInput(input: { jobId: string; imageDataUrl: string }): Promise<void> {
@@ -113,8 +117,11 @@ export class LocalStagingVideoArtifactStorage implements VideoArtifactStoragePor
     assertJobId(input.jobId);
     if (input.body.length === 0) throw new Error("VIDEO_ARTIFACT_EMPTY");
     const artifactKey = `video-artifacts/${input.jobId}.mp4`;
-    await this.writeIdempotent(artifactKey, input.body);
-    return { artifactKey, body: input.body, contentType: input.contentType };
+    const body = this.aiContentMarker
+      ? await this.aiContentMarker.markMp4({ body: input.body, contentId: input.jobId })
+      : input.body;
+    await this.writeIdempotent(artifactKey, body);
+    return { artifactKey, body, contentType: input.contentType };
   }
 
   deleteArtifact(input: { artifactKey: string }): Promise<void> {
@@ -220,6 +227,10 @@ export function createVideoArtifactStorageFromEnvironment(
       root: configuration.artifactRoot,
       signingSecret: configuration.signingSecret,
       playbackBaseUrl: configuration.playbackBaseUrl,
+      aiContentMarker: new FfmpegAiContentMarker({
+        providerName: configuration.aiContentProviderName,
+        providerCode: configuration.aiContentProviderCode,
+      }),
     }, PRODUCTION_STAGING_CONSTRUCTOR);
   } catch {
     throw new Error("VIDEO_ARTIFACT_STORAGE_UNAVAILABLE");

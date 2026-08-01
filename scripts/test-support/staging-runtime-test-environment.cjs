@@ -45,6 +45,8 @@ function createStagingRuntimeTestEnvironment({ mediaRoot, overrides = {} } = {})
       VIDEO_WORKER_EVIDENCE_ROOT: videoEvidenceRoot,
       VIDEO_ARTIFACT_SIGNING_SECRET: "v".repeat(48),
       VIDEO_ARTIFACT_PLAYBACK_BASE_URL: "https://api.staging.yijianmemory.cn/api/first-presence-video/playback",
+      AI_CONTENT_MARKING_PROVIDER_NAME: "MemoryAI Staging",
+      AI_CONTENT_MARKING_PROVIDER_CODE: "memoryai-staging",
       YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED: "true",
       VIDEO_REVIEW_ACCESS_TOKEN,
       YIJIAN_VIDEO_REVIEW_ACCOUNT: "video-reviewer@yijian.test",

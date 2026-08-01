@@ -106,6 +106,9 @@ test("approved owner playback returns the complete MP4 with controlled headers",
   assert.equal(response.headers.get("content-length"), "10");
   assert.equal(response.headers.get("accept-ranges"), "bytes");
   assert.match(response.headers.get("content-disposition") ?? "", /^inline/);
+  assert.equal(response.headers.get("x-ai-generated-content"), "true");
+  assert.equal(response.headers.get("x-ai-content-id"), jobId);
+  assert.equal(response.headers.get("x-content-disclosure"), "ai-generated");
 });
 
 test("approved owner playback supports a single byte range", async () => {

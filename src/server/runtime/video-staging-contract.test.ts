@@ -44,6 +44,18 @@ test("local staging artifacts fail closed for production deployment, formal orig
   }
 });
 
+test("AI content provenance configuration is mandatory and rejects metadata injection", () => {
+  const environment = stagingEnvironment();
+  for (const override of [
+    { AI_CONTENT_MARKING_PROVIDER_NAME: "" },
+    { AI_CONTENT_MARKING_PROVIDER_CODE: "" },
+    { AI_CONTENT_MARKING_PROVIDER_NAME: "MemoryAI\nforged=true" },
+    { AI_CONTENT_MARKING_PROVIDER_CODE: "memoryai;owner_id=forged" },
+  ]) {
+    assert.throws(() => getVideoArtifactStorageConfiguration({ ...environment, ...override }));
+  }
+});
+
 test("physical path checks reject shared-root escapes and directory symlink escapes", async () => {
   const sharedRoot = await mkdtemp(path.join(os.tmpdir(), "memoryai-video-contract-shared-"));
   const artifactRoot = path.join(sharedRoot, "artifacts");

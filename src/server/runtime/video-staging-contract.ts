@@ -27,6 +27,8 @@ export type VideoArtifactStorageConfiguration = Readonly<{
   signingSecret: string;
   previousSigningSecret: string | null;
   playbackBaseUrl: string;
+  aiContentProviderName: string;
+  aiContentProviderCode: string;
 }>;
 
 function required(environment: NodeJS.ProcessEnv, name: string): string {
@@ -98,6 +100,14 @@ function playbackBaseUrl(environment: NodeJS.ProcessEnv): string {
   }
 }
 
+function contentMarkingField(environment: NodeJS.ProcessEnv, name: string): string {
+  const value = required(environment, name);
+  if (value.length > 120 || /[\r\n;]/.test(value)) {
+    throw new VideoStagingRuntimeConfigurationError(`${name}_INVALID`);
+  }
+  return value;
+}
+
 function previousSigningSecret(environment: NodeJS.ProcessEnv, now: Date): string | null {
   const previous = environment.VIDEO_ARTIFACT_SIGNING_SECRET_PREVIOUS;
   const validUntil = environment.VIDEO_ARTIFACT_SIGNING_SECRET_PREVIOUS_VALID_UNTIL;
@@ -133,6 +143,8 @@ export function getVideoArtifactStorageConfiguration(
     signingSecret: requiredSecret(environment, "VIDEO_ARTIFACT_SIGNING_SECRET"),
     previousSigningSecret: previousSigningSecret(environment, now),
     playbackBaseUrl: playbackBaseUrl(environment),
+    aiContentProviderName: contentMarkingField(environment, "AI_CONTENT_MARKING_PROVIDER_NAME"),
+    aiContentProviderCode: contentMarkingField(environment, "AI_CONTENT_MARKING_PROVIDER_CODE"),
   });
 }
 

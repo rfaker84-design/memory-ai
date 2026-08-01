@@ -6,6 +6,7 @@ import {
   FirstPresenceVideoArtifactStorageReader,
   FirstPresencePlaybackError,
   FirstPresencePlaybackSigner,
+  aiGeneratedPlaybackHeaders,
   createVideoArtifactStorageFromEnvironment,
   parseSingleRange,
   type VideoArtifactQueryPort,
@@ -38,7 +39,7 @@ function unavailable(status = 404): NextResponse {
   return applyAuthNoStore(NextResponse.json({ error: "PLAYBACK_NOT_AVAILABLE" }, { status }));
 }
 
-function responseHeaders(input: { contentLength: number; totalBytes: number; range: { start: number; end: number } | null }) {
+function responseHeaders(input: { contentLength: number; totalBytes: number; range: { start: number; end: number } | null; contentId: string }) {
   const headers = new Headers({
     "Accept-Ranges": "bytes",
     "Content-Type": "video/mp4",
@@ -46,6 +47,7 @@ function responseHeaders(input: { contentLength: number; totalBytes: number; ran
     "Content-Length": String(input.contentLength),
     "X-Content-Type-Options": "nosniff",
   });
+  for (const [name, value] of Object.entries(aiGeneratedPlaybackHeaders(input.contentId))) headers.set(name, value);
   if (input.range) headers.set("Content-Range", `bytes ${input.range.start}-${input.range.end}/${input.totalBytes}`);
   return headers;
 }
@@ -103,6 +105,7 @@ export function createFirstPresencePlaybackReadHandler(
             contentLength: body.body.byteLength,
             totalBytes: body.totalBytes,
             range: range ?? null,
+            contentId: claims.jobId,
           }),
         }));
       } catch (error) {
