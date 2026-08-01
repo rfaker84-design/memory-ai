@@ -44,6 +44,10 @@ function canonicalJson(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
+// The provenance identifies the Docker Linux builder.  Running this helper on
+// another OS would produce a manifest for an incompatible standalone runtime
+// while falsely claiming that builder, so reject it before writing any proof.
+if (process.platform !== "linux") fail(`platform=${process.platform};expected=linux`);
 if (process.version !== nodeVersion) fail(`node_version=${process.version};expected=${nodeVersion}`);
 if (execFileSync("npm", ["--version"], { encoding: "utf8" }).trim() !== npmVersion) fail("npm_version");
 if (!existsSync(runtimeDirectory)) fail("standalone_runtime_missing");
