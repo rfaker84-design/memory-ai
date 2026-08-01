@@ -41,6 +41,7 @@ const EXACT_FORMAL_PATHS = new Set([
   "/api/commerce/referrals/qualifications",
   "/api/commerce/testing/callbacks",
   "/api/internal/commerce-reconciliation",
+  "/api/internal/operations/alerts",
   "/api/internal/operations/summary",
   "/api/internal/video-reviews",
   "/api/internal/report-reviews",
@@ -147,7 +148,7 @@ test("video reconciliation is an explicitly audited formal internal route", () =
 
 test("every tracked non-formal Route Handler is a route-level 410", async () => {
   const routes = trackedRoutes();
-  assert.equal(routes.length, 122, "the audit must enumerate the complete tracked API surface");
+  assert.equal(routes.length, 123, "the audit must enumerate the complete tracked API surface");
 
   for (const { file, pathname } of routes) {
     const formal = isFormalApiPath(pathname);
@@ -216,6 +217,7 @@ test("formal Session ownership and public health contracts remain explicit", asy
     commerceReferralQualifications: readFileSync("app/api/commerce/referrals/qualifications/route.ts", "utf8"),
     commerceTestCallback: readFileSync("app/api/commerce/testing/callbacks/route.ts", "utf8"),
     commerceReconciliation: readFileSync("app/api/internal/commerce-reconciliation/route.ts", "utf8"),
+    operationsAlerts: readFileSync("app/api/internal/operations/alerts/_handler.ts", "utf8"),
     operationsSummary: readFileSync("app/api/internal/operations/summary/_handler.ts", "utf8"),
     videoReviews: readFileSync("app/api/internal/video-reviews/_handler.ts", "utf8"),
     videoReconciliation: readFileSync("app/api/internal/video-reconciliation/_handler.ts", "utf8"),
@@ -239,6 +241,8 @@ test("formal Session ownership and public health contracts remain explicit", asy
   assert.match(sources.reports, /requireAllowedOrigin/);
   assert.match(sources.accountDeletion, /createAccountDeletionHandler/);
   assert.match(sources.guardianDeletionConfirmation, /createGuardianDeletionConfirmationHandler/);
+  assert.match(sources.operationsAlerts, /OPERATIONS_METRICS_ACCESS_TOKEN/);
+  assert.match(sources.operationsAlerts, /parseOperationsAlertThresholds/);
   assert.match(sources.operationsSummary, /OPERATIONS_METRICS_ACCESS_TOKEN/);
   assert.match(sources.logout, /clearSessionCookie/);
   assert.doesNotMatch(
