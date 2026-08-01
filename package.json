@@ -2,8 +2,10 @@
   "name": "memory-ai",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "npm@10.8.2",
   "engines": {
-    "node": ">=20.9.0"
+    "node": "20.20.2",
+    "npm": "10.8.2"
   },
   "scripts": {
     "dev": "next dev -H 127.0.0.1 -p 3000",
@@ -25,6 +27,7 @@
     "test:chat-session-atomicity": "tsx --test features/chat/chat-session-atomicity.integration.test.ts features/chat/memory-chat-turn-postgres-datasource.test.ts app/api/memories/chat-session-route.test.ts && node --test database/tests/015-chat-default-session-atomicity.test.cjs",
     "test:media": "tsx --test scripts/ops/test-media-storage.ts src/server/storage/tencent-cos-storage.test.ts src/server/storage/local-media-storage.test.ts app/api/media/local-media-upload.integration.test.ts",
     "package:standalone-rc": "node scripts/ops/package-standalone-rc.cjs",
+    "generate:production-candidate-evidence": "node scripts/ops/generate-production-candidate-evidence.cjs",
     "test:standalone-layout": "node --test scripts/ops/standalone-runtime-layout.test.cjs",
     "test:standalone-media": "node scripts/ops/test-standalone-media-runtime.cjs",
     "test:collective-analysis": "tsx --test app/api/collective-analysis/route.test.ts",
