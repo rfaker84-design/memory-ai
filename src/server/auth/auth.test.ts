@@ -382,7 +382,7 @@ test("same-user Sessions issued in the same second rotate with unpredictable jti
   const input = {
     userId: "00000000-0000-4000-8000-000000000001",
     externalUserId: "phone:test-hash",
-    now: new Date("2026-07-25T00:00:00.000Z"),
+    now: new Date(),
   };
   const first = await issueSession(input);
   const second = await issueSession(input);
@@ -465,11 +465,12 @@ test("production start configuration binds port 3000 to loopback only", () => {
   const deployment = fs.readFileSync(path.join(root, "scripts/safe-deploy.sh"), "utf8");
   const envExample = fs.readFileSync(path.join(root, ".env.example"), "utf8");
 
-  assert.match(packageJson.scripts.start, /-H 127\.0\.0\.1 -p 3000/);
-  assert.doesNotMatch(packageJson.scripts.start, /0\.0\.0\.0/);
-  assert.match(ecosystem, /args: "start -H 127\.0\.0\.1 -p 3000"/);
+  assert.match(packageJson.scripts.start, /retired-source-start/);
+  assert.match(packageJson.scripts.startStaging ?? packageJson.scripts["start:staging"], /retired-source-start/);
+  assert.match(ecosystem, /script: "run-standalone-from-manifest\.cjs"/);
+  assert.match(ecosystem, /MEMORYAI_MANIFEST_RUNTIME_REQUIRED/);
   assert.match(ecosystem, /name: "memoryai"/);
-  assert.match(deployment, /ss -H -ltn 'sport = :3000'/);
+  assert.match(deployment, /LEGACY_RELEASE_PATH_RETIRED/);
   assert.match(envExample, /AUTH_TRUST_NGINX_PROXY=false/);
   assert.match(envExample, /AUTH_PROXY_LOOPBACK_ONLY=false/);
   assert.doesNotMatch(envExample, /^AUTH_TRUST_NGINX_PROXY=true$/m);

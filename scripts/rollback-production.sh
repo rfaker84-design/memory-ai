@@ -1,18 +1,6 @@
-﻿#!/usr/bin/env bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-echo "Current commit:"
-git rev-parse --short HEAD
-
-if [ -z "$1" ]; then
-  echo "Please provide target commit: bash scripts/rollback-production.sh <commit>"
-  exit 1
-fi
-
-echo "Rolling back to commit: $1"
-git checkout "$1"
-npm install
-npm run build
-pm2 restart yijian
-pm2 status
-bash scripts/check-production.sh
+echo "LEGACY_RELEASE_PATH_RETIRED: source checkout rollback is forbidden." >&2
+echo "Use the approved immutable manifest-directed release runbook after R-01 evidence and Owner GO." >&2
+exit 64

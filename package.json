@@ -49,8 +49,8 @@
     "test": "npm run test:hydration && npm run test:create-flow && npm run test:memory-item && npm run test:memory-pages && npm run test:real-presence && npm run test:long-term-memory-beta && npm run test:media && npm run test:collective-analysis && npm run test:auth && npm run test:payments && npm run test:payment-experience && npm run test:commerce && npm run test:video-product && npm run test:video-postgres && npm run test:business-metrics && npm run test:security-routes && npm run test:workspace-boundary && npm run test:startup-contract && npm run test:staging-runtime",
     "typecheck": "tsc --noEmit",
     "verify:staging-source-seal": "npm ci --ignore-scripts && npm test && npm run typecheck && npm run build && npm run test:standalone-media && npm --prefix mobile ci --ignore-scripts && npm --prefix mobile run test:secure-session-contract && npm --prefix mobile run typecheck && npm --prefix mobile run verify:config && npm --prefix mobile run build",
-    "start": "next start -H 127.0.0.1 -p 3000",
-    "start:staging": "npm run verify:staging-runtime && next start -H 127.0.0.1 -p 3000",
+    "start": "node scripts/ops/retired-source-start.cjs",
+    "start:staging": "node scripts/ops/retired-source-start.cjs",
     "lint": "next lint"
   },
   "dependencies": {

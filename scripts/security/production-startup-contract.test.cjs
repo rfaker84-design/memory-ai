@@ -54,11 +54,17 @@ test("every tracked production startup entry is loopback-only", () => {
 
   const packageJson = JSON.parse(read("package.json"));
   assert.match(packageJson.scripts.dev, /-H 127\.0\.0\.1 -p 3000/);
-  assert.match(packageJson.scripts.start, /-H 127\.0\.0\.1 -p 3000/);
+  assert.match(packageJson.scripts.start, /retired-source-start/);
+  assert.match(packageJson.scripts["start:staging"], /retired-source-start/);
   assert.equal("lan" in packageJson.scripts, false);
   assert.match(read("Dockerfile"), /ENV HOSTNAME=127\.0\.0\.1/);
   assert.match(read("docker-compose.yml"), /127\.0\.0\.1:3000:3000/);
-  assert.match(read("ecosystem.config.js"), /args: "start -H 127\.0\.0\.1 -p 3000"/);
+  assert.match(read("ecosystem.config.js"), /script: "run-standalone-from-manifest\.cjs"/);
+  assert.match(read("ecosystem.config.js"), /MEMORYAI_MANIFEST_RUNTIME_REQUIRED/);
+  for (const file of ["scripts/deploy.sh", "scripts/deploy-production.sh", "scripts/safe-deploy.sh", "scripts/rollback-production.sh"]) {
+    assert.match(read(file), /LEGACY_RELEASE_PATH_RETIRED/);
+    assert.doesNotMatch(read(file), /npm (install|run build)|git (pull|reset|checkout)|pm2 (start|restart|reload)/);
+  }
   assert.match(read("worker/server.py"), /host="127\.0\.0\.1"/);
 });
 
@@ -95,15 +101,8 @@ test("trusted proxy requires loopback attestation and Nginx replacement gates", 
   assert.match(requestSecurity, /AUTH_TRUST_NGINX_PROXY/);
   assert.match(requestSecurity, /AUTH_PROXY_LOOPBACK_ONLY/);
 
-  for (const file of [
-    "scripts/deploy.sh",
-    "scripts/deploy-production.sh",
-    "scripts/safe-deploy.sh",
-  ]) {
-    const source = read(file);
-    assert.match(source, /nginx -T/);
-    assert.match(source, /X-Real-IP/);
-    assert.match(source, /\$remote_addr/);
-    assert.match(source, /ss -H -ltn 'sport = :3000'/);
-  }
+  const ecosystem = read("ecosystem.config.js");
+  assert.match(ecosystem, /cwd: releaseRoot/);
+  assert.match(ecosystem, /interpreter: "node"/);
+  assert.match(ecosystem, /AUTH_PROXY_LOOPBACK_ONLY: "true"/);
 });
