@@ -28,6 +28,7 @@ type AdapterFactory = (
 ) => CommercePaymentAdapter;
 
 const KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
+const PUBLIC_COMMERCE_STATE_CODE = /^[A-Z][A-Z0-9_]{2,127}$/;
 const json = (body: Record<string, unknown>, init?: ResponseInit) =>
   applyAuthNoStore(NextResponse.json(body, init));
 const service = (): OrderService =>
@@ -43,7 +44,10 @@ function failure(error: unknown) {
     return json({ error: "COMMERCE_ACCOUNT_NOT_FOUND" }, { status: 404 });
   }
   if (error instanceof CommerceStateError) {
-    return json({ error: error.message }, { status: 409 });
+    const code = PUBLIC_COMMERCE_STATE_CODE.test(error.message)
+      ? error.message
+      : "COMMERCE_STATE_CONFLICT";
+    return json({ error: code }, { status: 409 });
   }
   if (error instanceof CommerceConfigurationError) {
     return json({ error: error.code }, { status: 503 });

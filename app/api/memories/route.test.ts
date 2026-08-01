@@ -107,5 +107,5 @@ test("a real database dependency failure remains a 503", async () => {
   );
   const response = await handlers.POST(request("memory-limit-database-error"));
   assert.equal(response.status, 503);
-  assert.deepEqual(await response.json(), { error: "Database dependency unavailable" });
+  assert.deepEqual(await response.json(), { error: "DATABASE_UNAVAILABLE" });
 });

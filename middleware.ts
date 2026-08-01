@@ -82,6 +82,7 @@ function applyCredentialedCors(response: NextResponse, allowedOrigin: string): N
   response.headers.set("Access-Control-Allow-Credentials", "true");
   response.headers.set("Access-Control-Allow-Methods", CORS_ALLOWED_METHODS);
   response.headers.set("Access-Control-Allow-Headers", CORS_ALLOWED_HEADERS);
+  response.headers.set("Access-Control-Expose-Headers", "X-Request-Id");
   response.headers.set("Vary", "Origin");
   return response;
 }

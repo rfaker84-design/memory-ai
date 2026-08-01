@@ -45,13 +45,13 @@ function databaseErrorResponse(error: unknown) {
   }
 
   if (error instanceof MemoryValidationError) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ error: "INVALID_MEMORY_REQUEST" }, { status: 400 });
   }
 
   if (error instanceof DatabaseDependencyError) {
     console.error("[api:memories] database request failed", safeDatabaseErrorLog(error));
     return NextResponse.json(
-      { error: "Database dependency unavailable" },
+      { error: "DATABASE_UNAVAILABLE" },
       { status: 503 }
     );
   }
@@ -64,7 +64,7 @@ function databaseErrorResponse(error: unknown) {
   }
 
   console.error("[api:memories] unexpected request failure");
-  return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  return NextResponse.json({ error: "MEMORY_REQUEST_FAILED" }, { status: 500 });
 }
 
 export function createMemoriesHandlers(
@@ -119,7 +119,7 @@ export function createMemoriesHandlers(
 
         if (!name) {
           return NextResponse.json(
-            { error: "Missing name" },
+            { error: "INVALID_MEMORY_REQUEST" },
             { status: 400 }
           );
         }

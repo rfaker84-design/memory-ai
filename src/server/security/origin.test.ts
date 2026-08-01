@@ -134,6 +134,7 @@ test("the packaged same-site App origin receives credentialed CORS without wildc
   assert.equal(preflight.headers.get("access-control-allow-origin"), "https://memoryai.test");
   assert.equal(preflight.headers.get("access-control-allow-credentials"), "true");
   assert.equal(preflight.headers.get("access-control-allow-headers"), "Content-Type, Authorization, Idempotency-Key, X-MemoryAI-Staging-Access");
+  assert.equal(preflight.headers.get("access-control-expose-headers"), "X-Request-Id");
   assert.equal(preflight.headers.get("vary"), "Origin");
 
   const actual = middleware(new NextRequest("https://memoryai.test/api/auth/session", {

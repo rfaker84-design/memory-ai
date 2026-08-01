@@ -12,6 +12,7 @@ import type {
   CommerceOrder,
   CommercePaymentAdapter,
 } from "@/features/commerce";
+import { CommerceStateError } from "@/features/commerce";
 
 process.env.AUTH_ALLOWED_ORIGIN = "https://memoryai.test";
 
@@ -100,6 +101,31 @@ test("orders API accepts only product and platform and delegates iOS to StoreKit
     }),
   );
   assert.equal(tampered.status, 400);
+});
+
+test("orders API never exposes a dynamic commerce state message", async () => {
+  const handler = createCommerceOrdersHandler(
+    () => ({
+      createOrder: async () => {
+        throw new CommerceStateError("Idempotency-Key payload conflict");
+      },
+      listOrders: async () => [],
+    }),
+    async () => session,
+  );
+  const response = await handler.POST(
+    new NextRequest("https://memoryai.test/api/commerce/orders", {
+      method: "POST",
+      headers: {
+        origin: "https://memoryai.test",
+        "content-type": "application/json",
+        "idempotency-key": "commerce-order-route-state-conflict",
+      },
+      body: JSON.stringify({ productId: "memory_video_49", platform: "web" }),
+    }),
+  );
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { error: "COMMERCE_STATE_CONFLICT" });
 });
 
 test("referral qualification uses verified server device output, not the raw token", async () => {
