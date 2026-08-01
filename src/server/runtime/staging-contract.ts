@@ -17,6 +17,8 @@ export type StagingRuntimeConfiguration = Readonly<{
   accessToken: string;
   fixedSmsCode: string;
   fixedSmsPhones: readonly [string, string];
+  /** A disposable identity accepted only while the guarded deletion test is enabled. */
+  accountDeletionTestPhone: string | null;
   mediaRoot: string;
   mediaSigningSecret: string;
   previousMediaSigningSecret: string | null;
@@ -84,6 +86,24 @@ function parseFixedPhones(environment: NodeJS.ProcessEnv): readonly [string, str
   return [phones[0], phones[1]];
 }
 
+function parseAccountDeletionTestPhone(
+  environment: NodeJS.ProcessEnv,
+  fixedSmsPhones: readonly [string, string],
+): string | null {
+  const phone = environment.STAGING_ACCOUNT_DELETION_TEST_PHONE;
+  if (!phone) return null;
+  if (
+    phone !== phone.trim()
+    || !/^\+861[3-9]\d{9}$/.test(phone)
+    || fixedSmsPhones.includes(phone)
+    || environment.ACCOUNT_DELETION_ENABLED !== "true"
+    || environment.AUTH_SESSION_REVOCATION_ENFORCED !== "true"
+  ) {
+    throw new StagingRuntimeConfigurationError("STAGING_ACCOUNT_DELETION_TEST_PHONE_INVALID");
+  }
+  return phone;
+}
+
 function parseMediaRoot(environment: NodeJS.ProcessEnv): string {
   const root = required(environment, "STAGING_MEDIA_ROOT");
   if (!root.includes("staging")) {
@@ -134,11 +154,13 @@ export function getStagingRuntimeConfiguration(
     throw new StagingRuntimeConfigurationError("STAGING_FIXED_SMS_CODE_INVALID");
   }
 
+  const fixedSmsPhones = parseFixedPhones(environment);
   return Object.freeze({
     databaseName: parseStagingDatabaseName(environment),
     accessToken: requiredSecret(environment, "STAGING_ACCESS_TOKEN", MIN_STAGING_ACCESS_TOKEN_BYTES),
     fixedSmsCode,
-    fixedSmsPhones: parseFixedPhones(environment),
+    fixedSmsPhones,
+    accountDeletionTestPhone: parseAccountDeletionTestPhone(environment, fixedSmsPhones),
     mediaRoot: parseMediaRoot(environment),
     mediaSigningSecret: requiredSecret(
       environment,

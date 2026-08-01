@@ -22,7 +22,8 @@ const environment: NodeJS.ProcessEnv = {
 };
 
 async function withStagingEnvironment(work: () => Promise<void> | void): Promise<void> {
-  const previous = new Map(Object.keys(environment).map((key) => [key, process.env[key]]));
+  const scopedKeys = [...Object.keys(environment), "ACCOUNT_DELETION_ENABLED", "AUTH_SESSION_REVOCATION_ENFORCED", "STAGING_ACCOUNT_DELETION_TEST_PHONE"];
+  const previous = new Map(scopedKeys.map((key) => [key, process.env[key]]));
   Object.assign(process.env, environment);
   try {
     await work();
@@ -46,6 +47,21 @@ test("fixed staging SMS is limited to two configured synthetic phones and never 
     await assert.rejects(
       provider.sendVerificationCode({ phoneE164: "+8613700013700", code: "246810", expiresInMinutes: 5 }),
       (error: unknown) => error instanceof SmsProviderError && error.code === "SMS_REJECTED",
+    );
+  });
+});
+
+test("the disposable deletion test identity is accepted only by the explicitly enabled staging deletion runtime", async () => {
+  await withStagingEnvironment(async () => {
+    Object.assign(process.env, {
+      ACCOUNT_DELETION_ENABLED: "true",
+      AUTH_SESSION_REVOCATION_ENFORCED: "true",
+      STAGING_ACCOUNT_DELETION_TEST_PHONE: "+8613700013700",
+    });
+    const provider = new StagingFixedSmsVerificationProvider();
+    assert.deepEqual(
+      await provider.sendVerificationCode({ phoneE164: "+8613700013700", code: "246810", expiresInMinutes: 5 }),
+      { providerRequestId: "staging-fixed:3700" },
     );
   });
 });

@@ -20,6 +20,7 @@ test("staging runtime requires an isolated database, exact App origin, fixed tes
   const configuration = getStagingRuntimeConfiguration(stagingEnvironment);
   assert.equal(configuration.databaseName, "memoryai_staging");
   assert.deepEqual(configuration.fixedSmsPhones, ["+8613800013800", "+8613900013900"]);
+  assert.equal(configuration.accountDeletionTestPhone, null);
   assert.equal(hasValidStagingAccessToken("a".repeat(48), stagingEnvironment), true);
   assert.equal(hasValidStagingAccessToken("wrong", stagingEnvironment), false);
 });
@@ -39,6 +40,25 @@ test("staging runtime fails closed for production-shaped database, origin, provi
       () => getStagingRuntimeConfiguration({ ...stagingEnvironment, ...override }),
       (error: unknown) => error instanceof StagingRuntimeConfigurationError && error.code === code,
       name,
+    );
+  }
+});
+
+test("a disposable deletion test identity is staging-only, distinct, and requires the revocation-safe deletion runtime", () => {
+  const enabled = {
+    ...stagingEnvironment,
+    ACCOUNT_DELETION_ENABLED: "true",
+    AUTH_SESSION_REVOCATION_ENFORCED: "true",
+    STAGING_ACCOUNT_DELETION_TEST_PHONE: "+8613700013700",
+  };
+  assert.equal(getStagingRuntimeConfiguration(enabled).accountDeletionTestPhone, "+8613700013700");
+  for (const override of [
+    { STAGING_ACCOUNT_DELETION_TEST_PHONE: "+8613800013800" },
+    { STAGING_ACCOUNT_DELETION_TEST_PHONE: "+8613700013700" },
+  ]) {
+    assert.throws(
+      () => getStagingRuntimeConfiguration({ ...enabled, ...override, ...(override.STAGING_ACCOUNT_DELETION_TEST_PHONE === "+8613700013700" ? { ACCOUNT_DELETION_ENABLED: "false" } : {}) }),
+      (error: unknown) => error instanceof StagingRuntimeConfigurationError && error.code === "STAGING_ACCOUNT_DELETION_TEST_PHONE_INVALID",
     );
   }
 });

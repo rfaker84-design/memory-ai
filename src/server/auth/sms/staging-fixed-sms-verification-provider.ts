@@ -42,7 +42,7 @@ export class StagingFixedSmsVerificationProvider implements SmsVerificationProvi
 
   prepareVerificationCode(phoneE164: string): string {
     const configuration = this.configured();
-    if (!configuration.fixedSmsPhones.includes(phoneE164)) {
+    if (!this.isPermittedPhone(phoneE164, configuration)) {
       throw new SmsProviderError("SMS_REJECTED");
     }
     return configuration.fixedSmsCode;
@@ -50,12 +50,17 @@ export class StagingFixedSmsVerificationProvider implements SmsVerificationProvi
 
   async sendVerificationCode(input: SmsVerificationSendInput): Promise<SmsVerificationSendResult> {
     const configuration = this.configured();
-    if (!configuration.fixedSmsPhones.includes(input.phoneE164)) {
+    if (!this.isPermittedPhone(input.phoneE164, configuration)) {
       throw new SmsProviderError("SMS_REJECTED");
     }
     if (input.code !== configuration.fixedSmsCode) {
       throw new SmsProviderError("SMS_UNAVAILABLE");
     }
     return { providerRequestId: `staging-fixed:${input.phoneE164.slice(-4)}` };
+  }
+
+  private isPermittedPhone(phoneE164: string, configuration: StagingRuntimeConfiguration): boolean {
+    return configuration.fixedSmsPhones.includes(phoneE164)
+      || configuration.accountDeletionTestPhone === phoneE164;
   }
 }
