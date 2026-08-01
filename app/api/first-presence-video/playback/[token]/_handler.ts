@@ -13,6 +13,7 @@ import {
 } from "@/features/video";
 import { type AuthSession, verifyRequestSession } from "@/src/server/auth";
 import { DatabaseDependencyError } from "@/src/server/database";
+import { getVideoArtifactStorageConfiguration } from "@/src/server/runtime/video-staging-contract";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 
 type Context = { params: Promise<{ token: string }> };
@@ -25,12 +26,11 @@ type PlaybackReadDependencies = {
 };
 
 function dependencies(): PlaybackReadDependencies {
-  const secret = process.env.VIDEO_ARTIFACT_SIGNING_SECRET;
-  if (!secret) throw new FirstPresencePlaybackError("PLAYBACK_UNAVAILABLE");
+  const signing = getVideoArtifactStorageConfiguration();
   return {
     artifacts: new FirstPresenceVideoArtifactQueryPort(createVideoArtifactStorageFromEnvironment()),
     reader: new FirstPresenceVideoArtifactStorageReader(createVideoArtifactStorageFromEnvironment()),
-    signer: new FirstPresencePlaybackSigner(secret),
+    signer: new FirstPresencePlaybackSigner(signing.signingSecret, signing.previousSigningSecret),
   };
 }
 

@@ -25,6 +25,7 @@ export type VideoArtifactStorageConfiguration = Readonly<{
   artifactRoot: string;
   evidenceRoot: string;
   signingSecret: string;
+  previousSigningSecret: string | null;
   playbackBaseUrl: string;
 }>;
 
@@ -97,9 +98,24 @@ function playbackBaseUrl(environment: NodeJS.ProcessEnv): string {
   }
 }
 
+function previousSigningSecret(environment: NodeJS.ProcessEnv, now: Date): string | null {
+  const previous = environment.VIDEO_ARTIFACT_SIGNING_SECRET_PREVIOUS;
+  const validUntil = environment.VIDEO_ARTIFACT_SIGNING_SECRET_PREVIOUS_VALID_UNTIL;
+  if (!previous && !validUntil) return null;
+  const expiry = Date.parse(validUntil ?? "");
+  if (!previous || !validUntil || previous !== previous.trim()
+    || Buffer.byteLength(previous, "utf8") < 48
+    || previous === environment.VIDEO_ARTIFACT_SIGNING_SECRET
+    || !Number.isFinite(expiry) || expiry <= now.getTime() || expiry - now.getTime() > 900_000) {
+    throw new VideoStagingRuntimeConfigurationError("VIDEO_ARTIFACT_SIGNING_SECRET_PREVIOUS_INVALID");
+  }
+  return previous;
+}
+
 /** Validates only the private local-staging artifact and evidence boundary. */
 export function getVideoArtifactStorageConfiguration(
   environment: NodeJS.ProcessEnv = process.env,
+  now: Date = new Date(),
 ): VideoArtifactStorageConfiguration {
   // This also requires NODE_ENV=production, DEPLOYMENT_ENV=staging, the exact
   // staging App origin, and the isolated staging database configuration.
@@ -115,6 +131,7 @@ export function getVideoArtifactStorageConfiguration(
     artifactRoot,
     evidenceRoot,
     signingSecret: requiredSecret(environment, "VIDEO_ARTIFACT_SIGNING_SECRET"),
+    previousSigningSecret: previousSigningSecret(environment, now),
     playbackBaseUrl: playbackBaseUrl(environment),
   });
 }
