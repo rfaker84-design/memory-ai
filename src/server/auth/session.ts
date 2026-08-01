@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import { jwtVerify, SignJWT } from "jose";
+import { decodeProtectedHeader, jwtVerify, SignJWT } from "jose";
+import type { JWTVerifyResult } from "jose";
 import type { NextRequest, NextResponse } from "next/server";
 
 import {
@@ -9,8 +10,7 @@ import {
   AUTH_SESSION_COOKIE,
   AUTH_SESSION_ISSUER,
 } from "./config";
-import { sessionSecret } from "./crypto";
-import { AuthConfigurationError } from "./crypto";
+import { AuthConfigurationError, sessionSigningKeyRing } from "./crypto";
 
 export type AuthSession = {
   userId: string;
@@ -24,26 +24,43 @@ export async function issueSession(input: {
   now?: Date;
 }): Promise<string> {
   const now = input.now ?? new Date();
+  const keyRing = sessionSigningKeyRing();
   return new SignJWT({ externalUserId: input.externalUserId })
-    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .setProtectedHeader({ alg: "HS256", typ: "JWT", kid: keyRing.current.id })
     .setSubject(input.userId)
     .setIssuer(AUTH_SESSION_ISSUER)
     .setAudience(AUTH_SESSION_AUDIENCE)
     .setIssuedAt(Math.floor(now.getTime() / 1000))
     .setExpirationTime(Math.floor(now.getTime() / 1000) + AUTH_POLICY.sessionTtlSeconds)
     .setJti(randomUUID())
-    .sign(sessionSecret());
+    .sign(keyRing.current.secret);
 }
 
 export async function verifySessionToken(token: string): Promise<AuthSession | null> {
   try {
-    const verified = await jwtVerify(token, sessionSecret(), {
-      algorithms: ["HS256"],
-      issuer: AUTH_SESSION_ISSUER,
-      audience: AUTH_SESSION_AUDIENCE,
-      requiredClaims: ["sub", "externalUserId", "iat", "exp", "iss", "aud"],
-      clockTolerance: AUTH_POLICY.sessionClockToleranceSeconds,
-    });
+    const keyRing = sessionSigningKeyRing();
+    const protectedHeader = decodeProtectedHeader(token);
+    const keys = protectedHeader.kid === undefined
+      ? [keyRing.current, ...(keyRing.previous ? [keyRing.previous] : [])]
+      : typeof protectedHeader.kid === "string"
+        ? [keyRing.current, ...(keyRing.previous ? [keyRing.previous] : [])].filter((key) => key.id === protectedHeader.kid)
+        : [];
+    let verified: JWTVerifyResult | null = null;
+    for (const key of keys) {
+      try {
+        verified = await jwtVerify(token, key.secret, {
+          algorithms: ["HS256"],
+          issuer: AUTH_SESSION_ISSUER,
+          audience: AUTH_SESSION_AUDIENCE,
+          requiredClaims: ["sub", "externalUserId", "iat", "exp", "iss", "aud"],
+          clockTolerance: AUTH_POLICY.sessionClockToleranceSeconds,
+        });
+        break;
+      } catch {
+        // A key mismatch is indistinguishable from a malformed token here.
+      }
+    }
+    if (!verified) return null;
     const { sub, externalUserId, iat, exp } = verified.payload;
     const nowSeconds = Math.floor(Date.now() / 1000);
     if (

@@ -53,6 +53,25 @@ function requireConfiguredExact(environment, name, expected, code) {
   if (environment[name] !== expected) throw failure(code);
 }
 
+function requireSessionRotationContract(environment) {
+  const currentId = environment.SESSION_SECRET_KID && environment.SESSION_SECRET_KID.trim() || "current";
+  if (!/^[A-Za-z0-9_-]{1,32}$/.test(currentId)) throw failure("SESSION_SECRET_KID_INVALID");
+  const previous = environment.SESSION_SECRET_PREVIOUS;
+  const previousId = environment.SESSION_SECRET_PREVIOUS_KID;
+  const validUntil = environment.SESSION_SECRET_PREVIOUS_VALID_UNTIL;
+  if (!previous && !previousId && !validUntil) return;
+  if (!previous || !previousId || !validUntil
+    || previous !== previous.trim()
+    || Buffer.byteLength(previous, "utf8") < 32
+    || !/^[A-Za-z0-9_-]{1,32}$/.test(previousId)
+    || previousId === currentId
+    || previous === environment.SESSION_SECRET
+    || !Number.isFinite(Date.parse(validUntil))
+    || Date.parse(validUntil) <= Date.now()) {
+    throw failure("SESSION_SECRET_PREVIOUS_CONFIGURATION_INVALID");
+  }
+}
+
 function requireVideoInternalAccess(environment) {
   requireExact(environment, "YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED", "true");
   requireExact(environment, "YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED", "true");
@@ -105,6 +124,7 @@ function assertProductionRuntimeContract(environment = process.env) {
   requirePostgresUrl(environment);
   requiredSecret(environment, "AUTH_VERIFICATION_PEPPER", 32);
   requiredSecret(environment, "SESSION_SECRET", 32);
+  requireSessionRotationContract(environment);
   requiredSecret(environment, "REFUND_REVIEW_ACCESS_TOKEN", 48);
   requireEnabled(environment, "AUTH_TRUST_NGINX_PROXY", "AUTH_TRUST_NGINX_PROXY_NOT_CONFIGURED");
   requireEnabled(environment, "AUTH_PROXY_LOOPBACK_ONLY", "AUTH_PROXY_LOOPBACK_CONTRACT_NOT_CONFIGURED");

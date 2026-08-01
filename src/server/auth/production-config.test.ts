@@ -110,6 +110,23 @@ test("production rejects every staging-only capability even when its other setti
   }
 });
 
+test("production startup rejects incomplete or expired session rotation configuration", () => {
+  for (const override of [
+    { SESSION_SECRET_PREVIOUS: "p".repeat(32) },
+    {
+      SESSION_SECRET_PREVIOUS: "p".repeat(32),
+      SESSION_SECRET_PREVIOUS_KID: "previous-v1",
+      SESSION_SECRET_PREVIOUS_VALID_UNTIL: new Date(Date.now() - 1_000).toISOString(),
+    },
+  ]) {
+    assert.throws(
+      () => assertProductionAuthConfiguration({ ...productionEnvironment, ...override }),
+      (error: unknown) => error instanceof ProductionAuthConfigurationError
+        && error.code === "SESSION_SECRET_PREVIOUS_CONFIGURATION_INVALID",
+    );
+  }
+});
+
 test("production instrumentation invokes the startup gate before serving requests", async () => {
   const keys = Object.keys(productionEnvironment);
   const previous = new Map(keys.map((key) => [key, process.env[key]]));

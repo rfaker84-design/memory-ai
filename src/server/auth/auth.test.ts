@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { decodeJwt, SignJWT } from "jose";
+import { decodeJwt, decodeProtectedHeader, SignJWT } from "jose";
 import { NextRequest } from "next/server";
 
 import { createSendCodeHandler } from "@/app/api/auth/send-code/_handler";
@@ -17,7 +17,12 @@ import type {
 } from "./auth-repository";
 import { AuthService } from "./auth-service";
 import { AUTH_POLICY, AUTH_SESSION_COOKIE } from "./config";
-import { generateVerificationCode, sessionSecret, verificationDigestsEqual } from "./crypto";
+import {
+  AuthConfigurationError,
+  generateVerificationCode,
+  sessionSecret,
+  verificationDigestsEqual,
+} from "./crypto";
 import { issueSession, verifySessionToken } from "./session";
 import { FakeSmsVerificationProvider } from "./sms/fake-sms-verification-provider";
 import {
@@ -411,6 +416,68 @@ test("same-user Sessions issued in the same second rotate with unpredictable jti
     exp: nowSeconds + AUTH_POLICY.sessionTtlSeconds,
   });
   assert.ok(await verifySessionToken(stillValidLegacySession));
+});
+
+test("session key rotation signs with current kid and accepts only a bounded previous key", async () => {
+  const keys = [
+    "SESSION_SECRET",
+    "SESSION_SECRET_KID",
+    "SESSION_SECRET_PREVIOUS",
+    "SESSION_SECRET_PREVIOUS_KID",
+    "SESSION_SECRET_PREVIOUS_VALID_UNTIL",
+  ] as const;
+  const saved = new Map(keys.map((key) => [key, process.env[key]]));
+  try {
+    const current = "c".repeat(32);
+    const previous = "p".repeat(32);
+    Object.assign(process.env, {
+      SESSION_SECRET: current,
+      SESSION_SECRET_KID: "current-v2",
+      SESSION_SECRET_PREVIOUS: previous,
+      SESSION_SECRET_PREVIOUS_KID: "previous-v1",
+      SESSION_SECRET_PREVIOUS_VALID_UNTIL: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const now = Math.floor(Date.now() / 1000);
+    const oldToken = await new SignJWT({ externalUserId: "phone:previous" })
+      .setProtectedHeader({ alg: "HS256", typ: "JWT", kid: "previous-v1" })
+      .setSubject("00000000-0000-4000-8000-000000000001")
+      .setIssuer("memoryai")
+      .setAudience("memoryai-web")
+      .setIssuedAt(now)
+      .setExpirationTime(now + AUTH_POLICY.sessionTtlSeconds)
+      .sign(new TextEncoder().encode(previous));
+    assert.ok(await verifySessionToken(oldToken));
+
+    const newToken = await issueSession({
+      userId: "00000000-0000-4000-8000-000000000001",
+      externalUserId: "phone:current",
+    });
+    assert.equal(decodeProtectedHeader(newToken).kid, "current-v2");
+    assert.ok(await verifySessionToken(newToken));
+
+    const unknownKid = await new SignJWT({ externalUserId: "phone:unknown" })
+      .setProtectedHeader({ alg: "HS256", typ: "JWT", kid: "unknown" })
+      .setSubject("00000000-0000-4000-8000-000000000001")
+      .setIssuer("memoryai")
+      .setAudience("memoryai-web")
+      .setIssuedAt(now)
+      .setExpirationTime(now + AUTH_POLICY.sessionTtlSeconds)
+      .sign(new TextEncoder().encode(current));
+    assert.equal(await verifySessionToken(unknownKid), null);
+
+    process.env.SESSION_SECRET_PREVIOUS_VALID_UNTIL = new Date(Date.now() - 1_000).toISOString();
+    await assert.rejects(
+      verifySessionToken(oldToken),
+      (error: unknown) => error instanceof AuthConfigurationError
+        && error.code === "SESSION_SECRET_PREVIOUS_CONFIGURATION_INVALID",
+    );
+  } finally {
+    for (const key of keys) {
+      const value = saved.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 
 async function signSessionClaims(claims: Record<string, unknown>): Promise<string> {
