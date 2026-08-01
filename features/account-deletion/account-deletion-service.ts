@@ -150,7 +150,7 @@ export class PostgresAccountDeletionService {
           await client.query(
             `INSERT INTO public.account_deletion_tasks (deletion_request_id, kind, idempotency_key, next_attempt_at)
              VALUES ($1::uuid, $2, $3, $4)`,
-            [row.id, kind, `account-deletion:${row.id}:${kind}`, kind === "content_online" ? now : kind === "cos_provider" ? schedule.content : kind === "backup_retention" ? schedule.provider : now],
+            [row.id, kind, `account-deletion:${row.id}:${kind}`, kind === "content_online" ? now : kind === "cos_provider" ? schedule.provider : kind === "backup_retention" ? schedule.backup : now],
           );
         }
       }
