@@ -21,7 +21,7 @@ export class PostgresAccountDeletionWorker {
     try {
       await this.execute(task);
       await queryPostgres(
-        `UPDATE public.account_deletion_tasks SET status='completed', completed_at=NOW(), receipt=$2::jsonb, last_error_code=NULL
+        `UPDATE public.account_deletion_tasks SET status='completed', claimed_at=NULL, completed_at=NOW(), receipt=$2::jsonb, last_error_code=NULL
          WHERE id=$1::uuid AND status='running'`, [task.id, JSON.stringify({ completed: true, kind: task.kind })],
       );
       return "completed";
@@ -32,7 +32,7 @@ export class PostgresAccountDeletionWorker {
       // resume it without recreating the customer request.
       const status = "retry";
       await queryPostgres(
-        `UPDATE public.account_deletion_tasks SET status=$2, next_attempt_at=NOW()+INTERVAL '1 hour', last_error_code=$3
+        `UPDATE public.account_deletion_tasks SET status=$2, claimed_at=NULL, next_attempt_at=NOW()+INTERVAL '1 hour', last_error_code=$3
          WHERE id=$1::uuid AND status='running'`, [task.id, status, code],
       ).catch(() => undefined);
       return "retry";
@@ -44,12 +44,15 @@ export class PostgresAccountDeletionWorker {
       const selected = await client.query<{ id: string; deletion_request_id: string; user_id: string; kind: TaskKind }>(
         `SELECT t.id, t.deletion_request_id, r.user_id, t.kind
          FROM public.account_deletion_tasks t JOIN public.account_deletion_requests r ON r.id=t.deletion_request_id
-         WHERE t.status IN ('pending','retry') AND t.next_attempt_at <= NOW() AND NOT r.legal_hold
+         WHERE (
+           (t.status IN ('pending','retry') AND t.next_attempt_at <= NOW())
+           OR (t.status='running' AND t.claimed_at < NOW() - INTERVAL '10 minutes')
+         ) AND NOT r.legal_hold
          ORDER BY t.next_attempt_at, t.id FOR UPDATE SKIP LOCKED LIMIT 1`,
       );
       const row = selected.rows[0];
       if (!row) return null;
-      await client.query(`UPDATE public.account_deletion_tasks SET status='running', attempt_count=attempt_count+1 WHERE id=$1::uuid`, [row.id]);
+      await client.query(`UPDATE public.account_deletion_tasks SET status='running', claimed_at=NOW(), attempt_count=attempt_count+1 WHERE id=$1::uuid`, [row.id]);
       return { id: row.id, deletionRequestId: row.deletion_request_id, userId: row.user_id, kind: row.kind };
     });
   }
@@ -83,7 +86,7 @@ export class PostgresAccountDeletionWorker {
           voice_model_url=NULL, voice_clone_status=NULL, voice_training_status=NULL,
           voice_clone_error=NULL, avatar_video_url=NULL, avatar_status=NULL,
           avatar_job_id=NULL, avatar_provider=NULL, avatar_error=NULL,
-          metadata='{}'::jsonb, deleted_at=NOW(), updated_at=NOW()
+          metadata=jsonb_build_object('account_deletion_tombstone', true), deleted_at=NOW(), updated_at=NOW()
          WHERE user_id=$1::uuid`,
         "UPDATE public.users SET profile='{}'::jsonb, updated_at=NOW() WHERE id=$1::uuid",
       ]) await client.query(statement, [userId]);

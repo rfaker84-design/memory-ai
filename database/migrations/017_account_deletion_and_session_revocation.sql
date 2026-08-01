@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS public.account_deletion_tasks (
   idempotency_key TEXT NOT NULL,
   attempt_count INTEGER NOT NULL DEFAULT 0,
   next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  claimed_at TIMESTAMPTZ,
   completed_at TIMESTAMPTZ,
   receipt JSONB NOT NULL DEFAULT '{}'::jsonb,
   last_error_code TEXT,
@@ -57,7 +58,22 @@ CREATE TABLE IF NOT EXISTS public.account_deletion_tasks (
   CONSTRAINT ck_account_deletion_task_status CHECK (status IN ('pending','running','retry','completed','failed','legal_hold')),
   CONSTRAINT ck_account_deletion_task_attempts CHECK (attempt_count >= 0)
 );
-CREATE INDEX IF NOT EXISTS idx_account_deletion_tasks_ready ON public.account_deletion_tasks (status, next_attempt_at);
+CREATE INDEX IF NOT EXISTS idx_account_deletion_tasks_ready ON public.account_deletion_tasks (status, next_attempt_at, claimed_at);
+
+-- A dependent account never self-attests a guardian approval. The protected
+-- profile must identify a verified guardian user, whose freshly authenticated
+-- confirmation is recorded separately and expires before request creation.
+CREATE TABLE IF NOT EXISTS public.account_deletion_guardian_confirmations (
+  dependent_user_id UUID PRIMARY KEY REFERENCES public.users(id) ON DELETE RESTRICT,
+  guardian_user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE RESTRICT,
+  confirmation_method TEXT NOT NULL,
+  confirmed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  audit_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  CONSTRAINT ck_account_deletion_guardian_method CHECK (confirmation_method IN ('verified_guardian_session')),
+  CONSTRAINT ck_account_deletion_guardian_expiry CHECK (expires_at > confirmed_at AND expires_at <= confirmed_at + INTERVAL '30 minutes')
+);
+CREATE INDEX IF NOT EXISTS idx_account_deletion_guardian_expiry ON public.account_deletion_guardian_confirmations (expires_at);
 
 -- This private ledger preserves only the locator needed to delete a remote
 -- object after online content rows are removed. It is never returned through

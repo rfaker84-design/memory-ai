@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { withPostgresTransaction } from "@/src/server/database";
+import { accountDeletionRetentionPolicy } from "./account-deletion-policy";
 
 export const ACCOUNT_DELETION_CONFIRMATION = "DELETE_ACCOUNT";
 export const ACCOUNT_DELETION_TASK_KINDS = [
@@ -28,7 +29,7 @@ export type AccountDeletionProgress = {
 };
 
 export class AccountDeletionError extends Error {
-  constructor(readonly code: "ACCOUNT_NOT_FOUND" | "GUARDIAN_CONFIRMATION_REQUIRED") {
+  constructor(readonly code: "ACCOUNT_NOT_FOUND" | "GUARDIAN_CONFIRMATION_REQUIRED" | "GUARDIAN_CONFIRMATION_INVALID") {
     super(code);
   }
 }
@@ -64,11 +65,14 @@ function toProgress(row: DeletionRow, tasks: TaskRow[]): AccountDeletionProgress
   };
 }
 
-const retentionSchedule = (now: Date) => ({
-  content: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
-  provider: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
-  backup: new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000),
-});
+const retentionSchedule = (now: Date) => {
+  const policy = accountDeletionRetentionPolicy();
+  return {
+    content: new Date(now.getTime() + policy.contentDays * 24 * 60 * 60 * 1000),
+    provider: new Date(now.getTime() + policy.providerDays * 24 * 60 * 60 * 1000),
+    backup: new Date(now.getTime() + policy.backupDays * 24 * 60 * 60 * 1000),
+  };
+};
 
 /**
  * Candidate-only PostgreSQL repository.  The request, user-wide session
@@ -86,7 +90,14 @@ export class PostgresAccountDeletionService {
         [input.userId, input.externalUserId],
       );
       if (!user.rows[0]) throw new AccountDeletionError("ACCOUNT_NOT_FOUND");
-      if (user.rows[0].guardian_required) throw new AccountDeletionError("GUARDIAN_CONFIRMATION_REQUIRED");
+      if (user.rows[0].guardian_required) {
+        const confirmed = await client.query(
+          `SELECT 1 FROM public.account_deletion_guardian_confirmations
+           WHERE dependent_user_id=$1::uuid AND expires_at > $2 AND confirmation_method='verified_guardian_session'`,
+          [input.userId, now],
+        );
+        if (confirmed.rowCount !== 1) throw new AccountDeletionError("GUARDIAN_CONFIRMATION_REQUIRED");
+      }
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`memoryai:account-deletion:${input.userId}`]);
 
       const existing = await client.query<DeletionRow>(
@@ -95,13 +106,14 @@ export class PostgresAccountDeletionService {
       );
       let row = existing.rows[0];
       if (!row) {
+        const guardianConfirmedAt = user.rows[0].guardian_required ? now : null;
         const inserted = await client.query<DeletionRow>(
           `INSERT INTO public.account_deletion_requests (
              user_id, status, requested_at, content_delete_after, provider_delete_after, backup_expire_after,
-             receipt_access_hash, receipt_access_expires_at, audit_payload
-           ) VALUES ($1::uuid, 'requested', $2, $3, $4, $5, $6, $7, $8::jsonb)
+             receipt_access_hash, receipt_access_expires_at, guardian_confirmed_at, audit_payload
+           ) VALUES ($1::uuid, 'requested', $2::timestamptz, $3::timestamptz, $4::timestamptz, $5::timestamptz, $6, $7::timestamptz, $8::timestamptz, $9::jsonb)
            RETURNING id, status, requested_at, content_delete_after, provider_delete_after, backup_expire_after, legal_hold, completed_at`,
-          [input.userId, now, schedule.content, schedule.provider, schedule.backup, createHash("sha256").update(input.receiptToken).digest("hex"), schedule.backup, JSON.stringify({ policy: "account-deletion-v1", requestedBy: "reauthenticated-session" })],
+          [input.userId, now, schedule.content, schedule.provider, schedule.backup, createHash("sha256").update(input.receiptToken).digest("hex"), schedule.backup, guardianConfirmedAt, JSON.stringify({ policy: "account-deletion-v1", requestedBy: "reauthenticated-session" })],
         );
         row = inserted.rows[0];
         if (!row) throw new Error("ACCOUNT_DELETION_REQUEST_UNAVAILABLE");
@@ -154,7 +166,30 @@ export class PostgresAccountDeletionService {
          WHERE deletion_request_id = $1::uuid ORDER BY kind`, [row.id],
       );
       return toProgress(row, tasks.rows);
-    });
+    }, { preserveError: (error) => error instanceof AccountDeletionError });
+  }
+
+  async confirmGuardian(input: { dependentUserId: string; guardianUserId: string; guardianExternalUserId: string; now?: Date }): Promise<void> {
+    const now = input.now ?? new Date();
+    const expires = new Date(now.getTime() + 15 * 60 * 1000);
+    await withPostgresTransaction(async (client) => {
+      const dependent = await client.query<{ guardianRequired: boolean; guardianUserId: string | null }>(
+        `SELECT COALESCE((profile ->> 'guardian_deletion_confirmation_required')::boolean, false) AS "guardianRequired",
+          profile ->> 'guardian_user_id' AS "guardianUserId"
+         FROM public.users WHERE id=$1::uuid FOR UPDATE`, [input.dependentUserId],
+      );
+      const row = dependent.rows[0];
+      if (!row?.guardianRequired || row.guardianUserId !== input.guardianUserId) throw new AccountDeletionError("GUARDIAN_CONFIRMATION_INVALID");
+      const guardian = await client.query("SELECT 1 FROM public.users WHERE id=$1::uuid AND external_id=$2", [input.guardianUserId, input.guardianExternalUserId]);
+      if (guardian.rowCount !== 1) throw new AccountDeletionError("GUARDIAN_CONFIRMATION_INVALID");
+      await client.query(
+        `INSERT INTO public.account_deletion_guardian_confirmations (dependent_user_id, guardian_user_id, confirmation_method, confirmed_at, expires_at, audit_payload)
+         VALUES ($1::uuid, $2::uuid, 'verified_guardian_session', $3, $4, '{"policy":"account-deletion-v1"}'::jsonb)
+         ON CONFLICT (dependent_user_id) DO UPDATE SET guardian_user_id=EXCLUDED.guardian_user_id, confirmation_method=EXCLUDED.confirmation_method,
+           confirmed_at=EXCLUDED.confirmed_at, expires_at=EXCLUDED.expires_at, audit_payload=EXCLUDED.audit_payload`,
+        [input.dependentUserId, input.guardianUserId, now, expires],
+      );
+    }, { preserveError: (error) => error instanceof AccountDeletionError });
   }
 
   async getProgress(input: { userId: string; externalUserId: string }): Promise<AccountDeletionProgress | null> {

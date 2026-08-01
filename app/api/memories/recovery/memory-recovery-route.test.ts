@@ -265,7 +265,7 @@ test("the formal recovery path exposes no internal key and the PostgreSQL lookup
   );
   assert.match(
     dataSourceSource,
-    /WHERE u\.external_id = \$1\s+AND m\.creation_idempotency_key = \$2\s+AND m\.deleted_at IS NULL\s+LIMIT 1/
+    /WHERE u\.external_id = \$1\s+AND m\.creation_idempotency_key = \$2\s+AND m\.metadata ->> 'account_deletion_tombstone' IS DISTINCT FROM 'true'\s+LIMIT 1/
   );
   assert.doesNotMatch(
     dataSourceSource.match(

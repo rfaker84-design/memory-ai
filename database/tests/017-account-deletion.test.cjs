@@ -8,7 +8,7 @@ const migration = fs.readFileSync(path.join(root, "migrations", "017_account_del
 const runner = fs.readFileSync(path.join(root, "..", "scripts", "postgresql", "apply-migrations.sh"), "utf8");
 
 test("017 keeps deletion retention, legal hold, task recovery and session revocation explicit", () => {
-  for (const table of ["account_deletion_requests", "account_deletion_tasks", "account_deletion_object_ledger", "auth_session_revocations", "auth_session_invalidations"]) {
+  for (const table of ["account_deletion_requests", "account_deletion_tasks", "account_deletion_guardian_confirmations", "account_deletion_object_ledger", "auth_session_revocations", "auth_session_invalidations"]) {
     assert.match(migration, new RegExp(`CREATE TABLE IF NOT EXISTS public\\.${table}`));
   }
   assert.match(migration, /content_delete_after/);
@@ -17,9 +17,11 @@ test("017 keeps deletion retention, legal hold, task recovery and session revoca
   assert.match(migration, /legal_hold_approved_by/);
   assert.match(migration, /legal_hold_expires_at/);
   assert.match(migration, /uq_account_deletion_task_idempotency/);
+  assert.match(migration, /claimed_at TIMESTAMPTZ/);
   assert.match(migration, /reason IN \('account_deletion','logout_all','security_incident'\)/);
   assert.match(migration, /invalid_before/);
   assert.match(migration, /guardian_confirmed_at/);
+  assert.match(migration, /verified_guardian_session/);
   assert.match(migration, /legal_hold_scope/);
   assert.match(migration, /receipt_access_hash/);
   assert.match(migration, /receipt_access_expires_at/);

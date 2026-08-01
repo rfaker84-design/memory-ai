@@ -16,11 +16,11 @@ const RECEIPT_TTL_SECONDS = 90 * 24 * 60 * 60;
 
 const json = (body: Record<string, unknown>, init?: ResponseInit) => applyAuthNoStore(NextResponse.json(body, init));
 
-function deletionRuntimeEnabled(): boolean {
+export function deletionRuntimeEnabled(): boolean {
   return process.env.ACCOUNT_DELETION_ENABLED === "true" && process.env.AUTH_SESSION_REVOCATION_ENFORCED === "true";
 }
 
-function sessionIsFresh(session: AuthSession): boolean {
+export function accountDeletionSessionIsFresh(session: AuthSession): boolean {
   if (!session.authenticatedAt) return false;
   const authenticatedAt = Date.parse(session.authenticatedAt);
   return Number.isFinite(authenticatedAt) && authenticatedAt <= Date.now() + 30_000 && Date.now() - authenticatedAt <= FRESH_REAUTH_MS;
@@ -65,7 +65,7 @@ export function createAccountDeletionHandler(
         if (!session) return json({ error: "UNAUTHENTICATED" }, { status: 401 });
         requireAllowedOrigin(request);
         if (!deletionRuntimeEnabled()) return json({ error: "ACCOUNT_DELETION_UNAVAILABLE" }, { status: 503 });
-        if (!sessionIsFresh(session)) return json({ error: "REAUTH_REQUIRED" }, { status: 403 });
+        if (!accountDeletionSessionIsFresh(session)) return json({ error: "REAUTH_REQUIRED" }, { status: 403 });
         if (!parseConfirmation(await request.json().catch(() => null))) return json({ error: "INVALID_DELETION_CONFIRMATION" }, { status: 400 });
         const receiptToken = issueReceiptToken();
         const progress = await requestDeletion({ userId: session.userId, externalUserId: session.externalUserId, receiptToken });

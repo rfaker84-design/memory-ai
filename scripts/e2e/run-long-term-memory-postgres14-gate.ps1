@@ -85,7 +85,7 @@ try {
 
   $availableMigrations = Get-ChildItem -LiteralPath (Join-Path $projectRoot "database\migrations") -Filter "*.sql" |
     Sort-Object Name
-  $expected = 1..13 | ForEach-Object { "{0:D3}_" -f $_ }
+  $expected = 1..15 | ForEach-Object { "{0:D3}_" -f $_ }
   $migrations = @()
   foreach ($prefix in $expected) {
     $matches = @($availableMigrations | Where-Object { $_.Name.StartsWith($prefix) })

@@ -28,7 +28,7 @@ import {
   type AuthSession,
   verifyRequestSession,
 } from "../../../src/server/auth";
-import { DatabaseDependencyError } from "../../../src/server/database";
+import { DatabaseDependencyError, safeDatabaseErrorLog } from "../../../src/server/database";
 import { canAccessInternalBeta } from "../../../src/server/beta-access";
 
 type MemoryChatRequest = { memoryId: string; question: string };
@@ -283,6 +283,7 @@ export function createMemoryChatHandler(
         return NextResponse.json({ error: "IDEMPOTENCY_KEY_CONFLICT" }, { status: 409 });
       }
       if (error instanceof DatabaseDependencyError) {
+        console.warn("[memory-chat] DATABASE_UNAVAILABLE", safeDatabaseErrorLog(error));
         return NextResponse.json({ error: "DATABASE_UNAVAILABLE" }, { status: 503 });
       }
       if (error instanceof AuthConfigurationError) {

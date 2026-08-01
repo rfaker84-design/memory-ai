@@ -247,7 +247,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
           FROM memories m
           JOIN users u ON u.id = m.user_id
           WHERE m.user_id = $1
-            AND m.deleted_at IS NULL
+            AND m.metadata ->> 'account_deletion_tombstone' IS DISTINCT FROM 'true'
             AND (m.creation_idempotency_key = $2 OR m.idempotency_key = $3)
           ORDER BY (m.creation_idempotency_key = $2) DESC
           LIMIT 1
@@ -259,7 +259,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
       if (existing.rows[0]) return { row: existing.rows[0], created: false };
 
       const count = await client.query<{ count: string }>(
-        "SELECT COUNT(*)::text AS count FROM memories WHERE user_id = $1 AND deleted_at IS NULL",
+        "SELECT COUNT(*)::text AS count FROM memories WHERE user_id = $1 AND metadata ->> 'account_deletion_tombstone' IS DISTINCT FROM 'true'",
         [userId]
       );
       if (Number(count.rows[0]?.count ?? 0) >= 3) {
@@ -362,7 +362,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
         SELECT ${MEMORY_COLUMNS}
         FROM memories m
         JOIN users u ON u.id = m.user_id
-        WHERE m.id = $1 AND m.deleted_at IS NULL
+        WHERE m.id = $1 AND m.metadata ->> 'account_deletion_tombstone' IS DISTINCT FROM 'true'
         LIMIT 1
       `,
       [memoryId]
@@ -379,7 +379,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
         SELECT ${MEMORY_COLUMNS}
         FROM memories m
         JOIN users u ON u.id = m.user_id
-        WHERE m.id = $1 AND u.external_id = $2 AND m.deleted_at IS NULL
+        WHERE m.id = $1 AND u.external_id = $2 AND m.metadata ->> 'account_deletion_tombstone' IS DISTINCT FROM 'true'
         LIMIT 1
       `,
       [memoryId, externalId]
@@ -404,7 +404,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
         JOIN users u ON u.id = m.user_id
         WHERE u.external_id = $1
           AND m.creation_idempotency_key = $2
-          AND m.deleted_at IS NULL
+          AND m.metadata ->> 'account_deletion_tombstone' IS DISTINCT FROM 'true'
         LIMIT 1
       `,
       [externalId, idempotencyKey]
@@ -446,7 +446,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
           `SELECT m.id
            FROM memories m
            JOIN users u ON u.id = m.user_id
-           WHERE m.id = $1 AND u.external_id = $2 AND m.deleted_at IS NULL
+           WHERE m.id = $1 AND u.external_id = $2 AND m.metadata ->> 'account_deletion_tombstone' IS DISTINCT FROM 'true'
            FOR UPDATE`,
           [memoryId, externalUserId]
         );
@@ -503,7 +503,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
             SELECT ${MEMORY_COLUMNS}
             FROM memories m
             JOIN users u ON u.id = m.user_id
-            WHERE m.id = $1 AND m.deleted_at IS NULL${externalUserId ? " AND u.external_id = $2" : ""}
+            WHERE m.id = $1 AND m.metadata ->> 'account_deletion_tombstone' IS DISTINCT FROM 'true'${externalUserId ? " AND u.external_id = $2" : ""}
             LIMIT 1
           `,
           externalUserId ? [memoryId, externalUserId] : [memoryId]
@@ -518,7 +518,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
               UPDATE memories
               SET ${assignments.join(", ")}, updated_at = NOW()
               WHERE id = $${memoryIdParameter}
-                AND deleted_at IS NULL
+                AND metadata ->> 'account_deletion_tombstone' IS DISTINCT FROM 'true'
                 ${
                   externalUserId
                     ? `AND user_id = (
@@ -580,7 +580,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
         `SELECT m.id
          FROM memories m
          JOIN users u ON u.id = m.user_id
-         WHERE m.id = $1 AND u.external_id = $2 AND m.deleted_at IS NULL
+         WHERE m.id = $1 AND u.external_id = $2 AND m.metadata ->> 'account_deletion_tombstone' IS DISTINCT FROM 'true'
          FOR UPDATE`,
         [memoryId, externalId]
       );
@@ -610,7 +610,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
          WHERE m.id = $1
            AND m.user_id = u.id
            AND u.external_id = $2
-           AND m.deleted_at IS NULL
+           AND m.metadata ->> 'account_deletion_tombstone' IS DISTINCT FROM 'true'
          RETURNING m.id`,
         [memoryId, externalId]
       );
@@ -625,7 +625,7 @@ export class MemoryPostgresDataSource implements MemoryDataSource {
         SELECT ${MEMORY_COLUMNS}
         FROM memories m
         JOIN users u ON u.id = m.user_id
-        WHERE u.external_id = $1 AND m.deleted_at IS NULL
+        WHERE u.external_id = $1 AND m.metadata ->> 'account_deletion_tombstone' IS DISTINCT FROM 'true'
         ORDER BY m.created_at DESC
       `,
       [externalId]
