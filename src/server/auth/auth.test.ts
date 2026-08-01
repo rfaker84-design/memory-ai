@@ -427,6 +427,79 @@ test("same-user Sessions issued in the same second rotate with unpredictable jti
   assert.ok(await verifySessionToken(stillValidLegacySession));
 });
 
+test("registration kill switch reaches the atomic repository decision and never mints a Session", async () => {
+  let allowNewRegistration: boolean | undefined;
+  const repository: AuthRepositoryPort = {
+    async createChallenge() { return "created"; },
+    async setProviderRequestId() {},
+    async discardChallenge() {},
+    async verifyAndConsume(input) {
+      allowNewRegistration = input.allowNewRegistration;
+      return { status: "registration_disabled" };
+    },
+  };
+  const service = new AuthService(
+    repository,
+    new FakeSmsVerificationProvider(),
+    AUTH_POLICY,
+    () => new Date("2026-08-01T00:00:00.000Z"),
+    () => false,
+  );
+  const result = await service.verifyCode({
+    phone: "13800000000",
+    code: "123456",
+    challengeId: "00000000-0000-4000-8000-000000000001",
+  });
+  assert.equal(result.status, "registration_disabled");
+  assert.equal(allowNewRegistration, false);
+
+  const handler = createVerifyCodeHandler(() => ({
+    async verifyCode() { return { status: "registration_disabled" as const }; },
+  }));
+  const response = await handler(new NextRequest("https://memoryai.test/api/auth/verify-code", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "https://memoryai.test" },
+    body: JSON.stringify({
+      phone: "13800000000",
+      code: "123456",
+      challengeId: "00000000-0000-4000-8000-000000000001",
+    }),
+  }));
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "REGISTRATION_DISABLED" });
+  assert.equal(response.headers.get("set-cookie"), null);
+});
+
+test("registration kill switch leaves an existing-user verification eligible for Session issuance", async () => {
+  const existingUser = {
+    id: "00000000-0000-4000-8000-000000000001",
+    externalUserId: `phone:${"b".repeat(64)}`,
+    createdAt: "2026-07-01T00:00:00.000Z",
+  };
+  const repository: AuthRepositoryPort = {
+    async createChallenge() { return "created"; },
+    async setProviderRequestId() {},
+    async discardChallenge() {},
+    async verifyAndConsume(input) {
+      assert.equal(input.allowNewRegistration, false);
+      return { status: "verified", user: existingUser };
+    },
+  };
+  const service = new AuthService(
+    repository,
+    new FakeSmsVerificationProvider(),
+    AUTH_POLICY,
+    () => new Date("2026-08-01T00:00:00.000Z"),
+    () => false,
+  );
+  const result = await service.verifyCode({
+    phone: "13800000000",
+    code: "123456",
+    challengeId: "00000000-0000-4000-8000-000000000001",
+  });
+  assert.deepEqual(result, { status: "verified", user: existingUser });
+});
+
 test("session key rotation signs with current kid and accepts only a bounded previous key", async () => {
   const keys = [
     "SESSION_SECRET",

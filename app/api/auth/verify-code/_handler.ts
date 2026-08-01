@@ -38,6 +38,9 @@ export function createVerifyCodeHandler(serviceFactory: () => ServicePort = crea
         code: typeof record.code === "string" ? record.code : "",
         challengeId: typeof record.challengeId === "string" ? record.challengeId : "",
       });
+      if (result.status === "registration_disabled") {
+        return authJson({ error: "REGISTRATION_DISABLED" }, { status: 503 });
+      }
       if (result.status !== "verified") {
         return authJson({ error: "VERIFICATION_FAILED" }, { status: 400 });
       }

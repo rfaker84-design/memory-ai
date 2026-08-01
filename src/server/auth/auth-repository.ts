@@ -28,6 +28,7 @@ export type ChallengeCreateResult = "created" | "rate_limited";
 export type ChallengeVerifyResult =
   | { status: "verified"; user: AuthUser }
   | { status: "account_deletion_pending" }
+  | { status: "registration_disabled" }
   | { status: "invalid" };
 
 export interface AuthRepositoryPort {
@@ -42,6 +43,7 @@ export interface AuthRepositoryPort {
     candidateDigests?: readonly string[];
     externalUserId: string;
     externalUserIdCandidates?: readonly string[];
+    allowNewRegistration?: boolean;
     now: Date;
   }): Promise<ChallengeVerifyResult>;
 }
@@ -135,6 +137,7 @@ export class AuthPostgresRepository implements AuthRepositoryPort {
     candidateDigests?: readonly string[];
     externalUserId: string;
     externalUserIdCandidates?: readonly string[];
+    allowNewRegistration?: boolean;
     now: Date;
   }): Promise<ChallengeVerifyResult> {
     return withPostgresTransaction(async (client) => {
@@ -196,6 +199,9 @@ export class AuthPostgresRepository implements AuthRepositoryPort {
         // must not become a reusable capability if a deleted account is
         // targeted repeatedly, and the route returns a non-enumerating error.
         if (deletion.rowCount !== 0) return { status: "account_deletion_pending" };
+      }
+      if (!matchedUsers.rows[0] && input.allowNewRegistration === false) {
+        return { status: "registration_disabled" };
       }
       const currentExternalUserId = input.externalUserId;
       const user = matchedUsers.rows[0]

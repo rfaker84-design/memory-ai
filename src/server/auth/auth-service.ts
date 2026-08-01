@@ -14,6 +14,7 @@ import {
   hashRequestIpCandidates,
 } from "./crypto";
 import { normalizeChinaPhone } from "./phone";
+import { isProductCapabilityEnabled } from "../runtime/product-capability-gate";
 
 export type SendCodeResult =
   | { status: "sent"; challengeId: string; resendAfter: string }
@@ -25,7 +26,8 @@ export class AuthService {
     private readonly repository: AuthRepositoryPort,
     private readonly smsProvider: SmsVerificationProvider,
     private readonly policy: AuthPolicy = AUTH_POLICY,
-    private readonly now: () => Date = () => new Date()
+    private readonly now: () => Date = () => new Date(),
+    private readonly registrationsEnabled: () => boolean = () => isProductCapabilityEnabled("registration"),
   ) {}
 
   async sendCode(phoneInput: unknown, requestIp: string): Promise<SendCodeResult> {
@@ -93,6 +95,7 @@ export class AuthService {
       candidateDigests,
       externalUserId: `phone:${phoneHash}`,
       externalUserIdCandidates: phoneHashCandidates.map((candidate) => `phone:${candidate}`),
+      allowNewRegistration: this.registrationsEnabled(),
       now: this.now(),
     });
   }
