@@ -4,12 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { MemoryButton } from "../memory-ui";
 import {
+  clearPaymentCheckoutRecovery,
   createExperienceCheckout,
   createPaymentIdempotencyKey,
   describeExperienceStatus,
   loadPaymentSnapshot,
   PaymentExperienceRequestError,
+  readPaymentCheckoutRecovery,
   type PaymentSnapshot,
+  writePaymentCheckoutRecovery,
 } from "./memoryExperienceClient";
 import styles from "./MemoryExperienceOffer.module.css";
 import { recordBusinessView } from "../business-metrics/businessMetricsClient";
@@ -32,15 +35,29 @@ export function MemoryExperienceOffer({ memoryId, tone = "dark" }: Props) {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [notice, setNotice] = useState("");
   const [purchaseAccepted, setPurchaseAccepted] = useState(false);
-  const checkoutKey = useRef<string | null>(null);
+  const [checkoutKey, setCheckoutKey] = useState<string | null>(null);
   const viewedRef = useRef(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setNotice("");
     try {
-      setSnapshot(await loadPaymentSnapshot(memoryId));
-      checkoutKey.current = null;
+      const nextSnapshot = await loadPaymentSnapshot(memoryId);
+      setSnapshot(nextSnapshot);
+      const recovery = readPaymentCheckoutRecovery();
+      if (recovery?.memoryId === memoryId) {
+        const hasOpenOrder = nextSnapshot.orders.some((order) => order.status === "pending" || order.status === "paid");
+        if (hasOpenOrder) {
+          setCheckoutKey(recovery.idempotencyKey);
+        } else if (nextSnapshot.orders.some((order) => ["failed", "cancelled", "expired", "refunded"].includes(order.status))) {
+          clearPaymentCheckoutRecovery();
+          setCheckoutKey(null);
+        } else {
+          setCheckoutKey(recovery.idempotencyKey);
+        }
+      } else {
+        setCheckoutKey(null);
+      }
     } catch (error) {
       setNotice(readableFailure(error));
     } finally {
@@ -50,7 +67,11 @@ export function MemoryExperienceOffer({ memoryId, tone = "dark" }: Props) {
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  useEffect(() => { setPurchaseAccepted(false); }, [memoryId]);
+  useEffect(() => {
+    setPurchaseAccepted(false);
+    const recovery = readPaymentCheckoutRecovery();
+    setCheckoutKey(recovery?.memoryId === memoryId ? recovery.idempotencyKey : null);
+  }, [memoryId]);
 
   useEffect(() => {
     if (!viewedRef.current) {
@@ -65,13 +86,33 @@ export function MemoryExperienceOffer({ memoryId, tone = "dark" }: Props) {
     setNotice("");
     try {
       await recordTrustConsent("commercial_use", memoryId);
-      checkoutKey.current ??= createPaymentIdempotencyKey();
-      const paymentUrl = await createExperienceCheckout(memoryId, checkoutKey.current);
+      const key = checkoutKey ?? createPaymentIdempotencyKey();
+      if (!writePaymentCheckoutRecovery({ memoryId, idempotencyKey: key })) {
+        setNotice("当前浏览器无法安全保留支付恢复标识，尚未创建订单或跳转支付；请恢复后再试。");
+        return;
+      }
+      setCheckoutKey(key);
+      const paymentUrl = await createExperienceCheckout(memoryId, key);
       window.location.assign(paymentUrl);
     } catch (error) {
       setNotice(error instanceof TrustConsentRequestError
         ? "购买确认暂未安全记录，尚未创建订单或跳转支付；恢复连接后可明确重试。"
         : readableFailure(error));
+    } finally {
+      setCheckoutLoading(false);
+    }
+  };
+
+  const resumePurchase = async () => {
+    if (checkoutLoading || !checkoutKey) return;
+    setCheckoutLoading(true);
+    setNotice("");
+    try {
+      // This replays only the exact durable key saved before the original POST.
+      const paymentUrl = await createExperienceCheckout(memoryId, checkoutKey);
+      window.location.assign(paymentUrl);
+    } catch (error) {
+      setNotice(readableFailure(error));
     } finally {
       setCheckoutLoading(false);
     }
@@ -90,6 +131,7 @@ export function MemoryExperienceOffer({ memoryId, tone = "dark" }: Props) {
       {status.canPurchase && <div className={styles.trust}><p>一次性购买，不自动续费。付款成功后才开通；取消、失败或过期不会获得权益。</p><p>退款申请条件：仅限已完成付款且尚未退款的订单；未支付、已取消、失败、过期或已退款订单不符合系统受理条件。</p><p>{refundPolicy.noReason}</p><p>{refundPolicy.afterUse}</p><p>{refundPolicy.manualReview}</p><p>{refundPolicy.entitlementEnd}申请后的资格结果、处理中、成功或拒绝原因可在“我的”查看。</p><p>购买前请阅读 <a href="/terms">用户协议</a>、<a href="/privacy">隐私政策</a> 与 <a href="/authorization">AI 内容说明</a>；退款申请和数据删除入口在 <a href="/report">投诉与删除</a>。</p><label><input type="checkbox" checked={purchaseAccepted} onChange={(event) => setPurchaseAccepted(event.currentTarget.checked)} /><span>我已年满 18 周岁，理解这是 AI 服务，并确认价格、期限、额度、一次性收费及退款后权益终止。</span></label></div>}
       <div className={styles.actions}>
         {status.canPurchase && <MemoryButton variant="primary" loading={checkoutLoading} disabled={!purchaseAccepted} onClick={() => void beginPurchase()}>{checkoutLoading ? "正在前往微信支付" : "购买忆见初遇体验"}</MemoryButton>}
+        {!status.canPurchase && checkoutKey && snapshot?.orders.some((order) => order.status === "pending") && <MemoryButton variant="secondary" loading={checkoutLoading} onClick={() => void resumePurchase()}>{checkoutLoading ? "正在继续支付" : "继续支付"}</MemoryButton>}
         <button type="button" className={styles.refresh} onClick={() => void refresh()} disabled={loading || checkoutLoading}>{loading ? "正在刷新" : "刷新支付状态"}</button>
       </div>
       {notice && <p className={styles.notice} role="alert">{notice}</p>}

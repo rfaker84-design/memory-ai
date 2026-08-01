@@ -18,6 +18,86 @@ export type PaymentSnapshot = {
   entitlements: MemoryEntitlement[];
 };
 
+/**
+ * A checkout response can be lost after the server has durably created its
+ * order.  Keep only the non-sensitive idempotency key in session storage so a
+ * user can explicitly resume that exact request after a refresh or cold
+ * start.  This is deliberately not local storage: closing the browser ends
+ * the recovery window and no payment or user data is persisted on the device.
+ */
+export const PAYMENT_CHECKOUT_RECOVERY_STORAGE_KEY = "memoryai:payment-checkout-recovery:v1";
+
+export type PaymentCheckoutRecovery = {
+  memoryId: string;
+  idempotencyKey: string;
+};
+
+export type PaymentRecoveryStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+function defaultPaymentRecoveryStorage(): PaymentRecoveryStorage | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+function isPaymentCheckoutRecovery(value: unknown): value is PaymentCheckoutRecovery {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return Object.keys(record).length === 2
+    && typeof record.memoryId === "string"
+    && typeof record.idempotencyKey === "string"
+    && record.memoryId.length > 0
+    && record.memoryId.length <= 128
+    && record.idempotencyKey.length >= 12
+    && record.idempotencyKey.length <= 160
+    && !/[\r\n]/.test(record.memoryId)
+    && !/[\r\n]/.test(record.idempotencyKey);
+}
+
+export function readPaymentCheckoutRecovery(
+  storage: PaymentRecoveryStorage | null = defaultPaymentRecoveryStorage(),
+): PaymentCheckoutRecovery | null {
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem(PAYMENT_CHECKOUT_RECOVERY_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (isPaymentCheckoutRecovery(parsed)) return parsed;
+    storage.removeItem(PAYMENT_CHECKOUT_RECOVERY_STORAGE_KEY);
+  } catch {
+    // Storage may be unavailable in private contexts.  Do not claim recovery.
+  }
+  return null;
+}
+
+export function writePaymentCheckoutRecovery(
+  record: PaymentCheckoutRecovery,
+  storage: PaymentRecoveryStorage | null = defaultPaymentRecoveryStorage(),
+): boolean {
+  if (!storage || !isPaymentCheckoutRecovery(record)) return false;
+  try {
+    storage.setItem(PAYMENT_CHECKOUT_RECOVERY_STORAGE_KEY, JSON.stringify(record));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function clearPaymentCheckoutRecovery(
+  storage: PaymentRecoveryStorage | null = defaultPaymentRecoveryStorage(),
+): boolean {
+  if (!storage) return false;
+  try {
+    storage.removeItem(PAYMENT_CHECKOUT_RECOVERY_STORAGE_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export type RefundRequest = {
   id: string;
   memoryId: string;

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  clearPaymentCheckoutRecovery,
   createExperienceCheckout,
   createRefundRequest,
   describeRefundDecision,
@@ -11,6 +12,9 @@ import {
   describeExperienceStatus,
   loadRefundRequests,
   loadPaymentSnapshot,
+  PAYMENT_CHECKOUT_RECOVERY_STORAGE_KEY,
+  readPaymentCheckoutRecovery,
+  writePaymentCheckoutRecovery,
 } from "./memoryExperienceClient";
 import { refundPolicy } from "./refundPolicy";
 
@@ -38,6 +42,23 @@ test("checkout sends only memoryId and the idempotency header", async () => {
   assert.equal(await createExperienceCheckout("memory-1", "payment-key-0000001", request as typeof fetch), "https://pay.example.test/checkout");
   assert.equal((init?.headers as Record<string, string>)["Idempotency-Key"], "payment-key-0000001");
   assert.equal(init?.body, JSON.stringify({ memoryId: "memory-1" }));
+});
+
+test("checkout recovery keeps only a valid same-request key in session-shaped storage", () => {
+  const values = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); },
+    removeItem: (key: string) => { values.delete(key); },
+  };
+  const recovery = { memoryId: "memory-1", idempotencyKey: "payment-key-0000001" };
+  assert.equal(writePaymentCheckoutRecovery(recovery, storage), true);
+  assert.deepEqual(readPaymentCheckoutRecovery(storage), recovery);
+  values.set(PAYMENT_CHECKOUT_RECOVERY_STORAGE_KEY, JSON.stringify({ memoryId: "memory-1", idempotencyKey: "short", extra: true }));
+  assert.equal(readPaymentCheckoutRecovery(storage), null);
+  assert.equal(values.has(PAYMENT_CHECKOUT_RECOVERY_STORAGE_KEY), false);
+  assert.equal(writePaymentCheckoutRecovery({ memoryId: "memory-1\nunsafe", idempotencyKey: recovery.idempotencyKey }, storage), false);
+  assert.equal(clearPaymentCheckoutRecovery(storage), true);
 });
 
 test("refund client uses the formal endpoint, with reason only in the strict body", async () => {
