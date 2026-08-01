@@ -39,7 +39,9 @@ export class MemoryContextBuilder {
   private ltmService = createLongTermMemoryService();
 
   async buildContext(input: MemoryEngineInput): Promise<MemoryEngineContext> {
-    const memory = await this.memoryService.getMemory(input.memoryId);
+    // The public handler already proves ownership, but this second read must
+    // preserve the same boundary so this engine remains safe when reused.
+    const memory = await this.memoryService.getMemoryForUser(input.memoryId, input.userId);
     if (!memory) {
       throw new MemoryNotFoundError("Memory not found: " + input.memoryId);
     }
