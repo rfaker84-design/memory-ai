@@ -27,6 +27,7 @@ import {
 } from "./creationRecoveryClient";
 import styles from "./FirstPresenceFlow.module.css";
 import { AiGeneratedLabel } from "../safety/AiGeneratedLabel";
+import { resolveSmsLoginAction } from "../auth/loginExperienceClient";
 
 type EntryStage = "create" | "login-phone" | "preview-create";
 type FlowStage =
@@ -211,6 +212,7 @@ export function FirstPresenceFlow({
   const [voiceFile, setVoiceFile] = useState<File | null>(null);
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null);
   const [trustAccepted, setTrustAccepted] = useState(false);
+  const [loginAgreementAccepted, setLoginAgreementAccepted] = useState(false);
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [challengeId, setChallengeId] = useState("");
@@ -290,6 +292,11 @@ export function FirstPresenceFlow({
   };
 
   const sendCode = async () => {
+    const loginAction = resolveSmsLoginAction(loginAgreementAccepted);
+    if (loginAction.type === "notice") {
+      setError(loginAction.message);
+      return;
+    }
     if (!/^1\d{10}$/.test(phone.trim())) {
       setError("请输入有效的中国大陆手机号。");
       return;
@@ -324,6 +331,11 @@ export function FirstPresenceFlow({
   };
 
   const verifyCode = async () => {
+    const loginAction = resolveSmsLoginAction(loginAgreementAccepted);
+    if (loginAction.type === "notice") {
+      setError(loginAction.message);
+      return;
+    }
     if (!challengeId || !/^\d{6}$/.test(code.trim())) {
       setError("请输入 6 位短信验证码。");
       return;
@@ -733,7 +745,8 @@ export function FirstPresenceFlow({
                   <h1 id={titleId}>先确认，是你。</h1>
                   <p id="flow-description">验证成功后，你会继续留在这片记忆空间。</p>
                   <MemoryInput label="手机号" type="tel" inputMode="numeric" autoComplete="tel" value={phone} onChange={(event: ChangeEvent<HTMLInputElement>) => setPhone(event.currentTarget.value)} autoFocus error={error || undefined} />
-                  <div className={styles.actions}><button className={styles.backButton} type="button" onClick={leaveFlow}>返回</button><MemoryButton type="submit" loading={busy}>发送验证码</MemoryButton></div>
+                  <label className={styles.loginAgreement}><input type="checkbox" checked={loginAgreementAccepted} onChange={(event) => { setError(""); setLoginAgreementAccepted(event.currentTarget.checked); }} /><span>我已阅读并同意 <a href="/terms">《用户协议》</a> 与 <a href="/privacy">《隐私政策》</a>。</span></label>
+                  <div className={styles.actions}><button className={styles.backButton} type="button" onClick={leaveFlow}>返回</button><MemoryButton type="submit" loading={busy} disabled={!loginAgreementAccepted}>发送验证码</MemoryButton></div>
                 </form>
               )}
 
@@ -743,7 +756,7 @@ export function FirstPresenceFlow({
                   <h1 id={titleId}>输入 6 位验证码。</h1>
                   <p id="flow-description">确认是你以后，再继续写下关于 TA 的记忆。</p>
                   <MemoryInput label="短信验证码" type="text" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(event: ChangeEvent<HTMLInputElement>) => setCode(event.currentTarget.value)} autoFocus error={error || undefined} />
-                  <div className={styles.actions}><button className={styles.backButton} type="button" onClick={() => setStage("login-phone")}>更换号码</button><MemoryButton type="submit" loading={busy}>验证并继续</MemoryButton></div>
+                  <div className={styles.actions}><button className={styles.backButton} type="button" onClick={() => setStage("login-phone")}>更换号码</button><MemoryButton type="submit" loading={busy} disabled={!loginAgreementAccepted}>验证并继续</MemoryButton></div>
                 </form>
               )}
 

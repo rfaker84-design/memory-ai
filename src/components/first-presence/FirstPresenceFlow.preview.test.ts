@@ -47,6 +47,17 @@ test("preview is explicit, zero-write, and production-gated", () => {
   assert.doesNotMatch(previewRendering, /fetch\(|recordTrustConsent|MemoryExperienceOffer/);
 });
 
+test("direct SMS login exposes both policies and cannot request or verify without agreement", () => {
+  const sendCode = flow.slice(flow.indexOf("const sendCode"), flow.indexOf("const verifyCode"));
+  const verifyCode = flow.slice(flow.indexOf("const verifyCode"), flow.indexOf("const reviseText"));
+  assert.match(sendCode, /resolveSmsLoginAction\(loginAgreementAccepted\)[\s\S]*?fetch\("\/api\/auth\/send-code"/);
+  assert.match(verifyCode, /resolveSmsLoginAction\(loginAgreementAccepted\)[\s\S]*?fetch\("\/api\/auth\/verify-code"/);
+  assert.match(flow, /href="\/terms"/);
+  assert.match(flow, /href="\/privacy"/);
+  assert.match(flow, /disabled=\{!loginAgreementAccepted\}/);
+  assert.doesNotMatch(flow, /localStorage[\s\S]{0,120}loginAgreementAccepted/);
+});
+
 test("formal creation leaves React memory state for the stable owned chat URL", () => {
   assert.match(flow, /await completeCreatedMemory\(payload\.id, idempotencyKey\.current\)/);
   assert.match(chatPage, /loadOwnedMemory\(id/);

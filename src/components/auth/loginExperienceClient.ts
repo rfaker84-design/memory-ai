@@ -49,6 +49,12 @@ export function resolveWeChatLoginAction(
   return { type: "navigate", href: WECHAT_AUTH_START_PATH };
 }
 
+export function resolveSmsLoginAction(
+  agreementAccepted: boolean,
+): { type: "allow" } | { type: "notice"; message: string } {
+  return agreementAccepted ? { type: "allow" } : { type: "notice", message: LOGIN_AGREEMENT_NOTICE };
+}
+
 export function smsSendFailureNotice(status: number) {
   if (status === 400) return "请输入有效的中国大陆手机号。";
   if (status === 429) return "请求过于频繁，请稍后再试。";

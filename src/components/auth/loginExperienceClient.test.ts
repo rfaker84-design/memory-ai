@@ -8,6 +8,7 @@ import {
   WECHAT_AUTH_UNAVAILABLE_NOTICE,
   loadWeChatProviderState,
   resolveWeChatLoginAction,
+  resolveSmsLoginAction,
   smsSendFailureNotice,
 } from "./loginExperienceClient";
 
@@ -51,6 +52,14 @@ test("agreement and provider guards never invent a WeChat success path", () => {
     type: "navigate",
     href: WECHAT_AUTH_START_PATH,
   });
+});
+
+test("SMS login cannot issue a request until the agreement is accepted", () => {
+  assert.deepEqual(resolveSmsLoginAction(false), {
+    type: "notice",
+    message: LOGIN_AGREEMENT_NOTICE,
+  });
+  assert.deepEqual(resolveSmsLoginAction(true), { type: "allow" });
 });
 
 test("SMS error states keep explicit invalid, limited, and unavailable messages", () => {

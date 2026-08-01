@@ -482,6 +482,9 @@
 
 .consentBlock p { margin: 0; }
 .consentBlock a { color: #d7b57e; text-underline-offset: 0.22rem; }
+.loginAgreement { display: flex; align-items: flex-start; gap: 10px; color: #c8c4ca; font-size: 13px; line-height: 1.55; }
+.loginAgreement input { margin-top: 0.28rem; accent-color: #d7b57e; }
+.loginAgreement a { color: #d7b57e; text-underline-offset: 0.22rem; }
 
 .trustCheck {
   display: flex;
