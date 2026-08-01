@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "../../../src/lib/supabase";
+import { AiGeneratedLabel } from "@/src/components/safety/AiGeneratedLabel";
 
 type Memory = {
   id: string; name: string; relationship: string; photo_url: string | null;
@@ -94,6 +95,7 @@ export default function AvatarPresencePage() {
       </AnimatePresence>
 
       <main className="fixed inset-0 bg-black overflow-hidden">
+        <div className="absolute top-5 right-5 z-30 text-white/80"><AiGeneratedLabel compact /></div>
         {/* ---- Background: dim ambient field ---- */}
         <div className="absolute inset-0">
           <div style={{

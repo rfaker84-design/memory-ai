@@ -4,6 +4,7 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { supabase } from "../../../src/lib/supabase";
+import { AiGeneratedLabel } from "@/src/components/safety/AiGeneratedLabel";
 
 type Memory = { id: string; name: string; photo_url: string | null; voice_sample_url: string | null };
 type HeirloomItem = { type: "photo" | "voice" | "letter"; label: string; url?: string; content?: string; created_at?: string };
@@ -63,6 +64,7 @@ export default function HeirloomPage({ params }: { params: Promise<{ id: string 
                 )}
                 {item.type === "letter" && item.content && (
                   <div className="p-5">
+                    <AiGeneratedLabel compact />
                     <p className="text-[11px] uppercase tracking-wider text-rose mb-3">
                       {item.label}{item.created_at ? " · " + new Date(item.created_at).toLocaleDateString("zh-CN") : ""}
                     </p>
