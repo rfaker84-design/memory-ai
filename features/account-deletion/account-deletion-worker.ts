@@ -82,6 +82,10 @@ export class PostgresAccountDeletionWorker {
       // Content is removed, while remote locators were copied to the private
       // deletion ledger at request time for the later 30-day purge.
       for (const statement of [
+        `DELETE FROM public.long_term_memories
+         WHERE memory_id IN (SELECT id FROM public.memories WHERE user_id=$1::uuid)`,
+        `DELETE FROM public.memory_fragments
+         WHERE memory_id IN (SELECT id FROM public.memories WHERE user_id=$1::uuid)`,
         "DELETE FROM public.memory_chat_turns WHERE user_id=$1::uuid",
         "DELETE FROM public.memory_first_greetings WHERE user_id=$1::uuid",
         "DELETE FROM public.messages WHERE user_id=$1::uuid",
@@ -89,6 +93,15 @@ export class PostgresAccountDeletionWorker {
         "DELETE FROM public.video_generation_jobs WHERE user_id=$1::uuid",
         "DELETE FROM public.provider_jobs WHERE user_id=$1::uuid",
         "DELETE FROM public.media_assets WHERE user_id=$1::uuid",
+        `UPDATE public.consent_records
+         SET memory_id=NULL, owner_name=NULL, relationship_to_owner=NULL,
+             proof_key=NULL, notes=NULL,
+             metadata=jsonb_build_object('account_deletion_tombstone', true), updated_at=NOW()
+         WHERE user_id=$1::uuid`,
+        `UPDATE public.audit_logs
+         SET memory_id=NULL, message='account deletion audit retained',
+             metadata=jsonb_build_object('account_deletion_tombstone', true)
+         WHERE user_id=$1::uuid`,
         `UPDATE public.memories SET
           name='已删除', relationship='', life_story=NULL, personality_profile=NULL,
           speech_style=NULL, catch_phrases=NULL, photo_url=NULL, personality_tags=NULL,
