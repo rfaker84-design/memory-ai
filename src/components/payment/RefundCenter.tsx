@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { MemoryButton } from "../memory-ui";
+import { fetchOwnedMemoryList } from "../memory/ownedMemoryClient";
 import {
   createRefundIdempotencyKey,
   createRefundRequest,
@@ -47,7 +48,7 @@ export function RefundCenter() {
     setLoading(true); setStatusReady(false); setLoadedMemoryId(null); setSnapshot(null); setRefunds([]); setNotice("");
     try {
       if (!selected) {
-        const response = await fetch("/api/memories", { credentials: "same-origin", cache: "no-store" });
+        const response = await fetchOwnedMemoryList();
         const body = await response.json().catch(() => ({}));
         if (!isCurrent()) return;
         if (!response.ok) throw new PaymentExperienceRequestError(response.status, typeof body.error === "string" ? body.error : "MEMORIES_UNAVAILABLE");

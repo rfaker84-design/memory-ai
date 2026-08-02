@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   loadOwnedMediaUrl,
   loadOwnedMemory,
+  fetchOwnedMemoryList,
   OwnedMemoryRequestError,
 } from "./ownedMemoryClient";
 
@@ -43,6 +44,18 @@ test("formal Memory 404 remains a controlled page state", async () => {
       error.status === 404 &&
       error.code === "MEMORY_NOT_FOUND"
   );
+});
+
+test("owner list reads use the same bounded cookie-session boundary", async () => {
+  let init: RequestInit | undefined;
+  const response = await fetchOwnedMemoryList(undefined, (async (input, nextInit) => {
+    assert.equal(input, "/api/memories");
+    init = nextInit;
+    return Response.json([]);
+  }) as typeof fetch);
+  assert.equal(response.ok, true);
+  assert.equal(init?.credentials, "same-origin");
+  assert.equal(init?.cache, "no-store");
 });
 
 test("owned Memory reads time out without widening the session boundary or retrying", async () => {

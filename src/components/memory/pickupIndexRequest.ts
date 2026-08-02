@@ -1,4 +1,4 @@
-const PICKUP_INDEX_TIMEOUT_MS = 12_000;
+import { fetchOwnedMemoryList, OwnedMemoryRequestError } from "./ownedMemoryClient";
 
 export class PickupIndexRequestError extends Error {
   constructor(readonly code: "PICKUP_INDEX_TIMEOUT") {
@@ -14,25 +14,14 @@ export class PickupIndexRequestError extends Error {
 export async function fetchPickupIndexMemories(
   request: typeof fetch = fetch,
   parentSignal?: AbortSignal,
-  timeoutMs = PICKUP_INDEX_TIMEOUT_MS,
+  timeoutMs = 12_000,
 ): Promise<Response> {
-  const controller = new AbortController();
-  let timedOut = false;
-  const abortFromParent = () => controller.abort();
-  if (parentSignal?.aborted) controller.abort();
-  else parentSignal?.addEventListener("abort", abortFromParent, { once: true });
-  const timer = globalThis.setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   try {
-    return await request("/api/memories", {
-      cache: "no-store",
-      credentials: "same-origin",
-      signal: controller.signal,
-    });
+    return await fetchOwnedMemoryList(parentSignal, request, timeoutMs);
   } catch (error) {
-    if (timedOut) throw new PickupIndexRequestError("PICKUP_INDEX_TIMEOUT");
+    if (error instanceof OwnedMemoryRequestError && error.status === 408) {
+      throw new PickupIndexRequestError("PICKUP_INDEX_TIMEOUT");
+    }
     throw error;
-  } finally {
-    globalThis.clearTimeout(timer);
-    parentSignal?.removeEventListener("abort", abortFromParent);
   }
 }

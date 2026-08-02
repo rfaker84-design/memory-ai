@@ -137,6 +137,7 @@ test("frozen refund rules have one shared source for purchase and refund surface
   for (const surface of [purchaseSurface, refundSurface, termsSurface, reportSurface]) assert.doesNotMatch(surface, /退款结果异常/);
   assert.match(refundSurface, /setStatusReady\(false\); setLoadedMemoryId\(null\); setSnapshot\(null\); setRefunds\(\[\]\)/);
   assert.match(refundSurface, /const request = \+\+statusRequest\.current/);
+  assert.match(refundSurface, /fetchOwnedMemoryList\(\)/);
   assert.match(refundSurface, /if \(!isCurrent\(\)\) return/);
   assert.match(refundSurface, /loadedMemoryId !== memoryId/);
   assert.match(refundSurface, /statusReady && loadedMemoryId === memoryId && !latestRefund && latestOrder/);

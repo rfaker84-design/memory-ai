@@ -38,6 +38,15 @@ async function boundedOwnedRead(
   }
 }
 
+/** A bounded cookie-session list read for first-release owner-only surfaces. */
+export function fetchOwnedMemoryList(
+  signal?: AbortSignal,
+  request: typeof fetch = fetch,
+  timeoutMs = OWNED_MEMORY_READ_TIMEOUT_MS,
+): Promise<Response> {
+  return boundedOwnedRead("/api/memories", signal, request, timeoutMs);
+}
+
 export async function loadOwnedMemory(
   memoryId: string,
   signal?: AbortSignal,
