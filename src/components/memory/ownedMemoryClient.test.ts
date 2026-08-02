@@ -68,7 +68,7 @@ test("portrait retrieval uses the owned signed-media endpoint", async () => {
   assert.deepEqual(urls, ["/api/media/portrait-asset", "/api/media/portrait-asset"]);
 });
 
-test("detail, chat, and create success paths contain no legacy data requests", () => {
+test("legacy detail and automatic-memory deep links only reach approved first-release surfaces", () => {
   const forbiddenClientAuth = new RegExp([
     "temporaryMemoryOwnerId",
     ["yijian", "session", "token"].join("_"),
@@ -77,6 +77,10 @@ test("detail, chat, and create success paths contain no legacy data requests", (
   ].join("|"));
   const detail = readFileSync(
     new URL("../../../app/memory/[id]/page.tsx", import.meta.url),
+    "utf8"
+  );
+  const legacyLongTermMemory = readFileSync(
+    new URL("../../../app/memory/[id]/long-term-memory/page.tsx", import.meta.url),
     "utf8"
   );
   const chat = readFileSync(
@@ -95,17 +99,18 @@ test("detail, chat, and create success paths contain no legacy data requests", (
     new URL("../create-memory/CreateMemoryExperience.tsx", import.meta.url),
     "utf8"
   );
-  for (const [name, source] of [["detail", detail], ["chat", chat]]) {
-    assert.doesNotMatch(source.toLowerCase(), /supabase|memories-mvp/, name);
-    assert.match(source, /loadOwnedMemory/, name);
-  }
+  assert.match(detail, /redirect\(`\/memory-chat\/\$\{encodeURIComponent\(id\)\}`\)/);
+  assert.doesNotMatch(detail, /emotionEngine|PresenceAvatar|LongTermMemoryBetaEntry|setInterval/);
+  assert.match(legacyLongTermMemory, /redirect\(`\/memory\/\$\{encodeURIComponent\(id\)\}\/pickup`\)/);
+  assert.doesNotMatch(legacyLongTermMemory, /listLongTermMemories|correctLongTermMemory|deleteLongTermMemory/);
+  assert.doesNotMatch(chat.toLowerCase(), /supabase|memories-mvp/);
+  assert.match(chat, /loadOwnedMemory/);
   assert.match(conversationAdapter, /\/chat-session/);
   assert.doesNotMatch(conversation, /MemoryExperienceOffer|\/api\/payments\//);
   assert.match(conversationAdapter, /Idempotency-Key/);
   assert.doesNotMatch(conversationAdapter, /history:\s*messages/);
   assert.doesNotMatch(conversationAdapter, /fragments:\s*fragments/);
   assert.match(chat, /firstGreetingKey\(state\.memory\.id\)/);
-  assert.match(create, /`\/memory\/\$\{created\.id\}`/);
   assert.match(create, /`\/memory-chat\/\$\{created\.id\}`/);
   for (const source of [detail, chat, conversation, conversationAdapter, create]) {
     assert.doesNotMatch(source, forbiddenClientAuth);
