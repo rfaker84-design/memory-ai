@@ -12,6 +12,7 @@ import {
   hasPersistedFirstGreeting,
 } from "../memory/conversationExperience";
 import { useReducedMotion } from "../../motion";
+import { useQuietCompanionPresence } from "./quietCompanionPresence";
 
 import {
   ConversationMessage,
@@ -66,6 +67,8 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   const inFlightRef = useRef(false);
   const retryCandidateRef = useRef<PendingMessage | null>(null);
   const greetingViewedRef = useRef(false);
+  const replyPulseTimer = useRef<number | null>(null);
+  const [replyPulse, setReplyPulse] = useState(false);
   const titleId = useId();
 
   const restore = useCallback(async (signal?: AbortSignal) => {
@@ -124,6 +127,15 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     );
     return () => window.clearTimeout(timer);
   }, [controlsVisible, messages, reducedMotion]);
+
+  useEffect(() => {
+    const lastMessage = messages.at(-1);
+    if (lastMessage?.role !== "assistant" || reducedMotion) return;
+    setReplyPulse(true);
+    if (replyPulseTimer.current) window.clearTimeout(replyPulseTimer.current);
+    replyPulseTimer.current = window.setTimeout(() => setReplyPulse(false), 900);
+    return () => { if (replyPulseTimer.current) window.clearTimeout(replyPulseTimer.current); };
+  }, [messages, reducedMotion]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -191,13 +203,15 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   };
 
   const isBusy = phase === "loading" || phase === "greeting" || phase === "sending" || phase === "replying" || phase === "recovering";
+  const quietPresence = useQuietCompanionPresence({ reducedMotion, replying: replyPulse });
   const completedRounds = completedConversationRounds(messages, activeSessionId);
   const status = phase === "sending" ? "正在送出这句话…" : phase === "replying" ? "忆见正在整理回复…" : phase === "greeting" ? "忆见正在生成第一句回复…" : phase === "recovering" ? "正在找回刚才的对话…" : "";
 
   return (
     <section className={`${styles.scene} ${reducedMotion ? styles.reduced : ""}`} aria-labelledby={titleId}>
-      <div className={styles.presence} aria-label={`${memoryName} 的形象`}>
+      <div className={styles.presence} data-presence={quietPresence} aria-label={`${memoryName} 的形象`}>
         <div className={styles.orbit} aria-hidden="true" />
+        <div className={styles.replyGlow} aria-hidden="true" />
         <div className={styles.portraitFrame} role="img" aria-label={portraitUrl ? `${memoryName} 的照片` : `${memoryName} 的文字形象`}>
           {portraitUrl ? (
             <div className={styles.portraitPhoto} style={{ backgroundImage: `url("${portraitUrl}")` }} />
@@ -225,7 +239,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
             <article key={message.id} className={message.role === "user" ? styles.userMessage : styles.assistantMessage}>
               {message.role === "assistant" && (
                 <span className={styles.messageIdentity}>
-                  <MemoryAvatar image={portraitUrl} initials={memoryName} alt={`${memoryName} 的照片`} presence={isBusy ? "quiet" : "online"} size={30} />
+                  <MemoryAvatar image={portraitUrl} initials={memoryName} alt={`${memoryName} 的照片`} presence="quiet" size={30} />
                   <i>{memoryName}</i>
                   <AiGeneratedLabel compact confirmedSources />
                   <Link className={styles.sourceLink} href={`/memory/${memoryId}/sources`}>查看资料来源</Link>

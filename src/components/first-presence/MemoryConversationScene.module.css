@@ -34,7 +34,42 @@
     inset 0 0 5rem rgba(206, 158, 92, 0.03),
     0 0 4rem rgba(187, 130, 65, 0.05);
   transform: rotate(-5deg);
+}
+
+.replyGlow {
+  position: absolute;
+  z-index: -2;
+  width: min(32rem, 104%);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(226, 177, 94, 0.18), transparent 67%);
+  opacity: 0;
+}
+
+.presence[data-presence="quiet"] .orbit {
   animation: breathe 6.4s ease-in-out infinite;
+}
+
+.presence[data-presence="replying"] .orbit {
+  animation: breathe 6.4s ease-in-out infinite;
+}
+
+.presence[data-presence="replying"] .replyGlow {
+  animation: replyGlow 900ms ease-out both;
+}
+
+.presence[data-presence="static"] .orbit,
+.presence[data-presence="static"] .replyGlow {
+  animation: none;
+}
+
+.presence[data-presence="static"] .portraitFrame {
+  animation: none;
+}
+
+.presence[data-presence="replying"] .portraitFrame {
+  filter: brightness(1.025) saturate(1.02);
+  transition: filter 900ms ease-out;
 }
 
 .portraitFrame {
@@ -304,6 +339,11 @@
     opacity: 0.52;
     transform: rotate(-3deg) scale(1.04);
   }
+}
+
+@keyframes replyGlow {
+  28% { opacity: 0.78; transform: scale(1.03); }
+  100% { opacity: 0; transform: scale(1); }
 }
 
 @keyframes portraitArrive {
