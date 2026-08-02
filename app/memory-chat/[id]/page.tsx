@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type { Memory } from "../../../features/memory/types";
@@ -32,47 +32,47 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
   const router = useRouter();
   const [state, setState] = useState<PageState>({ status: "loading" });
 
+  const load = useCallback(async (signal?: AbortSignal) => {
+    setState({ status: "loading" });
+    try {
+      const memory = await loadOwnedMemory(id, signal);
+      let portraitUrl = memory.photoUrl ?? null;
+      if (memory.photoAssetId) {
+        try {
+          portraitUrl = await loadOwnedMediaUrl(memory.photoAssetId, signal);
+        } catch {
+          portraitUrl = null;
+        }
+      }
+      if (signal?.aborted) return;
+      setState({
+        status: "ready",
+        memory,
+        portraitUrl,
+        requiresMediaRecovery: readCreationRecovery()?.memoryId === memory.id,
+      });
+    } catch (error) {
+      if (signal?.aborted) return;
+      if (error instanceof OwnedMemoryRequestError && error.status === 401) {
+        clearCreationRecovery();
+        setState({ status: "unauthenticated" });
+        router.replace("/login");
+      } else if (error instanceof OwnedMemoryRequestError && error.status === 404) {
+        if (readCreationRecovery()?.memoryId === id) {
+          clearCreationRecovery();
+        }
+        setState({ status: "not-found" });
+      } else {
+        setState({ status: "error" });
+      }
+    }
+  }, [id, router]);
+
   useEffect(() => {
     const controller = new AbortController();
-    setState({ status: "loading" });
-
-    void loadOwnedMemory(id, controller.signal)
-      .then(async (memory) => {
-        let portraitUrl = memory.photoUrl ?? null;
-        if (memory.photoAssetId) {
-          try {
-            portraitUrl = await loadOwnedMediaUrl(memory.photoAssetId, controller.signal);
-          } catch {
-            portraitUrl = null;
-          }
-        }
-        if (!controller.signal.aborted) {
-          setState({
-            status: "ready",
-            memory,
-            portraitUrl,
-            requiresMediaRecovery: readCreationRecovery()?.memoryId === memory.id,
-          });
-        }
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        if (error instanceof OwnedMemoryRequestError && error.status === 401) {
-          clearCreationRecovery();
-          setState({ status: "unauthenticated" });
-          router.replace("/login");
-        } else if (error instanceof OwnedMemoryRequestError && error.status === 404) {
-          if (readCreationRecovery()?.memoryId === id) {
-            clearCreationRecovery();
-          }
-          setState({ status: "not-found" });
-        } else {
-          setState({ status: "error" });
-        }
-      });
-
+    void load(controller.signal);
     return () => controller.abort();
-  }, [id, router]);
+  }, [load]);
 
   if (state.status !== "ready") {
     const copy = state.status === "unauthenticated"
@@ -86,6 +86,7 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
       <main className={styles.loading}>
         <div className={styles.stars} aria-hidden="true" />
         <p>{copy}</p>
+        {state.status === "error" && <button type="button" onClick={() => void load()}>重新读取</button>}
         {state.status !== "loading" && (
           <button type="button" onClick={() => router.replace("/")}>回到首页</button>
         )}

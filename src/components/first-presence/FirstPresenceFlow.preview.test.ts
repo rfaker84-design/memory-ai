@@ -62,6 +62,9 @@ test("formal creation leaves React memory state for the stable owned chat URL", 
   assert.match(flow, /await completeCreatedMemory\(payload\.id, idempotencyKey\.current\)/);
   assert.match(chatPage, /loadOwnedMemory\(id/);
   assert.match(chatPage, /loadOwnedMediaUrl\(memory\.photoAssetId/);
+  assert.match(chatPage, /const load = useCallback/);
+  assert.match(chatPage, /void load\(controller\.signal\)/);
+  assert.match(chatPage, /state\.status === "error" && <button[^>]*onClick=\{\(\) => void load\(\)\}>重新读取<\/button>/);
   assert.match(chatPage, /clearCreationRecovery\(\)/);
   assert.match(chatPage, /router\.replace\("\/login"\)/);
   assert.match(chatPage, /firstGreetingKey\(state\.memory\.id\)/);
