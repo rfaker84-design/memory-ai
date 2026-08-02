@@ -11,7 +11,12 @@ type ViewState =
   | { status: "ready"; memory: Memory }
   | { status: "not-found" | "error" };
 
-type Pickup = { id: string; originalText: string; organizedText: string };
+type Pickup = { id: string; originalText: string; organizedText: string; createdAt: string };
+
+function recordedAt(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "记录时间待同步" : new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
 
 function confirmedFields(memory: Memory): Array<{ label: string; value: string }> {
   const candidates: Array<[string, string | null | undefined]> = [
@@ -77,6 +82,7 @@ export default function MemorySourcesPage({ params }: { params: Promise<{ id: st
     {pickups.length === 0 ? <p>暂无。普通聊天不会自动加入这里。</p> : pickups.map((pickup) => <article key={pickup.id} style={{ margin: "18px 0", padding: 16, border: "1px solid #ddd", borderRadius: 12 }}>
       <h3>原话</h3><p style={{ whiteSpace: "pre-wrap" }}>{pickup.originalText}</p>
       <h3>整理稿</h3><p style={{ whiteSpace: "pre-wrap" }}>{pickup.organizedText}</p>
+      <p style={{ color: "#666", fontSize: 13 }}>来源：你的主动讲述 · 叙述者：你 · 记录于 {recordedAt(pickup.createdAt)}</p>
     </article>)}
     <p style={{ marginTop: 28, fontSize: 14 }}><Link href={`/memory/${id}/pickup`}>前往拾忆</Link>，可补充、编辑或删除已确认资料；它不会从普通聊天自动写入。</p>
   </main>;

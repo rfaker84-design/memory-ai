@@ -2,6 +2,7 @@
 
 import { FormEvent, use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 import { loadOwnedMemory, OwnedMemoryRequestError } from "@/src/components/memory/ownedMemoryClient";
 import { pickupDeleteWasPersisted, pickupEditWasPersisted } from "../../pickupRecovery";
@@ -19,8 +20,15 @@ function organizationDraft(originalText: string): string {
   return sentences.length > 1 ? sentences.map((sentence) => `- ${sentence}`).join("\n") : originalText.trim();
 }
 
+function recordedAt(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "记录时间待同步" : new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
 export default function PickupPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: memoryId } = use(params);
+  const searchParams = useSearchParams();
+  const startsFromPhoto = searchParams.get("from") === "photo";
   const [state, setState] = useState<PageState>("loading");
   const [name, setName] = useState("");
   const [pickups, setPickups] = useState<Pickup[]>([]);
@@ -29,6 +37,7 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
   const [confirmed, setConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const [followUpAsked, setFollowUpAsked] = useState(false);
   const [editing, setEditing] = useState<Pickup | null>(null);
   const pendingRequestKey = useRef<string | null>(null);
 
@@ -70,7 +79,7 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
       setPickups((current) => [body.pickup, ...current.filter((entry) => entry.id !== body.pickup.id)]);
       setOriginalText(""); setOrganizedText(""); setConfirmed(false);
       pendingRequestKey.current = null;
-      setMessage("已确认保存。这条资料现在可作为可追溯来源使用。");
+      setMessage("已经替你收好了。这条资料现在可作为可追溯来源使用。");
     } catch {
       setMessage("暂时无法保存；原话和整理稿仍留在当前页面，未自动重试。");
     } finally { setSubmitting(false); }
@@ -119,11 +128,14 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
 
   return <main style={{ maxWidth: 720, margin: "0 auto", padding: "28px 20px 96px", lineHeight: 1.7 }}>
     <Link href="/memory">返回拾忆</Link>
-    <p style={{ margin: "24px 0 0", fontSize: 13 }}>为 {name} 整理资料</p>
-    <h1>讲述、核对、确认</h1>
-    <p>忆见不会从普通聊天自动收集资料，也不会猜测空缺。请先写下原话；整理稿可由你编辑，只有勾选确认后才会保存。</p>
+    <p style={{ margin: "24px 0 0", fontSize: 13 }}>忆见整理助手 · 为 {name} 整理资料</p>
+    <h1>把想起的事留在这里。</h1>
+    <p>你说，忆见帮你整理。只有经过你确认，才会成为TA可以引用的记忆。忆见不是 TA，不会从普通聊天自动收集资料，也不会猜测空缺。</p>
+    {startsFromPhoto && <p role="note">从一张照片说起：看着你手边的照片，把想起的事写下来。此页面不会读取相册、麦克风或录音。</p>}
     <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
       <label>你的原话<textarea value={originalText} onChange={(event) => { pendingRequestKey.current = null; setOriginalText(event.currentTarget.value); }} maxLength={8000} rows={5} required /></label>
+      {!followUpAsked && originalText.trim() && <button type="button" onClick={() => setFollowUpAsked(true)}>忆见可以追问一件事</button>}
+      {followUpAsked && <p role="note">忆见想确认一件事：这件事大约发生在什么时候？你可以直接补充在原话里。每次整理最多提出这一项追问。</p>}
       <button type="button" onClick={() => { pendingRequestKey.current = null; setOrganizedText(organizationDraft(originalText)); }} disabled={!originalText.trim()}>按原话分段整理草稿</button>
       <label>整理稿（请核对后编辑）<textarea value={organizedText} onChange={(event) => { pendingRequestKey.current = null; setOrganizedText(event.currentTarget.value); }} maxLength={8000} rows={6} required /></label>
       {!editing && <label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.currentTarget.checked)} /> 我确认原话与整理稿准确，允许忆见将此资料作为可追溯的回复来源。</label>}
@@ -135,6 +147,7 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
     {pickups.map((pickup) => <article key={pickup.id} style={{ borderTop: "1px solid #ddd", padding: "20px 0" }}>
       <h3>原话</h3><p style={{ whiteSpace: "pre-wrap" }}>{pickup.originalText}</p>
       <h3>整理稿</h3><p style={{ whiteSpace: "pre-wrap" }}>{pickup.organizedText}</p>
+      <p style={{ color: "#666", fontSize: 13 }}>来源：你的主动讲述 · 叙述者：你 · 记录于 {recordedAt(pickup.createdAt)}</p>
       <button type="button" onClick={() => { setEditing(pickup); setOriginalText(pickup.originalText); setOrganizedText(pickup.organizedText); setConfirmed(true); }}>编辑</button>{" "}
       <button type="button" onClick={() => void remove(pickup)}>删除</button>
     </article>)}

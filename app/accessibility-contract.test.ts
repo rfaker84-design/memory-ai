@@ -11,3 +11,10 @@ test("global accessibility keeps browser zoom, focus visibility, and a keyboard 
   assert.match(shell, /href="#main-content"/);
   assert.match(shell, /id="main-content"/);
 });
+
+test("bottom navigation is limited to first-release root destinations", () => {
+  const shell = readFileSync("src/components/MobileAppShell.tsx", "utf8");
+  assert.match(shell, /pathname === "\/memory" \|\| pathname === "\/continuity"/);
+  assert.match(shell, /if \(!showsRootNavigation\) \{[\s\S]*?return <>\{children\}<\/>;/);
+  assert.match(shell, /Creation,[\s\S]*companion chat,[\s\S]*memory-detail/);
+});

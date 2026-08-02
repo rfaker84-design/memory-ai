@@ -224,7 +224,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
       </div>
 
       <div className={styles.conversation}>
-        <p className={styles.eyebrow}>回到这段记忆里</p>
+        <p className={styles.eyebrow}>AI纪念陪伴</p>
         <h1 id={titleId}>第一句之后，慢慢说。</h1>
         <p className={styles.intro}>离开再回来，你们说过的话仍会留在这里。</p>
         <AiGeneratedLabel />

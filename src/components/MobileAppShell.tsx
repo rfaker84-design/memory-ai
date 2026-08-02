@@ -18,7 +18,11 @@ export default function MobileAppShell({ children }:{ children:React.ReactNode }
   const pathname = usePathname();
   const router = useRouter();
 
-  if (pathname === "/" || pathname === "/memory-world") {
+  // The three-tab shell belongs only to its three root destinations. Creation,
+  // encounter, companion chat, playback, and memory-detail routes must stay
+  // focused and never inherit a second navigation surface.
+  const showsRootNavigation = pathname === "/memory" || pathname === "/continuity";
+  if (!showsRootNavigation) {
     return <>{children}</>;
   }
 

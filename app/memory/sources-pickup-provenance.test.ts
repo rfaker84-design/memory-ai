@@ -9,5 +9,7 @@ test("reply provenance view includes the explicit pickup source set and its mana
   assert.match(source, /拾忆中已确认的资料/);
   assert.match(source, /原话/);
   assert.match(source, /整理稿/);
+  assert.match(source, /来源：你的主动讲述/);
+  assert.match(source, /叙述者：你/);
   assert.match(source, /\/memory\/\$\{id\}\/pickup/);
 });

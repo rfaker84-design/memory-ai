@@ -6,6 +6,14 @@ import { useRouter } from "next/navigation";
 import { MemoryAvatar, MemoryButton, MemoryCard, MemorySection, MemorySurface } from "../../src/components/memory-ui";
 import { MemoryRadius, MemorySpacing, MemorySurface as SurfaceToken, MemoryTypography, MemoryZIndex } from "../../src/design";
 import { MotionProvider } from "../../src/motion";
+import {
+  COMPANION_DAILY_GREETING_KEY,
+  COMPANION_PRIMARY_KEY,
+  companionDay,
+  dailyGreetingMarker,
+  isDailyCompanionGreetingDue,
+  selectPrimaryCompanion,
+} from "../../src/components/companion/companionHomeState";
 
 type MemoryWorldItem = {
   id: string;
@@ -21,6 +29,8 @@ function MemoryWorldContent() {
   const router = useRouter();
   const [state, setState] = useState<MemoryWorldState>("loading");
   const [memories, setMemories] = useState<MemoryWorldItem[]>([]);
+  const [primaryId, setPrimaryId] = useState<string | null>(null);
+  const [dailyGreetingVisible, setDailyGreetingVisible] = useState(false);
 
   const load = useCallback(async () => {
     setState("loading");
@@ -36,12 +46,31 @@ function MemoryWorldContent() {
       }
       if (!response.ok) throw new Error(data?.error || "load failed");
       const list = Array.isArray(data) ? data : [];
+      const primary = selectPrimaryCompanion(list, window.localStorage.getItem(COMPANION_PRIMARY_KEY));
       setMemories(list);
+      setPrimaryId(primary?.id ?? null);
+      if (primary) {
+        const day = companionDay();
+        const due = isDailyCompanionGreetingDue(
+          window.localStorage.getItem(COMPANION_DAILY_GREETING_KEY),
+          day,
+          primary.id,
+        );
+        setDailyGreetingVisible(due);
+        if (due) window.localStorage.setItem(COMPANION_DAILY_GREETING_KEY, dailyGreetingMarker(day, primary.id));
+      }
       setState(list.length > 0 ? "ready" : "empty");
     } catch {
       setState("error");
     }
   }, []);
+
+  const primary = selectPrimaryCompanion(memories, primaryId);
+  const choosePrimary = (memory: MemoryWorldItem) => {
+    setPrimaryId(memory.id);
+    window.localStorage.setItem(COMPANION_PRIMARY_KEY, memory.id);
+    setDailyGreetingVisible(false);
+  };
 
   useEffect(() => {
     void load();
@@ -76,6 +105,26 @@ function MemoryWorldContent() {
         )}
         {state === "ready" && (
           <div style={{ display: "grid", gap: MemorySpacing.md }}>
+            {primary && (
+              <MemoryCard depth="elevated">
+                <div style={{ display: "grid", gap: MemorySpacing.md }}>
+                  <span style={{ color: SurfaceToken.accent.gold, fontSize: MemoryTypography.size.meta, letterSpacing: "0.08em" }}>AI纪念陪伴 · 主 TA</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: MemorySpacing.lg }}>
+                    <MemoryAvatar image={primary.photoUrl} initials={primary.name} presence="quiet" size={96} />
+                    <div><div style={{ color: SurfaceToken.content.primary, fontSize: MemoryTypography.size.title }}>{primary.name}</div><div style={{ color: SurfaceToken.content.muted, marginTop: 4 }}>{primary.relationship || "关系待补充"}</div></div>
+                  </div>
+                  {dailyGreetingVisible && <p role="status" style={{ margin: 0, color: SurfaceToken.content.secondary, lineHeight: MemoryTypography.lineHeight.normal }}>忆见提示：今天也可以慢慢说一件你想起的小事。</p>}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: MemorySpacing.sm }}>
+                    <MemoryButton variant="primary" onClick={() => router.push(`/memory/${primary.id}/encounter`)}>遇见</MemoryButton>
+                    <MemoryButton variant="secondary" onClick={() => router.push(`/memory-chat/${primary.id}`)}>稍后再看</MemoryButton>
+                  </div>
+                </div>
+              </MemoryCard>
+            )}
+            {memories.length > 1 && <section aria-label="切换主 TA" style={{ display: "grid", gap: MemorySpacing.sm }}>
+              <p style={{ margin: 0, color: SurfaceToken.content.muted, fontSize: MemoryTypography.size.meta }}>手动切换或设为主 TA</p>
+              <div style={{ display: "flex", gap: MemorySpacing.sm, overflowX: "auto", paddingBottom: 2 }}>{memories.map((memory) => <button key={`primary-${memory.id}`} type="button" onClick={() => choosePrimary(memory)} aria-pressed={primary?.id === memory.id} style={{ minHeight: 44, whiteSpace: "nowrap", borderRadius: MemoryRadius.full, border: `1px solid ${primary?.id === memory.id ? SurfaceToken.accent.gold : SurfaceToken.border.subtle}`, background: "transparent", color: primary?.id === memory.id ? SurfaceToken.accent.gold : SurfaceToken.content.secondary, padding: "0 14px", cursor: "pointer" }}>{primary?.id === memory.id ? `${memory.name} · 主 TA` : `设 ${memory.name} 为主 TA`}</button>)}</div>
+            </section>}
             {memories.map((memory) => (
               <MemoryCard key={memory.id} interactive reveal onClick={() => router.push(`/memory-chat/${memory.id}`)}>
                 <div style={{ display: "flex", gap: MemorySpacing.md, alignItems: "center" }}>
