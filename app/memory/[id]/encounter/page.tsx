@@ -4,6 +4,7 @@ import { use, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { loadOwnedMemory, loadOwnedMediaUrl } from "@/src/components/memory/ownedMemoryClient";
+import { fetchPickupRequest } from "@/src/components/memory/pickupRequestClient";
 
 type VideoJob = {
   id: string;
@@ -35,7 +36,7 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
     try {
         const [memory, jobsResponse] = await Promise.all([
           loadOwnedMemory(memoryId, signal),
-          fetch(`/api/memories/${encodeURIComponent(memoryId)}/first-presence-video`, { cache: "no-store", credentials: "same-origin", signal }),
+          fetchPickupRequest(`/api/memories/${encodeURIComponent(memoryId)}/first-presence-video`, {}, signal),
         ]);
         if (!jobsResponse.ok) throw new Error("VIDEO_LIST_UNAVAILABLE");
         const jobsBody = await jobsResponse.json() as { jobs?: VideoJob[] };
@@ -46,7 +47,7 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
         if (memory.photoAssetId) portraitUrl = await loadOwnedMediaUrl(memory.photoAssetId, signal).catch(() => portraitUrl);
         let playbackUrl: string | null = null;
         if (preview) {
-          const playbackResponse = await fetch(`/api/memories/${encodeURIComponent(memoryId)}/first-presence-video/${encodeURIComponent(preview.id)}/playback`, { cache: "no-store", credentials: "same-origin", signal });
+          const playbackResponse = await fetchPickupRequest(`/api/memories/${encodeURIComponent(memoryId)}/first-presence-video/${encodeURIComponent(preview.id)}/playback`, {}, signal);
           if (playbackResponse.ok) {
             const playbackBody = await playbackResponse.json() as { playback?: { url?: unknown; saveAllowed?: unknown } };
             if (typeof playbackBody.playback?.url === "string" && playbackBody.playback.saveAllowed === false) playbackUrl = playbackBody.playback.url;

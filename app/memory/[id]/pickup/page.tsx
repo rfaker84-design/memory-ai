@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
 import { loadOwnedMemory, OwnedMemoryRequestError } from "@/src/components/memory/ownedMemoryClient";
+import { fetchPickupRequest } from "@/src/components/memory/pickupRequestClient";
 import { pickupDeleteWasPersisted, pickupEditWasPersisted } from "../../pickupRecovery";
 
 type Pickup = { id: string; originalText: string; organizedText: string; createdAt: string; updatedAt: string };
@@ -44,7 +45,7 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
   const load = useCallback(async (signal?: AbortSignal): Promise<Pickup[]> => {
     const [memory, response] = await Promise.all([
       loadOwnedMemory(memoryId, signal),
-      fetch(`/api/memories/${encodeURIComponent(memoryId)}/pickups`, { cache: "no-store", credentials: "same-origin", signal }),
+      fetchPickupRequest(`/api/memories/${encodeURIComponent(memoryId)}/pickups`, {}, signal),
     ]);
     if (!response.ok) throw new Error("PICKUPS_UNAVAILABLE");
     const body = await response.json() as { pickups?: Pickup[] };
@@ -77,7 +78,7 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
     if (!confirmed || !originalText.trim() || !organizedText.trim() || submitting) return;
     setSubmitting(true); setMessage("");
     try {
-      const response = await fetch(`/api/memories/${encodeURIComponent(memoryId)}/pickups`, {
+      const response = await fetchPickupRequest(`/api/memories/${encodeURIComponent(memoryId)}/pickups`, {
         method: "POST", credentials: "same-origin",
         headers: { "content-type": "application/json", "idempotency-key": pendingRequestKey.current ??= requestKey() },
         body: JSON.stringify({ originalText, organizedText, confirmed: true }),
@@ -97,7 +98,7 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
     if (!editing || !originalText.trim() || !organizedText.trim()) return;
     setSubmitting(true); setMessage("");
     try {
-      const response = await fetch(`/api/memories/${encodeURIComponent(memoryId)}/pickups/${encodeURIComponent(editing.id)}`, {
+      const response = await fetchPickupRequest(`/api/memories/${encodeURIComponent(memoryId)}/pickups/${encodeURIComponent(editing.id)}`, {
         method: "PATCH", credentials: "same-origin", headers: { "content-type": "application/json" },
         body: JSON.stringify({ originalText, organizedText }),
       });
@@ -120,7 +121,7 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
     if (!window.confirm("删除后，这条资料将不再作为 TA 可引用来源。确定删除吗？")) return;
     setMessage("");
     try {
-      const response = await fetch(`/api/memories/${encodeURIComponent(memoryId)}/pickups/${encodeURIComponent(pickup.id)}`, { method: "DELETE", credentials: "same-origin" });
+      const response = await fetchPickupRequest(`/api/memories/${encodeURIComponent(memoryId)}/pickups/${encodeURIComponent(pickup.id)}`, { method: "DELETE" });
       if (!response.ok) throw new Error("PICKUP_DELETE_FAILED");
       setPickups((current) => current.filter((entry) => entry.id !== pickup.id));
       setMessage("已删除，这条资料不会再被引用。");

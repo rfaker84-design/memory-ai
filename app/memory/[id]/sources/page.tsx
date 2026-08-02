@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import type { Memory } from "@/features/memory/types";
 import { loadOwnedMemory, OwnedMemoryRequestError } from "@/src/components/memory/ownedMemoryClient";
+import { fetchPickupRequest } from "@/src/components/memory/pickupRequestClient";
 
 type ViewState =
   | { status: "loading" }
@@ -43,7 +44,7 @@ export default function MemorySourcesPage({ params }: { params: Promise<{ id: st
     try {
       const [memory, response] = await Promise.all([
         loadOwnedMemory(id, signal),
-        fetch(`/api/memories/${encodeURIComponent(id)}/pickups`, { cache: "no-store", credentials: "same-origin", signal }),
+        fetchPickupRequest(`/api/memories/${encodeURIComponent(id)}/pickups`, {}, signal),
       ]);
       if (!response.ok) throw new Error("PICKUP_SOURCES_UNAVAILABLE");
       const body = await response.json() as { pickups?: Pickup[] };
