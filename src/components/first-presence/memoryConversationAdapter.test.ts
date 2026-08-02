@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   loadConversation,
+  fetchConversationRequest,
   requestFirstGreeting,
   restoreConversationWithFirstGreeting,
   sendConversationMessage,
@@ -202,4 +203,17 @@ test("subsequent messages send only the formal body and put their idempotency ke
   try {
     await sendConversationMessage("memory-1", "想和你说件事", "message-1");
   } finally { restore(); }
+});
+
+test("a client timeout is explicit and does not turn an uncertain request into a retry", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_input, init) => new Promise<Response>((_resolve, reject) => {
+    init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+  });
+  try {
+    await assert.rejects(
+      fetchConversationRequest("/api/memory-chat", { method: "POST" }, undefined, 1),
+      (error: unknown) => error instanceof Error && error.message === "CHAT_REQUEST_TIMEOUT" && (error as { status?: unknown }).status === 408,
+    );
+  } finally { globalThis.fetch = originalFetch; }
 });

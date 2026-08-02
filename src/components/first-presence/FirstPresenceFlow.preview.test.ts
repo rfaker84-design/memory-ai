@@ -109,7 +109,8 @@ test("handoff failures never enter a local conversation or local greeting", () =
   assert.doesNotMatch(formalCreate, /previewGreeting/);
   assert.match(mediaRecoveryGate, /if \(!record \|\| record\.memoryId !== memory\.id\)[\s\S]*?setPhase\("error"\)/);
   assert.match(chatPage, /requiresMediaRecovery: readCreationRecovery\(\)\?\.memoryId === memory\.id/);
-  assert.match(conversationAdapter, /fetch\(`\/api\/memories\/\$\{encodeURIComponent\(memoryId\)\}\/first-greeting`/);
+  assert.match(conversationAdapter, /fetchConversationRequest\(`\/api\/memories\/\$\{encodeURIComponent\(memoryId\)\}\/first-greeting`/);
+  assert.match(conversationAdapter, /CHAT_REQUEST_TIMEOUT/);
 });
 
 test("portrait remains consistent and the retired purchase card cannot render", () => {

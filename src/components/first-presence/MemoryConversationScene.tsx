@@ -49,6 +49,7 @@ function readableFailure(error: unknown) {
   if (error instanceof ConversationRequestError && error.status === 401) return "登录状态已失效。为了保护这段对话，请重新完成登录。";
   if (error instanceof ConversationRequestError && error.status === 404) return "暂时找不到这段记忆，请回到首页重新进入。";
   if (error instanceof ConversationRequestError && error.status === 503) return "此刻还没有收到回应。你刚才的话仍留在这里。";
+  if (error instanceof ConversationRequestError && error.status === 408) return "请求等待过久。先找回刚才的对话，再由你决定是否重试。";
   return "连接暂时中断。先找回这段对话，再决定是否重试。";
 }
 
