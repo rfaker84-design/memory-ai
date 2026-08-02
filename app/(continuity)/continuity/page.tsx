@@ -1,12 +1,26 @@
 "use client";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { MemoryTheme as T, WarmMotion as M } from "../../../src/lib/design-system/memory-theme";
-
-function clearCache(){try{Object.keys(localStorage).filter(k=>k.startsWith("yj_")||k.startsWith("yijian_")).forEach(k=>localStorage.removeItem(k));alert("已清理");}catch{}}
+import { clearPresentationCache } from "../../../src/components/continuity/clearPresentationCache";
 
 export default function ContinuityPage() {
   const router = useRouter();
+  const [cacheNotice, setCacheNotice] = useState("");
+
+  const clearCache = () => {
+    try {
+      const cleared = clearPresentationCache(window.localStorage, window.sessionStorage);
+      setCacheNotice(
+        cleared
+          ? `已清理 ${cleared} 项本机界面偏好。草稿、待恢复创建和登录状态未受影响。`
+          : "没有可清理的本机界面偏好。草稿、待恢复创建和登录状态未受影响。",
+      );
+    } catch {
+      setCacheNotice("暂时无法清理本机界面偏好；草稿、待恢复创建和登录状态未受影响。");
+    }
+  };
   return (
     <motion.div {...M.enter} style={{minHeight:"calc(100dvh - var(--nav-height,64px) - env(safe-area-inset-bottom,0px) - 16px)",padding:"clamp(20px,5vw,32px) clamp(16px,4vw,24px) calc(96px + env(safe-area-inset-bottom,0px))",background:T.colors.bg}}>
       <h2 style={{fontSize:"clamp(20px,5vw,26px)",fontWeight:700,color:T.colors.text,margin:"0 0 4px"}}>我的</h2>
@@ -20,6 +34,7 @@ export default function ContinuityPage() {
       <div style={{borderRadius:T.radius.lg,border:`0.5px solid ${T.colors.border}`,background:T.colors.card,boxShadow:T.shadow.card,padding:"4px 16px"}}>
         {[{label:"清理本机界面缓存",action:clearCache},{label:"数据删除与退款",action:()=>router.push("/settings/account-deletion")},{label:"数据导出",action:()=>router.push("/settings/data-export")},{label:"陪伴安全设置",action:()=>router.push("/settings/companion")},{label:"帮助与安全说明",action:()=>router.push("/help")},{label:"关于忆见",action:()=>router.push("/about")}].map((item,i,items)=>(<button key={item.label} type="button" onClick={item.action} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 0",border:"none",borderBottom:i<items.length-1?"0.5px solid "+T.colors.border:"none",background:"transparent",cursor:"pointer",textAlign:"left",minHeight:44}}><span style={{fontSize:14,color:T.colors.textMuted}}>{item.label}</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.colors.textFaint} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>))}
       </div>
+      {cacheNotice ? <p role="status" aria-live="polite" style={{margin:"14px 4px 0",fontSize:13,color:T.colors.textMuted,lineHeight:1.6}}>{cacheNotice}</p> : null}
       <div style={{textAlign:"center",fontSize:11,color:T.colors.textFaint,letterSpacing:"0.07em",paddingTop:32}}>忆见 MemoryAI<br/>V2 Warm Healing</div>
     </motion.div>
   );
