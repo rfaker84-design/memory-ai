@@ -23,6 +23,10 @@ export type OperationsSummary = {
     runnableTasks: number;
     failedTasks: number;
   };
+  chat: {
+    failedLast24Hours: number;
+    pendingOverFiveMinutes: number;
+  };
 };
 
 type SummaryRow = {
@@ -39,6 +43,8 @@ type SummaryRow = {
   commerce_refunds_awaiting_resolution: string;
   deletion_runnable_tasks: string;
   deletion_failed_tasks: string;
+  chat_failed_last_24_hours: string;
+  chat_pending_over_five_minutes: string;
 };
 
 function count(value: string): number {
@@ -83,7 +89,11 @@ export class OperationsPostgresDataSource {
         (SELECT count(*)::text FROM public.account_deletion_tasks
           WHERE status IN ('pending','running','retry')) AS deletion_runnable_tasks,
         (SELECT count(*)::text FROM public.account_deletion_tasks
-          WHERE status = 'failed') AS deletion_failed_tasks`,
+          WHERE status = 'failed') AS deletion_failed_tasks,
+        (SELECT count(*)::text FROM public.memory_chat_turns
+          WHERE status = 'failed' AND updated_at >= NOW() - INTERVAL '24 hours') AS chat_failed_last_24_hours,
+        (SELECT count(*)::text FROM public.memory_chat_turns
+          WHERE status = 'pending' AND updated_at < NOW() - INTERVAL '5 minutes') AS chat_pending_over_five_minutes`,
       [],
       5_000,
     );
@@ -111,6 +121,10 @@ export class OperationsPostgresDataSource {
       accountDeletion: {
         runnableTasks: count(row.deletion_runnable_tasks),
         failedTasks: count(row.deletion_failed_tasks),
+      },
+      chat: {
+        failedLast24Hours: count(row.chat_failed_last_24_hours),
+        pendingOverFiveMinutes: count(row.chat_pending_over_five_minutes),
       },
     };
   }

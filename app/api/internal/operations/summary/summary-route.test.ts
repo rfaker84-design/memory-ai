@@ -14,6 +14,7 @@ const summary = {
   media: { uploadsLast24Hours: 8, uploadedBytesLast24Hours: 9 },
   commerce: { pendingOrders: 4, refundsAwaitingResolution: 5 },
   accountDeletion: { runnableTasks: 6, failedTasks: 7 },
+  chat: { failedLast24Hours: 8, pendingOverFiveMinutes: 9 },
 };
 
 function request(headers?: Record<string, string>) {

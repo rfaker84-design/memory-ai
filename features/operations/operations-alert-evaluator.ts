@@ -10,6 +10,8 @@ export type OperationsAlertThresholds = {
   commerceRefundsAwaitingResolution: number;
   accountDeletionRunnableTasks: number;
   accountDeletionFailedTasks: number;
+  chatFailedLast24Hours: number;
+  chatPendingOverFiveMinutes: number;
 };
 
 export type OperationsAlert = {
@@ -22,7 +24,9 @@ export type OperationsAlert = {
     | "COMMERCE_PENDING_BACKLOG"
     | "COMMERCE_REFUND_BACKLOG"
     | "ACCOUNT_DELETION_BACKLOG"
-    | "ACCOUNT_DELETION_FAILED";
+    | "ACCOUNT_DELETION_FAILED"
+    | "CHAT_FAILURE_RATE_HIGH"
+    | "CHAT_PENDING_STUCK";
   severity: "warning" | "critical";
   observed: number;
   threshold: number;
@@ -38,6 +42,8 @@ const keys = [
   "commerceRefundsAwaitingResolution",
   "accountDeletionRunnableTasks",
   "accountDeletionFailedTasks",
+  "chatFailedLast24Hours",
+  "chatPendingOverFiveMinutes",
 ] as const satisfies ReadonlyArray<keyof OperationsAlertThresholds>;
 
 export class OperationsAlertConfigurationError extends Error {
@@ -80,6 +86,7 @@ export function evaluateOperationsAlerts(summary: OperationsSummary, thresholds:
   const checks: Array<OperationsAlert> = [
     { code: "VIDEO_SUBMISSION_UNCERTAIN", severity: "critical", observed: summary.video.submissionUncertain, threshold: thresholds.videoSubmissionUncertain },
     { code: "ACCOUNT_DELETION_FAILED", severity: "critical", observed: summary.accountDeletion.failedTasks, threshold: thresholds.accountDeletionFailedTasks },
+    { code: "CHAT_PENDING_STUCK", severity: "critical", observed: summary.chat.pendingOverFiveMinutes, threshold: thresholds.chatPendingOverFiveMinutes },
     { code: "VIDEO_ACTIVE_BACKLOG", severity: "warning", observed: summary.video.active, threshold: thresholds.videoActive },
     { code: "VIDEO_QUALITY_BACKLOG", severity: "warning", observed: summary.video.qualityPending, threshold: thresholds.videoQualityPending },
     { code: "VIDEO_MANUAL_REVIEW_BACKLOG", severity: "warning", observed: summary.video.manualReview, threshold: thresholds.videoManualReview },
@@ -87,6 +94,7 @@ export function evaluateOperationsAlerts(summary: OperationsSummary, thresholds:
     { code: "COMMERCE_PENDING_BACKLOG", severity: "warning", observed: summary.commerce.pendingOrders, threshold: thresholds.commercePendingOrders },
     { code: "COMMERCE_REFUND_BACKLOG", severity: "warning", observed: summary.commerce.refundsAwaitingResolution, threshold: thresholds.commerceRefundsAwaitingResolution },
     { code: "ACCOUNT_DELETION_BACKLOG", severity: "warning", observed: summary.accountDeletion.runnableTasks, threshold: thresholds.accountDeletionRunnableTasks },
+    { code: "CHAT_FAILURE_RATE_HIGH", severity: "warning", observed: summary.chat.failedLast24Hours, threshold: thresholds.chatFailedLast24Hours },
   ];
   return checks.filter((alert) => above(alert.observed, alert.threshold));
 }

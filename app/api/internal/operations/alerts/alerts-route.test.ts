@@ -10,6 +10,7 @@ const thresholds = JSON.stringify({
   videoActive: 2, videoSubmissionUncertain: 0, videoQualityPending: 2, videoManualReview: 2,
   videoTerminalP95Seconds: 60, commercePendingOrders: 2, commerceRefundsAwaitingResolution: 2,
   accountDeletionRunnableTasks: 2, accountDeletionFailedTasks: 0,
+  chatFailedLast24Hours: 2, chatPendingOverFiveMinutes: 0,
 });
 const summary = {
   observedAt: "2026-08-02T00:00:00.000Z",
@@ -17,6 +18,7 @@ const summary = {
   media: { uploadsLast24Hours: 0, uploadedBytesLast24Hours: 0 },
   commerce: { pendingOrders: 0, refundsAwaitingResolution: 0 },
   accountDeletion: { runnableTasks: 0, failedTasks: 0 },
+  chat: { failedLast24Hours: 0, pendingOverFiveMinutes: 0 },
 };
 
 function request(headers?: Record<string, string>) {
