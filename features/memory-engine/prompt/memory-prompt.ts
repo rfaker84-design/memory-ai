@@ -47,6 +47,12 @@ export function buildMemoryPrompt(input: PromptPipelineInput): PromptLayer {
     input.timeline.forEach((t) => lines.push("- " + t));
   }
 
+  if (input.longTermMemories.length > 0) {
+    lines.push("");
+    lines.push("用户在“拾忆”中明确确认的资料（每条均可追溯，不能补充或外推）：");
+    input.longTermMemories.forEach((memory) => lines.push("- " + memory));
+  }
+
   if (lines.length === 0) {
     return {
       name: "memory",

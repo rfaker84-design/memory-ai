@@ -7,6 +7,7 @@ import { ChatPostgresDataSource } from "../chat/chat-postgres-datasource";
 import { ChatRepository } from "../chat/chat-repository";
 import { ChatService } from "../chat/chat-service";
 import { EmotionEngineService } from "../emotion-engine";
+import { ConfirmedPickupPostgresService } from "../pickup";
 
 const createMemoryService = (): MemoryService => {
   const dataSource = new MemoryPostgresDataSource();
@@ -24,6 +25,7 @@ export class MemoryContextBuilder {
   private memoryService = createMemoryService();
   private chatService = createChatService();
   private emotionEngine = new EmotionEngineService();
+  private confirmedPickupService = new ConfirmedPickupPostgresService();
 
   async buildContext(input: MemoryEngineInput): Promise<MemoryEngineContext> {
     // The public handler already proves ownership, but this second read must
@@ -72,10 +74,20 @@ export class MemoryContextBuilder {
       // Keep safe defaults when emotion analysis is unavailable.
     }
 
-    // Historical heuristic chat extracts are held out of every TA prompt.
-    // Only the future explicit “拾忆” confirmation flow may introduce a
-    // separately typed, user-reviewable source into this context.
-    const longTermMemories: string[] = [];
+    // Historical heuristic chat extracts are permanently held out. Only an
+    // Owner's explicit “拾忆” confirmation can enter this context, and its
+    // source page remains available beside every generated reply.
+    let longTermMemories: string[] = [];
+    try {
+      const pickups = await this.confirmedPickupService.list({
+        externalUserId: input.userId,
+        memoryId: input.memoryId,
+      });
+      longTermMemories = pickups.slice(0, 20).map((pickup) => pickup.organizedText);
+    } catch {
+      // A missing optional pickup read may never widen the source set. The
+      // base confirmed profile remains the only available context.
+    }
 
     return {
       memoryId: memory.id,

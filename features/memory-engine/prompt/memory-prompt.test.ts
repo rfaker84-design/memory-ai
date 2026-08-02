@@ -33,6 +33,18 @@ test("memory prompt carries the confirmed address, phrases, speaking habit, and 
   assert.match(prompt.content, /不得以通用模板替代/);
 });
 
+test("memory prompt accepts only the separately supplied confirmed pickup source set", () => {
+  const prompt = buildMemoryPrompt({
+    memoryId: "memory-1", userId: "owner-1", sessionId: "session-1", userMessage: "你好",
+    memoryName: "妈妈", relationship: "母亲", fragments: [], timeline: [], history: [], recentMessages: [],
+    emotion: "neutral", emotionIntensity: "low", suggestedTone: "温和", aiCompanionMode: "guide", aiResponseStyle: "温和",
+    longTermMemories: ["雨天接送的已确认回忆。"],
+  });
+  assert.match(prompt.content, /拾忆/);
+  assert.match(prompt.content, /雨天接送的已确认回忆。/);
+  assert.match(prompt.content, /不能补充或外推/);
+});
+
 test("continuous chat keeps each TA's personality facts isolated", () => {
   const promptFor = (memoryId: string, prefix: string) => buildMemoryPrompt({
     memoryId,

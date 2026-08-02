@@ -11,6 +11,8 @@ type ViewState =
   | { status: "ready"; memory: Memory }
   | { status: "not-found" | "error" };
 
+type Pickup = { id: string; originalText: string; organizedText: string };
+
 function confirmedFields(memory: Memory): Array<{ label: string; value: string }> {
   const candidates: Array<[string, string | null | undefined]> = [
     ["称呼", memory.name],
@@ -29,11 +31,22 @@ function confirmedFields(memory: Memory): Array<{ label: string; value: string }
 export default function MemorySourcesPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [state, setState] = useState<ViewState>({ status: "loading" });
+  const [pickups, setPickups] = useState<Pickup[]>([]);
 
   useEffect(() => {
     const controller = new AbortController();
-    void loadOwnedMemory(id, controller.signal)
-      .then((memory) => { if (!controller.signal.aborted) setState({ status: "ready", memory }); })
+    void Promise.all([
+      loadOwnedMemory(id, controller.signal),
+      fetch(`/api/memories/${encodeURIComponent(id)}/pickups`, { cache: "no-store", credentials: "same-origin", signal: controller.signal }),
+    ])
+      .then(async ([memory, response]) => {
+        if (!response.ok) throw new Error("PICKUP_SOURCES_UNAVAILABLE");
+        const body = await response.json() as { pickups?: Pickup[] };
+        if (!controller.signal.aborted) {
+          setPickups(Array.isArray(body.pickups) ? body.pickups : []);
+          setState({ status: "ready", memory });
+        }
+      })
       .catch((error) => {
         if (controller.signal.aborted) return;
         setState({ status: error instanceof OwnedMemoryRequestError && error.status === 404 ? "not-found" : "error" });
@@ -60,6 +73,11 @@ export default function MemorySourcesPage({ params }: { params: Promise<{ id: st
         <dd style={{ margin: "4px 0 0", whiteSpace: "pre-wrap" }}>{field.value}</dd>
       </div>)}
     </dl> : <p>当前没有可展示的已确认资料。忆见不会据此猜测或补全经历。</p>}
-    <p style={{ marginTop: 28, fontSize: 14 }}>若资料需要补充、编辑或删除，请使用“拾忆”的明确确认流程；它不会从普通聊天自动写入。</p>
+    <h2 style={{ marginTop: 32 }}>拾忆中已确认的资料</h2>
+    {pickups.length === 0 ? <p>暂无。普通聊天不会自动加入这里。</p> : pickups.map((pickup) => <article key={pickup.id} style={{ margin: "18px 0", padding: 16, border: "1px solid #ddd", borderRadius: 12 }}>
+      <h3>原话</h3><p style={{ whiteSpace: "pre-wrap" }}>{pickup.originalText}</p>
+      <h3>整理稿</h3><p style={{ whiteSpace: "pre-wrap" }}>{pickup.organizedText}</p>
+    </article>)}
+    <p style={{ marginTop: 28, fontSize: 14 }}><Link href={`/memory/${id}/pickup`}>前往拾忆</Link>，可补充、编辑或删除已确认资料；它不会从普通聊天自动写入。</p>
   </main>;
 }
