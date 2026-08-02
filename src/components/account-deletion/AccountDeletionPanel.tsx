@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 
 type Task = { kind: string; status: string; completedAt: string | null; completionReceiptAvailable: boolean };
 type Progress = {
@@ -19,25 +20,32 @@ const format = (value: string | null) => value ? new Intl.DateTimeFormat("zh-CN"
 
 export function AccountDeletionPanel() {
   const [progress, setProgress] = useState<Progress | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "unauthenticated" | "unavailable">("loading");
   const [confirming, setConfirming] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    setLoadState("loading");
     try {
       const response = await fetch("/api/account/deletion", { credentials: "include", cache: "no-store" });
       const body = await response.json().catch(() => ({})) as { deletion?: Progress; error?: string };
-      if (response.ok) setProgress(body.deletion ?? null);
-      else if (body.error !== "UNAUTHENTICATED") setMessage(body.error ?? "无法获取注销状态");
+      if (response.ok) {
+        setProgress(body.deletion ?? null);
+        setLoadState("ready");
+      } else if (body.error === "UNAUTHENTICATED") {
+        setLoadState("unauthenticated");
+      } else {
+        setMessage(body.error ?? "无法获取注销状态");
+        setLoadState("unavailable");
+      }
     } catch {
       setMessage("暂时无法读取注销状态，请检查网络后重试。");
-    } finally {
-      setLoading(false);
+      setLoadState("unavailable");
     }
-  };
+  }, []);
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [load]);
 
   const submit = async () => {
     if (submitting) return;
@@ -61,6 +69,7 @@ export function AccountDeletionPanel() {
         return;
       }
       setProgress(body.deletion ?? null);
+      setLoadState("ready");
       setConfirming(false);
       setMessage("注销申请已受理。你已退出登录；本页会使用仅限注销进度的回执 Cookie 显示后续状态。");
     } catch {
@@ -70,7 +79,9 @@ export function AccountDeletionPanel() {
     }
   };
 
-  if (loading) return <main><p>正在读取账户注销状态…</p></main>;
+  if (loadState === "loading") return <main><p role="status">正在读取账户注销状态…</p></main>;
+  if (loadState === "unauthenticated") return <main><h1>注销账户</h1><p>请先登录，再读取或发起账户注销。</p><Link href="/login">前往登录</Link></main>;
+  if (loadState === "unavailable") return <main><h1>账户注销进度</h1><p role="alert">{message ?? "暂时无法读取注销状态。"}</p><button type="button" onClick={() => void load()}>重新读取</button></main>;
   if (progress) return <main aria-live="polite">
     <h1>账户注销进度</h1>
     <p>状态：{progress.status}{progress.legalHold ? "（存在法定保全范围，相关资料不会用于产品功能）" : ""}</p>
@@ -83,6 +94,7 @@ export function AccountDeletionPanel() {
     <h2>执行回执</h2>
     <ul>{progress.tasks.map((task) => <li key={task.kind}>{task.kind}：{task.status}{task.completedAt ? `（${format(task.completedAt)}）` : ""}{task.completionReceiptAvailable ? "，回执已留存" : ""}</li>)}</ul>
     {progress.completedAt ? <p>注销完成回执：{format(progress.completedAt)}。你的内容已停止用于产品、训练或生成。</p> : <p>请求编号：{progress.requestId}</p>}
+    {!progress.completedAt && <button type="button" onClick={() => void load()}>刷新进度</button>}
   </main>;
 
   return <main>
