@@ -9,6 +9,7 @@ test("help and profile expose the user-controlled crisis-support setting without
   assert.match(help, /href="\/settings\/companion"/);
   assert.match(help, /陪伴安全设置/);
   assert.match(profile, /label:"陪伴安全设置"/);
+  assert.equal((profile.match(/陪伴安全设置/g) ?? []).length, 1);
   assert.match(profile, /router\.push\("\/settings\/companion"\)/);
   assert.doesNotMatch(help, /已经联系.*外部|已通知.*外部/);
 });
