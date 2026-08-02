@@ -95,6 +95,8 @@ test("middleware enforces the formal API allowlist before route execution", asyn
   assert.equal(isFormalApiPath("/api/memories/00000000-0000-4000-8000-000000000001/first-greeting"), true);
   assert.equal(isFormalApiPath("/api/memories/00000000-0000-4000-8000-000000000001/first-presence-video"), true);
   assert.equal(isFormalApiPath("/api/memories/00000000-0000-4000-8000-000000000001/first-presence-video/00000000-0000-4000-8000-000000000002/playback"), true);
+  assert.equal(isFormalApiPath("/api/memories/00000000-0000-4000-8000-000000000001/pickups"), true);
+  assert.equal(isFormalApiPath("/api/memories/00000000-0000-4000-8000-000000000001/pickups/00000000-0000-4000-8000-000000000002"), true);
   assert.equal(isFormalApiPath("/api/first-presence-video/playback/signed-token"), true);
   assert.equal(isFormalApiPath("/api/media/00000000-0000-4000-8000-000000000001"), true);
   for (const pathname of [
@@ -149,7 +151,7 @@ test("video reconciliation is an explicitly audited formal internal route", () =
 
 test("every tracked non-formal Route Handler is a route-level 410", async () => {
   const routes = trackedRoutes();
-  assert.equal(routes.length, 124, "the audit must enumerate the complete tracked API surface");
+  assert.equal(routes.length, 126, "the audit must enumerate the complete tracked API surface");
 
   for (const { file, pathname } of routes) {
     const formal = isFormalApiPath(pathname);
@@ -201,6 +203,7 @@ test("formal Session ownership and public health contracts remain explicit", asy
     firstPresencePlayback: readFileSync("app/api/memories/[id]/first-presence-video/[jobId]/playback/_handler.ts", "utf8"),
     signedFirstPresencePlayback: readFileSync("app/api/first-presence-video/playback/[token]/_handler.ts", "utf8"),
     firstPresencePlaybackService: readFileSync("features/video/first-presence-video-playback.ts", "utf8"),
+    pickups: readFileSync("app/api/memories/[id]/pickups/_handlers.ts", "utf8"),
     memoryChat: readFileSync("app/api/memory-chat/route.ts", "utf8"),
     consents: readFileSync("app/api/consents/route.ts", "utf8"),
     reports: readFileSync("app/api/reports/_handler.ts", "utf8"),
@@ -230,6 +233,8 @@ test("formal Session ownership and public health contracts remain explicit", asy
   assert.match(sources.verifyCode, /createVerifyCodeHandler/);
   assert.match(sources.session, /verifyRequestSession/);
   for (const source of [sources.memoryItem, sources.chatSession, sources.firstGreeting]) assert.match(source, /resolveSessionOwner/);
+  assert.match(sources.pickups, /resolveSessionOwner/);
+  assert.match(sources.pickups, /requireAllowedOrigin/);
   assert.match(sources.firstPresenceVideo, /verifyRequestSession/);
   assert.doesNotMatch(sources.firstPresenceVideo, /resolveSessionOwner|compatibilityUserId|userId" in body/);
   assert.match(sources.firstPresencePlayback, /verifyRequestSession/);

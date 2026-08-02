@@ -14,6 +14,8 @@ const DYNAMIC_ROUTES: Array<[RegExp, string]> = [
   [/^\/api\/memories\/[^/]+\/first-presence-video$/, "/api/memories/:memoryId/first-presence-video"],
   [/^\/api\/memories\/[^/]+\/long-term-memories\/[^/]+$/, "/api/memories/:memoryId/long-term-memories/:entryId"],
   [/^\/api\/memories\/[^/]+\/long-term-memories$/, "/api/memories/:memoryId/long-term-memories"],
+  [/^\/api\/memories\/[^/]+\/pickups\/[^/]+$/, "/api/memories/:memoryId/pickups/:pickupId"],
+  [/^\/api\/memories\/[^/]+\/pickups$/, "/api/memories/:memoryId/pickups"],
   [/^\/api\/memories\/[^/]+$/, "/api/memories/:memoryId"],
   [/^\/api\/media\/[^/]+$/, "/api/media/:assetId"],
   [/^\/api\/first-presence-video\/playback\/[^/]+$/, "/api/first-presence-video/playback/:token"],
