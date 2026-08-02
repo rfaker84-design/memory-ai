@@ -53,6 +53,11 @@ function readableFailure(error: unknown) {
   return "连接暂时中断。先找回这段对话，再决定是否重试。";
 }
 
+function pickupHintViewKey(value: string): string {
+  // Presentation only: this opaque key never grants identity or API access.
+  return `memoryai.pickup-hint:${value}`;
+}
+
 export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey, initialPortraitUrl = null, onLeave }: Props) {
   const reducedMotion = useReducedMotion();
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -62,6 +67,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   const [pendingMessage, setPendingMessage] = useState<PendingMessage | null>(null);
   const [notice, setNotice] = useState("");
   const [networkOffline, setNetworkOffline] = useState(false);
+  const [pickupSuggestionVisible, setPickupSuggestionVisible] = useState(false);
   const portraitUrl = initialPortraitUrl;
   const [controlsVisible, setControlsVisible] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -124,6 +130,12 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
       window.removeEventListener("online", reconnected);
     };
   }, []);
+
+  useEffect(() => {
+    if (!activeSessionId || completedConversationRounds(messages, activeSessionId) < 1 || typeof window === "undefined") return;
+    const viewKey = pickupHintViewKey(activeSessionId);
+    setPickupSuggestionVisible(window.sessionStorage.getItem(viewKey) !== "dismissed");
+  }, [activeSessionId, messages]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "end" });
@@ -228,6 +240,14 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     void loadOrRequestGreeting();
   };
 
+  const dismissPickupSuggestion = () => {
+    if (activeSessionId && typeof window !== "undefined") {
+      const viewKey = pickupHintViewKey(activeSessionId);
+      window.sessionStorage.setItem(viewKey, "dismissed");
+    }
+    setPickupSuggestionVisible(false);
+  };
+
   const isBusy = phase === "loading" || phase === "greeting" || phase === "sending" || phase === "replying" || phase === "recovering";
   const quietPresence = useQuietCompanionPresence({ reducedMotion, replying: replyPulse });
   const completedRounds = completedConversationRounds(messages, activeSessionId);
@@ -288,6 +308,16 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
           <div className={styles.recoveryActions}>
             <button type="button" className={styles.recoverButton} disabled={phase === "recovering"} onClick={() => void recoverConversation()}>找回刚才的对话</button>
           </div>
+        )}
+
+        {pickupSuggestionVisible && (
+          <aside className={styles.pickupSuggestion} aria-label="拾忆建议">
+            <p>如果刚才想起了一件事，可以把它留到拾忆里；只有你确认后，才会成为 TA 可以引用的资料。</p>
+            <div>
+              <Link href={`/memory/${memoryId}/pickup`} onClick={dismissPickupSuggestion}>去拾忆</Link>
+              <button type="button" onClick={dismissPickupSuggestion}>这次先不用</button>
+            </div>
+          </aside>
         )}
 
         {controlsVisible && (
