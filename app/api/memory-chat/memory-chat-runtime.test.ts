@@ -180,6 +180,26 @@ test("memory-chat provider failures leave no messages and the same key can retry
   assert.equal(completeCalls, 1);
 });
 
+test("memory-chat rejects a session without server-recorded adult and profile authorization before it claims a turn", async () => {
+  let memoryReads = 0;
+  const handler = createMemoryChatHandler(
+    () => ({ async getMemoryForUser() { memoryReads += 1; return memory; } }),
+    () => ({ async claim() { throw new Error("must not claim"); }, async complete() { throw new Error("must not complete"); }, async fail() { throw new Error("must not fail"); } }) as never,
+    () => ({ async generateReply() { throw new Error("must not generate"); } }),
+    sessionResolver,
+    undefined,
+    allowAdmission,
+    undefined,
+    undefined,
+    undefined,
+    async () => false,
+  );
+  const response = await handler(request({ memoryId, question: "Hello" }));
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: "ADULT_ELIGIBILITY_REQUIRED" });
+  assert.equal(memoryReads, 0);
+});
+
 test("memory-chat rejects an unsafe engine response before it can be persisted", async () => {
   let completeCalls = 0;
   let failCalls = 0;

@@ -46,6 +46,7 @@ type QuotaService = {
 };
 type LongTermMemoryAccess = (externalUserId: string) => boolean;
 type CrisisSupportEscalation = (input: { userId: string; externalUserId: string; memoryId: string; idempotencyKey: string }) => Promise<boolean>;
+type ChatEligibility = (externalUserId: string) => Promise<boolean>;
 
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
 
@@ -139,6 +140,7 @@ export function createMemoryChatHandler(
   quotaServiceFactory: () => QuotaService = () => freeQuotaService,
   longTermMemoryAccess: LongTermMemoryAccess = () => false,
   crisisSupportEscalation: CrisisSupportEscalation = queueCrisisSupportIfAuthorized,
+  chatEligibility: ChatEligibility = async () => true,
 ) {
   return async function POST(request: NextRequest) {
     void persistTurn;
@@ -149,6 +151,9 @@ export function createMemoryChatHandler(
         return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
       }
       requireAllowedOrigin(request);
+      if (!(await chatEligibility(session.externalUserId))) {
+        return NextResponse.json({ error: "ADULT_ELIGIBILITY_REQUIRED" }, { status: 403 });
+      }
 
       const idempotencyKey = request.headers.get("idempotency-key");
       if (!idempotencyKey) {
