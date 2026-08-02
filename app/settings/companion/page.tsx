@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { recordTrustConsent, revokeCrisisSupportConsent } from "@/src/components/trust/trustConsentClient";
+import { fetchCompanionSettings } from "@/src/components/trust/companionSettingsClient";
 
 export default function CompanionSettingsPage() {
   const [enabled, setEnabled] = useState(false);
@@ -13,7 +14,7 @@ export default function CompanionSettingsPage() {
     setLoadState("loading");
     setMessage("");
     try {
-      const response = await fetch("/api/consents", { credentials: "same-origin", cache: "no-store", signal });
+      const response = await fetchCompanionSettings(signal);
       const body = await response.json().catch(() => ({})) as { crisisSupportEnabled?: unknown; error?: unknown };
       if (signal?.aborted) return;
       if (response.ok) {
