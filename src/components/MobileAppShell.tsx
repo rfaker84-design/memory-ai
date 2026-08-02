@@ -33,7 +33,7 @@ export default function MobileAppShell({ children }:{ children:React.ReactNode }
       <a className="skip-link" href="#main-content">跳至主要内容</a>
       <main id="main-content" tabIndex={-1} style={{ flex:1,paddingBottom:"calc(var(--nav-height,64px) + env(safe-area-inset-bottom,0px) + 12px)",overflowY:"auto",WebkitOverflowScrolling:"touch" }}>{children}</main>
       <Footer />
-      <nav style={{
+      <nav aria-label="主导航" style={{
         position:"fixed",bottom:0,left:0,right:0,zIndex:50,
         display:"flex",justifyContent:"space-around",alignItems:"center",
         height:"calc(var(--nav-height,64px) + env(safe-area-inset-bottom,0px))",
@@ -47,11 +47,11 @@ export default function MobileAppShell({ children }:{ children:React.ReactNode }
         {TABS.map(t => {
           const a = active(t);
           return (
-            <motion.button key={t.key} onClick={() => router.push(t.path)} whileTap={{ scale:0.96 }}
+            <motion.button key={t.key} onClick={() => router.push(t.path)} aria-current={a ? "page" : undefined} whileTap={{ scale:0.96 }}
               style={{
                 display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,
                 background:"none",border:"none",cursor:"pointer",padding:"6px 10px",minWidth:56,minHeight:44,
-                outline:"none",WebkitTapHighlightColor:"transparent",position:"relative",
+                WebkitTapHighlightColor:"transparent",position:"relative",
               }}>
               {a && <div style={{ position:"absolute",top:0,width:20,height:3,borderRadius:2,background:T.colors.primary,opacity:0.7 }}/>}
               {t.icon(a)}

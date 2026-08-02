@@ -10,6 +10,9 @@ test("global accessibility keeps browser zoom, focus visibility, and a keyboard 
   const shell = readFileSync("src/components/MobileAppShell.tsx", "utf8");
   assert.match(shell, /href="#main-content"/);
   assert.match(shell, /id="main-content"/);
+  assert.match(shell, /aria-label="主导航"/);
+  assert.match(shell, /aria-current=\{a \? "page" : undefined\}/);
+  assert.doesNotMatch(shell, /outline:"none"/);
 });
 
 test("bottom navigation is limited to first-release root destinations", () => {
@@ -17,4 +20,7 @@ test("bottom navigation is limited to first-release root destinations", () => {
   assert.match(shell, /pathname === "\/memory" \|\| pathname === "\/continuity"/);
   assert.match(shell, /if \(!showsRootNavigation\) \{[\s\S]*?return <>\{children\}<\/>;/);
   assert.match(shell, /Creation,[\s\S]*companion chat,[\s\S]*memory-detail/);
+  const companion = readFileSync("app/memory-world/page.tsx", "utf8");
+  assert.match(companion, /<nav aria-label="主导航"/);
+  assert.match(companion, /aria-current=\{item\.href === "\/memory-world" \? "page" : undefined\}/);
 });
