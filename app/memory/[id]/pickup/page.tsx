@@ -4,6 +4,7 @@ import { FormEvent, use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 import { loadOwnedMemory, OwnedMemoryRequestError } from "@/src/components/memory/ownedMemoryClient";
+import { pickupDeleteWasPersisted, pickupEditWasPersisted } from "../../pickupRecovery";
 
 type Pickup = { id: string; originalText: string; organizedText: string; createdAt: string; updatedAt: string };
 type PageState = "loading" | "ready" | "not-found" | "error";
@@ -31,7 +32,7 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
   const [editing, setEditing] = useState<Pickup | null>(null);
   const pendingRequestKey = useRef<string | null>(null);
 
-  const load = async (signal?: AbortSignal) => {
+  const load = async (signal?: AbortSignal): Promise<Pickup[]> => {
     const [memory, response] = await Promise.all([
       loadOwnedMemory(memoryId, signal),
       fetch(`/api/memories/${encodeURIComponent(memoryId)}/pickups`, { cache: "no-store", credentials: "same-origin", signal }),
@@ -39,7 +40,9 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
     if (!response.ok) throw new Error("PICKUPS_UNAVAILABLE");
     const body = await response.json() as { pickups?: Pickup[] };
     setName(memory.name);
-    setPickups(Array.isArray(body.pickups) ? body.pickups : []);
+    const next = Array.isArray(body.pickups) ? body.pickups : [];
+    setPickups(next);
+    return next;
   };
 
   useEffect(() => {
@@ -86,7 +89,14 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
       setPickups((current) => current.map((entry) => entry.id === body.pickup.id ? body.pickup : entry));
       setEditing(null); setOriginalText(""); setOrganizedText(""); setConfirmed(false);
       setMessage("已更新确认资料。");
-    } catch { setMessage("暂时无法更新，请稍后重试。"); } finally { setSubmitting(false); }
+    } catch {
+      const recovered = await load().catch(() => null);
+      const target = { id: editing.id, originalText: originalText.trim(), organizedText: organizedText.trim() };
+      if (recovered && pickupEditWasPersisted(recovered, target)) {
+        setEditing(null); setOriginalText(""); setOrganizedText(""); setConfirmed(false);
+        setMessage("更新已在服务端保存，不会重复提交。");
+      } else setMessage("暂时无法确认更新结果；未自动重试，请稍后查看或手动重试。");
+    } finally { setSubmitting(false); }
   };
 
   const remove = async (pickup: Pickup) => {
@@ -97,7 +107,12 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
       if (!response.ok) throw new Error("PICKUP_DELETE_FAILED");
       setPickups((current) => current.filter((entry) => entry.id !== pickup.id));
       setMessage("已删除，这条资料不会再被引用。");
-    } catch { setMessage("暂时无法删除，请稍后重试。"); }
+    } catch {
+      const recovered = await load().catch(() => null);
+      if (recovered && pickupDeleteWasPersisted(recovered, pickup.id)) {
+        setMessage("删除已在服务端完成，不会重复提交。");
+      } else setMessage("暂时无法确认删除结果；未自动重试，请稍后查看或手动重试。");
+    }
   };
 
   if (state !== "ready") return <main style={{ maxWidth: 720, margin: "0 auto", padding: 28 }}><p>{state === "not-found" ? "找不到这位 TA。" : state === "error" ? "拾忆暂时无法打开。" : "正在打开拾忆…"}</p><Link href="/memory">返回拾忆</Link></main>;
