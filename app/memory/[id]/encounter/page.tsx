@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useRef, useState } from "react";
+import { use, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { loadOwnedMemory, loadOwnedMediaUrl } from "@/src/components/memory/ownedMemoryClient";
@@ -29,13 +29,13 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
   const [playbackComplete, setPlaybackComplete] = useState(false);
   const leaveTimer = useRef<number | null>(null);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    void (async () => {
-      try {
+  const load = useCallback(async (signal?: AbortSignal) => {
+    setState({ status: "loading" });
+    setPlaybackComplete(false);
+    try {
         const [memory, jobsResponse] = await Promise.all([
-          loadOwnedMemory(memoryId, controller.signal),
-          fetch(`/api/memories/${encodeURIComponent(memoryId)}/first-presence-video`, { cache: "no-store", credentials: "same-origin", signal: controller.signal }),
+          loadOwnedMemory(memoryId, signal),
+          fetch(`/api/memories/${encodeURIComponent(memoryId)}/first-presence-video`, { cache: "no-store", credentials: "same-origin", signal }),
         ]);
         if (!jobsResponse.ok) throw new Error("VIDEO_LIST_UNAVAILABLE");
         const jobsBody = await jobsResponse.json() as { jobs?: VideoJob[] };
@@ -43,25 +43,29 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
           ? jobsBody.jobs.find((job) => job.intent === "initial_preview" && job.status === "succeeded" && job.artifactAvailable && !job.manualReviewRequired)
           : undefined;
         let portraitUrl = memory.photoUrl ?? null;
-        if (memory.photoAssetId) portraitUrl = await loadOwnedMediaUrl(memory.photoAssetId, controller.signal).catch(() => portraitUrl);
+        if (memory.photoAssetId) portraitUrl = await loadOwnedMediaUrl(memory.photoAssetId, signal).catch(() => portraitUrl);
         let playbackUrl: string | null = null;
         if (preview) {
-          const playbackResponse = await fetch(`/api/memories/${encodeURIComponent(memoryId)}/first-presence-video/${encodeURIComponent(preview.id)}/playback`, { cache: "no-store", credentials: "same-origin", signal: controller.signal });
+          const playbackResponse = await fetch(`/api/memories/${encodeURIComponent(memoryId)}/first-presence-video/${encodeURIComponent(preview.id)}/playback`, { cache: "no-store", credentials: "same-origin", signal });
           if (playbackResponse.ok) {
             const playbackBody = await playbackResponse.json() as { playback?: { url?: unknown; saveAllowed?: unknown } };
             if (typeof playbackBody.playback?.url === "string" && playbackBody.playback.saveAllowed === false) playbackUrl = playbackBody.playback.url;
           }
         }
-        if (!controller.signal.aborted) setState({ status: "ready", name: memory.name, portraitUrl, playbackUrl });
-      } catch {
-        if (!controller.signal.aborted) setState({ status: "error" });
-      }
-    })();
+        if (!signal?.aborted) setState({ status: "ready", name: memory.name, portraitUrl, playbackUrl });
+    } catch {
+      if (!signal?.aborted) setState({ status: "error" });
+    }
+  }, [memoryId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
     return () => {
       controller.abort();
       if (leaveTimer.current) window.clearTimeout(leaveTimer.current);
     };
-  }, [memoryId]);
+  }, [load]);
 
   const continueToChat = () => router.replace(`/memory-chat/${encodeURIComponent(memoryId)}`);
   const afterPlayback = () => {
@@ -71,7 +75,7 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
   };
 
   if (state.status === "loading") return <main><p role="status" aria-live="polite">正在准备这次遇见…</p></main>;
-  if (state.status === "error") return <main><p role="alert">暂时无法打开遇见页面。</p><button type="button" onClick={continueToChat}>直接进入相伴</button></main>;
+  if (state.status === "error") return <main><p role="alert">暂时无法打开遇见页面。</p><button type="button" onClick={() => void load()}>重新读取</button><button type="button" onClick={continueToChat}>直接进入相伴</button></main>;
 
   return <main style={{ minHeight: "100dvh", display: "grid", placeItems: "center", padding: 24, background: "#090807", color: "#fff" }}>
     <section style={{ width: "min(100%, 520px)", display: "grid", gap: 16 }}>

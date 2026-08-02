@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, use, useEffect, useRef, useState } from "react";
+import { FormEvent, use, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
@@ -41,7 +41,7 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
   const [editing, setEditing] = useState<Pickup | null>(null);
   const pendingRequestKey = useRef<string | null>(null);
 
-  const load = async (signal?: AbortSignal): Promise<Pickup[]> => {
+  const load = useCallback(async (signal?: AbortSignal): Promise<Pickup[]> => {
     const [memory, response] = await Promise.all([
       loadOwnedMemory(memoryId, signal),
       fetch(`/api/memories/${encodeURIComponent(memoryId)}/pickups`, { cache: "no-store", credentials: "same-origin", signal }),
@@ -52,16 +52,24 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
     const next = Array.isArray(body.pickups) ? body.pickups : [];
     setPickups(next);
     return next;
-  };
+  }, [memoryId]);
+
+  const initialize = useCallback(async (signal?: AbortSignal) => {
+    setState("loading");
+    try {
+      await load(signal);
+      if (!signal?.aborted) setState("ready");
+    } catch (error) {
+      if (signal?.aborted) return;
+      setState(error instanceof OwnedMemoryRequestError && error.status === 404 ? "not-found" : "error");
+    }
+  }, [load]);
 
   useEffect(() => {
     const controller = new AbortController();
-    void load(controller.signal).then(() => setState("ready")).catch((error) => {
-      if (controller.signal.aborted) return;
-      setState(error instanceof OwnedMemoryRequestError && error.status === 404 ? "not-found" : "error");
-    });
+    void initialize(controller.signal);
     return () => controller.abort();
-  }, [memoryId]);
+  }, [initialize]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -124,7 +132,7 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
     }
   };
 
-  if (state !== "ready") return <main style={{ maxWidth: 720, margin: "0 auto", padding: 28 }}><p>{state === "not-found" ? "找不到这位 TA。" : state === "error" ? "拾忆暂时无法打开。" : "正在打开拾忆…"}</p><Link href="/memory">返回拾忆</Link></main>;
+  if (state !== "ready") return <main style={{ maxWidth: 720, margin: "0 auto", padding: 28 }}><p>{state === "not-found" ? "找不到这位 TA。" : state === "error" ? "拾忆暂时无法打开。" : "正在打开拾忆…"}</p>{state === "error" && <button type="button" onClick={() => void initialize()}>重新读取</button>}<Link href="/memory">返回拾忆</Link></main>;
 
   return <main style={{ maxWidth: 720, margin: "0 auto", padding: "28px 20px 96px", lineHeight: 1.7 }}>
     <Link href="/memory">返回拾忆</Link>

@@ -13,6 +13,9 @@ test("encounter only reads an approved owner preview and never submits a generat
   assert.match(source, /onEnded=\{afterPlayback\}/);
   assert.match(source, /影像播放结束，正在进入相伴/);
   assert.match(source, /role="status" aria-live="polite"/);
+  assert.match(source, /const load = useCallback/);
+  assert.match(source, /void load\(controller\.signal\)/);
+  assert.match(source, /state\.status === "error"[\s\S]*?重新读取/);
   assert.doesNotMatch(source, /method:\s*"POST"/);
   assert.doesNotMatch(source, /loop=/);
 });
