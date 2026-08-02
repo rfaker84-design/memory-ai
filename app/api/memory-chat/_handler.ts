@@ -8,6 +8,7 @@ import type { MemoryChatTurnResult } from "../../../features/chat/memory-chat-tu
 import { MemoryEngineService } from "../../../features/memory-engine/memory-engine-service";
 import { assertSafeMemorialResponse } from "../../../features/memory-engine/response-pipeline";
 import { crisisResponseFor } from "../../../features/memory-engine/crisis-response";
+import { queueCrisisSupportIfAuthorized } from "../../../features/safety/crisis-support-escalation";
 import { MemoryValidationError } from "../../../features/memory/errors";
 import { MemoryPostgresDataSource } from "../../../features/memory/memory-postgres-datasource";
 import { MemoryRepository } from "../../../features/memory/memory-repository";
@@ -44,6 +45,7 @@ type QuotaService = {
   releaseChatQuota(input: { externalUserId: string; memoryId: string; idempotencyKey: string }): Promise<void>;
 };
 type LongTermMemoryAccess = (externalUserId: string) => boolean;
+type CrisisSupportEscalation = (input: { userId: string; externalUserId: string; memoryId: string; idempotencyKey: string }) => Promise<boolean>;
 
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
 
@@ -136,6 +138,7 @@ export function createMemoryChatHandler(
   admissionControl: AdmissionControl = checkAdmission,
   quotaServiceFactory: () => QuotaService = () => freeQuotaService,
   longTermMemoryAccess: LongTermMemoryAccess = () => false,
+  crisisSupportEscalation: CrisisSupportEscalation = queueCrisisSupportIfAuthorized,
 ) {
   return async function POST(request: NextRequest) {
     void persistTurn;
@@ -219,7 +222,16 @@ export function createMemoryChatHandler(
       }
 
       const crisisResponse = crisisResponseFor(parsed.question);
-      if (crisisResponse) await releaseQuota();
+      if (crisisResponse) {
+        await releaseQuota();
+        try {
+          await crisisSupportEscalation({ userId: session.userId, externalUserId: userId, memoryId: parsed.memoryId, idempotencyKey });
+        } catch {
+          // The user still receives the fixed safety handoff; never claim that
+          // a support team was notified if this best-effort queue is unavailable.
+          console.warn("[memory-chat] CRISIS_SUPPORT_QUEUE_UNAVAILABLE");
+        }
+      }
 
       let answer: string;
       try {

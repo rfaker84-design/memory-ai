@@ -8,7 +8,7 @@ import {
   type TrustConsentType,
 } from "@/features/consent/trust-consent-postgres";
 
-const CONSENT_TYPES = new Set(["adult_eligibility", "memory_profile", "media_asset", "commercial_use"]);
+const CONSENT_TYPES = new Set(["adult_eligibility", "memory_profile", "media_asset", "commercial_use", "crisis_support_escalation"]);
 const REQUEST_KEY = /^[A-Za-z0-9._:-]{16,128}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 type RecordConsent = (input: { externalUserId: string; consentType: TrustConsentType; memoryId: string | null; requestKey: string }) => Promise<void>;

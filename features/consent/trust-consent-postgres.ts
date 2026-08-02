@@ -6,7 +6,8 @@ export type TrustConsentType =
   | "adult_eligibility"
   | "memory_profile"
   | "media_asset"
-  | "commercial_use";
+  | "commercial_use"
+  | "crisis_support_escalation";
 
 /**
  * Account-level consent required before a Memory/TA can be created.  This is

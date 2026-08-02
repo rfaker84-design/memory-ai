@@ -204,6 +204,7 @@ test("memory-chat short-circuits immediate crisis language without a role-model 
   let persistedCalls = 0;
   let releasedQuota = 0;
   let completedAnswer = "";
+  let escalation: unknown;
   const handler = createMemoryChatHandler(
     () => ({ async getMemoryForUser() { return memory; } }),
     () => ({
@@ -223,6 +224,7 @@ test("memory-chat short-circuits immediate crisis language without a role-model 
       async releaseChatQuota() { releasedQuota += 1; },
     }),
     () => true,
+    async (input) => { escalation = input; return true; },
   );
 
   const response = await handler(request({ memoryId, question: "我不想活了" }));
@@ -237,6 +239,7 @@ test("memory-chat short-circuits immediate crisis language without a role-model 
   assert.equal(providerCalls, 0);
   assert.equal(persistedCalls, 0);
   assert.equal(releasedQuota, 1);
+  assert.deepEqual(escalation, { userId: "internal-owner", externalUserId: userId, memoryId, idempotencyKey: "memory-chat-turn-0001" });
 });
 
 test("memory-chat admission fallbacks remain platform messages and never impersonate the TA", async () => {
