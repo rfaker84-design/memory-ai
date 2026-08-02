@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { NextRequest } from "next/server";
 
-import { createConsentsHandler, createCrisisSupportConsentRevocationHandler } from "./_handler";
+import { createConsentsHandler, createCrisisSupportConsentRevocationHandler, createCrisisSupportConsentStatusHandler } from "./_handler";
 
 process.env.AUTH_ALLOWED_ORIGIN = "https://memoryai.test";
 
@@ -46,6 +46,22 @@ test("revokes crisis support authorization only for the current session", async 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { revoked: true });
   assert.deepEqual(removed, { externalUserId: "phone:13800138000" });
+});
+
+test("reports only the current session's crisis support authorization", async () => {
+  let read: unknown;
+  const handler = createCrisisSupportConsentStatusHandler(async (input) => { read = input; return true; }, session);
+  const response = await handler(new NextRequest("https://memoryai.test/api/consents", { method: "GET" }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { crisisSupportEnabled: true });
+  assert.deepEqual(read, { externalUserId: "phone:13800138000" });
+});
+
+test("does not expose crisis support state without an authenticated session", async () => {
+  const handler = createCrisisSupportConsentStatusHandler(async () => true, async () => null);
+  const response = await handler(new NextRequest("https://memoryai.test/api/consents", { method: "GET" }));
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "UNAUTHENTICATED" });
 });
 
 test("requires a memory for media and commerce acknowledgement", async () => {

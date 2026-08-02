@@ -14,6 +14,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 type RecordConsent = (input: { externalUserId: string; consentType: TrustConsentType; memoryId: string | null; requestKey: string }) => Promise<void>;
 type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
 type RevokeConsent = (input: { externalUserId: string }) => Promise<void>;
+type ReadCrisisSupportConsent = (input: { externalUserId: string }) => Promise<boolean>;
 
 const json = (body: Record<string, unknown>, init?: ResponseInit) => applyAuthNoStore(NextResponse.json(body, init));
 
@@ -49,7 +50,7 @@ const recordConsent: RecordConsent = async ({ externalUserId, consentType, memor
     ]);
     const written = await client.query(
       `SELECT id FROM consent_records WHERE user_id = $1 AND consent_type = $2
-       AND memory_id IS NOT DISTINCT FROM $3 AND metadata ->> 'version' = $4 LIMIT 1`,
+       AND memory_id IS NOT DISTINCT FROM $3 AND status='approved' AND metadata ->> 'version' = $4 LIMIT 1`,
       [userId, consentType, memoryId, TRUST_CONSENT_VERSION],
     );
     if (written.rows[0]) return;
@@ -72,6 +73,22 @@ const revokeCrisisSupportConsent: RevokeConsent = async ({ externalUserId }) => 
     );
   });
 };
+
+const readCrisisSupportConsent: ReadCrisisSupportConsent = async ({ externalUserId }) => withPostgresTransaction(async (client) => {
+  const result = await client.query(
+    `SELECT 1
+       FROM public.users account
+       JOIN public.consent_records consent ON consent.user_id = account.id
+      WHERE account.external_id = $1
+        AND consent.consent_type = 'crisis_support_escalation'
+        AND consent.memory_id IS NULL
+        AND consent.status = 'approved'
+        AND consent.metadata ->> 'version' = $2
+      LIMIT 1`,
+    [externalUserId, TRUST_CONSENT_VERSION],
+  );
+  return result.rowCount === 1;
+});
 
 function failure(error: unknown) {
   if (error instanceof DatabaseDependencyError) {
@@ -110,6 +127,17 @@ export function createCrisisSupportConsentRevocationHandler(removeConsent: Revok
       if (!body || Object.keys(body).join(",") !== "consentType" || body.consentType !== "crisis_support_escalation") return json({ error: "INVALID_CONSENT_REQUEST" }, { status: 400 });
       await removeConsent({ externalUserId: session.externalUserId });
       return json({ revoked: true });
+    } catch (error) { return failure(error); }
+  };
+}
+
+export function createCrisisSupportConsentStatusHandler(readConsent: ReadCrisisSupportConsent = readCrisisSupportConsent, sessionResolver: SessionResolver = verifyRequestSession) {
+  return async function GET(request: NextRequest) {
+    try {
+      const session = await sessionResolver(request);
+      if (!session) return json({ error: "UNAUTHENTICATED" }, { status: 401 });
+      const crisisSupportEnabled = await readConsent({ externalUserId: session.externalUserId });
+      return json({ crisisSupportEnabled });
     } catch (error) { return failure(error); }
   };
 }
