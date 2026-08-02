@@ -17,6 +17,7 @@ type Progress = {
 };
 
 const format = (value: string | null) => value ? new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "尚未完成";
+const ACCOUNT_DELETION_STATUS_TIMEOUT_MS = 12_000;
 
 export function AccountDeletionPanel() {
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -25,11 +26,18 @@ export function AccountDeletionPanel() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (parentSignal?: AbortSignal) => {
     setLoadState("loading");
+    const controller = new AbortController();
+    let timedOut = false;
+    const abortFromParent = () => controller.abort();
+    if (parentSignal?.aborted) controller.abort();
+    else parentSignal?.addEventListener("abort", abortFromParent, { once: true });
+    const timer = globalThis.setTimeout(() => { timedOut = true; controller.abort(); }, ACCOUNT_DELETION_STATUS_TIMEOUT_MS);
     try {
-      const response = await fetch("/api/account/deletion", { credentials: "include", cache: "no-store" });
+      const response = await fetch("/api/account/deletion", { credentials: "include", cache: "no-store", signal: controller.signal });
       const body = await response.json().catch(() => ({})) as { deletion?: Progress; error?: string };
+      if (parentSignal?.aborted) return;
       if (response.ok) {
         setProgress(body.deletion ?? null);
         setLoadState("ready");
@@ -40,12 +48,20 @@ export function AccountDeletionPanel() {
         setLoadState("unavailable");
       }
     } catch {
-      setMessage("暂时无法读取注销状态，请检查网络后重试。");
+      if (parentSignal?.aborted) return;
+      setMessage(timedOut ? "读取注销状态超时；未创建新的注销申请。请恢复网络后手动重试。" : "暂时无法读取注销状态，请检查网络后重试。");
       setLoadState("unavailable");
+    } finally {
+      globalThis.clearTimeout(timer);
+      parentSignal?.removeEventListener("abort", abortFromParent);
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [load]);
 
   const submit = async () => {
     if (submitting) return;
