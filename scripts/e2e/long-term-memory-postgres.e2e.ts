@@ -117,7 +117,7 @@ function itemRequest(
 }
 
 test(
-  "isolated PostgreSQL E2E: chat -> recall -> view -> correct -> delete",
+  "isolated PostgreSQL E2E: formal chat never auto-persists; explicit beta memory -> recall -> view -> correct -> delete",
   async () => {
     const database = await PGlite.create({ extensions: { pgcrypto } });
     const port = await availableLoopbackPort();
@@ -191,12 +191,22 @@ test(
       );
       assert.deepEqual(persisted.rows[0], {
         message_count: "2",
-        memory_count: "1",
+        memory_count: "0",
       });
 
       const longTermMemoryService = new LongTermMemoryService(
         new LongTermMemoryRepository(new LongTermMemoryPostgresDataSource())
       );
+      await longTermMemoryService.createMemory({
+        externalUserId,
+        memoryId,
+        content: "用户明确确认：小时候每周六和妈妈去公园散步。",
+        sourceType: "pickup_confirmed",
+        sourceId: "isolated-confirmed-pickup",
+        importance: 60,
+        tags: ["confirmed", "pickup"],
+        metadata: { confirmedByUser: true, source: "isolated-e2e" },
+      });
       const recalled = await longTermMemoryService.recallMemory({
         externalUserId,
         memoryId,

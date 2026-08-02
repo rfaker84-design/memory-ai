@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 
 import { prepareReportSubmission, type PendingReportSubmission } from "./reportIntakeClient";
 
@@ -13,20 +14,31 @@ export function ReportIntake() {
   const [requestedAction, setRequestedAction] = useState("review");
   const [message, setMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "unauthenticated" | "unavailable">("loading");
   const pendingSubmission = useRef<PendingReportSubmission | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    setLoadState("loading");
     try {
       const response = await fetch("/api/reports", { credentials: "include", cache: "no-store" });
       const body = await response.json().catch(() => ({})) as { reports?: Report[]; error?: string };
-      if (response.ok) setReports(body.reports ?? []);
-      else if (body.error === "UNAUTHENTICATED") setMessage("请先登录后提交应用内工单。非登录状态的权利或隐私请求渠道尚未配置；请勿向未核验地址发送身份材料、照片、声音或聊天内容。");
-      else setMessage("暂时无法读取工单状态；尚未提交新的工单。请恢复网络后刷新。");
+      if (response.ok) {
+        setReports(body.reports ?? []);
+        setMessage(null);
+        setLoadState("ready");
+      } else if (body.error === "UNAUTHENTICATED") {
+        setMessage("请先登录后提交应用内工单。非登录状态的权利或隐私请求渠道尚未配置；请勿向未核验地址发送身份材料、照片、声音或聊天内容。");
+        setLoadState("unauthenticated");
+      } else {
+        setMessage("暂时无法读取工单状态；尚未提交新的工单。请恢复网络后刷新。");
+        setLoadState("unavailable");
+      }
     } catch {
       setMessage("暂时无法读取工单状态；尚未提交新的工单。请恢复网络后刷新。");
+      setLoadState("unavailable");
     }
-  };
-  useEffect(() => { void load(); }, []);
+  }, []);
+  useEffect(() => { void load(); }, [load]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -37,15 +49,27 @@ export function ReportIntake() {
     try {
       const response = await fetch("/api/reports", { method: "POST", credentials: "include", headers: { "content-type": "application/json", "idempotency-key": submission.idempotencyKey }, body: JSON.stringify({ category, subjectType: "other", subjectId: null, requestedAction, details }) });
       const body = await response.json().catch(() => ({})) as { report?: Report; error?: string };
-      if (!response.ok) { setMessage(body.error === "UNAUTHENTICATED" ? "请先登录后再提交。" : "暂时无法确认是否已受理。请勿刷新或修改这份说明；恢复连接后再次提交会安全复用同一请求。"); return; }
+      if (!response.ok) {
+        if (body.error === "UNAUTHENTICATED") {
+          setMessage("登录状态已失效。请重新登录后再提交；这份尚未确认受理的说明仍只保留在当前页面内。");
+          setLoadState("unauthenticated");
+        } else {
+          setMessage("暂时无法确认是否已受理。请勿刷新或修改这份说明；恢复连接后再次提交会安全复用同一请求。");
+        }
+        return;
+      }
       pendingSubmission.current = null;
-      setReports((current) => [body.report!, ...current]); setDetails(""); setMessage("已受理。工单状态会显示在此页面。");
+      setReports((current) => [body.report!, ...current]); setDetails(""); setMessage("已受理。工单状态会显示在此页面。"); setLoadState("ready");
     } catch {
       setMessage("暂时无法确认是否已受理。请勿刷新或修改这份说明；恢复连接后再次提交会安全复用同一请求。");
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (loadState === "loading") return <section className="mt-8 rounded-xl border border-[#d5b172]/25 p-5" aria-labelledby="report-intake-title"><h2 id="report-intake-title" className="text-xl font-semibold">应用内投诉与举报</h2><p role="status" aria-live="polite">正在确认登录状态…</p></section>;
+  if (loadState === "unauthenticated") return <section className="mt-8 rounded-xl border border-[#d5b172]/25 p-5" aria-labelledby="report-intake-title"><h2 id="report-intake-title" className="text-xl font-semibold">应用内投诉与举报</h2><p role="alert">{message ?? "请先登录后提交应用内工单。"}</p><Link className="mt-3 inline-block underline" href="/login">前往登录</Link></section>;
+  if (loadState === "unavailable") return <section className="mt-8 rounded-xl border border-[#d5b172]/25 p-5" aria-labelledby="report-intake-title"><h2 id="report-intake-title" className="text-xl font-semibold">应用内投诉与举报</h2><p role="alert">{message ?? "暂时无法读取工单状态。"}</p><button className="mt-3 rounded border border-[#d5b172]/50 px-4 py-2" type="button" onClick={() => void load()}>重新读取</button></section>;
 
   return <section className="mt-8 rounded-xl border border-[#d5b172]/25 p-5" aria-labelledby="report-intake-title">
     <h2 id="report-intake-title" className="text-xl font-semibold">应用内投诉与举报</h2>
