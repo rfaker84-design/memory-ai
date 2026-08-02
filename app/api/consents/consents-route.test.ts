@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { NextRequest } from "next/server";
 
-import { createConsentsHandler } from "./_handler";
+import { createConsentsHandler, createCrisisSupportConsentRevocationHandler } from "./_handler";
 
 process.env.AUTH_ALLOWED_ORIGIN = "https://memoryai.test";
 
@@ -37,6 +37,15 @@ test("records a separately explicit crisis support escalation authorization", as
   const response = await handler(request({ consentType: "crisis_support_escalation" }));
   assert.equal(response.status, 200);
   assert.deepEqual(written, { externalUserId: "phone:13800138000", consentType: "crisis_support_escalation", memoryId: null, requestKey: "consent-1234567890abcd" });
+});
+
+test("revokes crisis support authorization only for the current session", async () => {
+  let removed: unknown;
+  const handler = createCrisisSupportConsentRevocationHandler(async (input) => { removed = input; }, session);
+  const response = await handler(request({ consentType: "crisis_support_escalation" }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { revoked: true });
+  assert.deepEqual(removed, { externalUserId: "phone:13800138000" });
 });
 
 test("requires a memory for media and commerce acknowledgement", async () => {

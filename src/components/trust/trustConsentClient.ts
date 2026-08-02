@@ -33,3 +33,8 @@ export async function recordTrustConsent(
     throw new TrustConsentRequestError(typeof body.error === "string" ? body.error : "CONSENT_RECORD_FAILED");
   }
 }
+
+export async function revokeCrisisSupportConsent(request: typeof fetch = fetch): Promise<void> {
+  const response = await request("/api/consents", { method: "DELETE", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ consentType: "crisis_support_escalation" }) });
+  if (!response.ok) throw new TrustConsentRequestError("CONSENT_REVOKE_FAILED");
+}

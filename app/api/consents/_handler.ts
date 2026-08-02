@@ -13,6 +13,7 @@ const REQUEST_KEY = /^[A-Za-z0-9._:-]{16,128}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 type RecordConsent = (input: { externalUserId: string; consentType: TrustConsentType; memoryId: string | null; requestKey: string }) => Promise<void>;
 type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
+type RevokeConsent = (input: { externalUserId: string }) => Promise<void>;
 
 const json = (body: Record<string, unknown>, init?: ResponseInit) => applyAuthNoStore(NextResponse.json(body, init));
 
@@ -60,6 +61,18 @@ const recordConsent: RecordConsent = async ({ externalUserId, consentType, memor
   });
 };
 
+const revokeCrisisSupportConsent: RevokeConsent = async ({ externalUserId }) => {
+  await withPostgresTransaction(async (client) => {
+    await client.query(
+      `UPDATE public.consent_records SET status='revoked'
+        WHERE user_id=(SELECT id FROM public.users WHERE external_id=$1)
+          AND consent_type='crisis_support_escalation' AND memory_id IS NULL
+          AND metadata ->> 'version'=$2`,
+      [externalUserId, TRUST_CONSENT_VERSION],
+    );
+  });
+};
+
 function failure(error: unknown) {
   if (error instanceof DatabaseDependencyError) {
     console.error("[api:consents] database request failed", safeDatabaseErrorLog(error));
@@ -83,6 +96,20 @@ export function createConsentsHandler(writeConsent: RecordConsent = recordConsen
       if (!parsed) return json({ error: "INVALID_CONSENT_REQUEST" }, { status: 400 });
       await writeConsent({ externalUserId: session.externalUserId, requestKey, ...parsed });
       return json({ recorded: true });
+    } catch (error) { return failure(error); }
+  };
+}
+
+export function createCrisisSupportConsentRevocationHandler(removeConsent: RevokeConsent = revokeCrisisSupportConsent, sessionResolver: SessionResolver = verifyRequestSession) {
+  return async function DELETE(request: NextRequest) {
+    try {
+      const session = await sessionResolver(request);
+      if (!session) return json({ error: "UNAUTHENTICATED" }, { status: 401 });
+      requireAllowedOrigin(request);
+      const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+      if (!body || Object.keys(body).join(",") !== "consentType" || body.consentType !== "crisis_support_escalation") return json({ error: "INVALID_CONSENT_REQUEST" }, { status: 400 });
+      await removeConsent({ externalUserId: session.externalUserId });
+      return json({ revoked: true });
     } catch (error) { return failure(error); }
   };
 }
