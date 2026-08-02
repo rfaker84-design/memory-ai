@@ -22,6 +22,17 @@ Credential rotation is an environment operation: set a new token in the
 collector and application, verify a successful protected pull, then revoke the
 old value. Do not place either value in source control.
 
+The candidate includes `scripts/ops/collect-operations-alerts.ts` for that
+collector role. It requires the same server-only token plus
+`OPERATIONS_ALERTS_URL`, which must be the exact private alerts path with no
+query string. It accepts HTTPS, or loopback HTTP only for a same-host collector.
+Run it with `npx tsx scripts/ops/collect-operations-alerts.ts` from the release
+directory. Its JSON output is aggregate-only; exit `0` means no critical alert,
+`2` means at least one critical alert, and `1` means the protected pull or its
+configuration failed. A deployment-owned scheduler or monitoring system must
+turn those results into an on-call notification. No webhook or notification
+target is embedded in the application.
+
 ## Alert semantics
 
 `VIDEO_SUBMISSION_UNCERTAIN` and `ACCOUNT_DELETION_FAILED` are critical. A
