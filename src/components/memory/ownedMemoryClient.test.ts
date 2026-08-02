@@ -45,6 +45,17 @@ test("formal Memory 404 remains a controlled page state", async () => {
   );
 });
 
+test("owned Memory reads time out without widening the session boundary or retrying", async () => {
+  await assert.rejects(
+    loadOwnedMemory(memory.id, undefined, ((_input, init) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+    })) as typeof fetch, 1),
+    (error) => error instanceof OwnedMemoryRequestError
+      && error.status === 408
+      && error.code === "MEMORY_READ_TIMEOUT",
+  );
+});
+
 test("portrait retrieval uses the owned signed-media endpoint", async () => {
   const urls: string[] = [];
   const request = async (input: string | URL | Request, init?: RequestInit) => {
