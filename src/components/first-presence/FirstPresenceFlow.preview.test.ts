@@ -47,6 +47,15 @@ test("preview is explicit, zero-write, and production-gated", () => {
   assert.doesNotMatch(previewRendering, /fetch\(|recordTrustConsent|MemoryExperienceOffer/);
 });
 
+test("home cold start is a disclosed static loading state, not a blank client-only screen", () => {
+  assert.match(page, /function HomeLoadingFallback/);
+  assert.match(page, /role="status"[\s\S]*aria-live="polite"/);
+  assert.match(page, /正在准备陪伴空间/);
+  assert.match(page, /loading: \(\) => <HomeLoadingFallback \/>/);
+  assert.match(page, /stage === "checking" && <HomeLoadingFallback \/>/);
+  assert.match(page, /const homeIsMounted = stage === "launch" \|\| stage === "home"/);
+});
+
 test("direct SMS login exposes both policies and cannot request or verify without agreement", () => {
   const sendCode = flow.slice(flow.indexOf("const sendCode"), flow.indexOf("const verifyCode"));
   const verifyCode = flow.slice(flow.indexOf("const verifyCode"), flow.indexOf("const reviseText"));
