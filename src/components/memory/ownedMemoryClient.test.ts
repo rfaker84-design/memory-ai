@@ -83,6 +83,10 @@ test("legacy detail and automatic-memory deep links only reach approved first-re
     new URL("../../../app/memory/[id]/long-term-memory/page.tsx", import.meta.url),
     "utf8"
   );
+  const legacyMemoryRoom = readFileSync(
+    new URL("../../../app/memory-room/page.tsx", import.meta.url),
+    "utf8"
+  );
   const chat = readFileSync(
     new URL("../../../app/memory-chat/[id]/page.tsx", import.meta.url),
     "utf8"
@@ -103,6 +107,8 @@ test("legacy detail and automatic-memory deep links only reach approved first-re
   assert.doesNotMatch(detail, /emotionEngine|PresenceAvatar|LongTermMemoryBetaEntry|setInterval/);
   assert.match(legacyLongTermMemory, /redirect\(`\/memory\/\$\{encodeURIComponent\(id\)\}\/pickup`\)/);
   assert.doesNotMatch(legacyLongTermMemory, /listLongTermMemories|correctLongTermMemory|deleteLongTermMemory/);
+  assert.match(legacyMemoryRoom, /redirect\("\/memory-world"\)/);
+  assert.doesNotMatch(legacyMemoryRoom, /emotionEngine|store|fetch\(/);
   assert.doesNotMatch(chat.toLowerCase(), /supabase|memories-mvp/);
   assert.match(chat, /loadOwnedMemory/);
   assert.match(conversationAdapter, /\/chat-session/);
