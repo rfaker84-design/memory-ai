@@ -1,13 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+const ACCOUNT_EXPORT_TIMEOUT_MS = 12_000;
 
 export function AccountDataExportPanel() {
   const [downloading, setDownloading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const activeRequest = useRef<AbortController | null>(null);
+
+  useEffect(() => () => activeRequest.current?.abort(), []);
 
   const download = async () => {
     if (downloading) return;
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = globalThis.setTimeout(() => { timedOut = true; controller.abort(); }, ACCOUNT_EXPORT_TIMEOUT_MS);
+    activeRequest.current = controller;
     setDownloading(true);
     setMessage(null);
     try {
@@ -15,7 +24,9 @@ export function AccountDataExportPanel() {
         method: "POST",
         credentials: "include",
         cache: "no-store",
+        signal: controller.signal,
       });
+      if (activeRequest.current !== controller) return;
       if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { error?: string };
         if (response.status === 403 && body.error === "REAUTH_REQUIRED") {
@@ -26,6 +37,7 @@ export function AccountDataExportPanel() {
         return;
       }
       const blob = await response.blob();
+      if (activeRequest.current !== controller) return;
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -36,9 +48,16 @@ export function AccountDataExportPanel() {
       URL.revokeObjectURL(url);
       setMessage("资料副本已开始下载。媒体和已审批视频仍由各自的 Owner 访问边界保护。");
     } catch {
-      setMessage("网络暂时不可用，未生成或保存任何资料副本。请恢复网络后重试。");
+      if (activeRequest.current !== controller) return;
+      setMessage(timedOut
+        ? "下载资料副本超时，无法确认是否已经开始下载。为避免重复暴露，忆见不会自动重试；请先查看本机下载列表，必要时由你手动重新下载。"
+        : "网络连接中断，无法确认资料副本是否已经开始下载。为避免重复暴露，忆见不会自动重试；请先查看本机下载列表，必要时由你手动重新下载。");
     } finally {
-      setDownloading(false);
+      globalThis.clearTimeout(timer);
+      if (activeRequest.current === controller) {
+        activeRequest.current = null;
+        setDownloading(false);
+      }
     }
   };
 
