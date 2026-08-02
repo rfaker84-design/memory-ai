@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
-import { prepareReportSubmission, type PendingReportSubmission } from "./reportIntakeClient";
+import { fetchReportRequest, prepareReportSubmission, type PendingReportSubmission } from "./reportIntakeClient";
 
 type Report = { id: string; category: string; requestedAction: string; status: string; createdAt: string; resolvedAt: string | null };
 
@@ -20,7 +20,7 @@ export function ReportIntake() {
   const load = useCallback(async () => {
     setLoadState("loading");
     try {
-      const response = await fetch("/api/reports", { credentials: "include", cache: "no-store" });
+      const response = await fetchReportRequest("/api/reports", { credentials: "include", cache: "no-store" });
       const body = await response.json().catch(() => ({})) as { reports?: Report[]; error?: string };
       if (response.ok) {
         setReports(body.reports ?? []);
@@ -47,7 +47,7 @@ export function ReportIntake() {
     const submission = prepareReportSubmission(pendingSubmission.current, { category, requestedAction, details });
     pendingSubmission.current = submission;
     try {
-      const response = await fetch("/api/reports", { method: "POST", credentials: "include", headers: { "content-type": "application/json", "idempotency-key": submission.idempotencyKey }, body: JSON.stringify({ category, subjectType: "other", subjectId: null, requestedAction, details }) });
+      const response = await fetchReportRequest("/api/reports", { method: "POST", credentials: "include", headers: { "content-type": "application/json", "idempotency-key": submission.idempotencyKey }, body: JSON.stringify({ category, subjectType: "other", subjectId: null, requestedAction, details }) });
       const body = await response.json().catch(() => ({})) as { report?: Report; error?: string };
       if (!response.ok) {
         if (body.error === "UNAUTHENTICATED") {

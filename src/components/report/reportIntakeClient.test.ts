@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { prepareReportSubmission, type ReportDraft } from "./reportIntakeClient";
+import { fetchReportRequest, prepareReportSubmission, ReportRequestError, type ReportDraft } from "./reportIntakeClient";
 
 const draft: ReportDraft = {
   category: "rights",
@@ -26,6 +26,15 @@ test("report retry recovery never persists complaint text to browser storage", (
   assert.doesNotMatch(source, /localStorage|sessionStorage/);
 });
 
+test("a report request timeout preserves the explicit in-memory retry boundary", async () => {
+  await assert.rejects(
+    fetchReportRequest("/api/reports", { method: "POST" }, ((_input, init) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+    })) as typeof fetch, undefined, 1),
+    (error) => error instanceof ReportRequestError && error.code === "REPORT_REQUEST_TIMEOUT",
+  );
+});
+
 test("report UI gates submission on a confirmed session and serializes an in-flight retry", () => {
   const source = readFileSync(new URL("./ReportIntake.tsx", import.meta.url), "utf8");
   assert.match(source, /暂时无法读取工单状态；尚未提交新的工单/);
@@ -39,4 +48,5 @@ test("report UI gates submission on a confirmed session and serializes an in-fli
   assert.match(source, /重新读取/);
   assert.match(source, /if \(submitting\) return/);
   assert.match(source, /disabled=\{submitting\}/);
+  assert.match(source, /fetchReportRequest\("\/api\/reports"/);
 });
