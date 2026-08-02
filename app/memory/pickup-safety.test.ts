@@ -18,7 +18,8 @@ test("pickup is an explicit-confirmation flow and never relies on ordinary-chat 
   assert.match(source, /不会读取相册、麦克风或录音/);
   assert.match(source, /const initialize = useCallback/);
   assert.match(source, /void initialize\(controller\.signal\)/);
-  assert.match(source, /state === "error" && <button[^>]*onClick=\{\(\) => void initialize\(\)\}>重新读取<\/button>/);
+  assert.match(source, /function TouchButton[\s\S]*?minHeight: 44/);
+  assert.match(source, /state === "error" && <TouchButton[^>]*onClick=\{\(\) => void initialize\(\)\}>重新读取<\/TouchButton>/);
   assert.match(source, /编辑/);
   assert.match(source, /删除/);
   assert.doesNotMatch(source, /localStorage|sessionStorage/);

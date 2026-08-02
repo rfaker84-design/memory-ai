@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, use, useCallback, useEffect, useRef, useState } from "react";
+import { ButtonHTMLAttributes, FormEvent, use, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
@@ -24,6 +24,10 @@ function organizationDraft(originalText: string): string {
 function recordedAt(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "记录时间待同步" : new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function TouchButton({ style, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
+  return <button {...props} style={{ minHeight: 44, padding: "8px 12px", ...style }} />;
 }
 
 export default function PickupPage({ params }: { params: Promise<{ id: string }> }) {
@@ -133,7 +137,7 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
     }
   };
 
-  if (state !== "ready") return <main style={{ maxWidth: 720, margin: "0 auto", padding: 28 }}><p>{state === "not-found" ? "找不到这位 TA。" : state === "error" ? "拾忆暂时无法打开。" : "正在打开拾忆…"}</p>{state === "error" && <button type="button" onClick={() => void initialize()}>重新读取</button>}<Link href="/memory">返回拾忆</Link></main>;
+  if (state !== "ready") return <main style={{ maxWidth: 720, margin: "0 auto", padding: 28 }}><p>{state === "not-found" ? "找不到这位 TA。" : state === "error" ? "拾忆暂时无法打开。" : "正在打开拾忆…"}</p>{state === "error" && <TouchButton type="button" onClick={() => void initialize()}>重新读取</TouchButton>}<Link href="/memory">返回拾忆</Link></main>;
 
   return <main style={{ maxWidth: 720, margin: "0 auto", padding: "28px 20px 96px", lineHeight: 1.7 }}>
     <Link href="/memory">返回拾忆</Link>
@@ -143,12 +147,12 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
     {startsFromPhoto && <p role="note">从一张照片说起：看着你手边的照片，把想起的事写下来。此页面不会读取相册、麦克风或录音。</p>}
     <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
       <label>你的原话<textarea value={originalText} onChange={(event) => { pendingRequestKey.current = null; setOriginalText(event.currentTarget.value); }} maxLength={8000} rows={5} required /></label>
-      {!followUpAsked && originalText.trim() && <button type="button" onClick={() => setFollowUpAsked(true)}>忆见可以追问一件事</button>}
+      {!followUpAsked && originalText.trim() && <TouchButton type="button" onClick={() => setFollowUpAsked(true)}>忆见可以追问一件事</TouchButton>}
       {followUpAsked && <p role="note">忆见想确认一件事：这件事大约发生在什么时候？你可以直接补充在原话里。每次整理最多提出这一项追问。</p>}
-      <button type="button" onClick={() => { pendingRequestKey.current = null; setOrganizedText(organizationDraft(originalText)); }} disabled={!originalText.trim()}>按原话分段整理草稿</button>
+      <TouchButton type="button" onClick={() => { pendingRequestKey.current = null; setOrganizedText(organizationDraft(originalText)); }} disabled={!originalText.trim()}>按原话分段整理草稿</TouchButton>
       <label>整理稿（请核对后编辑）<textarea value={organizedText} onChange={(event) => { pendingRequestKey.current = null; setOrganizedText(event.currentTarget.value); }} maxLength={8000} rows={6} required /></label>
       {!editing && <label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.currentTarget.checked)} /> 我确认原话与整理稿准确，允许忆见将此资料作为可追溯的回复来源。</label>}
-      <button type="submit" disabled={(editing ? !originalText.trim() || !organizedText.trim() : !confirmed) || submitting}>{submitting ? "正在保存…" : editing ? "保存编辑" : "确认并保存"}</button>
+      <TouchButton type="submit" disabled={(editing ? !originalText.trim() || !organizedText.trim() : !confirmed) || submitting}>{submitting ? "正在保存…" : editing ? "保存编辑" : "确认并保存"}</TouchButton>
     </form>
     {message && <p role="status">{message}</p>}
     <h2 style={{ marginTop: 36 }}>已确认资料</h2>
@@ -157,13 +161,13 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
       <h3>原话</h3><p style={{ whiteSpace: "pre-wrap" }}>{pickup.originalText}</p>
       <h3>整理稿</h3><p style={{ whiteSpace: "pre-wrap" }}>{pickup.organizedText}</p>
       <p style={{ color: "#666", fontSize: 13 }}>来源：你的主动讲述 · 叙述者：你 · 记录于 {recordedAt(pickup.createdAt)}</p>
-      <button type="button" onClick={() => { setEditing(pickup); setOriginalText(pickup.originalText); setOrganizedText(pickup.organizedText); setConfirmed(true); }}>编辑</button>{" "}
-      <button type="button" onClick={() => void remove(pickup)}>删除</button>
+      <TouchButton type="button" onClick={() => { setEditing(pickup); setOriginalText(pickup.originalText); setOrganizedText(pickup.organizedText); setConfirmed(true); }}>编辑</TouchButton>{" "}
+      <TouchButton type="button" onClick={() => void remove(pickup)}>删除</TouchButton>
     </article>)}
     {editing && <section aria-label="编辑已确认资料" style={{ position: "sticky", bottom: 12, padding: 16, border: "1px solid #bda", background: "#fff" }}>
       <p>正在编辑已确认资料。修改后请保存；未保存不会影响当前资料。</p>
-      <button type="button" onClick={() => void saveEdit()} disabled={submitting}>保存编辑</button>{" "}
-      <button type="button" onClick={() => { setEditing(null); setOriginalText(""); setOrganizedText(""); setConfirmed(false); }}>取消编辑</button>
+      <TouchButton type="button" onClick={() => void saveEdit()} disabled={submitting}>保存编辑</TouchButton>{" "}
+      <TouchButton type="button" onClick={() => { setEditing(null); setOriginalText(""); setOrganizedText(""); setConfirmed(false); }}>取消编辑</TouchButton>
     </section>}
   </main>;
 }
