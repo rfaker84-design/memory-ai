@@ -3,6 +3,7 @@ import { isMemoryCreationIdempotencyKey } from "../../../features/memory/memory-
 import { createMemoryRequestHeaders } from "../create-memory/createMemoryLogic";
 
 export const CREATION_RECOVERY_STORAGE_KEY = "memoryai:create-recovery:v1";
+const CREATION_REQUEST_TIMEOUT_MS = 20_000;
 
 export type CreationRecoveryPhase =
   | "creating"
@@ -176,17 +177,46 @@ export class CreationRecoveryRequestError extends Error {
   }
 }
 
+/**
+ * A timeout is intentionally uncertain: callers must retain the original
+ * idempotency key and use the formal recovery endpoint instead of submitting
+ * another creation or media request.
+ */
+export async function fetchCreationRequest(
+  input: string,
+  init: RequestInit,
+  request: typeof fetch = fetch,
+  parentSignal?: AbortSignal,
+  timeoutMs = CREATION_REQUEST_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const abortFromParent = () => controller.abort();
+  if (parentSignal?.aborted) controller.abort();
+  else parentSignal?.addEventListener("abort", abortFromParent, { once: true });
+  const timer = globalThis.setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+  try {
+    return await request(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (timedOut) throw new CreationRecoveryRequestError(408, "CREATION_REQUEST_TIMEOUT");
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timer);
+    parentSignal?.removeEventListener("abort", abortFromParent);
+  }
+}
+
 export async function recoverCreatedMemory(
   idempotencyKey: string,
   request: typeof fetch = fetch,
 ): Promise<Memory> {
-  const response = await request("/api/memories/recovery", {
+  const response = await fetchCreationRequest("/api/memories/recovery", {
     method: "POST",
     credentials: "same-origin",
     cache: "no-store",
     headers: createMemoryRequestHeaders(idempotencyKey),
     body: JSON.stringify({}),
-  });
+  }, request);
   const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
   if (!response.ok) {
     throw new CreationRecoveryRequestError(
@@ -213,11 +243,11 @@ export async function uploadCreationMedia(
   const body = new FormData();
   body.append("file", file);
   body.append("memoryId", memoryId);
-  const response = await request("/api/media/upload", {
+  const response = await fetchCreationRequest("/api/media/upload", {
     method: "POST",
     credentials: "same-origin",
     body,
-  });
+  }, request);
   const payload = await response.json().catch(() => ({})) as {
     error?: unknown;
     asset?: { id?: unknown; mediaType?: unknown; status?: unknown };

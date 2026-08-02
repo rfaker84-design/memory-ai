@@ -20,6 +20,7 @@ import { buildConfirmedMemoryProfile } from "./confirmedMemoryProfile";
 import { recordTrustConsent, TrustConsentRequestError } from "../trust/trustConsentClient";
 import {
   clearCreationRecovery,
+  fetchCreationRequest,
   readCreationRecovery,
   recoverPendingCreation,
   uploadCurrentCreationMedia,
@@ -528,7 +529,7 @@ export function FirstPresenceFlow({
         setStage("network-failed");
         return;
       }
-      const response = await fetch("/api/memories", {
+      const response = await fetchCreationRequest("/api/memories", {
         method: "POST",
         credentials: "same-origin",
         headers: createMemoryRequestHeaders(idempotencyKey.current),

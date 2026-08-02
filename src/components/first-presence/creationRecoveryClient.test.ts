@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   clearCreationRecovery,
+  fetchCreationRequest,
   CreationRecoveryRequestError,
   mediaPhase,
   phaseForRemainingMedia,
@@ -72,6 +73,17 @@ test("temporary recovery storage contains only key, memory id, and phase", () =>
   ]) {
     assert.equal(raw.includes(forbidden), false);
   }
+});
+
+test("creation timeout remains uncertain and exposes no automatic retry path", async () => {
+  await assert.rejects(
+    fetchCreationRequest("/api/memories", { method: "POST" }, ((_input, init) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+    })) as typeof fetch, undefined, 1),
+    (error) => error instanceof CreationRecoveryRequestError
+      && error.status === 408
+      && error.code === "CREATION_REQUEST_TIMEOUT",
+  );
 });
 
 test("invalid or expanded records are rejected and removed", () => {
