@@ -26,6 +26,7 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
   const { id: memoryId } = use(params);
   const router = useRouter();
   const [state, setState] = useState<EncounterState>({ status: "loading" });
+  const [playbackComplete, setPlaybackComplete] = useState(false);
   const leaveTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -65,16 +66,18 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
   const continueToChat = () => router.replace(`/memory-chat/${encodeURIComponent(memoryId)}`);
   const afterPlayback = () => {
     // Keep the last frame briefly visible, then enter the disclosed chat.
+    setPlaybackComplete(true);
     leaveTimer.current = window.setTimeout(continueToChat, 720);
   };
 
-  if (state.status === "loading") return <main><p>正在准备这次遇见…</p></main>;
+  if (state.status === "loading") return <main><p role="status" aria-live="polite">正在准备这次遇见…</p></main>;
   if (state.status === "error") return <main><p role="alert">暂时无法打开遇见页面。</p><button type="button" onClick={continueToChat}>直接进入相伴</button></main>;
 
   return <main style={{ minHeight: "100dvh", display: "grid", placeItems: "center", padding: 24, background: "#090807", color: "#fff" }}>
     <section style={{ width: "min(100%, 520px)", display: "grid", gap: 16 }}>
       <p style={{ margin: 0, color: "#d6b675" }}>AI纪念陪伴</p>
       <h1 style={{ margin: 0 }}>与 {state.name} 的第一次遇见</h1>
+      {playbackComplete && <p role="status" aria-live="polite">影像播放结束，正在进入相伴。</p>}
       {state.playbackUrl ? <video src={state.playbackUrl} autoPlay playsInline controls={false} controlsList="nodownload noremoteplayback" disablePictureInPicture onEnded={afterPlayback} style={{ width: "100%", borderRadius: 20, background: "#15120e" }} aria-label={`${state.name} 的首次相遇影像`} /> : <>
         {state.portraitUrl ? <img src={state.portraitUrl} alt={`${state.name} 的照片`} style={{ width: "100%", aspectRatio: "9 / 16", objectFit: "cover", borderRadius: 20 }} /> : <div role="img" aria-label={`${state.name} 的静态形象`} style={{ minHeight: 360, display: "grid", placeItems: "center", borderRadius: 20, background: "#15120e" }}>{state.name}</div>}
         <p>遇见影像暂时还不能播放。不会在这里创建生成任务；你可以先进入相伴。</p>

@@ -11,6 +11,8 @@ test("encounter only reads an approved owner preview and never submits a generat
   assert.match(source, /artifactAvailable/);
   assert.match(source, /saveAllowed === false/);
   assert.match(source, /onEnded=\{afterPlayback\}/);
+  assert.match(source, /影像播放结束，正在进入相伴/);
+  assert.match(source, /role="status" aria-live="polite"/);
   assert.doesNotMatch(source, /method:\s*"POST"/);
   assert.doesNotMatch(source, /loop=/);
 });
