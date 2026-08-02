@@ -12,4 +12,7 @@ test("reply provenance view includes the explicit pickup source set and its mana
   assert.match(source, /来源：你的主动讲述/);
   assert.match(source, /叙述者：你/);
   assert.match(source, /\/memory\/\$\{id\}\/pickup/);
+  assert.match(source, /const load = useCallback/);
+  assert.match(source, /state\.status === "error" && <button[^>]*onClick=\{\(\) => void load\(\)\}>重新读取<\/button>/);
+  assert.match(source, /void load\(controller\.signal\)/);
 });

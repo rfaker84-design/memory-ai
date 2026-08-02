@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 
 import type { Memory } from "@/features/memory/types";
@@ -38,30 +38,34 @@ export default function MemorySourcesPage({ params }: { params: Promise<{ id: st
   const [state, setState] = useState<ViewState>({ status: "loading" });
   const [pickups, setPickups] = useState<Pickup[]>([]);
 
+  const load = useCallback(async (signal?: AbortSignal) => {
+    setState({ status: "loading" });
+    try {
+      const [memory, response] = await Promise.all([
+        loadOwnedMemory(id, signal),
+        fetch(`/api/memories/${encodeURIComponent(id)}/pickups`, { cache: "no-store", credentials: "same-origin", signal }),
+      ]);
+      if (!response.ok) throw new Error("PICKUP_SOURCES_UNAVAILABLE");
+      const body = await response.json() as { pickups?: Pickup[] };
+      if (signal?.aborted) return;
+      setPickups(Array.isArray(body.pickups) ? body.pickups : []);
+      setState({ status: "ready", memory });
+    } catch (error) {
+      if (signal?.aborted) return;
+      setState({ status: error instanceof OwnedMemoryRequestError && error.status === 404 ? "not-found" : "error" });
+    }
+  }, [id]);
+
   useEffect(() => {
     const controller = new AbortController();
-    void Promise.all([
-      loadOwnedMemory(id, controller.signal),
-      fetch(`/api/memories/${encodeURIComponent(id)}/pickups`, { cache: "no-store", credentials: "same-origin", signal: controller.signal }),
-    ])
-      .then(async ([memory, response]) => {
-        if (!response.ok) throw new Error("PICKUP_SOURCES_UNAVAILABLE");
-        const body = await response.json() as { pickups?: Pickup[] };
-        if (!controller.signal.aborted) {
-          setPickups(Array.isArray(body.pickups) ? body.pickups : []);
-          setState({ status: "ready", memory });
-        }
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        setState({ status: error instanceof OwnedMemoryRequestError && error.status === 404 ? "not-found" : "error" });
-      });
+    void load(controller.signal);
     return () => controller.abort();
-  }, [id]);
+  }, [load]);
 
   if (state.status !== "ready") {
     return <main style={{ maxWidth: 680, margin: "0 auto", padding: "48px 24px" }}>
       <p>{state.status === "not-found" ? "找不到这段资料。" : state.status === "error" ? "资料暂时无法读取，请稍后重试。" : "正在读取已确认资料…"}</p>
+      {state.status === "error" && <button type="button" onClick={() => void load()}>重新读取</button>}
       <Link href={`/memory-chat/${id}`}>返回相伴</Link>
     </main>;
   }
