@@ -49,6 +49,7 @@ export default function HelpPage() {
           <p className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-[#f1c980]">
             <Link href="/report" className="underline">投诉、退款与数据删除</Link>
             <Link href="/settings/account-deletion" className="underline">账户注销进度</Link>
+            <Link href="/settings/companion" className="underline">陪伴安全设置</Link>
             <Link href="/privacy" className="underline">隐私政策</Link>
             <Link href="/terms" className="underline">用户协议</Link>
           </p>
