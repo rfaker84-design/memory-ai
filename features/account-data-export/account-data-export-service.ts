@@ -91,6 +91,7 @@ export class PostgresAccountDataExportService {
         exportRows(`SELECT jsonb_build_object(
           'id', m.id, 'conversationId', m.conversation_id, 'memoryId', m.memory_id,
           'role', m.role, 'content', m.content, 'emotion', m.emotion,
+          'aiGenerated', (m.role = 'assistant'),
           'createdAt', m.created_at, 'updatedAt', m.updated_at
         ) AS value FROM public.messages m WHERE m.user_id=$1::uuid ORDER BY m.created_at, m.id`),
         exportRows(`SELECT jsonb_build_object(
@@ -106,7 +107,7 @@ export class PostgresAccountDataExportService {
         ) AS value FROM public.media_assets a WHERE a.user_id=$1::uuid ORDER BY a.created_at, a.id`),
         exportRows(`SELECT jsonb_build_object(
           'id', j.id, 'memoryId', j.memory_id, 'provider', j.provider, 'status', j.status,
-          'qualityStatus', j.quality_status, 'actualCredits', j.actual_credits,
+          'qualityStatus', j.quality_status, 'actualCredits', j.actual_credits, 'aiGenerated', true,
           'createdAt', j.created_at, 'updatedAt', j.updated_at
         ) AS value FROM public.video_generation_jobs j WHERE j.user_id=$1::uuid ORDER BY j.created_at, j.id`),
         exportRows(`SELECT jsonb_build_object(
@@ -145,6 +146,7 @@ export class PostgresAccountDataExportService {
         payments,
         refunds,
         notices: [
+          "本副本中的 assistant 消息和视频任务均涉及 AI 生成内容，仅基于当时可用的资料生成，不代表真实人物或其真实表达。",
           "该副本不包含登录凭据、设备标识、验证码、Provider 请求或响应、对象存储定位符、签名 URL、支付渠道交易标识及内部审计元数据。",
           "媒体条目给出受当前 Owner Session 保护的下载入口；已审批视频继续由现有播放授权边界控制。",
           "法定财务、退款争议与会计归档与产品内容物理/逻辑隔离；本副本只包含面向用户的最小订单和退款摘要。",

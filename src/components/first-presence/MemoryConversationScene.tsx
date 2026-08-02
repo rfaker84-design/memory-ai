@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
+import Link from "next/link";
 
 import { MemoryAvatar, MemoryButton } from "../memory-ui";
 import { recordBusinessView } from "../business-metrics/businessMetricsClient";
@@ -191,7 +192,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
 
   const isBusy = phase === "loading" || phase === "greeting" || phase === "sending" || phase === "replying" || phase === "recovering";
   const completedRounds = completedConversationRounds(messages, activeSessionId);
-  const status = phase === "sending" ? "正在送出这句话…" : phase === "replying" ? `${memoryName} 正在回应…` : phase === "greeting" ? "第一句话正在慢慢靠近…" : phase === "recovering" ? "正在找回刚才的对话…" : "";
+  const status = phase === "sending" ? "正在送出这句话…" : phase === "replying" ? "忆见正在整理回复…" : phase === "greeting" ? "忆见正在生成第一句回复…" : phase === "recovering" ? "正在找回刚才的对话…" : "";
 
   return (
     <section className={`${styles.scene} ${reducedMotion ? styles.reduced : ""}`} aria-labelledby={titleId}>
@@ -226,6 +227,8 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
                 <span className={styles.messageIdentity}>
                   <MemoryAvatar image={portraitUrl} initials={memoryName} alt={`${memoryName} 的照片`} presence={isBusy ? "quiet" : "online"} size={30} />
                   <i>{memoryName}</i>
+                  <AiGeneratedLabel compact confirmedSources />
+                  <Link className={styles.sourceLink} href={`/memory/${memoryId}/sources`}>查看资料来源</Link>
                 </span>
               )}
               <p>{message.content}</p>

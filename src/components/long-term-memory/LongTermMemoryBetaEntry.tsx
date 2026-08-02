@@ -40,7 +40,7 @@ export function LongTermMemoryBetaEntry({ memoryId }: { memoryId: string }) {
         cursor: "pointer",
       }}
     >
-      内测记忆
+      历史内测记录
     </button>
   );
 }

@@ -83,6 +83,8 @@ test("account data export uses a read-only PG14 snapshot and excludes internal/p
     const exported = await service.create({ userId: user.id, externalUserId: "export-owner", now: new Date("2026-08-02T00:00:00.000Z") });
     assert.equal(exported.schemaVersion, "memoryai-account-data-export-v1");
     assert.equal(exported.messages[0]?.content, "private message");
+    assert.equal(exported.messages[0]?.aiGenerated, false);
+    assert.match(exported.notices.join(" "), /AI 生成内容/);
     assert.equal(exported.media[0]?.id, media.id);
     assert.equal(exported.media[0]?.downloadEndpoint, `/api/media/${media.id}?expiresIn=300`);
     assert.equal(exported.payments[0]?.amountFen, 4900);

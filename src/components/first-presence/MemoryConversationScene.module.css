@@ -188,6 +188,18 @@
   font-style: normal;
 }
 
+.sourceLink {
+  color: rgba(229, 199, 165, 0.78);
+  font-size: 0.7rem;
+  text-decoration: underline;
+  text-underline-offset: 0.2rem;
+}
+
+.sourceLink:focus-visible {
+  outline: 2px solid #d7b184;
+  outline-offset: 0.2rem;
+}
+
 .userMessage,
 .pendingMessage {
   justify-self: end;

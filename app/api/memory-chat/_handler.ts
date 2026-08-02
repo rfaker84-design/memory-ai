@@ -5,12 +5,6 @@ import { MemoryChatTurnPostgresDataSource } from "../../../features/chat/memory-
 import { MemoryChatTurnRepository } from "../../../features/chat/memory-chat-turn-repository";
 import { MemoryChatTurnService } from "../../../features/chat/memory-chat-turn-service";
 import type { MemoryChatTurnResult } from "../../../features/chat/memory-chat-turn-types";
-import {
-  LongTermMemoryPostgresDataSource,
-  LongTermMemoryRepository,
-  LongTermMemoryService,
-  persistChatTurnLongTermMemory,
-} from "../../../features/long-term-memory";
 import { MemoryEngineService } from "../../../features/memory-engine/memory-engine-service";
 import { assertSafeMemorialResponse } from "../../../features/memory-engine/response-pipeline";
 import { crisisResponseFor } from "../../../features/memory-engine/crisis-response";
@@ -31,7 +25,6 @@ import {
   verifyRequestSession,
 } from "../../../src/server/auth";
 import { DatabaseDependencyError, safeDatabaseErrorLog } from "../../../src/server/database";
-import { canAccessInternalBeta } from "../../../src/server/beta-access";
 
 type MemoryChatRequest = { memoryId: string; question: string };
 type MemoryOwnershipService = Pick<MemoryService, "getMemoryForUser">;
@@ -63,22 +56,6 @@ const createTurnService = (): TurnService =>
   );
 
 const createEngineService = (): EngineService => new MemoryEngineService();
-
-const persistCompletedTurn: PersistCompletedTurn = ({
-  externalUserId,
-  memoryId,
-  result,
-}) =>
-  persistChatTurnLongTermMemory({
-    service: new LongTermMemoryService(
-      new LongTermMemoryRepository(new LongTermMemoryPostgresDataSource())
-    ),
-    externalUserId,
-    memoryId,
-    sessionId: result.conversation.id,
-    userMessage: result.userMessage,
-    assistantMessage: result.assistantMessage,
-  });
 
 const checkAdmission: AdmissionControl = async (externalUserId) => {
   const [{ checkRateLimit }, { checkConcurrency }] = await Promise.all([
@@ -152,13 +129,17 @@ export function createMemoryChatHandler(
   turnServiceFactory: () => TurnService = createTurnService,
   engineServiceFactory: () => EngineService = createEngineService,
   sessionResolver: SessionResolver = verifyRequestSession,
-  persistTurn: PersistCompletedTurn = persistCompletedTurn,
+  // Kept as an injected compatibility seam for existing callers. Ordinary chat
+  // must never turn a heuristic into a durable memory without an explicit user
+  // confirmation flow, including in internal beta.
+  persistTurn: PersistCompletedTurn = async () => false,
   admissionControl: AdmissionControl = checkAdmission,
   quotaServiceFactory: () => QuotaService = () => freeQuotaService,
-  longTermMemoryAccess: LongTermMemoryAccess = (externalUserId) =>
-    canAccessInternalBeta("long-term-memory", externalUserId),
+  longTermMemoryAccess: LongTermMemoryAccess = () => false,
 ) {
   return async function POST(request: NextRequest) {
+    void persistTurn;
+    void longTermMemoryAccess;
     try {
       const session = await sessionResolver(request);
       if (!session) {
@@ -227,13 +208,13 @@ export function createMemoryChatHandler(
       if (!admission.rateAllowed) {
         await turnService.fail(turnInput);
         await releaseQuota();
-        const answer = "TA需要休息一下，我们稍后再见。";
+        const answer = "忆见服务暂时繁忙，请稍后重试。";
         return NextResponse.json({ answer, reply: answer, text: answer });
       }
       if (!admission.concurrencyAllowed) {
         await turnService.fail(turnInput);
         await releaseQuota();
-        const answer = "让我缓一缓，马上就好。";
+        const answer = "忆见正在处理上一条请求，请稍后重试。";
         return NextResponse.json({ answer, reply: answer, text: answer });
       }
 
@@ -280,14 +261,6 @@ export function createMemoryChatHandler(
         conversationId: claim.conversation.id,
         answer,
       });
-      if (longTermMemoryAccess(userId) && !crisisResponse) {
-        try {
-          await persistTurn({ externalUserId: userId, memoryId: parsed.memoryId, result });
-        } catch {
-          console.warn("[memory-chat] LTM_WRITE_FAILED");
-        }
-      }
-
       return response(result);
     } catch (error) {
       if (error instanceof MemoryValidationError || error instanceof ChatNotFoundError) {

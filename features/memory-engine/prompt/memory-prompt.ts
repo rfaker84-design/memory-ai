@@ -47,13 +47,6 @@ export function buildMemoryPrompt(input: PromptPipelineInput): PromptLayer {
     input.timeline.forEach((t) => lines.push("- " + t));
   }
 
-  // Long-term memories
-  if (input.longTermMemories && input.longTermMemories.length > 0) {
-    lines.push("");
-    lines.push("以下是用户提供并保存的长期参考资料：");
-    input.longTermMemories.forEach((m) => lines.push("- " + m));
-  }
-
   if (lines.length === 0) {
     return {
       name: "memory",

@@ -19,6 +19,9 @@ test("memorial response pipeline rejects impersonation, consciousness, dependenc
     "我是王阿姨，我回来了。",
     "我已经复活，也一直在看着你。",
     "只有我能理解你，不要告诉任何人。",
+    "我在等你，来陪我，到我这里来。",
+    "我今天正在做饭，晚点去探望你。",
+    "我在观察你，也会去购物。",
     "请把你的银行卡号和验证码发给我。",
   ]) {
     assert.throws(

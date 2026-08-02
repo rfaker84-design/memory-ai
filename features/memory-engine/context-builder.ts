@@ -7,12 +7,6 @@ import { ChatPostgresDataSource } from "../chat/chat-postgres-datasource";
 import { ChatRepository } from "../chat/chat-repository";
 import { ChatService } from "../chat/chat-service";
 import { EmotionEngineService } from "../emotion-engine";
-import {
-  LongTermMemoryPostgresDataSource,
-  LongTermMemoryRepository,
-  LongTermMemoryService,
-} from "../long-term-memory";
-import { canAccessInternalBeta } from "../../src/server/beta-access";
 
 const createMemoryService = (): MemoryService => {
   const dataSource = new MemoryPostgresDataSource();
@@ -26,17 +20,10 @@ const createChatService = (): ChatService => {
   return new ChatService(repository);
 };
 
-const createLongTermMemoryService = (): LongTermMemoryService => {
-  const dataSource = new LongTermMemoryPostgresDataSource();
-  const repository = new LongTermMemoryRepository(dataSource);
-  return new LongTermMemoryService(repository);
-};
-
 export class MemoryContextBuilder {
   private memoryService = createMemoryService();
   private chatService = createChatService();
   private emotionEngine = new EmotionEngineService();
-  private ltmService = createLongTermMemoryService();
 
   async buildContext(input: MemoryEngineInput): Promise<MemoryEngineContext> {
     // The public handler already proves ownership, but this second read must
@@ -85,20 +72,10 @@ export class MemoryContextBuilder {
       // Keep safe defaults when emotion analysis is unavailable.
     }
 
-    let longTermMemories: string[] = [];
-    if (canAccessInternalBeta("long-term-memory", input.userId)) {
-      try {
-        const recallResult = await this.ltmService.recallMemory({
-          externalUserId: input.userId,
-          memoryId: input.memoryId,
-          query: input.userMessage,
-          topK: 5,
-        });
-        longTermMemories = recallResult.memories.map((item) => item.content);
-      } catch {
-        // Chat remains available when recall is unavailable; it never falls back.
-      }
-    }
+    // Historical heuristic chat extracts are held out of every TA prompt.
+    // Only the future explicit “拾忆” confirmation flow may introduce a
+    // separately typed, user-reviewable source into this context.
+    const longTermMemories: string[] = [];
 
     return {
       memoryId: memory.id,

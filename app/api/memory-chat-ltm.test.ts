@@ -8,15 +8,13 @@ const contextBuilder = readFileSync(
   "utf8"
 );
 
-test("formal chat path uses PostgreSQL LTM only after both messages persist", () => {
-  assert.match(handler, /LongTermMemoryPostgresDataSource/);
-  assert.match(handler, /persistChatTurnLongTermMemory/);
-  assert.ok(handler.indexOf("const result = await turnService.complete") < handler.indexOf("await persistTurn"));
-  assert.match(handler, /console\.warn\("\[memory-chat\] LTM_WRITE_FAILED"\)/);
-  assert.match(handler, /canAccessInternalBeta\("long-term-memory", externalUserId\)/);
-  assert.match(handler, /if \(longTermMemoryAccess\(userId\) && !crisisResponse\)/);
+test("formal chat path neither auto-persists nor recalls historical heuristic long-term memory", () => {
+  assert.doesNotMatch(handler, /LongTermMemoryPostgresDataSource/);
+  assert.doesNotMatch(handler, /persistChatTurnLongTermMemory/);
+  assert.doesNotMatch(handler, /await persistTurn/);
+  assert.doesNotMatch(handler, /canAccessInternalBeta/);
   assert.doesNotMatch(handler, /supabase/i);
-  assert.match(contextBuilder, /LongTermMemoryPostgresDataSource/);
-  assert.match(contextBuilder, /canAccessInternalBeta\("long-term-memory", input\.userId\)/);
+  assert.doesNotMatch(contextBuilder, /LongTermMemoryPostgresDataSource/);
+  assert.doesNotMatch(contextBuilder, /canAccessInternalBeta/);
   assert.doesNotMatch(contextBuilder, /supabase/i);
 });

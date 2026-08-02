@@ -6,16 +6,12 @@ import { motion } from "framer-motion";
 import Footer from "../../components/Footer";
 import { MemoryTheme as T } from "../lib/design-system/memory-theme";
 
-/* 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
-   MobileAppShell 鈥?Warm Healing 4-Tab Shell
-   棣栭〉 路 杩炴帴 路 瀵硅瘽 路 鎴戠殑
-   鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲 */
+/** Approved first-release navigation: companion, explicitly confirmed memories, and account. */
 
 const TABS = [
-  { key:"home",label:"首页",path:"/",icon:(a:boolean)=>(<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={a?T.colors.primary:T.colors.textFaint} strokeWidth={a?1.8:1.3} strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>) },
-  { key:"dialogue",label:"聊天",path:"/dialogue",icon:(a:boolean)=>(<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={a?T.colors.primary:T.colors.textFaint} strokeWidth={a?1.8:1.3} strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>) },
-  { key:"memory",label:"记忆",path:"/memory-world",icon:(a:boolean)=>(<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={a?T.colors.primary:T.colors.textFaint} strokeWidth={a?1.8:1.3} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-7 8-7s8 3 8 7"/></svg>) },
-  { key:"continuity",label:"我的",path:"/continuity",icon:(a:boolean)=>(<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={a?T.colors.primary:T.colors.textFaint} strokeWidth={a?1.8:1.3} strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>) },
+  { key:"companion",label:"相伴",path:"/memory-world",icon:(a:boolean)=>(<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={a?T.colors.primary:T.colors.textFaint} strokeWidth={a?1.8:1.3} strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>) },
+  { key:"memory",label:"拾忆",path:"/memory",icon:(a:boolean)=>(<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={a?T.colors.primary:T.colors.textFaint} strokeWidth={a?1.8:1.3} strokeLinecap="round" strokeLinejoin="round"><path d="M4 20c0-4 4-7 8-7s8 3 8 7"/><circle cx="12" cy="8" r="4"/></svg>) },
+  { key:"account",label:"我的",path:"/continuity",icon:(a:boolean)=>(<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={a?T.colors.primary:T.colors.textFaint} strokeWidth={a?1.8:1.3} strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 01-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>) },
 ];
 
 export default function MobileAppShell({ children }:{ children:React.ReactNode }) {

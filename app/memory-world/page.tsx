@@ -92,7 +92,7 @@ function MemoryWorldContent() {
       </MemorySection>
 
       <nav style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: MemoryZIndex.navigation, display: "flex", justifyContent: "center", gap: MemorySpacing.sm, padding: `${MemorySpacing.sm} ${MemorySpacing.lg} calc(${MemorySpacing.md} + env(safe-area-inset-bottom, 0px))`, background: "rgba(5,5,5,0.86)", borderTop: `1px solid ${SurfaceToken.border.subtle}` }}>
-        {[{ label: "首页", href: "/" }, { label: "聊天", href: memories[0]?.id ? `/memory-chat/${memories[0].id}` : "/create-memory" }, { label: "记忆", href: "/memory-world" }, { label: "我的", href: "/continuity" }].map((item) => (
+        {[{ label: "相伴", href: "/memory-world" }, { label: "拾忆", href: "/memory" }, { label: "我的", href: "/continuity" }].map((item) => (
           <button key={item.label} onClick={() => router.push(item.href)} style={{ minWidth: 64, minHeight: 46, border: "none", borderRadius: MemoryRadius.full, background: item.href === "/memory-world" ? "rgba(196,168,130,0.14)" : "transparent", color: item.href === "/memory-world" ? SurfaceToken.accent.gold : SurfaceToken.content.muted, cursor: "pointer" }}>{item.label}</button>
         ))}
       </nav>

@@ -119,8 +119,8 @@ export default function LongTermMemoryBetaPage({
       {loadState === "ready" && (
         <>
           <section className={styles.notice}>
-            <p>这里展示从真实对话中留下的内容。你可以逐条查看、更正和删除。</p>
-            <p>这些内容只服务于当前内测体验，不会用于训练模型。</p>
+            <p>这里展示历史内测记录。它们已暂停用于 TA 回复；你可以逐条查看、更正和删除。</p>
+            <p>普通聊天不会自动成为长期记忆。只有在“拾忆”中由你明确确认的资料，才会在未来成为可引用内容。</p>
           </section>
 
           {message && <p className={styles.message}>{message}</p>}
@@ -128,7 +128,7 @@ export default function LongTermMemoryBetaPage({
           {items.length === 0 ? (
             <section className={styles.empty}>
               <h2>还没有长期记忆</h2>
-              <p>在对话中讲到家庭、经历或偏好后，可回到这里查看。</p>
+              <p>普通聊天不会自动保存。你可以在“拾忆”中主动整理并确认资料。</p>
             </section>
           ) : (
             <section className={styles.list} aria-label="长期记忆列表">

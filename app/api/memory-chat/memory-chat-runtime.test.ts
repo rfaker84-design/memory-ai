@@ -91,7 +91,7 @@ function createHandler(turnService: {
   );
 }
 
-test("memory-chat handler completes a fully injected turn without Supabase, database, or AI access", async () => {
+test("memory-chat handler completes a fully injected turn without automatically persisting ordinary chat as long-term memory", async () => {
   let providerCalls = 0;
   let completeCalls = 0;
   let persistedCalls = 0;
@@ -120,7 +120,7 @@ test("memory-chat handler completes a fully injected turn without Supabase, data
   });
   assert.equal(providerCalls, 1);
   assert.equal(completeCalls, 1);
-  assert.equal(persistedCalls, 1);
+  assert.equal(persistedCalls, 0);
 });
 
 test("memory-chat replay does not call the provider or persist a duplicate long-term memory", async () => {
@@ -237,6 +237,37 @@ test("memory-chat short-circuits immediate crisis language without a role-model 
   assert.equal(providerCalls, 0);
   assert.equal(persistedCalls, 0);
   assert.equal(releasedQuota, 1);
+});
+
+test("memory-chat admission fallbacks remain platform messages and never impersonate the TA", async () => {
+  for (const [admission, expected] of [
+    [{ rateAllowed: false, concurrencyAllowed: true }, "忆见服务暂时繁忙，请稍后重试。"],
+    [{ rateAllowed: true, concurrencyAllowed: false }, "忆见正在处理上一条请求，请稍后重试。"],
+  ] as const) {
+    let providerCalls = 0;
+    let failedCalls = 0;
+    const handler = createMemoryChatHandler(
+      () => ({ async getMemoryForUser() { return memory; } }),
+      () => ({
+        async claim() { return { status: "claimed" as const, conversation }; },
+        async complete() { throw new Error("complete should not run"); },
+        async fail() { failedCalls += 1; },
+      }),
+      () => ({ async generateReply() { providerCalls += 1; return { content: "unexpected" }; } }),
+      sessionResolver,
+      async () => false,
+      async () => admission,
+      undefined,
+      () => false,
+    );
+
+    const response = await handler(request({ memoryId, question: "Hello" }));
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { answer: expected, reply: expected, text: expected });
+    assert.equal(providerCalls, 0);
+    assert.equal(failedCalls, 1);
+    assert.doesNotMatch(expected, /TA|再见|马上就好/);
+  }
 });
 
 test("memory-chat validates Unicode length and dangerous question content before service work", async () => {

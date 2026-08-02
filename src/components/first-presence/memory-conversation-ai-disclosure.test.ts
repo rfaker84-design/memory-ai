@@ -11,4 +11,9 @@ test("continuous memorial chat keeps an accessible AI identity disclosure visibl
     source.indexOf("<AiGeneratedLabel />") < source.indexOf("<div className={styles.messages}"),
     "disclosure must precede conversation messages",
   );
+  assert.match(source, /<AiGeneratedLabel compact confirmedSources \/>/);
+  assert.match(source, /查看资料来源/);
+  assert.match(source, /\/memory\/\$\{memoryId\}\/sources/);
+  assert.match(source, /忆见正在整理回复/);
+  assert.doesNotMatch(source, /\$\{memoryName\} 正在回应/);
 });
