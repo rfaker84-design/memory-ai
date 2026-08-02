@@ -61,6 +61,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   const [draft, setDraft] = useState("");
   const [pendingMessage, setPendingMessage] = useState<PendingMessage | null>(null);
   const [notice, setNotice] = useState("");
+  const [networkOffline, setNetworkOffline] = useState(false);
   const portraitUrl = initialPortraitUrl;
   const [controlsVisible, setControlsVisible] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -106,6 +107,25 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   }, [loadOrRequestGreeting]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const disconnected = () => {
+      setNetworkOffline(true);
+      setNotice("网络已断开。你可以继续阅读这段对话；恢复连接后再由你决定是否发送。");
+    };
+    const reconnected = () => {
+      setNetworkOffline(false);
+      setNotice("网络已恢复。刚才未送出的内容不会被自动发送。");
+    };
+    if (!navigator.onLine) disconnected();
+    window.addEventListener("offline", disconnected);
+    window.addEventListener("online", reconnected);
+    return () => {
+      window.removeEventListener("offline", disconnected);
+      window.removeEventListener("online", reconnected);
+    };
+  }, []);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "end" });
   }, [messages, pendingMessage, phase, reducedMotion]);
 
@@ -142,6 +162,11 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     event.preventDefault();
     const message = draft.trim();
     if (!message || inFlightRef.current || phase !== "ready") return;
+    if (networkOffline || (typeof navigator !== "undefined" && !navigator.onLine)) {
+      setNetworkOffline(true);
+      setNotice("当前离线，内容仍留在输入框；恢复连接后请由你决定是否发送。");
+      return;
+    }
 
     const retryCandidate = retryCandidateRef.current;
     const idempotencyKey = retryCandidate?.content === message
@@ -284,7 +309,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
                 disabled={isBusy || phase === "error"}
                 rows={2}
               />
-              <MemoryButton type="submit" loading={phase === "sending" || phase === "replying"} disabled={!draft.trim() || isBusy || phase === "error"}>送出</MemoryButton>
+              <MemoryButton type="submit" loading={phase === "sending" || phase === "replying"} disabled={!draft.trim() || isBusy || phase === "error" || networkOffline}>{networkOffline ? "等待网络恢复" : "送出"}</MemoryButton>
             </div>
             <p>网络不稳定时，这句话不会被自动重复发送。</p>
           </form>

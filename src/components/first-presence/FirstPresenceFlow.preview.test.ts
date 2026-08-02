@@ -148,3 +148,11 @@ test("failure, back navigation, and reduced motion preserve the current draft", 
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(styles, /\.reduced \*/);
 });
+
+test("continuous chat preserves the draft while offline and never auto-sends on reconnect", () => {
+  assert.match(conversation, /网络已断开/);
+  assert.match(conversation, /内容仍留在输入框/);
+  assert.match(conversation, /刚才未送出的内容不会被自动发送/);
+  assert.match(conversation, /window\.addEventListener\("offline"/);
+  assert.match(conversation, /disabled=\{!draft\.trim\(\) \|\| isBusy \|\| phase === "error" \|\| networkOffline\}/);
+});
