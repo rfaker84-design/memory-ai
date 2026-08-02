@@ -34,13 +34,14 @@ export function RefundCenter() {
   const [refunds, setRefunds] = useState<RefundRequest[]>([]);
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(true);
+  const [statusReady, setStatusReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState("");
   const requestKey = useRef<string | null>(null);
 
   const load = useCallback(async (nextMemoryId?: string) => {
     const selected = nextMemoryId ?? memoryId;
-    setLoading(true); setNotice("");
+    setLoading(true); setStatusReady(false); setSnapshot(null); setRefunds([]); setNotice("");
     try {
       if (!selected) {
         const response = await fetch("/api/memories", { credentials: "same-origin", cache: "no-store" });
@@ -50,13 +51,13 @@ export function RefundCenter() {
         setMemories(nextMemories);
         const first = nextMemories[0]?.id ?? "";
         setMemoryId(first);
-        if (!first) { setSnapshot(null); setRefunds([]); return; }
+        if (!first) { setStatusReady(true); return; }
         const [nextSnapshot, nextRefunds] = await Promise.all([loadPaymentSnapshot(first), loadRefundRequests(first)]);
-        setSnapshot(nextSnapshot); setRefunds(nextRefunds);
+        setSnapshot(nextSnapshot); setRefunds(nextRefunds); setStatusReady(true);
         return;
       }
       const [nextSnapshot, nextRefunds] = await Promise.all([loadPaymentSnapshot(selected), loadRefundRequests(selected)]);
-      setSnapshot(nextSnapshot); setRefunds(nextRefunds);
+      setSnapshot(nextSnapshot); setRefunds(nextRefunds); setStatusReady(true);
     } catch (error) {
       setNotice(error instanceof PaymentExperienceRequestError && error.status === 401
         ? "登录状态已失效，请完成短信登录后查看退款状态。"
@@ -72,7 +73,7 @@ export function RefundCenter() {
 
   const submit = async () => {
     const orderNo = snapshot?.orders.find((order) => order.status === "paid")?.orderNo ?? snapshot?.orders[0]?.orderNo;
-    if (!memoryId || !orderNo || !reason.trim() || submitting) return;
+    if (!statusReady || !memoryId || !orderNo || !reason.trim() || submitting) return;
     setSubmitting(true); setNotice("");
     try {
       requestKey.current ??= createRefundIdempotencyKey();
@@ -97,9 +98,9 @@ export function RefundCenter() {
     {memories.length > 1 && <label className={styles.selector}>选择 TA<select value={memoryId} onChange={(event) => chooseMemory(event.currentTarget.value)}>{memories.map((memory) => <option value={memory.id} key={memory.id}>{memory.name}</option>)}</select></label>}
     {loading && <p className={styles.muted} role="status">正在核验订单与退款状态…</p>}
     {!loading && !memoryId && <p className={styles.muted}>还没有可查询的 TA。创建 TA 并完成购买后，可在这里查看退款资格和处理结果。</p>}
-    {!loading && latestRefund && <div className={styles.status} aria-live="polite"><strong>{describeRefundRequest(latestRefund).title}</strong><span>资格结果：{describeRefundEligibility(latestRefund.eligibility)}</span><p>{describeRefundRequest(latestRefund).detail}</p></div>}
-    {!loading && !latestRefund && latestOrder && <div className={styles.form}><p className={styles.order}>订单 {latestOrder.orderNo} · {latestOrder.status === "paid" ? "已完成付款，可提交申请" : "当前订单将由系统核验资格"}</p><p className={styles.order}>{refundPolicy.noReason}{refundPolicy.afterUse}</p><label>申请说明<textarea value={reason} maxLength={500} placeholder="请简要说明退款原因" onChange={(event) => { requestKey.current = null; setReason(event.currentTarget.value); }} /></label><MemoryButton variant="secondary" disabled={!reason.trim()} loading={submitting} onClick={() => void submit()}>{submitting ? "正在提交申请" : "提交退款申请"}</MemoryButton></div>}
-    {!loading && !latestRefund && !latestOrder && memoryId && <p className={styles.muted}>尚未找到支付订单，因此暂时没有可申请退款的订单。</p>}
+    {!loading && statusReady && latestRefund && <div className={styles.status} aria-live="polite"><strong>{describeRefundRequest(latestRefund).title}</strong><span>资格结果：{describeRefundEligibility(latestRefund.eligibility)}</span><p>{describeRefundRequest(latestRefund).detail}</p></div>}
+    {!loading && statusReady && !latestRefund && latestOrder && <div className={styles.form}><p className={styles.order}>订单 {latestOrder.orderNo} · {latestOrder.status === "paid" ? "已完成付款，可提交申请" : "当前订单将由系统核验资格"}</p><p className={styles.order}>{refundPolicy.noReason}{refundPolicy.afterUse}</p><label>申请说明<textarea value={reason} maxLength={500} placeholder="请简要说明退款原因" onChange={(event) => { requestKey.current = null; setReason(event.currentTarget.value); }} /></label><MemoryButton variant="secondary" disabled={!reason.trim() || !statusReady} loading={submitting} onClick={() => void submit()}>{submitting ? "正在提交申请" : "提交退款申请"}</MemoryButton></div>}
+    {!loading && statusReady && !latestRefund && !latestOrder && memoryId && <p className={styles.muted}>尚未找到支付订单，因此暂时没有可申请退款的订单。</p>}
     <button className={styles.refresh} type="button" disabled={loading || submitting} onClick={() => void load(memoryId)}>{loading ? "正在刷新" : "刷新退款状态"}</button>
     {notice && <p className={styles.notice} role="alert">{notice}</p>}
   </section>;
