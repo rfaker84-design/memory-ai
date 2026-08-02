@@ -44,6 +44,12 @@ if (existsSync(nativeConfigPath)) {
   }
 }
 
+const nativeManifestPath = resolve("android/app/src/main/AndroidManifest.xml");
+const nativeManifest = readFileSync(nativeManifestPath, "utf8");
+if (!/android:allowBackup="false"/.test(nativeManifest)) {
+  throw new Error("Android Release must disable system backup for session and memorial-content privacy.");
+}
+
 const releaseAssetsPath = resolve("android/app/src/main/assets/public");
 if (existsSync(releaseAssetsPath)) {
   const assets = releaseAssetText(releaseAssetsPath).toLowerCase();
