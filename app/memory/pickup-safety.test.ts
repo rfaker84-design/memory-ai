@@ -24,5 +24,8 @@ test("pickup is an explicit-confirmation flow and never relies on ordinary-chat 
   assert.match(index, /把想起的事留在这里/);
   assert.match(index, /从一件小事说起/);
   assert.match(index, /从一张照片说起/);
+  assert.match(index, /flexWrap: "wrap"/);
+  assert.match(index, /暂时无法读取 TA/);
+  assert.match(index, /onClick=\{\(\) => void load\(\)\}/);
   assert.match(index, /\/pickup/);
 });
