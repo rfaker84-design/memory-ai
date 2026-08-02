@@ -49,6 +49,9 @@ const nativeManifest = readFileSync(nativeManifestPath, "utf8");
 if (!/android:allowBackup="false"/.test(nativeManifest)) {
   throw new Error("Android Release must disable system backup for session and memorial-content privacy.");
 }
+if (!/android:usesCleartextTraffic="false"/.test(nativeManifest)) {
+  throw new Error("Android Release must explicitly reject cleartext traffic.");
+}
 
 const releaseAssetsPath = resolve("android/app/src/main/assets/public");
 if (existsSync(releaseAssetsPath)) {
