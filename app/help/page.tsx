@@ -54,6 +54,28 @@ export default function HelpPage() {
             <Link href="/terms" className="underline">用户协议</Link>
           </p>
         </section>
+
+        <section style={sectionStyle}>
+          <h2 className="text-xl font-semibold">常见问题</h2>
+          <dl className="mt-3 space-y-4 leading-7 text-[#d8bfaa]">
+            <div>
+              <dt className="font-semibold text-[#f6eee2]">这是真实的 TA 吗？</dt>
+              <dd className="mt-1">不是。忆见提供的是 AI 纪念陪伴内容，不代表真实人物具有意识、真实意图或正在现实中行动。</dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-[#f6eee2]">聊天内容会自动成为长期记忆吗？</dt>
+              <dd className="mt-1">不会。只有你主动在“拾忆”中确认的内容，才会成为 TA 可以引用的资料；你可以查看来源、编辑或删除它。</dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-[#f6eee2]">网络中断时，我刚写的话会怎样？</dt>
+              <dd className="mt-1">未发送的文字会保留在输入框中，恢复连接后也不会自动发送。请先找回对话，再由你决定是否重试。</dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-[#f6eee2]">怎样提交投诉、退款或数据权利请求？</dt>
+              <dd className="mt-1">请通过应用内的投诉、退款与数据删除入口提交；不要把身份证件、照片、声音或聊天正文发送到未核验的地址。</dd>
+            </div>
+          </dl>
+        </section>
       </div>
     </main>
   );

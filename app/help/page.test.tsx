@@ -16,6 +16,13 @@ test("help content gives a real, safe support path for first-use and failures", 
     "请求编号",
     "href=\"/report\"",
   ]) assert.match(help, new RegExp(value));
+  for (const value of [
+    "常见问题",
+    "不是。忆见提供的是 AI 纪念陪伴内容",
+    "聊天内容会自动成为长期记忆吗？",
+    "未发送的文字会保留在输入框中",
+    "投诉、退款或数据权利请求",
+  ]) assert.match(help, new RegExp(value));
 });
 
 test("help is reachable from the shared footer, login, and personal settings", () => {
