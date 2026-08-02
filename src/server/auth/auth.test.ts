@@ -611,8 +611,8 @@ test("verification pepper overlap verifies a challenge persisted with the previo
     const phone = "+8613800000000";
     const code = "246810";
     const repository = new InMemoryAuthRepository();
-    const previousPhoneHash = hashPhoneCandidates(phone)[1]!;
-    const previousCodeDigest = digestVerificationCodeCandidates(challengeId, code)[1]!;
+    const previousPhoneHash = hashPhoneCandidates(phone, environment, now)[1]!;
+    const previousCodeDigest = digestVerificationCodeCandidates(challengeId, code, environment, now)[1]!;
     repository.challenge = {
       challengeId,
       phoneHash: previousPhoneHash,
@@ -621,7 +621,7 @@ test("verification pepper overlap verifies a challenge persisted with the previo
       purpose: "sign_in",
       expiresAt: new Date(now.getTime() + 60_000),
       resendAfter: now,
-      requestIpHash: hashRequestIpCandidates("127.0.0.1")[1]!,
+      requestIpHash: hashRequestIpCandidates("127.0.0.1", environment, now)[1]!,
       requestIpHashCandidates: [],
       attempts: 0,
       consumed: false,
@@ -629,7 +629,7 @@ test("verification pepper overlap verifies a challenge persisted with the previo
     const verified = await new AuthService(repository, new FakeSmsVerificationProvider(), AUTH_POLICY, () => now).verifyCode({ phone, code, challengeId });
     assert.equal(verified.status, "verified");
     if (verified.status === "verified") {
-      assert.equal(verified.user.externalUserId, `phone:${hashPhoneCandidates(phone)[0]!}`);
+      assert.equal(verified.user.externalUserId, `phone:${hashPhoneCandidates(phone, environment, now)[0]!}`);
     }
     assert.equal(repository.challenge.consumed, true);
   } finally {

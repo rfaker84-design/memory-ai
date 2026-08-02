@@ -84,8 +84,9 @@ export class AuthService {
     if (!phoneE164 || !/^[0-9a-f-]{36}$/i.test(input.challengeId) || !/^\d{6}$/.test(input.code)) {
       return { status: "invalid" };
     }
-    const phoneHashCandidates = hashPhoneCandidates(phoneE164);
-    const candidateDigests = digestVerificationCodeCandidates(input.challengeId, input.code);
+    const now = this.now();
+    const phoneHashCandidates = hashPhoneCandidates(phoneE164, process.env, now);
+    const candidateDigests = digestVerificationCodeCandidates(input.challengeId, input.code, process.env, now);
     const phoneHash = phoneHashCandidates[0]!;
     return this.repository.verifyAndConsume({
       challengeId: input.challengeId,
@@ -96,7 +97,7 @@ export class AuthService {
       externalUserId: `phone:${phoneHash}`,
       externalUserIdCandidates: phoneHashCandidates.map((candidate) => `phone:${candidate}`),
       allowNewRegistration: this.registrationsEnabled(),
-      now: this.now(),
+      now,
     });
   }
 }
