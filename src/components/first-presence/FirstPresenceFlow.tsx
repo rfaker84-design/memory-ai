@@ -780,7 +780,7 @@ export function FirstPresenceFlow({
                   {authState === "checking" && !previewMode && <p className={styles.inlineStatus} role="status">正在确认登录状态，你写下的内容仍会留在这里。</p>}
                   <div className={styles.actions}>
                     <button className={styles.backButton} type="button" onClick={goBack}>返回</button>
-                    <MemoryButton type="submit">{questionIndex === QUESTION_COUNT - 1 ? "让 TA 来到这里" : "继续"}</MemoryButton>
+                    <MemoryButton type="submit">{questionIndex === QUESTION_COUNT - 1 ? "确认资料并创建 TA" : "继续"}</MemoryButton>
                   </div>
                 </form>
               )}
