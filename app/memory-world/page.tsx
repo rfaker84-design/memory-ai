@@ -14,6 +14,7 @@ import {
   isDailyCompanionGreetingDue,
   selectPrimaryCompanion,
 } from "../../src/components/companion/companionHomeState";
+import { CompanionHomeRequestError, fetchCompanionHomeMemories } from "../../src/components/companion/companionHomeRequest";
 
 type MemoryWorldItem = {
   id: string;
@@ -23,7 +24,7 @@ type MemoryWorldItem = {
   photoUrl?: string | null;
 };
 
-type MemoryWorldState = "loading" | "unauthenticated" | "empty" | "ready" | "error";
+type MemoryWorldState = "loading" | "unauthenticated" | "empty" | "ready" | "error" | "timeout";
 
 function MemoryWorldContent() {
   const router = useRouter();
@@ -32,14 +33,12 @@ function MemoryWorldContent() {
   const [primaryId, setPrimaryId] = useState<string | null>(null);
   const [dailyGreetingVisible, setDailyGreetingVisible] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setState("loading");
     try {
-      const response = await fetch("/api/memories", {
-        cache: "no-store",
-        credentials: "same-origin",
-      });
+      const response = await fetchCompanionHomeMemories(fetch, signal);
       const data = await response.json();
+      if (signal?.aborted) return;
       if (response.status === 401) {
         setState("unauthenticated");
         return;
@@ -60,8 +59,9 @@ function MemoryWorldContent() {
         if (due) window.localStorage.setItem(COMPANION_DAILY_GREETING_KEY, dailyGreetingMarker(day, primary.id));
       }
       setState(list.length > 0 ? "ready" : "empty");
-    } catch {
-      setState("error");
+    } catch (error) {
+      if (signal?.aborted) return;
+      setState(error instanceof CompanionHomeRequestError ? "timeout" : "error");
     }
   }, []);
 
@@ -73,7 +73,9 @@ function MemoryWorldContent() {
   };
 
   useEffect(() => {
-    void load();
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
   }, [load]);
 
   return (
@@ -93,7 +95,7 @@ function MemoryWorldContent() {
 
       <MemorySection>
         {state === "loading" && <MemoryCard>正在整理记忆空间…</MemoryCard>}
-        {state === "error" && <MemoryCard><div style={{ display: "grid", gap: MemorySpacing.md }}><span>暂时无法读取记忆。</span><MemoryButton variant="secondary" onClick={() => void load()}>重试</MemoryButton></div></MemoryCard>}
+        {(state === "error" || state === "timeout") && <MemoryCard><div style={{ display: "grid", gap: MemorySpacing.md }}><span>{state === "timeout" ? "读取等待过久，没有创建或修改任何资料。" : "暂时无法读取记忆。"}</span><MemoryButton variant="secondary" onClick={() => void load()}>重试</MemoryButton></div></MemoryCard>}
         {(state === "empty" || state === "unauthenticated") && (
           <MemoryCard depth="elevated">
             <div style={{ display: "grid", gap: MemorySpacing.md }}>
