@@ -29,6 +29,9 @@ test("report retry recovery never persists complaint text to browser storage", (
 test("report UI makes load failure visible and serializes an in-flight retry", () => {
   const source = readFileSync(new URL("./ReportIntake.tsx", import.meta.url), "utf8");
   assert.match(source, /暂时无法读取工单状态；尚未提交新的工单/);
+  assert.match(source, /非登录状态的权利或隐私请求渠道尚未配置/);
+  assert.match(source, /请勿向未核验地址发送身份材料、照片、声音或聊天内容/);
+  assert.doesNotMatch(source, /下方正式邮箱/);
   assert.match(source, /if \(submitting\) return/);
   assert.match(source, /disabled=\{submitting\}/);
 });

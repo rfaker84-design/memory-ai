@@ -20,7 +20,7 @@ export function ReportIntake() {
       const response = await fetch("/api/reports", { credentials: "include", cache: "no-store" });
       const body = await response.json().catch(() => ({})) as { reports?: Report[]; error?: string };
       if (response.ok) setReports(body.reports ?? []);
-      else if (body.error === "UNAUTHENTICATED") setMessage("请先登录后提交应用内工单。非用户的权利或隐私请求请使用下方正式邮箱。 ");
+      else if (body.error === "UNAUTHENTICATED") setMessage("请先登录后提交应用内工单。非登录状态的权利或隐私请求渠道尚未配置；请勿向未核验地址发送身份材料、照片、声音或聊天内容。");
       else setMessage("暂时无法读取工单状态；尚未提交新的工单。请恢复网络后刷新。");
     } catch {
       setMessage("暂时无法读取工单状态；尚未提交新的工单。请恢复网络后刷新。");
