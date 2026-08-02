@@ -2,6 +2,7 @@ export type CompanionHomeMemory = { id: string };
 
 export const COMPANION_PRIMARY_KEY = "memoryai.companion.primary";
 export const COMPANION_DAILY_GREETING_KEY = "memoryai.companion.daily-greeting";
+export const COMPANION_POSITION_KEY = "memoryai.companion.position";
 
 /**
  * This is presentation preference only. The API still reloads owner-scoped
@@ -32,4 +33,24 @@ export function isDailyCompanionGreetingDue(
   memoryId: string,
 ): boolean {
   return storedMarker !== dailyGreetingMarker(day, memoryId);
+}
+
+/**
+ * A same-day scroll position is a local presentation preference only. It is
+ * deliberately bounded and expires on the next calendar day, so it cannot
+ * become a stale cross-session navigation state or an access signal.
+ */
+export function serializeCompanionPosition(day: string, scrollY: number): string {
+  return JSON.stringify({ day, scrollY: Math.max(0, Math.round(scrollY)) });
+}
+
+export function restoreCompanionPosition(value: string | null, day: string): number | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as { day?: unknown; scrollY?: unknown };
+    if (parsed.day !== day || typeof parsed.scrollY !== "number" || !Number.isFinite(parsed.scrollY)) return null;
+    return Math.max(0, Math.round(parsed.scrollY));
+  } catch {
+    return null;
+  }
 }

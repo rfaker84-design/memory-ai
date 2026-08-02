@@ -5,7 +5,9 @@ import {
   companionDay,
   dailyGreetingMarker,
   isDailyCompanionGreetingDue,
+  restoreCompanionPosition,
   selectPrimaryCompanion,
+  serializeCompanionPosition,
 } from "./companionHomeState";
 
 const memories = [{ id: "first" }, { id: "second" }];
@@ -22,4 +24,12 @@ test("daily companion greeting is shown once per day and selected TA", () => {
   assert.equal(isDailyCompanionGreetingDue(marker, day, "first"), false);
   assert.equal(isDailyCompanionGreetingDue(marker, day, "second"), true);
   assert.equal(isDailyCompanionGreetingDue(marker, "2026-08-03", "first"), true);
+});
+
+test("companion home restores only a bounded same-day local reading position", () => {
+  const stored = serializeCompanionPosition("2026-08-02", 118.6);
+  assert.equal(restoreCompanionPosition(stored, "2026-08-02"), 119);
+  assert.equal(restoreCompanionPosition(stored, "2026-08-03"), null);
+  assert.equal(restoreCompanionPosition('{"day":"2026-08-02","scrollY":-12}', "2026-08-02"), 0);
+  assert.equal(restoreCompanionPosition("not-json", "2026-08-02"), null);
 });

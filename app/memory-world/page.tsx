@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { MemoryAvatar, MemoryButton, MemoryCard, MemorySection, MemorySurface } from "../../src/components/memory-ui";
@@ -8,11 +8,14 @@ import { MemoryRadius, MemorySpacing, MemorySurface as SurfaceToken, MemoryTypog
 import { MotionProvider } from "../../src/motion";
 import {
   COMPANION_DAILY_GREETING_KEY,
+  COMPANION_POSITION_KEY,
   COMPANION_PRIMARY_KEY,
   companionDay,
   dailyGreetingMarker,
   isDailyCompanionGreetingDue,
+  restoreCompanionPosition,
   selectPrimaryCompanion,
+  serializeCompanionPosition,
 } from "../../src/components/companion/companionHomeState";
 import { CompanionHomeRequestError, fetchCompanionHomeMemories } from "../../src/components/companion/companionHomeRequest";
 
@@ -32,6 +35,7 @@ function MemoryWorldContent() {
   const [memories, setMemories] = useState<MemoryWorldItem[]>([]);
   const [primaryId, setPrimaryId] = useState<string | null>(null);
   const [dailyGreetingVisible, setDailyGreetingVisible] = useState(false);
+  const restoredPosition = useRef(false);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setState("loading");
@@ -77,6 +81,32 @@ function MemoryWorldContent() {
     void load(controller.signal);
     return () => controller.abort();
   }, [load]);
+
+  useEffect(() => {
+    if (state !== "ready" || restoredPosition.current) return;
+    restoredPosition.current = true;
+    const position = restoreCompanionPosition(
+      window.localStorage.getItem(COMPANION_POSITION_KEY),
+      companionDay(),
+    );
+    if (position === null) return;
+    const frame = window.requestAnimationFrame(() => window.scrollTo({ top: position, behavior: "auto" }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [state]);
+
+  useEffect(() => {
+    const persistPosition = () => {
+      window.localStorage.setItem(
+        COMPANION_POSITION_KEY,
+        serializeCompanionPosition(companionDay(), window.scrollY),
+      );
+    };
+    window.addEventListener("pagehide", persistPosition);
+    return () => {
+      persistPosition();
+      window.removeEventListener("pagehide", persistPosition);
+    };
+  }, []);
 
   return (
     <MemorySurface
