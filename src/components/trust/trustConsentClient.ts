@@ -6,6 +6,8 @@ export class TrustConsentRequestError extends Error {
   }
 }
 
+export const TRUST_CONSENT_TIMEOUT_MS = 20_000;
+
 function idempotencyKey() {
   const random = typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -13,12 +15,27 @@ function idempotencyKey() {
   return `consent-${random}`;
 }
 
+async function requestWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  request: typeof fetch,
+  timeoutMs = TRUST_CONSENT_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await request(input, { ...init, signal: controller.signal });
+  } finally {
+    globalThis.clearTimeout(timer);
+  }
+}
+
 export async function recordTrustConsent(
   consentType: TrustConsentType,
   memoryId?: string,
   request: typeof fetch = fetch,
 ): Promise<void> {
-  const response = await request("/api/consents", {
+  const response = await requestWithTimeout("/api/consents", {
     method: "POST",
     credentials: "same-origin",
     headers: {
@@ -26,7 +43,7 @@ export async function recordTrustConsent(
       "Idempotency-Key": idempotencyKey(),
     },
     body: JSON.stringify(memoryId ? { consentType, memoryId } : { consentType }),
-  });
+  }, request);
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as { error?: unknown };
@@ -35,6 +52,6 @@ export async function recordTrustConsent(
 }
 
 export async function revokeCrisisSupportConsent(request: typeof fetch = fetch): Promise<void> {
-  const response = await request("/api/consents", { method: "DELETE", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ consentType: "crisis_support_escalation" }) });
+  const response = await requestWithTimeout("/api/consents", { method: "DELETE", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ consentType: "crisis_support_escalation" }) }, request);
   if (!response.ok) throw new TrustConsentRequestError("CONSENT_REVOKE_FAILED");
 }
