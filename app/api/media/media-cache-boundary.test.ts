@@ -15,6 +15,19 @@ test("media API JSON responses are private and cannot be shared-cached", async (
   assert.equal(failed.headers.get("cache-control"), "private, no-store, max-age=0");
 });
 
+test("unexpected media failures do not copy raw storage or Provider errors to process logs", () => {
+  const original = console.error;
+  const values: unknown[][] = [];
+  console.error = (...args: unknown[]) => { values.push(args); };
+  try {
+    const response = mediaError(new Error("https://provider.example/private/media/customer-object-key"));
+    assert.equal(response.status, 500);
+  } finally {
+    console.error = original;
+  }
+  assert.deepEqual(values, [["[media] request failed"]]);
+});
+
 test("owned media read, delete, and upload paths cannot bypass the no-store helper", () => {
   const mediaItem = readFileSync(new URL("./[id]/route.ts", import.meta.url), "utf8");
   const upload = readFileSync(new URL("./upload/_handler.ts", import.meta.url), "utf8");

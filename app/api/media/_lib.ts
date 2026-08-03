@@ -63,6 +63,8 @@ export function mediaError(error: unknown): NextResponse {
     console.error("[media] storage configuration is incomplete");
     return mediaJson({ error: "STORAGE_UNAVAILABLE" }, { status: 503 });
   }
-  console.error("[media] request failed", error instanceof Error ? error.message : "unknown error");
+  // Storage and Provider exceptions can contain object paths, request URLs, or
+  // opaque identifiers. The stable response/error marker is sufficient here.
+  console.error("[media] request failed");
   return mediaJson({ error: "MEDIA_OPERATION_FAILED" }, { status: 500 });
 }
