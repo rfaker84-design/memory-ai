@@ -96,7 +96,7 @@ export function Screen02Product() {
 
 /* ========================================================================
    Screen 03 — AI Chat
-   "你可以再次和他们对话"
+   "AI 纪念陪伴 · 基于已确认资料"
    ======================================================================== */
 export function Screen03Chat() {
   return (
@@ -108,9 +108,9 @@ export function Screen03Chat() {
       </div>
       {/* Messages */}
       <div style={{flex:1,width:"100%",padding:"18px 14px",display:"flex",flexDirection:"column",gap:12}}>
-        <div style={{alignSelf:"flex-start",maxWidth:"78%",padding:"12px 16px",borderRadius:"18px 18px 18px 4px",background:palette.surface,border:`0.5px solid ${palette.border}`,fontSize:14,color:palette.textSecondary,lineHeight:1.7}}>孩子，最近过得好吗？我一直都在你身边。</div>
+        <div style={{alignSelf:"flex-start",maxWidth:"78%",padding:"12px 16px",borderRadius:"18px 18px 18px 4px",background:palette.surface,border:`0.5px solid ${palette.border}`,fontSize:14,color:palette.textSecondary,lineHeight:1.7}}>这是 AI 纪念陪伴内容；想念时可以慢慢说。</div>
         <div style={{alignSelf:"flex-end",maxWidth:"78%",padding:"12px 16px",borderRadius:"18px 18px 4px 18px",background:palette.primarySoft,border:`0.5px solid ${palette.borderPrimary}`,fontSize:14,color:palette.primary,lineHeight:1.7}}>妈，今天特别想你</div>
-        <div style={{alignSelf:"flex-start",maxWidth:"78%",padding:"12px 16px",borderRadius:"18px 18px 18px 4px",background:palette.surface,border:`0.5px solid ${palette.border}`,fontSize:14,color:palette.textSecondary,lineHeight:1.7}}>我也在想你。你看，窗外的阳光多好。</div>
+        <div style={{alignSelf:"flex-start",maxWidth:"78%",padding:"12px 16px",borderRadius:"18px 18px 18px 4px",background:palette.surface,border:`0.5px solid ${palette.border}`,fontSize:14,color:palette.textSecondary,lineHeight:1.7}}>内容仅基于你已确认的资料生成。</div>
       </div>
       {/* Static voice waveform */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:3,padding:"4px 0 12px"}}>
@@ -120,7 +120,7 @@ export function Screen03Chat() {
       <div style={{width:"100%",padding:"10px 14px",borderTop:`0.5px solid ${palette.border}`}}>
         <div style={{width:"100%",height:44,borderRadius:22,border:`0.5px solid ${palette.border}`,background:palette.surface,display:"flex",alignItems:"center",padding:"0 16px",fontSize:14,color:palette.textMuted}}>输入消息...</div>
       </div>
-      <p style={{position:"absolute",top:14,fontSize:18,color:palette.primary,fontWeight:600,letterSpacing:"0.03em"}}>你可以再次和他们对话</p>
+      <p style={{position:"absolute",top:14,fontSize:14,color:palette.primary,fontWeight:600,letterSpacing:"0.03em"}}>AI生成 · 基于已确认资料</p>
     </Screen>
   );
 }
@@ -160,7 +160,7 @@ export function Screen04Memories() {
 
 /* ========================================================================
    Screen 05 — Digital Presence
-   "他们从未真正离开"
+   "思念可以被温柔记录"
    ======================================================================== */
 export function Screen05Presence() {
   return (
@@ -180,10 +180,10 @@ export function Screen05Presence() {
         <div style={{position:"absolute",width:180,height:180,borderRadius:"50%",background:gradient.ambient,filter:"blur(40px)"}}/>
       </div>
       <motion.p {...m.fadeIn} style={{marginTop:28,...typography.emotion,color:palette.textPrimary,lineHeight:1.5}}>
-        他们从未真正离开
+        思念可以被温柔记录
       </motion.p>
       <p style={{position:"absolute",bottom:32,fontSize:11,color:palette.textMuted,letterSpacing:"0.08em"}}>
-        Memory is not gone.<br/>It is transformed.
+        AI memorial companionship<br/>Confirmed materials only.
       </p>
     </Screen>
   );
@@ -191,7 +191,7 @@ export function Screen05Presence() {
 
 /* ========================================================================
    Screen 06 — Brand Closing
-   "忆见 · Memory is not gone. It is transformed."
+   "忆见 · 思念可以被温柔记录"
    ======================================================================== */
 export function Screen06Brand() {
   return (
@@ -202,7 +202,7 @@ export function Screen06Brand() {
         <p style={{fontSize:"clamp(13px,3.5vw,15px)",color:palette.accent,letterSpacing:"0.1em",marginTop:12,fontWeight:500}}>让思念，被温柔记录</p>
       </motion.div>
       <p style={{position:"absolute",bottom:36,fontSize:11,color:palette.textMuted,letterSpacing:"0.07em",textAlign:"center",lineHeight:1.8}}>
-        Memory is not gone.<br/>It is transformed.
+        AI memorial companionship<br/>Confirmed materials only.
       </p>
       <div style={{position:"absolute",bottom:100,width:40,height:40,borderRadius:"50%",border:`1px solid ${palette.primarySoft}`}}/>
     </Screen>
