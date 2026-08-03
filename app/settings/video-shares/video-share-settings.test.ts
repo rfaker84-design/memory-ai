@@ -13,5 +13,6 @@ test("video share management lives under My and only exposes approved videos wit
   assert.match(page, /function boundedFetch/);
   assert.match(page, /12_000/);
   assert.match(page, /20_000/);
+  assert.match(page, /minHeight: 44/);
   assert.doesNotMatch(page, /download|attachment/i);
 });
