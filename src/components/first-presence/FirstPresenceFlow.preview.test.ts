@@ -38,7 +38,7 @@ test("preview is explicit, zero-write, and production-gated", () => {
   assert.match(flow, /NEXT_PUBLIC_MEMORYAI_ENABLE_PRESENCE_PREVIEW === "true"/);
   assert.match(page, /initialStage="preview-create"/);
   assert.match(flow, /开发预览 · 内容不保存/);
-  assert.match(flow, /if \(previewMode\) return;[\s\S]*?fetch\("\/api\/auth\/session"/);
+  assert.match(flow, /if \(previewMode\) return;[\s\S]*?fetchAuthRequest\("\/api\/auth\/session"/);
   assert.match(
     flow,
     /if \(previewMode && VISUAL_PREVIEW_ENABLED\) \{\s*setStage\("preview-forming"\);\s*return;/,
@@ -59,8 +59,10 @@ test("home cold start is a disclosed static loading state, not a blank client-on
 test("direct SMS login exposes both policies and cannot request or verify without agreement", () => {
   const sendCode = flow.slice(flow.indexOf("const sendCode"), flow.indexOf("const verifyCode"));
   const verifyCode = flow.slice(flow.indexOf("const verifyCode"), flow.indexOf("const reviseText"));
-  assert.match(sendCode, /resolveSmsLoginAction\(loginAgreementAccepted\)[\s\S]*?fetch\("\/api\/auth\/send-code"/);
-  assert.match(verifyCode, /resolveSmsLoginAction\(loginAgreementAccepted\)[\s\S]*?fetch\("\/api\/auth\/verify-code"/);
+  assert.match(sendCode, /resolveSmsLoginAction\(loginAgreementAccepted\)[\s\S]*?fetchAuthRequest\("\/api\/auth\/send-code"/);
+  assert.match(verifyCode, /resolveSmsLoginAction\(loginAgreementAccepted\)[\s\S]*?fetchAuthRequest\("\/api\/auth\/verify-code"/);
+  assert.match(verifyCode, /fetchAuthRequest\("\/api\/auth\/session"/);
+  assert.match(flow, /fetchAuthRequest\("\/api\/auth\/session"[\s\S]*?fetch, controller\.signal/);
   assert.match(flow, /href="\/terms"/);
   assert.match(flow, /href="\/privacy"/);
   assert.match(flow, /disabled=\{!loginAgreementAccepted\}/);
@@ -94,7 +96,7 @@ test("formal creation leaves React memory state for the stable owned chat URL", 
 test("formal creation uploads current selected media before the one stable chat navigation", () => {
   assert.match(flow, /writeCreationRecovery\(\{\s*idempotencyKey: idempotencyKey\.current,\s*phase: "creating"/);
   assert.match(flow, /recoverPendingCreation\(\)/);
-  assert.match(recoveryClient, /request\("\/api\/memories\/recovery"/);
+  assert.match(recoveryClient, /fetchCreationRequest\("\/api\/memories\/recovery"/);
   assert.match(recoveryClient, /body: JSON\.stringify\(\{\}\)/);
   assert.match(flow, /await uploadCurrentCreationMedia\(/);
   assert.match(flow, /await completeCreatedMemory\(payload\.id, idempotencyKey\.current\)/);

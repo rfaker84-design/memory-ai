@@ -29,6 +29,7 @@ import {
 import styles from "./FirstPresenceFlow.module.css";
 import { AiGeneratedLabel } from "../safety/AiGeneratedLabel";
 import { resolveSmsLoginAction } from "../auth/loginExperienceClient";
+import { fetchAuthRequest } from "../auth/authRequestClient";
 
 type EntryStage = "create" | "login-phone" | "preview-create";
 type FlowStage =
@@ -236,11 +237,10 @@ export function FirstPresenceFlow({
   useEffect(() => {
     if (previewMode) return;
     const controller = new AbortController();
-    void fetch("/api/auth/session", {
+    void fetchAuthRequest("/api/auth/session", {
       cache: "no-store",
       credentials: "same-origin",
-      signal: controller.signal,
-    })
+    }, fetch, controller.signal)
       .then(async (response) => {
         const payload = await responsePayload(response);
         if (controller.signal.aborted) return;
@@ -305,7 +305,7 @@ export function FirstPresenceFlow({
     setBusy(true);
     setError("");
     try {
-      const response = await fetch("/api/auth/send-code", {
+      const response = await fetchAuthRequest("/api/auth/send-code", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
@@ -344,7 +344,7 @@ export function FirstPresenceFlow({
     setBusy(true);
     setError("");
     try {
-      const response = await fetch("/api/auth/verify-code", {
+      const response = await fetchAuthRequest("/api/auth/verify-code", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
@@ -355,7 +355,7 @@ export function FirstPresenceFlow({
         setError("验证码无效或已过期，请重新获取。");
         return;
       }
-      const sessionResponse = await fetch("/api/auth/session", {
+      const sessionResponse = await fetchAuthRequest("/api/auth/session", {
         cache: "no-store",
         credentials: "same-origin",
       });
@@ -369,7 +369,7 @@ export function FirstPresenceFlow({
       setAuthState("authenticated");
       setStage("questions");
     } catch {
-      setError("网络连接中断，尚未建立登录会话。系统不会自动重试。");
+      setError("网络连接中断，登录结果尚未确认。系统不会自动重试；请重新验证或刷新后确认。");
     } finally {
       setBusy(false);
     }
