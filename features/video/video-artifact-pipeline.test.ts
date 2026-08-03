@@ -87,6 +87,19 @@ test("multiple workers only process queued or safely recoverable persisted state
   assert.equal(calls.filter((call) => call === `submit:${queued.id}`).length, 2, "workers rely on the repository's conditional claim for the single provider winner");
 });
 
+test("worker failure summaries never expose job identifiers or raw Provider errors", async () => {
+  const queued = job("00000000-0000-4000-8000-000000000024", "queued");
+  const result = await new FirstPresenceVideoWorker(
+    { listWorkerCandidates: async () => [queued] },
+    {
+      processQueued: async () => { throw new Error("https://provider.example/private/task/secret-id"); },
+      recover: async () => queued,
+    },
+  ).runOnce();
+  assert.deepEqual(result.failures, [{ code: "VIDEO_WORKER_JOB_FAILURE" }]);
+  assert.doesNotMatch(JSON.stringify(result), /00000000|provider\.example|secret-id/);
+});
+
 test("initial previews are explicitly non-save while later generations inherit Commerce save rights", () => {
   assert.deepEqual(videoArtifactPresentation({ purpose: "first_preview", creditLotSaveAllowed: true }), {
     presentation: "initial_preview",

@@ -24,7 +24,7 @@ async function main(): Promise<void> {
   process.once("SIGTERM", stop);
   do {
     const result = await worker.runOnce(batchSize);
-    if (result.failures.length > 0) console.error("[video-worker] cycle failures", result.failures);
+    if (result.failures.length > 0) console.error("[video-worker] cycle failure count", result.failures.length);
     if (once || stopping) break;
     await new Promise<void>((resolve) => setTimeout(resolve, intervalMs));
   } while (!stopping);
@@ -32,7 +32,8 @@ async function main(): Promise<void> {
 }
 
 main().catch(async (error) => {
-  console.error("[video-worker] stopped", error instanceof Error ? error.message : "VIDEO_WORKER_UNKNOWN_ERROR");
+  void error;
+  console.error("[video-worker] stopped", "VIDEO_WORKER_STOPPED");
   await closePostgresPool();
   process.exitCode = 1;
 });

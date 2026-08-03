@@ -12,7 +12,8 @@ export type FirstPresenceVideoWorkerService = {
 export type VideoWorkerRunResult = {
   scanned: number;
   processed: number;
-  failures: Array<{ jobId: string; error: string }>;
+  /** Safe for aggregate worker logs; job identifiers and raw Provider errors stay out of it. */
+  failures: Array<{ code: "VIDEO_WORKER_JOB_FAILURE" }>;
 };
 
 const RECOVERABLE = new Set<FirstPresenceVideoStatus>([
@@ -41,10 +42,10 @@ export class FirstPresenceVideoWorker {
         else continue;
         processed += 1;
       } catch (error) {
-        failures.push({
-          jobId: candidate.id,
-          error: error instanceof Error ? error.message : "VIDEO_WORKER_UNKNOWN_ERROR",
-        });
+        // The durable job record has the controlled error state. Do not copy an
+        // identifier or raw Provider/storage exception into process logs.
+        void error;
+        failures.push({ code: "VIDEO_WORKER_JOB_FAILURE" });
       }
     }
     return { scanned: candidates.length, processed, failures };
