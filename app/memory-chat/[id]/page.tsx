@@ -85,7 +85,10 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
     return (
       <main className={styles.loading}>
         <div className={styles.stars} aria-hidden="true" />
-        <p>{copy}</p>
+        <p
+          role={state.status === "loading" ? "status" : "alert"}
+          aria-live={state.status === "loading" ? "polite" : "assertive"}
+        >{copy}</p>
         {state.status === "error" && <button type="button" onClick={() => void load()}>重新读取</button>}
         {state.status !== "loading" && (
           <button type="button" onClick={() => router.replace("/")}>回到首页</button>
