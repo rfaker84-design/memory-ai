@@ -10,7 +10,7 @@ This directory is a Capacitor 7 mobile product shell for the existing Next.js pr
 
 Phone login and memory creation use the existing API contract when a non-production origin is injected. Chat and memory routes remain controlled-beta product capabilities; no production route, payment or store integration is added here.
 
-The native capability lab is reachable only in a **Debug** build through `yijianmemory://debug/native`. It is compiled out of the Release web bundle. Push registration and account deletion remain unavailable until their authenticated server endpoints exist, and their controls are not rendered in Release.
+The native capability lab is reachable only in a **Debug** build through `yijianmemory://debug/native`. It is compiled out of the Release web bundle. Push registration and account deletion remain unavailable in the native host until their separately approved, session-bound mobile integrations are enabled; their controls are not rendered in Release.
 
 ## Secure staging connection
 
@@ -92,7 +92,7 @@ adb shell am start -a android.intent.action.VIEW -d "yijianmemory://memory/examp
 | System share | native share sheet | none |
 | Push | no Release entry is rendered; the Debug capability lab remains fail-closed | new authenticated device-token registration endpoint is required; current `/api/notification/push` is unavailable |
 | Deep link | `yijianmemory://…` opens a single-task app and emits `appUrlOpen` | HTTPS Universal/App Links wait for staging AASA / `assetlinks.json` |
-| Account deletion | no Release entry is rendered; the Debug capability lab remains fail-closed | new audited, session-bound deletion workflow is required; clearing a local session is not deletion |
+| Account deletion | no Release entry is rendered; the Debug capability lab remains fail-closed | a separately approved, fresh-session mobile integration is required; clearing a local session is not deletion |
 | IAP | explicit disabled native boundary, no store SDK and no payment path | separate approved commerce task and store product configuration |
 
 ## iOS conditions
@@ -108,6 +108,6 @@ The Xcode project is generated at `ios/App/App.xcworkspace` (after CocoaPods run
 ## Current blockers deliberately left outside this worktree
 
 - the checked-in example uses the reserved `.invalid` non-production host; a reachable staging origin has not been supplied;
-- no current authenticated endpoint safely accepts push tokens or performs account deletion;
+- no current authenticated endpoint safely accepts push tokens, and no native account-deletion integration has been approved;
 - no FCM `google-services.json`, APNs credentials or iOS signing material is available;
 - no IAP product, store SDK or payment integration is included.

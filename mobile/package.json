@@ -17,7 +17,8 @@
     "verify:config": "tsx scripts/verify-mobile-config.ts",
     "test:secure-session-contract": "tsx --test scripts/session-origin.test.ts",
     "test:incomplete-ta-resume": "tsx --test src/product/incomplete-memory.test.ts",
-    "test:video-opportunity": "tsx --test src/product/video-opportunity.test.ts"
+    "test:video-opportunity": "tsx --test src/product/video-opportunity.test.ts",
+    "test:ios-media-contract": "tsx --test scripts/ios-media-contract.test.ts"
   },
   "dependencies": {
     "@capacitor/app": "^7.0.0",

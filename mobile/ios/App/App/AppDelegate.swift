@@ -59,18 +59,25 @@ final class MemoryAppViewController: CAPBridgeViewController {
 
 @objc(MemoryMediaPlugin)
 final class MemoryMediaPlugin: CAPPlugin, CAPBridgedPlugin, PHPickerViewControllerDelegate {
+    private let maximumImageBytes = 20 * 1024 * 1024
     let identifier = "MemoryMediaPlugin"
     let jsName = "MemoryMedia"
     let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "pickMedia", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "readMedia", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "saveVideo", returnType: CAPPluginReturnPromise),
     ]
     private var pendingPickerCall: CAPPluginCall?
 
+    private func supportedImageMimeType(_ type: UTType) -> String? {
+        guard type.conforms(to: .image), let mimeType = type.preferredMIMEType else { return nil }
+        return ["image/jpeg", "image/png", "image/webp"].contains(mimeType) ? mimeType : nil
+    }
+
     @objc func pickMedia(_ call: CAPPluginCall) {
         var config = PHPickerConfiguration(photoLibrary: .shared())
         config.selectionLimit = min(max(call.getInt("limit", 20), 1), 20)
-        config.filter = .any(of: [.images, .videos])
+        config.filter = .images
         let picker = PHPickerViewController(configuration: config)
         picker.delegate = self
         pendingPickerCall = call
@@ -89,10 +96,9 @@ final class MemoryMediaPlugin: CAPPlugin, CAPBridgedPlugin, PHPickerViewControll
         for result in results {
             group.enter()
             let provider = result.itemProvider
-            let type = provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier)
-                ? UTType.movie.identifier
-                : UTType.image.identifier
-            provider.loadFileRepresentation(forTypeIdentifier: type) { source, _ in
+            guard let type = provider.registeredContentTypes.first(where: { supportedImageMimeType($0) != nil }),
+                  let mimeType = supportedImageMimeType(type) else { continue }
+            provider.loadFileRepresentation(forTypeIdentifier: type.identifier) { source, _ in
                 defer { group.leave() }
                 guard let source else { return }
                 let destination = FileManager.default.temporaryDirectory.appendingPathComponent("memoryai-\(UUID().uuidString)-\(source.lastPathComponent)")
@@ -101,14 +107,53 @@ final class MemoryMediaPlugin: CAPPlugin, CAPBridgedPlugin, PHPickerViewControll
                     lock.lock()
                     items.append([
                         "uri": destination.absoluteString,
-                        "mimeType": type == UTType.movie.identifier ? "video/mp4" : "image/jpeg",
+                        "mimeType": mimeType,
                         "name": destination.lastPathComponent,
                     ])
                     lock.unlock()
                 } catch { }
             }
         }
-        group.notify(queue: .main) { call.resolve(["items": items]) }
+        group.notify(queue: .main) {
+            if items.isEmpty { call.reject("UNSUPPORTED_MEDIA_TYPE") }
+            else { call.resolve(["items": items]) }
+        }
+    }
+
+    @objc func readMedia(_ call: CAPPluginCall) {
+        guard let rawUri = call.getString("uri"), let source = URL(string: rawUri), source.isFileURL else {
+            call.reject("MEDIA_URI_REQUIRED")
+            return
+        }
+        let file = source.standardizedFileURL
+        let temporaryDirectory = FileManager.default.temporaryDirectory.standardizedFileURL
+        guard file.path.hasPrefix(temporaryDirectory.path + "/") else {
+            call.reject("UNSUPPORTED_MEDIA_URI")
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            do {
+                let values = try file.resourceValues(forKeys: [.fileSizeKey, .contentTypeKey, .isRegularFileKey])
+                guard values.isRegularFile == true,
+                      let sizeBytes = values.fileSize,
+                      sizeBytes > 0,
+                      sizeBytes <= self.maximumImageBytes,
+                      let contentType = values.contentType,
+                      self.supportedImageMimeType(contentType) != nil else {
+                    call.reject("UNSUPPORTED_MEDIA_TYPE")
+                    return
+                }
+                let data = try Data(contentsOf: file, options: .mappedIfSafe)
+                guard data.count == sizeBytes else {
+                    call.reject("MEDIA_READ_FAILED")
+                    return
+                }
+                call.resolve(["base64": data.base64EncodedString(), "sizeBytes": data.count])
+            } catch {
+                call.reject("MEDIA_READ_FAILED")
+            }
+        }
     }
 
     @objc func saveVideo(_ call: CAPPluginCall) {
