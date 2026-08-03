@@ -118,6 +118,8 @@ function requireVideoInternalAccess(environment) {
   requireExact(environment, "YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED", "true");
   const review = requiredSecret(environment, "VIDEO_REVIEW_ACCESS_TOKEN", MINIMUM_VIDEO_TOKEN_BYTES);
   const reconciliation = requiredSecret(environment, "VIDEO_RECONCILIATION_ACCESS_TOKEN", MINIMUM_VIDEO_TOKEN_BYTES);
+  requireInternalControlTokenRotation(environment, "VIDEO_REVIEW_ACCESS_TOKEN");
+  requireInternalControlTokenRotation(environment, "VIDEO_RECONCILIATION_ACCESS_TOKEN");
   if (new Set(review).size < 16 || new Set(reconciliation).size < 16) {
     throw failure("VIDEO_REVIEW_ACCESS_TOKEN_NOT_CONFIGURED");
   }

@@ -197,6 +197,29 @@ test("production startup rejects incomplete, expired, or overlong report-review 
   }
 });
 
+test("production startup rejects incomplete, expired, or overlong video-control token rotation", () => {
+  for (const name of ["VIDEO_REVIEW_ACCESS_TOKEN", "VIDEO_RECONCILIATION_ACCESS_TOKEN"] as const) {
+    for (const override of [
+      { [`${name}_PREVIOUS`]: "p".repeat(48) },
+      {
+        [`${name}_PREVIOUS`]: "p".repeat(48),
+        [`${name}_PREVIOUS_VALID_UNTIL`]: new Date(Date.now() - 1_000).toISOString(),
+      },
+      {
+        [`${name}_PREVIOUS`]: "p".repeat(48),
+        [`${name}_PREVIOUS_VALID_UNTIL`]: new Date(Date.now() + 15 * 60 * 1000 + 1_000).toISOString(),
+      },
+    ]) {
+      assert.throws(
+        () => assertProductionAuthConfiguration({ ...productionEnvironment, ...override }),
+        (error: unknown) => error instanceof ProductionAuthConfigurationError
+          && error.code === `${name}_PREVIOUS_CONFIGURATION_INVALID`,
+        name,
+      );
+    }
+  }
+});
+
 test("production startup rejects incomplete, too-short and expired verification pepper rotation configuration", () => {
   for (const override of [
     { AUTH_VERIFICATION_PEPPER_PREVIOUS: "p".repeat(32) },
