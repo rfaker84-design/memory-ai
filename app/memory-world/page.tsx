@@ -125,7 +125,16 @@ function MemoryWorldContent() {
       <MemorySection>
         {state === "loading" && <MemoryCard role="status" aria-live="polite">正在整理记忆空间…</MemoryCard>}
         {(state === "error" || state === "timeout") && <MemoryCard role="alert" aria-live="assertive"><div style={{ display: "grid", gap: MemorySpacing.md }}><span>{state === "timeout" ? "读取等待过久，没有创建或修改任何资料。" : "暂时无法读取记忆。"}</span><MemoryButton variant="secondary" onClick={() => void load()}>重试</MemoryButton></div></MemoryCard>}
-        {(state === "empty" || state === "unauthenticated") && (
+        {state === "unauthenticated" && (
+          <MemoryCard depth="elevated">
+            <div style={{ display: "grid", gap: MemorySpacing.md }}>
+              <span style={{ color: SurfaceToken.content.primary }}>请先登录，再查看或创建你的 TA。</span>
+              <span style={{ color: SurfaceToken.content.muted, lineHeight: MemoryTypography.lineHeight.normal }}>当前没有读取或修改任何资料。</span>
+              <MemoryButton href="/login" variant="primary">前往登录</MemoryButton>
+            </div>
+          </MemoryCard>
+        )}
+        {state === "empty" && (
           <MemoryCard depth="elevated">
             <div style={{ display: "grid", gap: MemorySpacing.md }}>
               <span style={{ color: SurfaceToken.content.primary }}>还没有可进入的记忆空间。</span>

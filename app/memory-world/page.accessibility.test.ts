@@ -11,4 +11,6 @@ test("companion home announces bounded cold-start and recovery states", () => {
   assert.match(page, /<button type="button" onClick=\{\(\) => router\.push\("\/"\)\}/);
   assert.match(page, /<button key=\{item\.label\} type="button" onClick=\{\(\) => router\.push\(item\.href\)\}/);
   assert.match(page, /MemoryButton variant="secondary" onClick=\{\(\) => void load\(\)\}>重试/);
+  assert.match(page, /state === "unauthenticated"[\s\S]*?<MemoryButton href="\/login" variant="primary">/);
+  assert.match(page, /state === "empty"[\s\S]*?<MemoryButton variant="primary" onClick=\{\(\) => router\.push\("\/create-memory"\)\}>/);
 });
