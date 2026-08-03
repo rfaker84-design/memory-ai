@@ -23,8 +23,6 @@ export class MemoryEngineService {
     const context = await this.contextBuilder.buildContext(input);
     const prompt = this.promptBuilder.buildPrompt(context);
 
-    // TODO: update summary via SummaryEngine
-
     const result = await this.llmProvider.generate({
       messages: prompt.messages,
     });
