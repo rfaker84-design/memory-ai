@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { MemoryAvatar, MemoryButton, MemoryCard, MemorySection, MemorySurface } from "../../src/components/memory-ui";
+import { MemoryAvatar, MemoryBottomSheet, MemoryButton, MemoryCard, MemorySection, MemorySurface } from "../../src/components/memory-ui";
 import { MemoryRadius, MemorySpacing, MemorySurface as SurfaceToken, MemoryTypography, MemoryZIndex } from "../../src/design";
 import { MotionProvider } from "../../src/motion";
 import {
@@ -34,6 +34,7 @@ function MemoryWorldContent() {
   const [state, setState] = useState<MemoryWorldState>("loading");
   const [memories, setMemories] = useState<MemoryWorldItem[]>([]);
   const [primaryId, setPrimaryId] = useState<string | null>(null);
+  const [primarySelectorOpen, setPrimarySelectorOpen] = useState(false);
   const [dailyGreetingVisible, setDailyGreetingVisible] = useState(false);
   const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -78,6 +79,7 @@ function MemoryWorldContent() {
     setPrimaryId(memory.id);
     window.localStorage.setItem(COMPANION_PRIMARY_KEY, memory.id);
     setDailyGreetingVisible(false);
+    setPrimarySelectorOpen(false);
   };
 
   const deleteMemory = async (memory: MemoryWorldItem) => {
@@ -219,10 +221,10 @@ function MemoryWorldContent() {
               <MemoryCard depth="elevated">
                 <div style={{ display: "grid", gap: MemorySpacing.md }}>
                   <span style={{ color: SurfaceToken.accent.gold, fontSize: MemoryTypography.size.meta, letterSpacing: "0.08em" }}>AI纪念陪伴 · 主 TA</span>
-                  <div style={{ display: "flex", alignItems: "center", gap: MemorySpacing.lg }}>
+                  <button type="button" onClick={() => setPrimarySelectorOpen(true)} aria-haspopup="dialog" aria-expanded={primarySelectorOpen} aria-label={`切换主 TA，当前为 ${primary.name}`} style={{ display: "flex", alignItems: "center", gap: MemorySpacing.lg, padding: 0, border: "none", background: "transparent", color: "inherit", cursor: "pointer", textAlign: "left", minHeight: 44 }}>
                     <MemoryAvatar image={primary.photoUrl} initials={primary.name} presence="quiet" size={96} />
                     <div><div style={{ color: SurfaceToken.content.primary, fontSize: MemoryTypography.size.title }}>{primary.name}</div><div style={{ color: SurfaceToken.content.muted, marginTop: 4 }}>{primary.relationship || "关系待补充"}</div></div>
-                  </div>
+                  </button>
                   {dailyGreetingVisible && <p role="status" style={{ margin: 0, color: SurfaceToken.content.secondary, lineHeight: MemoryTypography.lineHeight.normal }}>忆见提示：今天也可以慢慢说一件你想起的小事。</p>}
                   <div style={{ display: "flex", flexWrap: "wrap", gap: MemorySpacing.sm }}>
                     <MemoryButton variant="primary" onClick={() => router.push(`/memory/${primary.id}/encounter`)}>遇见</MemoryButton>
@@ -231,10 +233,11 @@ function MemoryWorldContent() {
                 </div>
               </MemoryCard>
             )}
-            {memories.length > 1 && <section aria-label="切换主 TA" style={{ display: "grid", gap: MemorySpacing.sm }}>
-              <p style={{ margin: 0, color: SurfaceToken.content.muted, fontSize: MemoryTypography.size.meta }}>手动切换或设为主 TA</p>
-              <div style={{ display: "flex", gap: MemorySpacing.sm, overflowX: "auto", paddingBottom: 2 }}>{memories.map((memory) => <button key={`primary-${memory.id}`} type="button" onClick={() => choosePrimary(memory)} aria-pressed={primary?.id === memory.id} style={{ minHeight: 44, whiteSpace: "nowrap", borderRadius: MemoryRadius.full, border: `1px solid ${primary?.id === memory.id ? SurfaceToken.accent.gold : SurfaceToken.border.subtle}`, background: "transparent", color: primary?.id === memory.id ? SurfaceToken.accent.gold : SurfaceToken.content.secondary, padding: "0 14px", cursor: "pointer" }}>{primary?.id === memory.id ? `${memory.name} · 主 TA` : `设 ${memory.name} 为主 TA`}</button>)}</div>
-            </section>}
+            {primary && memories.length > 1 && primarySelectorOpen && <MemoryBottomSheet open title="切换主 TA" description="选择后，相伴首页会以这位 TA 为主。" footer={<MemoryButton variant="secondary" onClick={() => setPrimarySelectorOpen(false)}>取消</MemoryButton>}>
+              <div style={{ display: "grid", gap: MemorySpacing.sm }}>
+                {memories.map((memory) => <button key={`primary-${memory.id}`} type="button" onClick={() => choosePrimary(memory)} aria-pressed={primary.id === memory.id} style={{ minHeight: 44, borderRadius: MemoryRadius.full, border: `1px solid ${primary.id === memory.id ? SurfaceToken.accent.gold : SurfaceToken.border.subtle}`, background: "transparent", color: primary.id === memory.id ? SurfaceToken.accent.gold : SurfaceToken.content.secondary, padding: "0 14px", cursor: "pointer", textAlign: "left" }}>{primary.id === memory.id ? `${memory.name} · 当前主 TA` : `设 ${memory.name} 为主 TA`}</button>)}
+              </div>
+            </MemoryBottomSheet>}
             {memories.map((memory) => (
               <MemoryCard key={memory.id} interactive reveal onClick={() => router.push(`/memory-chat/${memory.id}`)}>
                 <div style={{ display: "flex", gap: MemorySpacing.md, alignItems: "center" }}>

@@ -14,3 +14,12 @@ test("companion home announces bounded cold-start and recovery states", () => {
   assert.match(page, /state === "unauthenticated"[\s\S]*?<MemoryButton href="\/login" variant="primary">/);
   assert.match(page, /state === "empty"[\s\S]*?<MemoryButton variant="primary" onClick=\{\(\) => router\.push\("\/create-memory"\)\}>/);
 });
+
+test("companion home opens the primary-TA selector from the current portrait and keeps it in the shared bottom sheet", () => {
+  assert.match(page, /MemoryBottomSheet/);
+  assert.match(page, /onClick=\{\(\) => setPrimarySelectorOpen\(true\)\}/);
+  assert.match(page, /aria-haspopup="dialog"/);
+  assert.match(page, /primarySelectorOpen && <MemoryBottomSheet open/);
+  assert.match(page, /setPrimarySelectorOpen\(false\)/);
+  assert.match(page, /设 \$\{memory\.name\} 为主 TA/);
+});
