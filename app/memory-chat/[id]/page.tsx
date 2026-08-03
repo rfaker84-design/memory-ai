@@ -91,7 +91,7 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
         >{copy}</p>
         {state.status === "error" && <button type="button" onClick={() => void load()}>重新读取</button>}
         {state.status !== "loading" && (
-          <button type="button" onClick={() => router.replace("/")}>回到首页</button>
+          <button type="button" onClick={() => router.replace("/memory-world")}>返回相伴</button>
         )}
       </main>
     );
@@ -103,7 +103,7 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
       memoryName={state.memory.name}
       firstGreetingKey={firstGreetingKey(state.memory.id)}
       initialPortraitUrl={state.portraitUrl}
-      onLeave={() => router.replace("/")}
+      onLeave={() => router.replace("/memory-world")}
     />
   );
 
@@ -116,7 +116,7 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
             memory={state.memory}
             firstGreetingKey={firstGreetingKey(state.memory.id)}
             initialPortraitUrl={state.portraitUrl}
-            onLeave={() => router.replace("/")}
+            onLeave={() => router.replace("/memory-world")}
           />
         ) : conversation}
       </MotionProvider>
