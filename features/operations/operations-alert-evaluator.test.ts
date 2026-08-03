@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import test from "node:test";
 
 import { evaluateOperationsAlerts, OperationsAlertConfigurationError, parseOperationsAlertThresholds } from "./operations-alert-evaluator";
@@ -32,6 +34,25 @@ test("operations alert thresholds are complete, bounded and fail closed", () => 
   for (const invalid of [undefined, "", "[]", "{}", JSON.stringify({ ...thresholds, unknown: 1 }), JSON.stringify({ ...thresholds, videoActive: -1 }), JSON.stringify({ ...thresholds, videoActive: 1.5 })]) {
     assert.throws(() => parseOperationsAlertThresholds({ OPERATIONS_ALERT_THRESHOLDS_JSON: invalid }), OperationsAlertConfigurationError);
   }
+});
+
+test("the production environment example supplies every operations alert threshold", () => {
+  const environmentExample = readFileSync(resolve(process.cwd(), ".env.example"), "utf8");
+  const raw = environmentExample.match(/^OPERATIONS_ALERT_THRESHOLDS_JSON=(.+)$/m)?.[1];
+  assert.ok(raw, "the environment example must define operations alert thresholds");
+  assert.deepEqual(parseOperationsAlertThresholds({ OPERATIONS_ALERT_THRESHOLDS_JSON: raw }), {
+    videoActive: 20,
+    videoSubmissionUncertain: 0,
+    videoQualityPending: 10,
+    videoManualReview: 10,
+    videoTerminalP95Seconds: 900,
+    commercePendingOrders: 20,
+    commerceRefundsAwaitingResolution: 5,
+    accountDeletionRunnableTasks: 20,
+    accountDeletionFailedTasks: 0,
+    chatFailedLast24Hours: 10,
+    chatPendingOverFiveMinutes: 0,
+  });
 });
 
 test("operations alert evaluator reports only aggregate, deterministic threshold crossings", () => {
