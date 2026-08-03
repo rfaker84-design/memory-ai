@@ -7,6 +7,7 @@ import { MemoryAvatar, MemoryButton } from "../memory-ui";
 import { recordBusinessView } from "../business-metrics/businessMetricsClient";
 import { CommerceVideoCreditsEntry } from "./CommerceVideoCreditsEntry";
 import { AiGeneratedLabel } from "../safety/AiGeneratedLabel";
+import { CRISIS_RESPONSE } from "@/features/memory-engine/crisis-response";
 import {
   completedConversationRounds,
   hasPersistedFirstGreeting,
@@ -56,6 +57,10 @@ function readableFailure(error: unknown) {
 function pickupHintViewKey(value: string): string {
   // Presentation only: this opaque key never grants identity or API access.
   return `memoryai.pickup-hint:${value}`;
+}
+
+function isSafetyAssistantMessage(message: ConversationMessage): boolean {
+  return message.role === "assistant" && message.content === CRISIS_RESPONSE;
 }
 
 export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey, initialPortraitUrl = null, onLeave }: Props) {
@@ -285,10 +290,19 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
             <article key={message.id} className={message.role === "user" ? styles.userMessage : styles.assistantMessage}>
               {message.role === "assistant" && (
                 <span className={styles.messageIdentity}>
-                  <MemoryAvatar image={portraitUrl} initials={memoryName} alt={`${memoryName} 的照片`} presence="quiet" size={30} />
-                  <i>{memoryName}</i>
-                  <AiGeneratedLabel compact confirmedSources />
-                  <Link className={styles.sourceLink} href={`/memory/${memoryId}/sources`}>查看资料来源</Link>
+                  {isSafetyAssistantMessage(message) ? (
+                    <>
+                      <i>忆见安全陪伴助手</i>
+                      <span role="note">安全支持 · 不代表 TA</span>
+                    </>
+                  ) : (
+                    <>
+                      <MemoryAvatar image={portraitUrl} initials={memoryName} alt={`${memoryName} 的照片`} presence="quiet" size={30} />
+                      <i>{memoryName}</i>
+                      <AiGeneratedLabel compact confirmedSources />
+                      <Link className={styles.sourceLink} href={`/memory/${memoryId}/sources`}>查看资料来源</Link>
+                    </>
+                  )}
                 </span>
               )}
               <p>{message.content}</p>
