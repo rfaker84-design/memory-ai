@@ -23,6 +23,9 @@ import type {
   GenerationPurpose,
   GenerationReservation,
   GenerationSettlementOutcome,
+  OccasionKind,
+  OccasionReward,
+  OccasionRewardOffer,
   PhotoRemedyGrant,
   PhotoRemedyInput,
   ReconciliationIssue,
@@ -31,6 +34,12 @@ import type {
   ReferralQualification,
   ReferralStatus,
 } from "./types";
+import {
+  isOccasionClaimOpen,
+  OCCASION_KINDS,
+  occasionRewardWindow,
+  type OccasionRewardWindow,
+} from "./occasion-rewards";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -650,16 +659,19 @@ export class CommercePostgresDataSource implements CommerceDataSource {
     const referralAvailable = available.get("referral_reward") ?? 0;
     const freePreviewAvailable = available.get("free_preview") ?? 0;
     const photoRemedyAvailable = available.get("photo_remedy") ?? 0;
+    const occasionAvailable = available.get("occasion_reward") ?? 0;
     return {
       paidAvailable,
       referralAvailable,
       freePreviewAvailable,
       photoRemedyAvailable,
+      occasionAvailable,
       totalAvailable:
         paidAvailable
         + referralAvailable
         + freePreviewAvailable
-        + photoRemedyAvailable,
+        + photoRemedyAvailable
+        + occasionAvailable,
       paidCreditsNeverExpire: true,
       canSaveFirstPreview: Boolean(save.rows[0]),
     };
@@ -685,6 +697,7 @@ export class CommercePostgresDataSource implements CommerceDataSource {
       new_video: "paid_package",
       photo_remedy: "photo_remedy",
       referral_experience: "referral_reward",
+      occasion_experience: "occasion_reward",
     };
     const sourceKind = sourceByPurpose[input.purpose];
     if (!sourceKind) throw new CommerceValidationError("purpose is invalid");
@@ -742,6 +755,7 @@ export class CommercePostgresDataSource implements CommerceDataSource {
          WHERE user_id = $1
            AND source_kind = $2
            AND active
+           AND (expires_at IS NULL OR expires_at > NOW())
            AND total_credits > reserved_credits + consumed_credits
          ORDER BY created_at ASC, id ASC
          LIMIT 1 FOR UPDATE`,
@@ -1162,6 +1176,131 @@ export class CommercePostgresDataSource implements CommerceDataSource {
       rewardsGranted: Number(result.rows[0].rewards),
       inviteesUntilNextReward: remainder === 0 ? 3 : 3 - remainder,
     };
+  }
+
+  async claimOccasionReward(input: {
+    externalUserId: string;
+    requestKey: string;
+    occasion: OccasionKind;
+    now?: Date;
+  }): Promise<OccasionReward> {
+    const externalUserId = required(input.externalUserId, "userId");
+    const requestKey = required(input.requestKey, "requestKey", KEY_PATTERN);
+    const now = input.now ?? new Date();
+    return withPostgresTransaction(async (client) => {
+      const user = await lockUser(client, externalUserId);
+      const profile = await client.query<{ birth_date: string | null }>(
+        `SELECT profile ->> 'birth_date' AS birth_date
+         FROM public.users WHERE id = $1 FOR KEY SHARE`,
+        [user.id],
+      );
+      const window = occasionRewardWindow(
+        input.occasion,
+        profile.rows[0]?.birth_date ?? "",
+        now,
+      );
+      if (!window || !isOccasionClaimOpen(window, now)) {
+        throw new CommerceStateError("OCCASION_CLAIM_NOT_OPEN");
+      }
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        [`memoryai:commerce-occasion:${user.id}:${window.occasion}:${window.calendarYear}`],
+      );
+      const existing = await client.query<{
+        occasion: OccasionKind;
+        calendar_year: number;
+        eligible_on: string;
+        claim_deadline: string;
+        claimed_at: Date | string;
+      }>(
+        `SELECT occasion, calendar_year, eligible_on::text, claim_deadline::text, claimed_at
+         FROM public.commerce_occasion_rewards
+         WHERE user_id = $1 AND occasion = $2 AND calendar_year = $3
+         FOR UPDATE`,
+        [user.id, window.occasion, window.calendarYear],
+      );
+      const prior = existing.rows[0];
+      if (prior) {
+        return {
+          occasion: prior.occasion,
+          calendarYear: prior.calendar_year,
+          eligibleOn: prior.eligible_on,
+          claimDeadline: prior.claim_deadline,
+          claimedAt: iso(prior.claimed_at)!,
+          saveAllowed: true,
+        };
+      }
+
+      const lot = await client.query<{ id: string }>(
+        `INSERT INTO public.commerce_credit_lots (
+           user_id, source_kind, source_key, total_credits, save_allowed, expires_at
+         ) VALUES ($1, 'occasion_reward', $2, 1, true, $3::date + INTERVAL '1 day')
+         RETURNING id`,
+        [
+          user.id,
+          `${user.id}:${window.occasion}:${window.calendarYear}`,
+          window.claimDeadline,
+        ],
+      );
+      const creditLotId = lot.rows[0]?.id;
+      if (!creditLotId) throw new CommerceStateError("OCCASION_REWARD_UNAVAILABLE");
+      const written = await client.query<{
+        occasion: OccasionKind;
+        calendar_year: number;
+        eligible_on: string;
+        claim_deadline: string;
+        claimed_at: Date | string;
+      }>(
+        `INSERT INTO public.commerce_occasion_rewards (
+           user_id, occasion, calendar_year, request_key, eligible_on, claim_deadline, credit_lot_id
+         ) VALUES ($1, $2, $3, $4, $5::date, $6::date, $7)
+         RETURNING occasion, calendar_year, eligible_on::text, claim_deadline::text, claimed_at`,
+        [user.id, window.occasion, window.calendarYear, requestKey, window.eligibleOn, window.claimDeadline, creditLotId],
+      );
+      const reward = written.rows[0];
+      if (!reward) throw new CommerceStateError("OCCASION_REWARD_UNAVAILABLE");
+      return {
+        occasion: reward.occasion,
+        calendarYear: reward.calendar_year,
+        eligibleOn: reward.eligible_on,
+        claimDeadline: reward.claim_deadline,
+        claimedAt: iso(reward.claimed_at)!,
+        saveAllowed: true,
+      };
+    });
+  }
+
+  async listOpenOccasionRewardOffers(input: {
+    externalUserId: string;
+    now?: Date;
+  }): Promise<OccasionRewardOffer[]> {
+    const externalUserId = required(input.externalUserId, "userId");
+    const now = input.now ?? new Date();
+    const user = await queryPostgres<{ id: string; birth_date: string | null }>(
+      `SELECT id, profile ->> 'birth_date' AS birth_date
+       FROM public.users WHERE external_id = $1`,
+      [externalUserId],
+    );
+    const owner = user.rows[0];
+    if (!owner) throw new CommerceNotFoundError("User was not found");
+    const windows = OCCASION_KINDS
+      .map((occasion) => occasionRewardWindow(occasion, owner.birth_date ?? "", now))
+      .filter((window): window is OccasionRewardWindow => Boolean(window && isOccasionClaimOpen(window, now)));
+    if (windows.length === 0) return [];
+    const claims = await queryPostgres<{ occasion: OccasionKind; calendar_year: number }>(
+      `SELECT occasion, calendar_year
+       FROM public.commerce_occasion_rewards
+       WHERE user_id = $1 AND calendar_year = ANY($2::int[])`,
+      [owner.id, [...new Set(windows.map((window) => window.calendarYear))]],
+    );
+    const claimed = new Set(claims.rows.map((claim) => `${claim.occasion}:${claim.calendar_year}`));
+    return windows.map((window) => ({
+      occasion: window.occasion,
+      calendarYear: window.calendarYear,
+      eligibleOn: window.eligibleOn,
+      claimDeadline: window.claimDeadline,
+      claimed: claimed.has(`${window.occasion}:${window.calendarYear}`),
+    }));
   }
 
   async reconcileOrders(now: Date = new Date()): Promise<ReconciliationReport> {

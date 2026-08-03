@@ -4,19 +4,27 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   clearCommerceVideoOrderRecovery,
+  clearOccasionVideoRecovery,
+  claimOccasionReward,
   CommerceVideoOrderRecovery,
   CommerceVideoEntryError,
   CommerceReferralStatus,
   CommerceVideoProduct,
+  createOccasionVideo,
+  createOccasionVideoRecovery,
   commercePlatform,
   createCommerceVideoOrder,
   createCommerceVideoOrderIdempotencyKey,
   createReferralCode,
   loadCommerceCreditBalance,
   loadCommerceVideoProducts,
+  loadOpenOccasionRewardOffers,
   loadReferralStatus,
   readCommerceVideoOrderRecovery,
+  readOccasionVideoRecovery,
   writeCommerceVideoOrderRecovery,
+  writeOccasionVideoRecovery,
+  type OccasionRewardOffer,
 } from "./commerceVideoCreditsClient";
 import {
   resolveCommerceVideoCreditsBalanceState,
@@ -60,6 +68,7 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [commercialAccepted, setCommercialAccepted] = useState(false);
   const [orderRecovery, setOrderRecovery] = useState<CommerceVideoOrderRecovery | null>(null);
+  const [occasionOffers, setOccasionOffers] = useState<OccasionRewardOffer[]>([]);
   const balanceAttempt = useRef(0);
 
   const refreshBalance = useCallback(async () => {
@@ -91,12 +100,13 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
 
   useEffect(() => {
     let current = true;
-    void Promise.allSettled([loadCommerceVideoProducts(), loadReferralStatus()]).then((results) => {
+    void Promise.allSettled([loadCommerceVideoProducts(), loadReferralStatus(), loadOpenOccasionRewardOffers()]).then((results) => {
       if (!current) return;
-      const [catalog, referralStatus] = results;
+      const [catalog, referralStatus, offers] = results;
       if (catalog.status === "fulfilled") setProducts(catalog.value);
       if (catalog.status === "rejected") setCatalogUnavailable(true);
       if (referralStatus.status === "fulfilled") setReferral(referralStatus.value);
+      if (offers.status === "fulfilled") setOccasionOffers(offers.value);
       setCatalogLoading(false);
     });
     return () => {
@@ -173,6 +183,43 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
     }
   };
 
+  const useOccasionReward = async (offer: OccasionRewardOffer) => {
+    if (submitting) return;
+    const previous = readOccasionVideoRecovery();
+    const recovery = previous
+      && previous.memoryId === memoryId
+      && previous.occasion === offer.occasion
+      ? previous
+      : createOccasionVideoRecovery(memoryId, offer.occasion);
+    if (!writeOccasionVideoRecovery(recovery)) {
+      setNotice("浏览器无法安全保留本次影像请求标识；尚未提交，请恢复后再试。");
+      return;
+    }
+    setSubmitting(`occasion:${offer.occasion}`);
+    setNotice("");
+    try {
+      if (!offer.claimed) {
+        await claimOccasionReward(offer.occasion, recovery.claimIdempotencyKey);
+        setOccasionOffers((current) => current.map((item) => (
+          item.occasion === offer.occasion && item.calendarYear === offer.calendarYear
+            ? { ...item, claimed: true }
+            : item
+        )));
+      }
+      await createOccasionVideo(memoryId, recovery.videoIdempotencyKey);
+      clearOccasionVideoRecovery();
+      setNotice("纪念影像已加入准备队列；完成前会先经过人工审核。");
+      await refreshBalance();
+    } catch (error) {
+      setNotice(error instanceof CommerceVideoEntryError
+        ? unavailableCopy(error)
+        : "纪念影像暂时无法提交；已保留安全恢复标识，请稍后重试。");
+      await refreshBalance();
+    } finally {
+      setSubmitting(null);
+    }
+  };
+
   const titleId = memoryId + "-video-credits-title";
 
   return (
@@ -184,6 +231,7 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
         commercialAccepted={commercialAccepted}
         memoryId={memoryId}
         notice={notice}
+        occasionOffers={occasionOffers}
         products={products}
         referral={referral}
         styles={entryStyles}
@@ -195,6 +243,7 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
         onCreateOrder={(product) => void createOrder(product)}
         onOpenInvite={() => void openInvite()}
         onOpenPackages={openPackages}
+        onUseOccasionReward={(offer) => void useOccasionReward(offer)}
         onRetryBalance={() => void refreshBalance()}
       />
     </aside>

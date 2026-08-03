@@ -24,6 +24,9 @@ import type {
   GenerationPurpose,
   GenerationReservation,
   GenerationSettlementOutcome,
+  OccasionKind,
+  OccasionReward,
+  OccasionRewardOffer,
   PhotoRemedyInput,
   ReconciliationReport,
   ReferralCode,
@@ -31,6 +34,7 @@ import type {
   ReferralStatus,
 } from "./types";
 import { getCommerceProduct, listCommerceProducts } from "./catalog";
+import { isOccasionClaimOpen, OCCASION_KINDS, occasionRewardWindow } from "./occasion-rewards";
 
 type Lot = {
   source: CreditSourceKind;
@@ -66,6 +70,8 @@ class TestLedger implements CommerceDataSource {
   readonly usedDevices = new Set<string>();
   readonly usedPhones = new Set<string>();
   readonly remedies = new Map<string, string>();
+  readonly occasionRewards = new Map<string, OccasionReward>();
+  readonly birthDates = new Map<string, string>();
   readonly saveRightUsers = new Set<string>();
   corruptPaidLot = false;
 
@@ -73,6 +79,7 @@ class TestLedger implements CommerceDataSource {
     this.firstMemory.set(user, firstMemory);
     this.createdAt.set(user, createdAt);
     this.lots.set(user, []);
+    this.birthDates.set(user, "1990-01-01");
   }
 
   async createOrder(input: CreateCommerceOrderInput): Promise<CommerceOrder> {
@@ -231,16 +238,19 @@ class TestLedger implements CommerceDataSource {
     const referralAvailable = sums.get("referral_reward") ?? 0;
     const freePreviewAvailable = sums.get("free_preview") ?? 0;
     const photoRemedyAvailable = sums.get("photo_remedy") ?? 0;
+    const occasionAvailable = sums.get("occasion_reward") ?? 0;
     return {
       paidAvailable,
       referralAvailable,
       freePreviewAvailable,
       photoRemedyAvailable,
+      occasionAvailable,
       totalAvailable:
         paidAvailable
         + referralAvailable
         + freePreviewAvailable
-        + photoRemedyAvailable,
+        + photoRemedyAvailable
+        + occasionAvailable,
       paidCreditsNeverExpire: true,
       canSaveFirstPreview: this.saveRightUsers.has(externalUserId),
     };
@@ -270,6 +280,7 @@ class TestLedger implements CommerceDataSource {
       new_video: "paid_package",
       photo_remedy: "photo_remedy",
       referral_experience: "referral_reward",
+      occasion_experience: "occasion_reward",
     };
     if (input.purpose === "first_preview") {
       if (this.firstMemory.get(input.externalUserId) !== input.memoryId) {
@@ -495,6 +506,68 @@ class TestLedger implements CommerceDataSource {
       rewardsGranted: items.filter((item) => item.rewardCohort !== null).length,
       inviteesUntilNextReward: count % 3 === 0 ? 3 : 3 - (count % 3),
     };
+  }
+
+  async claimOccasionReward(input: {
+    externalUserId: string;
+    requestKey: string;
+    occasion: OccasionKind;
+    now?: Date;
+  }): Promise<OccasionReward> {
+    const now = input.now ?? new Date();
+    const window = occasionRewardWindow(
+      input.occasion,
+      this.birthDates.get(input.externalUserId) ?? "",
+      now,
+    );
+    if (!window || !isOccasionClaimOpen(window, now)) {
+      throw new CommerceStateError("OCCASION_CLAIM_NOT_OPEN");
+    }
+    const scope = `${input.externalUserId}:${window.occasion}:${window.calendarYear}`;
+    const existing = this.occasionRewards.get(scope);
+    if (existing) return existing;
+    const reward: OccasionReward = {
+      occasion: window.occasion,
+      calendarYear: window.calendarYear,
+      eligibleOn: window.eligibleOn,
+      claimDeadline: window.claimDeadline,
+      claimedAt: now.toISOString(),
+      saveAllowed: true,
+    };
+    this.occasionRewards.set(scope, reward);
+    this.lots.get(input.externalUserId)!.push({
+      source: "occasion_reward",
+      total: 1,
+      reserved: 0,
+      consumed: 0,
+      saveAllowed: true,
+      active: true,
+    });
+    return reward;
+  }
+
+  async listOpenOccasionRewardOffers(input: {
+    externalUserId: string;
+    now?: Date;
+  }): Promise<OccasionRewardOffer[]> {
+    const now = input.now ?? new Date();
+    return OCCASION_KINDS.flatMap((occasion) => {
+      const window = occasionRewardWindow(
+        occasion,
+        this.birthDates.get(input.externalUserId) ?? "",
+        now,
+      );
+      if (!window || !isOccasionClaimOpen(window, now)) return [];
+      return [{
+        occasion: window.occasion,
+        calendarYear: window.calendarYear,
+        eligibleOn: window.eligibleOn,
+        claimDeadline: window.claimDeadline,
+        claimed: this.occasionRewards.has(
+          `${input.externalUserId}:${window.occasion}:${window.calendarYear}`,
+        ),
+      }];
+    });
   }
 
   async reconcileOrders(now = new Date()): Promise<ReconciliationReport> {
@@ -841,6 +914,50 @@ test("three distinct verified phones and attested devices grant one non-save rew
         deviceKeyHash: createHash("sha256").update("device-5").digest("hex"),
       }),
     /Verified phone/,
+  );
+});
+
+test("an occasion reward is user-claimed once per year, saveable, and releases on failed generation", async () => {
+  const { service, user } = fixture();
+  const memoryId = "00000000-0000-4000-8000-000000000101";
+  const now = new Date("2026-05-10T03:00:00.000Z");
+  const reward = await service.claimOccasionReward({
+    externalUserId: user,
+    requestKey: "occasion-mothers-day-claim-0001",
+    occasion: "mothers_day",
+    now,
+  });
+  assert.equal(reward.saveAllowed, true);
+  assert.equal((await service.getCreditBalance(user)).occasionAvailable, 1);
+  const repeated = await service.claimOccasionReward({
+    externalUserId: user,
+    requestKey: "occasion-mothers-day-claim-0002",
+    occasion: "mothers_day",
+    now,
+  });
+  assert.equal(repeated.claimedAt, reward.claimedAt);
+  const reservation = await service.reserveGeneration({
+    externalUserId: user,
+    memoryId,
+    requestKey: "occasion-mothers-day-reserve-0001",
+    generationKey: "occasion-mothers-day-generation-0001",
+    purpose: "occasion_experience",
+  });
+  assert.equal(reservation.saveAllowed, true);
+  await service.settleGeneration({
+    externalUserId: user,
+    requestKey: "occasion-mothers-day-reserve-0001",
+    outcome: "system_failed",
+  });
+  assert.equal((await service.getCreditBalance(user)).occasionAvailable, 1);
+  await assert.rejects(
+    () => service.claimOccasionReward({
+      externalUserId: user,
+      requestKey: "occasion-fathers-day-claim-0001",
+      occasion: "fathers_day",
+      now,
+    }),
+    /OCCASION_CLAIM_NOT_OPEN/,
   );
 });
 

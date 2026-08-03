@@ -5,6 +5,8 @@ import type {
   CreateCommerceOrderInput,
   GenerationPurpose,
   GenerationSettlementOutcome,
+  OccasionKind,
+  OccasionRewardOffer,
   PhotoRemedyInput,
 } from "./types";
 
@@ -76,6 +78,20 @@ export class CommerceRepository {
   }
   getReferralStatus(externalUserId: string) {
     return this.dataSource.getReferralStatus(externalUserId);
+  }
+  claimOccasionReward(input: {
+    externalUserId: string;
+    requestKey: string;
+    occasion: OccasionKind;
+    now?: Date;
+  }) {
+    return this.dataSource.claimOccasionReward(input);
+  }
+  listOpenOccasionRewardOffers(input: {
+    externalUserId: string;
+    now?: Date;
+  }): Promise<OccasionRewardOffer[]> {
+    return this.dataSource.listOpenOccasionRewardOffers(input);
   }
   reconcileOrders(now?: Date) {
     return this.dataSource.reconcileOrders(now);

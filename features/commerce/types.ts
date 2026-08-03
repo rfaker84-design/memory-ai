@@ -97,13 +97,15 @@ export type CreditSourceKind =
   | "paid_package"
   | "free_preview"
   | "photo_remedy"
-  | "referral_reward";
+  | "referral_reward"
+  | "occasion_reward";
 
 export type GenerationPurpose =
   | "first_preview"
   | "new_video"
   | "photo_remedy"
-  | "referral_experience";
+  | "referral_experience"
+  | "occasion_experience";
 
 export type GenerationSettlementOutcome =
   | "succeeded"
@@ -134,9 +136,29 @@ export type CreditBalance = {
   referralAvailable: number;
   freePreviewAvailable: number;
   photoRemedyAvailable: number;
+  occasionAvailable: number;
   totalAvailable: number;
   paidCreditsNeverExpire: true;
   canSaveFirstPreview: boolean;
+};
+
+export type OccasionKind = "birthday" | "mothers_day" | "fathers_day";
+
+export type OccasionReward = {
+  occasion: OccasionKind;
+  calendarYear: number;
+  eligibleOn: string;
+  claimDeadline: string;
+  claimedAt: string;
+  saveAllowed: true;
+};
+
+/** A currently open, owner-scoped occasion opportunity. */
+export type OccasionRewardOffer = Pick<
+  OccasionReward,
+  "occasion" | "calendarYear" | "eligibleOn" | "claimDeadline"
+> & {
+  claimed: boolean;
 };
 
 export type PhotoRemedyInput = {

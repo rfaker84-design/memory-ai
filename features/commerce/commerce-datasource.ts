@@ -8,6 +8,9 @@ import type {
   GenerationPurpose,
   GenerationReservation,
   GenerationSettlementOutcome,
+  OccasionKind,
+  OccasionReward,
+  OccasionRewardOffer,
   PhotoRemedyGrant,
   PhotoRemedyInput,
   ReconciliationReport,
@@ -63,5 +66,15 @@ export interface CommerceDataSource {
     deviceKeyHash: string;
   }): Promise<ReferralQualification>;
   getReferralStatus(externalUserId: string): Promise<ReferralStatus>;
+  claimOccasionReward(input: {
+    externalUserId: string;
+    requestKey: string;
+    occasion: OccasionKind;
+    now?: Date;
+  }): Promise<OccasionReward>;
+  listOpenOccasionRewardOffers(input: {
+    externalUserId: string;
+    now?: Date;
+  }): Promise<OccasionRewardOffer[]>;
   reconcileOrders(now?: Date): Promise<ReconciliationReport>;
 }

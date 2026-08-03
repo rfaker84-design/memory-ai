@@ -23,7 +23,7 @@ export type VideoArtifactQueryPort = {
 };
 
 export function videoArtifactPresentation(input: {
-  purpose: "first_preview" | "new_video" | "photo_remedy" | "referral_experience";
+  purpose: "first_preview" | "new_video" | "photo_remedy" | "referral_experience" | "occasion_experience";
   creditLotSaveAllowed: boolean;
 }): Pick<ApprovedVideoArtifact, "presentation" | "saveAllowed"> {
   const presentation = input.purpose === "first_preview" ? "initial_preview" : "additional_generation";
@@ -37,7 +37,7 @@ type ApprovedArtifactRow = {
   id: string;
   memory_id: string;
   artifact_key: string;
-  purpose: "first_preview" | "new_video" | "photo_remedy" | "referral_experience";
+  purpose: "first_preview" | "new_video" | "photo_remedy" | "referral_experience" | "occasion_experience";
   save_allowed: boolean;
 };
 

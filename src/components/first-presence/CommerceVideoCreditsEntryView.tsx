@@ -3,6 +3,7 @@
 import { MemoryButton } from "../memory-ui";
 import type {
   CommerceReferralStatus,
+  OccasionRewardOffer,
   CommerceVideoProduct,
 } from "./commerceVideoCreditsClient";
 import {
@@ -21,6 +22,7 @@ type Props = {
   commercialAccepted?: boolean;
   memoryId: string;
   notice: string;
+  occasionOffers?: OccasionRewardOffer[];
   products: CommerceVideoProduct[];
   referral: CommerceReferralStatus | null;
   styles: CommerceVideoCreditsEntryStyles;
@@ -32,6 +34,7 @@ type Props = {
   onCreateOrder: (product: CommerceVideoProduct) => void;
   onOpenInvite: () => void;
   onOpenPackages: () => void;
+  onUseOccasionReward?: (offer: OccasionRewardOffer) => void;
   onRetryBalance: () => void;
 };
 
@@ -42,6 +45,7 @@ export function CommerceVideoCreditsEntryView({
   commercialAccepted = false,
   memoryId,
   notice,
+  occasionOffers = [],
   products,
   referral,
   styles,
@@ -53,6 +57,7 @@ export function CommerceVideoCreditsEntryView({
   onCreateOrder,
   onOpenInvite,
   onOpenPackages,
+  onUseOccasionReward = () => undefined,
   onRetryBalance,
 }: Props) {
   const presentation = commerceVideoCreditsEntryPresentation(balanceState);
@@ -64,6 +69,21 @@ export function CommerceVideoCreditsEntryView({
         {presentation.title}
       </h2>
       {presentation.description && <p className={styles.description}>{presentation.description}</p>}
+
+      {balanceState.kind !== "loading" && balanceState.kind !== "unavailable" && occasionOffers
+        .filter((offer) => !offer.claimed || balanceState.balance.occasionAvailable > 0)
+        .map((offer) => (
+          <div className={styles.detail} key={`${offer.occasion}-${offer.calendarYear}`}>
+            <p>今天有一份纪念影像机会，领取期至 {offer.claimDeadline}。</p>
+            <p>8 秒竖版、静音；生成成功后可保存。</p>
+            <MemoryButton
+              onClick={() => onUseOccasionReward(offer)}
+              disabled={submitting !== null}
+            >
+              {offer.claimed ? "使用已领取的纪念影像机会" : "领取并制作纪念影像"}
+            </MemoryButton>
+          </div>
+        ))}
 
       {balanceState.kind === "unavailable" && (
         <div className={styles.choices}>

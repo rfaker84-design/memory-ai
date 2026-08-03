@@ -37,6 +37,7 @@ const EXACT_FORMAL_PATHS = new Set([
   "/api/payments/entitlements",
   "/api/commerce/catalog",
   "/api/commerce/credits",
+  "/api/commerce/occasion-rewards",
   "/api/commerce/orders",
   "/api/commerce/refunds",
   "/api/commerce/referrals/code",
@@ -152,7 +153,7 @@ test("video reconciliation is an explicitly audited formal internal route", () =
 
 test("every tracked non-formal Route Handler is a route-level 410", async () => {
   const routes = trackedRoutes();
-  assert.equal(routes.length, 127, "the audit must enumerate the complete tracked API surface");
+  assert.equal(routes.length, 128, "the audit must enumerate the complete tracked API surface");
 
   for (const { file, pathname } of routes) {
     const formal = isFormalApiPath(pathname);
@@ -219,6 +220,7 @@ test("formal Session ownership and public health contracts remain explicit", asy
     paymentEntitlements: readFileSync("app/api/payments/entitlements/route.ts", "utf8"),
     commerceOrders: readFileSync("app/api/commerce/orders/route.ts", "utf8"),
     commerceCredits: readFileSync("app/api/commerce/credits/route.ts", "utf8"),
+    commerceOccasionRewards: readFileSync("app/api/commerce/occasion-rewards/route.ts", "utf8"),
     commerceRefunds: readFileSync("app/api/commerce/refunds/route.ts", "utf8"),
     commerceReferralCode: readFileSync("app/api/commerce/referrals/code/route.ts", "utf8"),
     commerceReferralQualifications: readFileSync("app/api/commerce/referrals/qualifications/route.ts", "utf8"),
@@ -274,6 +276,7 @@ test("formal Session ownership and public health contracts remain explicit", asy
   assert.match(sources.paymentEntitlements, /isLegacyChatCommerceTestAccount/);
   assert.match(sources.commerceOrders, /createCommerceOrdersHandler/);
   assert.match(sources.commerceCredits, /verifyRequestSession/);
+  assert.match(sources.commerceOccasionRewards, /createOccasionRewardHandler/);
   assert.match(sources.commerceRefunds, /verifyRequestSession/);
   assert.match(sources.commerceReferralCode, /createReferralCodeHandler/);
   assert.match(sources.commerceReferralQualifications, /createReferralQualificationHandler/);

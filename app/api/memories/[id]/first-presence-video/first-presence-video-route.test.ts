@@ -95,7 +95,7 @@ function request(
 
 const context = (id = memoryId) => ({ params: Promise.resolve({ id }) });
 
-test("POST accepts only session identity, header idempotency, and the two contracted intents", async () => {
+test("POST accepts an explicitly selected occasion credit only for an additional generation", async () => {
   const calls: CreateOwnerVideoJobInput[] = [];
   const handler = createFirstPresenceVideoHandler(
     () => ({
@@ -127,12 +127,18 @@ test("POST accepts only session identity, header idempotency, and the two contra
     context(),
   );
   assert.equal(additional.status, 202);
+  const occasion = await handler.POST(
+    request("POST", { intent: "additional_generation", creditSource: "occasion_reward" }, "first-presence-video-0003"),
+    context(),
+  );
+  assert.equal(occasion.status, 202);
   assert.deepEqual(
     calls.map((call) => ({
       externalUserId: call.externalUserId,
       memoryId: call.memoryId,
       idempotencyKey: call.idempotencyKey,
       intent: call.intent,
+      ...(call.creditSource ? { creditSource: call.creditSource } : {}),
     })),
     [
       {
@@ -146,6 +152,13 @@ test("POST accepts only session identity, header idempotency, and the two contra
         memoryId,
         idempotencyKey: "first-presence-video-0002",
         intent: "additional_generation",
+      },
+      {
+        externalUserId,
+        memoryId,
+        idempotencyKey: "first-presence-video-0003",
+        intent: "additional_generation",
+        creditSource: "occasion_reward",
       },
     ],
   );
@@ -182,6 +195,20 @@ test("POST rejects unauthenticated, missing key, invalid body, and ownership or 
   );
   assert.equal(
     (await handler.POST(request("POST", { intent: "initial_preview", extra: true }), context())).status,
+    400,
+  );
+  assert.equal(
+    (await handler.POST(
+      request("POST", { intent: "initial_preview", creditSource: "occasion_reward" }),
+      context(),
+    )).status,
+    400,
+  );
+  assert.equal(
+    (await handler.POST(
+      request("POST", { intent: "additional_generation", creditSource: "paid_package" }),
+      context(),
+    )).status,
     400,
   );
   assert.deepEqual(

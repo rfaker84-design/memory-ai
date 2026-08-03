@@ -100,4 +100,8 @@ test("initial previews are explicitly non-save while later generations inherit C
     presentation: "additional_generation",
     saveAllowed: false,
   });
+  assert.deepEqual(videoArtifactPresentation({ purpose: "occasion_experience", creditLotSaveAllowed: true }), {
+    presentation: "additional_generation",
+    saveAllowed: true,
+  });
 });

@@ -4,15 +4,22 @@ import test from "node:test";
 import {
   availableVideoCredits,
   clearCommerceVideoOrderRecovery,
+  clearOccasionVideoRecovery,
   COMMERCE_VIDEO_ORDER_RECOVERY_STORAGE_KEY,
   commercePlatform,
+  claimOccasionReward,
   createCommerceVideoOrder,
+  createOccasionVideo,
   createReferralCode,
   loadCommerceCreditBalance,
+  loadOpenOccasionRewardOffers,
   loadCommerceVideoProducts,
   loadReferralStatus,
   readCommerceVideoOrderRecovery,
+  readOccasionVideoRecovery,
   writeCommerceVideoOrderRecovery,
+  writeOccasionVideoRecovery,
+  OCCASION_VIDEO_RECOVERY_STORAGE_KEY,
 } from "./commerceVideoCreditsClient";
 import { listCommerceProducts } from "../../../features/commerce";
 
@@ -31,7 +38,7 @@ test("video-credit entry reads only the new Commerce catalog, balance, and refer
       return response({ products: [{ id: "memory_video_49", priceFen: 4900, generationCredits: 2, grantsFirstPreviewSave: true }] });
     }
     if (input === "/api/commerce/credits") {
-      return response({ balance: { paidAvailable: 2, referralAvailable: 1, freePreviewAvailable: 0, photoRemedyAvailable: 0, totalAvailable: 3, paidCreditsNeverExpire: true, canSaveFirstPreview: true } });
+      return response({ balance: { paidAvailable: 2, referralAvailable: 1, freePreviewAvailable: 0, photoRemedyAvailable: 0, occasionAvailable: 0, totalAvailable: 3, paidCreditsNeverExpire: true, canSaveFirstPreview: true } });
     }
     if (input === "/api/commerce/referrals/code") {
       return response({ referral: { code: "ABCDEFGH23", qualifiedInvitees: 1, rewardsGranted: 0, inviteesUntilNextReward: 2 } });
@@ -109,6 +116,49 @@ test("video-credit order recovery only reuses the exact memory, product, platfor
   assert.equal(readCommerceVideoOrderRecovery(storage), null);
   assert.equal(values.has(COMMERCE_VIDEO_ORDER_RECOVERY_STORAGE_KEY), false);
   assert.equal(clearCommerceVideoOrderRecovery(storage), true);
+});
+
+test("occasion claim and video reuse distinct durable idempotency keys and cannot be forged into another source", async () => {
+  const values = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); },
+    removeItem: (key: string) => { values.delete(key); },
+  };
+  const recovery = {
+    memoryId: "00000000-0000-4000-8000-000000000001",
+    occasion: "birthday" as const,
+    claimIdempotencyKey: "occasion-reward-claim-000000000001",
+    videoIdempotencyKey: "occasion-video-000000000001",
+  };
+  assert.equal(writeOccasionVideoRecovery(recovery, storage), true);
+  assert.deepEqual(readOccasionVideoRecovery(storage), recovery);
+  const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+  const request = async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ input, init });
+    return response({ ok: true }, 202);
+  };
+  await claimOccasionReward("birthday", recovery.claimIdempotencyKey, request as typeof fetch);
+  await createOccasionVideo(recovery.memoryId, recovery.videoIdempotencyKey, request as typeof fetch);
+  assert.equal(calls[0].input, "/api/commerce/occasion-rewards");
+  assert.deepEqual(JSON.parse(String(calls[0].init?.body)), { occasion: "birthday" });
+  assert.equal(calls[1].input, "/api/memories/00000000-0000-4000-8000-000000000001/first-presence-video");
+  assert.deepEqual(JSON.parse(String(calls[1].init?.body)), { intent: "additional_generation", creditSource: "occasion_reward" });
+  values.set(OCCASION_VIDEO_RECOVERY_STORAGE_KEY, JSON.stringify({ ...recovery, videoIdempotencyKey: recovery.claimIdempotencyKey }));
+  assert.equal(readOccasionVideoRecovery(storage), null);
+  assert.equal(values.has(OCCASION_VIDEO_RECOVERY_STORAGE_KEY), false);
+  assert.equal(clearOccasionVideoRecovery(storage), true);
+});
+
+test("occasion offers are owner-scoped and malformed payloads fail closed", async () => {
+  const offers = await loadOpenOccasionRewardOffers((async () => response({
+    offers: [{ occasion: "birthday", calendarYear: 2026, eligibleOn: "2026-08-03", claimDeadline: "2026-09-01", claimed: false }],
+  })) as typeof fetch);
+  assert.equal(offers[0]?.occasion, "birthday");
+  await assert.rejects(
+    loadOpenOccasionRewardOffers((async () => response({ offers: [{ occasion: "birthday", claimed: false }] })) as typeof fetch),
+    /INVALID_OCCASION_REWARDS/,
+  );
 });
 
 test("iOS remains explicitly reserved for StoreKit and other platforms stay distinct", () => {

@@ -9,6 +9,8 @@ import type {
   CommerceRefundRequest,
   GenerationPurpose,
   GenerationSettlementOutcome,
+  OccasionKind,
+  OccasionRewardOffer,
   PhotoRemedyInput,
 } from "./types";
 import { getCommerceProduct } from "./catalog";
@@ -202,6 +204,32 @@ export class CommerceService {
     return this.repository.getReferralStatus(
       text(externalUserId, "userId", 255),
     );
+  }
+
+  claimOccasionReward(input: {
+    externalUserId: string;
+    requestKey: string;
+    occasion: OccasionKind;
+    now?: Date;
+  }) {
+    if (!["birthday", "mothers_day", "fathers_day"].includes(input.occasion)) {
+      throw new CommerceValidationError("occasion is invalid");
+    }
+    return this.repository.claimOccasionReward({
+      ...input,
+      externalUserId: text(input.externalUserId, "userId", 255),
+      requestKey: key(input.requestKey),
+    });
+  }
+
+  listOpenOccasionRewardOffers(input: {
+    externalUserId: string;
+    now?: Date;
+  }): Promise<OccasionRewardOffer[]> {
+    return this.repository.listOpenOccasionRewardOffers({
+      externalUserId: text(input.externalUserId, "userId", 255),
+      now: input.now,
+    });
   }
 
   reconcileOrders(now?: Date) {

@@ -45,6 +45,7 @@ const FORMAL_API_PATHS = new Set([
   "/api/payments/entitlements",
   "/api/commerce/catalog",
   "/api/commerce/credits",
+  "/api/commerce/occasion-rewards",
   "/api/commerce/orders",
   "/api/commerce/refunds",
   "/api/commerce/referrals/code",

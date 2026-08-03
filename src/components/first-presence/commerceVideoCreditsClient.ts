@@ -10,6 +10,7 @@ export type CommerceCreditBalance = {
   referralAvailable: number;
   freePreviewAvailable: number;
   photoRemedyAvailable: number;
+  occasionAvailable: number;
   totalAvailable: number;
   paidCreditsNeverExpire: true;
   canSaveFirstPreview: boolean;
@@ -22,7 +23,23 @@ export type CommerceReferralStatus = {
   inviteesUntilNextReward: number;
 };
 
+export type OccasionRewardOffer = {
+  occasion: "birthday" | "mothers_day" | "fathers_day";
+  calendarYear: number;
+  eligibleOn: string;
+  claimDeadline: string;
+  claimed: boolean;
+};
+
+export type OccasionVideoRecovery = {
+  memoryId: string;
+  occasion: OccasionRewardOffer["occasion"];
+  claimIdempotencyKey: string;
+  videoIdempotencyKey: string;
+};
+
 export const COMMERCE_VIDEO_ORDER_RECOVERY_STORAGE_KEY = "memoryai:commerce-video-order-recovery:v1";
+export const OCCASION_VIDEO_RECOVERY_STORAGE_KEY = "memoryai:occasion-video-recovery:v1";
 
 export type CommerceVideoOrderRecovery = {
   memoryId: string;
@@ -50,6 +67,15 @@ function randomKey(prefix: string) {
 
 export function createCommerceVideoOrderIdempotencyKey() {
   return randomKey("commerce-video-order");
+}
+
+export function createOccasionVideoRecovery(memoryId: string, occasion: OccasionRewardOffer["occasion"]): OccasionVideoRecovery {
+  return {
+    memoryId,
+    occasion,
+    claimIdempotencyKey: randomKey("occasion-reward-claim"),
+    videoIdempotencyKey: randomKey("occasion-video"),
+  };
 }
 
 function defaultCommerceRecoveryStorage(): CommerceRecoveryStorage | null {
@@ -115,6 +141,59 @@ export function clearCommerceVideoOrderRecovery(
   }
 }
 
+function isOccasionVideoRecovery(value: unknown): value is OccasionVideoRecovery {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return Object.keys(record).length === 4
+    && typeof record.memoryId === "string"
+    && ["birthday", "mothers_day", "fathers_day"].includes(record.occasion as string)
+    && typeof record.claimIdempotencyKey === "string"
+    && typeof record.videoIdempotencyKey === "string"
+    && /^occasion-reward-claim-[^\r\n]{8,120}$/.test(record.claimIdempotencyKey)
+    && /^occasion-video-[^\r\n]{8,120}$/.test(record.videoIdempotencyKey);
+}
+
+export function readOccasionVideoRecovery(
+  storage: CommerceRecoveryStorage | null = defaultCommerceRecoveryStorage(),
+): OccasionVideoRecovery | null {
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem(OCCASION_VIDEO_RECOVERY_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (isOccasionVideoRecovery(parsed)) return parsed;
+    storage.removeItem(OCCASION_VIDEO_RECOVERY_STORAGE_KEY);
+  } catch {
+    // A missing recovery record must never cause a blind duplicate request.
+  }
+  return null;
+}
+
+export function writeOccasionVideoRecovery(
+  record: OccasionVideoRecovery,
+  storage: CommerceRecoveryStorage | null = defaultCommerceRecoveryStorage(),
+): boolean {
+  if (!storage || !isOccasionVideoRecovery(record)) return false;
+  try {
+    storage.setItem(OCCASION_VIDEO_RECOVERY_STORAGE_KEY, JSON.stringify(record));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function clearOccasionVideoRecovery(
+  storage: CommerceRecoveryStorage | null = defaultCommerceRecoveryStorage(),
+): boolean {
+  if (!storage) return false;
+  try {
+    storage.removeItem(OCCASION_VIDEO_RECOVERY_STORAGE_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function body(response: Response): Promise<ResponseBody> {
   const parsed = await response.json().catch(() => ({}));
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
@@ -152,6 +231,7 @@ function isCommerceCreditBalance(value: unknown): value is CommerceCreditBalance
     "referralAvailable",
     "freePreviewAvailable",
     "photoRemedyAvailable",
+    "occasionAvailable",
     "totalAvailable",
   ].every((key) => isNonNegativeInteger(balance[key]))
     && balance.paidCreditsNeverExpire === true
@@ -178,6 +258,48 @@ export async function loadReferralStatus(request: typeof fetch = fetch) {
     throw new CommerceVideoEntryError("INVALID_REFERRAL_STATUS");
   }
   return parsed.referral as CommerceReferralStatus;
+}
+
+function isOccasionRewardOffer(value: unknown): value is OccasionRewardOffer {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const offer = value as Record<string, unknown>;
+  return ["birthday", "mothers_day", "fathers_day"].includes(offer.occasion as string)
+    && isNonNegativeInteger(offer.calendarYear)
+    && /^\d{4}-\d{2}-\d{2}$/.test(offer.eligibleOn as string)
+    && /^\d{4}-\d{2}-\d{2}$/.test(offer.claimDeadline as string)
+    && typeof offer.claimed === "boolean";
+}
+
+export async function loadOpenOccasionRewardOffers(request: typeof fetch = fetch) {
+  const parsed = await requestJson("/api/commerce/occasion-rewards", undefined, request);
+  if (!Array.isArray(parsed.offers) || !parsed.offers.every(isOccasionRewardOffer)) {
+    throw new CommerceVideoEntryError("INVALID_OCCASION_REWARDS");
+  }
+  return parsed.offers;
+}
+
+export async function claimOccasionReward(
+  occasion: OccasionRewardOffer["occasion"],
+  idempotencyKey: string,
+  request: typeof fetch = fetch,
+) {
+  return requestJson("/api/commerce/occasion-rewards", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify({ occasion }),
+  }, request);
+}
+
+export async function createOccasionVideo(
+  memoryId: string,
+  idempotencyKey: string,
+  request: typeof fetch = fetch,
+) {
+  return requestJson(`/api/memories/${encodeURIComponent(memoryId)}/first-presence-video`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify({ intent: "additional_generation", creditSource: "occasion_reward" }),
+  }, request);
 }
 
 export async function createReferralCode(request: typeof fetch = fetch) {

@@ -38,14 +38,19 @@ const styles: CommerceVideoCreditsEntryStyles = {
 const emptyBalance: CommerceCreditBalance = {
   paidAvailable: 0,
   referralAvailable: 0,
-  freePreviewAvailable: 0,
-  photoRemedyAvailable: 0,
+      freePreviewAvailable: 0,
+      photoRemedyAvailable: 0,
+      occasionAvailable: 0,
   totalAvailable: 0,
   paidCreditsNeverExpire: true,
   canSaveFirstPreview: false,
 };
 
-function renderEntryState(state: CommerceVideoCreditsBalanceState, products: CommerceVideoProduct[] = []) {
+function renderEntryState(
+  state: CommerceVideoCreditsBalanceState,
+  products: CommerceVideoProduct[] = [],
+  occasionOffers: Array<{ occasion: "birthday"; calendarYear: number; eligibleOn: string; claimDeadline: string; claimed: boolean }> = [],
+) {
   return renderToStaticMarkup(
     <MotionProvider>
       <aside aria-labelledby="test-entry-title">
@@ -55,6 +60,7 @@ function renderEntryState(state: CommerceVideoCreditsBalanceState, products: Com
           catalogUnavailable={false}
           memoryId="test-memory"
           notice=""
+          occasionOffers={occasionOffers}
           products={products}
           referral={null}
           styles={styles}
@@ -96,6 +102,17 @@ test("zero-balance UI is the only state that presents invitation and packages", 
   assert.match(rendered, /邀请朋友/);
   assert.match(rendered, /选择影像次数/);
   assert.doesNotMatch(rendered, /使用现有额度生成影像/);
+});
+
+test("an open occasion offer is visible only after the user opens the credit entry and requires an explicit claim/use action", () => {
+  const rendered = renderEntryState(
+    resolveCommerceVideoCreditsBalanceState(emptyBalance),
+    [],
+    [{ occasion: "birthday", calendarYear: 2026, eligibleOn: "2026-08-03", claimDeadline: "2026-09-01", claimed: false }],
+  );
+  assert.match(rendered, /今天有一份纪念影像机会/);
+  assert.match(rendered, /领取并制作纪念影像/);
+  assert.match(rendered, /8 秒竖版、静音；生成成功后可保存/);
 });
 
 test("package choices require an explicit commercial confirmation", () => {

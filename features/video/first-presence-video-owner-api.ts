@@ -17,6 +17,13 @@ export type FirstPresenceVideoIntent =
   | "initial_preview"
   | "additional_generation";
 
+/**
+ * A user can opt into a time-bounded occasion credit.  Absence deliberately
+ * preserves the existing paid/referral selection path: an occasion credit is
+ * never silently consumed merely because it happens to be available.
+ */
+export type AdditionalVideoCreditSource = "occasion_reward";
+
 export type FirstPresenceVideoSafeDto = {
   id: string;
   memoryId: string;
@@ -33,6 +40,8 @@ export type FirstPresenceVideoSafeDto = {
 
 export type OwnerVideoJob = FirstPresenceVideoJob & {
   intent: FirstPresenceVideoIntent;
+  /** Internal idempotency binding; it is intentionally omitted from the DTO. */
+  creditSource?: AdditionalVideoCreditSource;
   saveAllowed: boolean;
 };
 
@@ -46,6 +55,7 @@ export type CreateOwnerVideoJobInput = {
   memoryId: string;
   idempotencyKey: string;
   intent: FirstPresenceVideoIntent;
+  creditSource?: AdditionalVideoCreditSource;
 };
 
 export type OwnerVideoJobCommandPort = {
@@ -111,6 +121,7 @@ type OwnerJobRow = {
   manual_review: FirstPresenceVideoJob["manualReview"];
   error_code: string | null;
   intent: FirstPresenceVideoIntent;
+  credit_source: "free_preview" | "paid_package" | "referral_reward" | "occasion_reward";
   save_allowed: boolean;
   created_at: Date | string;
   updated_at: Date | string;
@@ -134,6 +145,7 @@ const OWNER_JOB_COLUMNS = `j.id, u.external_id AS external_user_id, j.memory_id,
     WHEN r.purpose = 'first_preview' THEN 'initial_preview'
     ELSE 'additional_generation'
   END AS intent,
+  l.source_kind AS credit_source,
   COALESCE(l.save_allowed, false) AS save_allowed,
   j.created_at, j.updated_at`;
 
@@ -154,6 +166,7 @@ function toOwnerJob(row: OwnerJobRow): OwnerVideoJob {
     manualReview: row.manual_review ?? null,
     errorCode: row.error_code,
     intent: row.intent,
+    creditSource: row.credit_source === "occasion_reward" ? "occasion_reward" : undefined,
     saveAllowed: row.save_allowed,
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
@@ -264,6 +277,7 @@ async function reserveCredit(
     requestKey: string;
     generationKey: string;
     intent: FirstPresenceVideoIntent;
+    creditSource?: AdditionalVideoCreditSource;
   },
 ): Promise<{
   id: string;
@@ -275,6 +289,7 @@ async function reserveCredit(
     memory_id: string;
     generation_key: string;
     purpose: GenerationPurpose;
+    source_kind: "free_preview" | "paid_package" | "referral_reward" | "occasion_reward";
     save_allowed: boolean;
   }>(
     `SELECT r.id, r.memory_id, r.generation_key, r.purpose, l.save_allowed
@@ -293,6 +308,7 @@ async function reserveCredit(
       existingReservation.memory_id !== input.memoryId
       || existingReservation.generation_key !== input.generationKey
       || expectedIntent !== input.intent
+      || (existingReservation.source_kind === "occasion_reward" ? "occasion_reward" : undefined) !== input.creditSource
     ) {
       throw new FirstPresenceVideoOwnerApiError("IDEMPOTENCY_PAYLOAD_CONFLICT");
     }
@@ -337,10 +353,12 @@ async function reserveCredit(
 
   const sourceKinds = input.intent === "initial_preview"
     ? ["free_preview"]
-    : ["paid_package", "referral_reward"];
+    : input.creditSource === "occasion_reward"
+      ? ["occasion_reward"]
+      : ["paid_package", "referral_reward"];
   const selected = await client.query<{
     id: string;
-    source_kind: "free_preview" | "paid_package" | "referral_reward";
+    source_kind: "free_preview" | "paid_package" | "referral_reward" | "occasion_reward";
     save_allowed: boolean;
   }>(
     `SELECT id, source_kind, save_allowed
@@ -348,12 +366,14 @@ async function reserveCredit(
      WHERE user_id = $1
        AND source_kind = ANY($2::text[])
        AND active
+       AND (expires_at IS NULL OR expires_at > NOW())
        AND total_credits > reserved_credits + consumed_credits
      ORDER BY
        CASE source_kind
          WHEN 'free_preview' THEN 0
          WHEN 'paid_package' THEN 1
          WHEN 'referral_reward' THEN 2
+         WHEN 'occasion_reward' THEN 3
          ELSE 9
        END,
        created_at ASC,
@@ -370,6 +390,8 @@ async function reserveCredit(
     ? "first_preview"
     : lot.source_kind === "referral_reward"
       ? "referral_experience"
+      : lot.source_kind === "occasion_reward"
+        ? "occasion_experience"
       : "new_video";
   await client.query(
     `UPDATE public.commerce_credit_lots
@@ -415,6 +437,12 @@ export class FirstPresenceVideoOwnerPostgresPort
       "idempotency_key",
       KEY_PATTERN,
     );
+    if (
+      (input.creditSource !== undefined && input.creditSource !== "occasion_reward")
+      || (input.intent === "initial_preview" && input.creditSource !== undefined)
+    ) {
+      throw new FirstPresenceVideoOwnerApiError("INVALID_CREDIT_SOURCE");
+    }
 
     try {
       return await withPostgresTransaction(async (client) => {
@@ -453,7 +481,10 @@ export class FirstPresenceVideoOwnerPostgresPort
         true,
       );
       if (existing) {
-        if (existing.intent !== input.intent) {
+        if (
+          existing.intent !== input.intent
+          || existing.creditSource !== input.creditSource
+        ) {
           throw new FirstPresenceVideoOwnerApiError("IDEMPOTENCY_PAYLOAD_CONFLICT");
         }
         return { job: existing, created: false };
@@ -473,6 +504,7 @@ export class FirstPresenceVideoOwnerPostgresPort
         requestKey,
         generationKey: requestKey,
         intent: input.intent,
+        creditSource: input.creditSource,
       });
       const jobId = randomUUID();
       const inputStaging = this.createInputStaging();

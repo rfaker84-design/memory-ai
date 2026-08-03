@@ -21,6 +21,7 @@ const previewBalance: CommerceCreditBalance = {
   referralAvailable: 0,
   freePreviewAvailable: 0,
   photoRemedyAvailable: 0,
+  occasionAvailable: 0,
   totalAvailable: 2,
   paidCreditsNeverExpire: true,
   canSaveFirstPreview: true,

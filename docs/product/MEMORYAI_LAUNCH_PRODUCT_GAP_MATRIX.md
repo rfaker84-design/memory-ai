@@ -18,7 +18,7 @@
 | P-12 | 合规退款说明 | Refund Center/合同存在 | AUDIT_REQUIRED | 对外文案与平台/法律复核 |
 | P-13 | 注销显示权益并不阻断 | 删除候选与财务归档已有 | AUDIT_REQUIRED | 连接权益视图并保持外部删除门 |
 | P-14 | 3 人邀请、反作弊、独立来源 | Commerce referral 已有 | AUDIT_REQUIRED | 保留真实设备证明外部门 |
-| P-15 | 生日/节日奖励独立记账 | 未见完整首发产品闭环 | P1_OPEN | 建模前先完成 P0 纠正与核心审计 |
+| P-15 | 生日/节日奖励独立记账 | Candidate 020 extends the existing Commerce ledger; China-time 30-day/no-cross-year windows, owner-scoped offers/claim, durable claim/video idempotency, explicit `occasion_reward` selection, saveable artifact contract, failed-generation release, and isolated PG14.23 first/replay/rollback/concurrency/postflight PASS | CODE_CANDIDATE | Keep 020 outside the automatic runner; Staging migration, real Provider/manual review and production evidence remain separate gates |
 | P-16 | 克制问候和通用通知 | 每日问候已有 | AUDIT_REQUIRED | 核验通知授权时机与文案 |
 | P-17 | noindex/revocable/view-only 分享 | 旧分享隔离；正式分享需核验 | AUDIT_REQUIRED | 审计分享路由/契约 |
 | P-18 | 多 TA 底部选择器 | 主 TA 切换已有 | AUDIT_REQUIRED | 核验底部选择器体验 |
