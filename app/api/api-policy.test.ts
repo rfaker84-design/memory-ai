@@ -102,6 +102,8 @@ test("middleware enforces the formal API allowlist before route execution", asyn
   assert.equal(isFormalApiPath("/api/memories/00000000-0000-4000-8000-000000000001/pickups"), true);
   assert.equal(isFormalApiPath("/api/memories/00000000-0000-4000-8000-000000000001/pickups/00000000-0000-4000-8000-000000000002"), true);
   assert.equal(isFormalApiPath("/api/first-presence-video/playback/signed-token"), true);
+  assert.equal(isFormalApiPath("/api/video-shares/00000000-0000-4000-8000-000000000002"), true);
+  assert.equal(isFormalApiPath("/api/video-shares/00000000-0000-4000-8000-000000000002/playback"), true);
   assert.equal(isFormalApiPath("/api/media/00000000-0000-4000-8000-000000000001"), true);
   for (const pathname of [
     "/api/memories-mvp",
@@ -119,6 +121,7 @@ test("middleware enforces the formal API allowlist before route execution", asyn
     "/api/memories/id/video-shares/extra/path",
     "/api/first-presence-video/playback/",
     "/api/first-presence-video/playback/token/extra",
+    "/api/video-shares/id/playback/extra",
     "/api/media/",
     "/api/media//",
     "/api/media/id/extra",
@@ -156,7 +159,7 @@ test("video reconciliation is an explicitly audited formal internal route", () =
 
 test("every tracked non-formal Route Handler is a route-level 410", async () => {
   const routes = trackedRoutes();
-  assert.equal(routes.length, 130, "the audit must enumerate the complete tracked API surface");
+  assert.equal(routes.length, 132, "the audit must enumerate the complete tracked API surface");
 
   for (const { file, pathname } of routes) {
     const formal = isFormalApiPath(pathname);
@@ -210,6 +213,8 @@ test("formal Session ownership and public health contracts remain explicit", asy
     firstPresencePlaybackService: readFileSync("features/video/first-presence-video-playback.ts", "utf8"),
     ownerVideoShares: readFileSync("app/api/memories/[id]/video-shares/_handler.ts", "utf8"),
     ownerVideoShareRevocation: readFileSync("app/api/memories/[id]/video-shares/[publicId]/_handler.ts", "utf8"),
+    publicVideoShare: readFileSync("app/api/video-shares/[publicId]/_handler.ts", "utf8"),
+    publicVideoSharePlayback: readFileSync("app/api/video-shares/[publicId]/playback/_handler.ts", "utf8"),
     pickups: readFileSync("app/api/memories/[id]/pickups/_handlers.ts", "utf8"),
     memoryChat: readFileSync("app/api/memory-chat/route.ts", "utf8"),
     consents: readFileSync("app/api/consents/route.ts", "utf8"),
@@ -257,6 +262,10 @@ test("formal Session ownership and public health contracts remain explicit", asy
     assert.match(source, /applyAuthNoStore/);
   }
   assert.doesNotMatch(sources.ownerVideoShares, /artifactKey|providerTaskId|storage_key/);
+  assert.match(sources.publicVideoShare, /X-Robots-Tag/);
+  assert.doesNotMatch(sources.publicVideoShare, /artifactKey|providerTaskId|storage_key/);
+  assert.match(sources.publicVideoSharePlayback, /findActivePublic/);
+  assert.match(sources.publicVideoSharePlayback, /Content-Disposition.*inline/);
   for (const source of [sources.memoryChat, sources.media]) assert.match(source, /verifyRequestSession/);
   assert.match(sources.consents, /createConsentsHandler/);
   assert.match(sources.reports, /verifyRequestSession/);

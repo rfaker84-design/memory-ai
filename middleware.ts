@@ -78,6 +78,8 @@ const FORMAL_DYNAMIC_API_PATHS = [
   /^\/api\/memories\/[^/]+\/pickups\/[^/]+$/,
   /^\/api\/media\/[^/]+$/,
   /^\/api\/first-presence-video\/playback\/[^/]+$/,
+  /^\/api\/video-shares\/[^/]+$/,
+  /^\/api\/video-shares\/[^/]+\/playback$/,
 ];
 
 const LEGACY_CHAT_COMMERCE_API_PATHS = new Set([
