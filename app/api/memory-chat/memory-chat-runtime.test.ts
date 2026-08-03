@@ -240,7 +240,9 @@ test("memory-chat rejects an unsafe engine response before it can be persisted",
 test("memory-chat short-circuits immediate crisis language without a role-model call or durable memory write", async () => {
   let providerCalls = 0;
   let persistedCalls = 0;
+  let quotaReservations = 0;
   let releasedQuota = 0;
+  let admissionCalls = 0;
   let completedAnswer = "";
   let escalation: unknown;
   const handler = createMemoryChatHandler(
@@ -256,9 +258,12 @@ test("memory-chat short-circuits immediate crisis language without a role-model 
     () => ({ async generateReply() { providerCalls += 1; return { content: "unexpected" }; } }),
     sessionResolver,
     async () => { persistedCalls += 1; return true; },
-    allowAdmission,
+    async () => {
+      admissionCalls += 1;
+      return { rateAllowed: false, concurrencyAllowed: false };
+    },
     () => ({
-      async reserveChatQuota() { return "reserved" as const; },
+      async reserveChatQuota() { quotaReservations += 1; return "reserved" as const; },
       async releaseChatQuota() { releasedQuota += 1; },
     }),
     () => true,
@@ -276,7 +281,9 @@ test("memory-chat short-circuits immediate crisis language without a role-model 
   assert.equal(completedAnswer, CRISIS_RESPONSE);
   assert.equal(providerCalls, 0);
   assert.equal(persistedCalls, 0);
-  assert.equal(releasedQuota, 1);
+  assert.equal(quotaReservations, 0);
+  assert.equal(releasedQuota, 0);
+  assert.equal(admissionCalls, 0);
   assert.deepEqual(escalation, { userId: "internal-owner", externalUserId: userId, memoryId, idempotencyKey: "memory-chat-turn-0001" });
 });
 

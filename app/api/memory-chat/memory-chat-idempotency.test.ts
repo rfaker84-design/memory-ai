@@ -29,13 +29,13 @@ test("memory-chat replays completed turns and holds unknown processing state", (
   assert.ok(source.indexOf('claim.status === "in_progress"') < source.indexOf("engineServiceFactory().generateReply"));
 });
 
-test("provider failure is explicitly retryable while completion precedes LTM persistence", () => {
+test("provider failure is explicitly retryable and ordinary chat never auto-persists long-term memory", () => {
   assert.match(source, /await turnService\.fail\(turnInput\)/);
   assert.match(source, /AI_UNAVAILABLE/);
   assert.match(source, /const result = await turnService\.complete/);
-  assert.match(source, /await persistTurn/);
-  assert.ok(source.indexOf("turnService.complete") < source.indexOf("persistTurn({"));
-  assert.match(source, /LTM_WRITE_FAILED/);
+  assert.match(source, /void persistTurn/);
+  assert.doesNotMatch(source, /await persistTurn|persistTurn\(\{/);
+  assert.doesNotMatch(source, /LTM_WRITE_FAILED/);
   assert.doesNotMatch(source, /addiction-score/);
   assert.doesNotMatch(source, /supabase/i);
 });

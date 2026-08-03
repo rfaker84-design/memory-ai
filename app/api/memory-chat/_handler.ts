@@ -184,6 +184,10 @@ export function createMemoryChatHandler(
       const memory = await memoryServiceFactory().getMemoryForUser(parsed.memoryId, userId);
       if (!memory) return json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
 
+      // A crisis handoff is a safety response, not an ordinary model turn. It
+      // must remain available even when the normal-chat quota, rate or
+      // concurrency guard has closed, and it must not reserve a paid reply.
+      const crisisResponse = crisisResponseFor(parsed.question);
       const turnInput = { userId, memoryId: parsed.memoryId, idempotencyKey, question: parsed.question };
       const turnService = turnServiceFactory();
       const claim = await turnService.claim(turnInput);
@@ -195,45 +199,47 @@ export function createMemoryChatHandler(
         return json({ error: "CHAT_TURN_IN_PROGRESS" }, { status: 409 });
       }
 
-      const quotaService = quotaServiceFactory();
-      let quota: QuotaReservation;
-      try {
-        quota = await quotaService.reserveChatQuota({
-          externalUserId: userId, memoryId: parsed.memoryId, idempotencyKey,
-        });
-      } catch (error) {
-        try { await turnService.fail(turnInput); } catch { console.warn("[memory-chat] CHAT_TURN_FAILURE_MARK_UNAVAILABLE"); }
-        throw error;
-      }
-      if (quota === "unavailable") {
-        await turnService.fail(turnInput);
-        return json({ error: "PAYMENT_ENTITLEMENT_REQUIRED" }, { status: 402 });
-      }
+      let quota: QuotaReservation = "free";
+      let quotaService: QuotaService | null = null;
       let quotaReleased = false;
       const releaseQuota = async () => {
-        if (quota === "reserved" && !quotaReleased) {
+        if (quota === "reserved" && quotaService && !quotaReleased) {
           quotaReleased = true;
           await quotaService.releaseChatQuota({ externalUserId: userId, memoryId: parsed.memoryId, idempotencyKey });
         }
       };
 
-      const admission = await admissionControl(userId);
-      if (!admission.rateAllowed) {
-        await turnService.fail(turnInput);
-        await releaseQuota();
-        const answer = "忆见服务暂时繁忙，请稍后重试。";
-        return json({ answer, reply: answer, text: answer });
-      }
-      if (!admission.concurrencyAllowed) {
-        await turnService.fail(turnInput);
-        await releaseQuota();
-        const answer = "忆见正在处理上一条请求，请稍后重试。";
-        return json({ answer, reply: answer, text: answer });
+      if (!crisisResponse) {
+        quotaService = quotaServiceFactory();
+        try {
+          quota = await quotaService.reserveChatQuota({
+            externalUserId: userId, memoryId: parsed.memoryId, idempotencyKey,
+          });
+        } catch (error) {
+          try { await turnService.fail(turnInput); } catch { console.warn("[memory-chat] CHAT_TURN_FAILURE_MARK_UNAVAILABLE"); }
+          throw error;
+        }
+        if (quota === "unavailable") {
+          await turnService.fail(turnInput);
+          return json({ error: "PAYMENT_ENTITLEMENT_REQUIRED" }, { status: 402 });
+        }
+
+        const admission = await admissionControl(userId);
+        if (!admission.rateAllowed) {
+          await turnService.fail(turnInput);
+          await releaseQuota();
+          const answer = "忆见服务暂时繁忙，请稍后重试。";
+          return json({ answer, reply: answer, text: answer });
+        }
+        if (!admission.concurrencyAllowed) {
+          await turnService.fail(turnInput);
+          await releaseQuota();
+          const answer = "忆见正在处理上一条请求，请稍后重试。";
+          return json({ answer, reply: answer, text: answer });
+        }
       }
 
-      const crisisResponse = crisisResponseFor(parsed.question);
       if (crisisResponse) {
-        await releaseQuota();
         try {
           await crisisSupportEscalation({ userId: session.userId, externalUserId: userId, memoryId: parsed.memoryId, idempotencyKey });
         } catch {
