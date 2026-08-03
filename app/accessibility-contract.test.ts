@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 test("global accessibility keeps browser zoom, focus visibility, and a keyboard skip link", () => {
@@ -23,4 +23,9 @@ test("bottom navigation is limited to first-release root destinations", () => {
   const companion = readFileSync("app/memory-world/page.tsx", "utf8");
   assert.match(companion, /<nav aria-label="主导航"/);
   assert.match(companion, /aria-current=\{item\.href === "\/memory-world" \? "page" : undefined\}/);
+});
+
+test("the retired four-tab navigation cannot be wired back into the first release", () => {
+  assert.equal(existsSync("src/components/BottomNav.tsx"), false);
+  assert.equal(existsSync("src/components/BottomNavWrapper.tsx"), false);
 });
