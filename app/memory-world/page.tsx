@@ -124,8 +124,8 @@ function MemoryWorldContent() {
       </header>
 
       <MemorySection>
-        {state === "loading" && <MemoryCard>正在整理记忆空间…</MemoryCard>}
-        {(state === "error" || state === "timeout") && <MemoryCard><div style={{ display: "grid", gap: MemorySpacing.md }}><span>{state === "timeout" ? "读取等待过久，没有创建或修改任何资料。" : "暂时无法读取记忆。"}</span><MemoryButton variant="secondary" onClick={() => void load()}>重试</MemoryButton></div></MemoryCard>}
+        {state === "loading" && <MemoryCard role="status" aria-live="polite">正在整理记忆空间…</MemoryCard>}
+        {(state === "error" || state === "timeout") && <MemoryCard role="alert" aria-live="assertive"><div style={{ display: "grid", gap: MemorySpacing.md }}><span>{state === "timeout" ? "读取等待过久，没有创建或修改任何资料。" : "暂时无法读取记忆。"}</span><MemoryButton variant="secondary" onClick={() => void load()}>重试</MemoryButton></div></MemoryCard>}
         {(state === "empty" || state === "unauthenticated") && (
           <MemoryCard depth="elevated">
             <div style={{ display: "grid", gap: MemorySpacing.md }}>
