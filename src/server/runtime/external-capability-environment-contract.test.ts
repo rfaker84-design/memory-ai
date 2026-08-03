@@ -23,3 +23,12 @@ test("external video, payment, and product capabilities are documented as empty 
   assert.match(environmentTemplate, /commercial terms,\n# retention\/deletion terms, region/i);
   assert.match(environmentTemplate, /fail closed until the merchant account/i);
 });
+
+test("production mutation kill switches are explicit and default to disabled", () => {
+  for (const name of [
+    "YIJIAN_REGISTRATION_ENABLED",
+    "YIJIAN_VIDEO_GENERATION_ENABLED",
+    "YIJIAN_COMMERCE_PURCHASE_ENABLED",
+  ]) assert.match(environmentTemplate, new RegExp(`^${name}=false$`, "m"), name);
+  assert.match(environmentTemplate, /mutating capability kill switches/i);
+});
