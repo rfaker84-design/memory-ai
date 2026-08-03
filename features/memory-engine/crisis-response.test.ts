@@ -13,6 +13,8 @@ test("immediate crisis language receives a fixed non-role safety response", () =
     "有人正在伤害我",
     "我被家暴了",
     "未成年人正在遭受侵害",
+    "我　想　自　杀",
+    "我\u200b想\u200b自\u200b伤",
   ]) {
     assert.equal(crisisResponseFor(message), CRISIS_RESPONSE);
   }
