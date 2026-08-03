@@ -76,6 +76,14 @@ export default function HelpPage() {
             </div>
           </dl>
         </section>
+        <section style={sectionStyle}>
+          <h2 className="text-xl font-semibold">公开影像分享</h2>
+          <ul className="mt-3 list-disc space-y-2 pl-5 leading-7 text-[#d8bfaa]">
+            <li>影像默认私密。只有 Owner 主动为已人工审核通过的影像创建链接，才会出现公开只读页面。</li>
+            <li>分享页面默认不被搜索收录，持续标注为 AI 生成内容，并且不提供原始文件下载。</li>
+            <li>Owner 可以在“我的 → 影像分享”随时撤销链接；撤销后，公开页面和播放都会立即不可访问。</li>
+          </ul>
+        </section>
       </div>
     </main>
   );

@@ -25,6 +25,7 @@ test("help content gives a real, safe support path for first-use and failures", 
   ]) assert.match(help, new RegExp(value));
   assert.match(help, /公开首发不收集声音、不录音，也不提供声音克隆/);
   assert.doesNotMatch(help, /照片和声音会在正式创建后上传/);
+  for (const value of ["公开影像分享", "影像默认私密", "默认不被搜索收录", "我的 → 影像分享", "撤销后，公开页面和播放都会立即不可访问"]) assert.match(help, new RegExp(value));
 });
 
 test("help is reachable from the shared footer, login, and personal settings", () => {
