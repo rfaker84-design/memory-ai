@@ -82,7 +82,7 @@ blockquote { max-width: 300px; margin: 12px auto 38px; color: rgba(245, 231, 214
 .emptyPortrait { position: relative; width: 118px; height: 118px; margin-bottom: 34px; border: 1px solid rgba(231, 198, 156, .18); border-radius: 50%; background: radial-gradient(circle at 50% 34%, rgba(236, 201, 156, .13), transparent 60%); }
 .homeSpace .personFrame { position: relative; width: 135px; height: 135px; margin-bottom: 25px; font-size: 34px; }
 
-.bottomNav { position: fixed; right: 16px; bottom: max(12px, env(safe-area-inset-bottom)); left: 16px; z-index: 4; display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid rgba(255, 244, 230, .08); border-radius: 23px; padding: 7px 4px; background: rgba(30, 24, 19, .88); box-shadow: 0 12px 36px rgba(0, 0, 0, .25); backdrop-filter: blur(14px); }
+.bottomNav { position: fixed; right: 16px; bottom: max(12px, env(safe-area-inset-bottom)); left: 16px; z-index: 4; display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid rgba(255, 244, 230, .08); border-radius: 23px; padding: 7px 4px; background: rgba(30, 24, 19, .88); box-shadow: 0 12px 36px rgba(0, 0, 0, .25); backdrop-filter: blur(14px); }
 .bottomNav button { position: relative; display: grid; min-height: 46px; place-items: center; gap: 1px; border: 0; border-radius: 16px; color: rgba(238, 220, 199, .48); background: transparent; }
 .bottomNav button.active { color: #ebc791; background: rgba(229, 193, 143, .09); }
 .bottomNav span { font-size: 19px; line-height: 16px; }.bottomNav small { font-size: 10px; }.bottomNav i { position: absolute; top: 7px; right: 23%; width: 4px; height: 4px; border-radius: 50%; background: #dfb778; }

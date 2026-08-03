@@ -1,9 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { App as NativeApp } from "@capacitor/app";
 import { Haptics, ImpactStyle } from "@capacitor/haptics";
-import { Share } from "@capacitor/share";
 import { runtimeConfig } from "./config/environment";
-import { MemoryMedia, type PickedMedia, saveSignedVideo } from "./native/memory-media";
+import { MemoryMedia, type PickedMedia } from "./native/memory-media";
 import {
   productApi,
   ProductApiError,
@@ -114,7 +113,6 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [conversation, setConversation] = useState<ProductConversation>({ sessionId: null, messages: [] });
   const [question, setQuestion] = useState("");
-  const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
 
   const hasMemory = Boolean(memory);
   const hasIncompleteMemory = Boolean(incompleteMemory);
@@ -226,11 +224,6 @@ export function App() {
     });
     return () => { void listener.then((value) => value.remove()); };
   }, [handleAppUrl]);
-
-  useEffect(() => {
-    if (!__MOBILE_DEBUG_BUILD__ || mode !== "preview") return;
-    void import("./debug/productPreview").then(({ debugPreviewVideoUrl }) => setPreviewVideoUrl(debugPreviewVideoUrl()));
-  }, [mode]);
 
   const beginPreview = () => {
     setMode("preview");
@@ -366,19 +359,6 @@ export function App() {
     finally { setBusy(false); }
   };
 
-  const saveVideo = async () => {
-    if (!previewVideoUrl) { setNotice("影像准备好后，就可以保存到系统相册。 "); return; }
-    setBusy(true); setNotice("");
-    try { await saveSignedVideo({ signedUrl: previewVideoUrl, fileName: "yijian-memory.mp4", mimeType: "video/mp4" }); setNotice("影像已保存到系统相册。"); }
-    catch { setNotice("暂时无法保存这段影像，请稍后再试。"); }
-    finally { setBusy(false); }
-  };
-
-  const shareVideo = async () => {
-    try { await Share.share({ title: `${title} 的影像`, text: "忆见里的一段珍贵记忆" }); }
-    catch { setNotice("分享已取消。"); }
-  };
-
   const content = useMemo(() => {
     if (screen === "splash") return <BrandSplash />;
     if (screen === "offline") return <Offline retry={() => setScreen(navigator.onLine ? "welcome" : "offline")} />;
@@ -423,10 +403,6 @@ export function App() {
       {notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="chat" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
     if (screen === "video" && memory) {
-      if (mode === "preview") return <main className="memoryScene">
-        <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><span>影像</span><button className="headerAction" onClick={() => setScreen("memory")}>详情</button></header>
-        <section className="galleryScene"><p className="eyebrow">影像</p><h1>把瞬间，留在身边。</h1>{previewVideoUrl ? <article className="videoCard"><div><span>回忆片段</span><small>{memory.name} · 一段被珍藏的时光</small></div><button onClick={() => void saveVideo()} disabled={busy}>保存到相册</button><button className="secondaryButton" onClick={() => void shareVideo()}>分享</button></article> : <p className="emptyCopy">影像准备好后，会安静地留在这里。</p>}</section>
-      </main>;
       return <VideoOpportunityScreen
         memory={memory}
         conversation={conversation}
@@ -446,7 +422,7 @@ export function App() {
     return <main className="homeScene"><p className="eyebrow">忆见</p><div className="homeSpace"><div className="homeGlow" aria-hidden="true" />{memory ? <><div className="personFrame"><span>{initials(memory.name)}</span></div><p>{memory.name} 在这里</p></> : <><div className="emptyPortrait" /><h1>为谁，留一盏灯？</h1><p>从一个名字、一句常说的话，开始重新靠近。</p></>}</div>
       <button className="primaryButton" onClick={() => press(() => incompleteMemory ? continueIncompleteMemory() : memory ? setScreen("chat") : beginCreateMemory())}>{hasIncompleteMemory ? "继续补充照片" : memory ? "继续相见" : "创建 TA"}</button>{notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="home" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
-  }, [busy, challengeId, code, conversation, hasMemory, incompleteMemory, isFirstMemory, media.length, memory, messages, mode, name, notice, online, pendingCreation, phone, previewVideoUrl, question, relationship, resumingMemory, screen, story, title]);
+  }, [busy, challengeId, code, conversation, hasMemory, incompleteMemory, isFirstMemory, media.length, memory, messages, mode, name, notice, online, pendingCreation, phone, question, relationship, resumingMemory, screen, story, title]);
 
   return <div className={`appRoot ${productOnline ? "isOnline" : ""}`}>{content}</div>;
 }
