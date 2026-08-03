@@ -7,7 +7,7 @@ import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 
 type Context = { params: Promise<{ id: string }> };
 type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
-type Shares = Pick<VideoShareLinksPostgres, "createForOwner">;
+type Shares = Pick<VideoShareLinksPostgres, "createForOwner" | "listForOwner">;
 const json = (body: Record<string, unknown>, init?: ResponseInit) => applyAuthNoStore(NextResponse.json(body, init));
 
 function parse(body: unknown): { jobId: string; title: string } | null {
@@ -29,7 +29,17 @@ export function createOwnerVideoShareHandler(
   shares: Shares = new VideoShareLinksPostgres(),
   sessionResolver: SessionResolver = verifyRequestSession,
 ) {
-  return { POST: async (request: NextRequest, { params }: Context) => {
+  return {
+  GET: async (request: NextRequest, { params }: Context) => {
+    try {
+      const session = await sessionResolver(request);
+      if (!session) return json({ error: "UNAUTHENTICATED" }, { status: 401 });
+      if ([...request.nextUrl.searchParams.keys()].length) return json({ error: "INVALID_SHARE_REQUEST" }, { status: 400 });
+      const { id: memoryId } = await params;
+      return json({ shares: await shares.listForOwner({ externalUserId: session.externalUserId, memoryId }) });
+    } catch (error) { return failure(error); }
+  },
+  POST: async (request: NextRequest, { params }: Context) => {
     try {
       const session = await sessionResolver(request);
       if (!session) return json({ error: "UNAUTHENTICATED" }, { status: 401 });

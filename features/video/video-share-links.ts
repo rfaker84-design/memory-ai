@@ -38,6 +38,23 @@ function normalizeTitle(value: string): string {
  * capability and a revoked or no-longer-approved job cannot be played.
  */
 export class VideoShareLinksPostgres {
+  async listForOwner(input: { externalUserId: string; memoryId: string }): Promise<OwnerVideoShareLink[]> {
+    assertUuid(input.memoryId);
+    const result = await queryPostgres<{
+      public_id: string; title: string; video_job_id: string; memory_id: string; revoked_at: Date | null;
+    }>(
+      `SELECT s.public_id, s.title, s.video_job_id, s.memory_id, s.revoked_at
+       FROM public.video_share_links s JOIN public.users u ON u.id = s.user_id
+       WHERE u.external_id = $1 AND s.memory_id = $2::uuid AND s.revoked_at IS NULL
+       ORDER BY s.created_at DESC`,
+      [input.externalUserId, input.memoryId],
+    );
+    return result.rows.map((row) => ({
+      publicId: row.public_id, title: row.title, jobId: row.video_job_id, memoryId: row.memory_id,
+      revokedAt: row.revoked_at?.toISOString() ?? null, watermarkDownloadEnabled: false,
+    }));
+  }
+
   async createForOwner(input: {
     externalUserId: string;
     memoryId: string;

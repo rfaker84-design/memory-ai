@@ -15,7 +15,7 @@ const createRequest = (body: unknown, origin = "https://memoryai.test") => new N
 
 test("owner creates a share only through the exact Session and Origin-bound request", async () => {
   const calls: unknown[] = [];
-  const handler = createOwnerVideoShareHandler({ async createForOwner(input) { calls.push(input); return { publicId, title: "想念", jobId, memoryId, revokedAt: null, watermarkDownloadEnabled: false as const }; } }, session);
+  const handler = createOwnerVideoShareHandler({ async listForOwner() { return []; }, async createForOwner(input) { calls.push(input); return { publicId, title: "想念", jobId, memoryId, revokedAt: null, watermarkDownloadEnabled: false as const }; } }, session);
   const response = await handler.POST(createRequest({ jobId, title: " 想念 " }), { params: Promise.resolve({ id: memoryId }) });
   assert.equal(response.status, 201);
   assert.deepEqual(calls, [{ externalUserId: "owner", memoryId, jobId, title: " 想念 " }]);
@@ -27,7 +27,7 @@ test("owner creates a share only through the exact Session and Origin-bound requ
 
 test("owner create rejects no-session, forged origin and altered payload without a write", async () => {
   let writes = 0;
-  const shares = { async createForOwner() { writes += 1; throw new Error("must not run"); } };
+  const shares = { async listForOwner() { return []; }, async createForOwner() { writes += 1; throw new Error("must not run"); } };
   const noSession = createOwnerVideoShareHandler(shares, async () => null);
   assert.equal((await noSession.POST(createRequest({ jobId, title: "想念" }), { params: Promise.resolve({ id: memoryId }) })).status, 401);
   const handler = createOwnerVideoShareHandler(shares, session);
@@ -43,4 +43,13 @@ test("revocation is owner-scoped, origin-bound and idempotent at the data bounda
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { revoked: true });
   assert.deepEqual(calls, [{ externalUserId: "owner", memoryId, publicId }]);
+});
+
+test("owner can list only active links for the selected owned TA", async () => {
+  const calls: unknown[] = [];
+  const handler = createOwnerVideoShareHandler({ async listForOwner(input) { calls.push(input); return [{ publicId, title: "想念", jobId, memoryId, revokedAt: null, watermarkDownloadEnabled: false as const }]; }, async createForOwner() { throw new Error("not used"); } }, session);
+  const response = await handler.GET(new NextRequest(`https://memoryai.test/api/memories/${memoryId}/video-shares`), { params: Promise.resolve({ id: memoryId }) });
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{ externalUserId: "owner", memoryId }]);
+  assert.deepEqual((await response.json()).shares[0].publicId, publicId);
 });
