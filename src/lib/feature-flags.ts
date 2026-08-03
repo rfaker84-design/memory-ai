@@ -59,7 +59,6 @@ export const PRODUCTION_PAGES = [
   "/about",         // about
   "/privacy",       // privacy
   "/terms",         // terms
-  "/app-store-preview", // App Store preview
 ] as const;
 
 export const PRODUCTION_APIS = [
