@@ -65,8 +65,8 @@ export default function MemorySourcesPage({ params }: { params: Promise<{ id: st
 
   if (state.status !== "ready") {
     return <main style={{ maxWidth: 680, margin: "0 auto", padding: "48px 24px" }}>
-      <p>{state.status === "not-found" ? "找不到这段资料。" : state.status === "error" ? "资料暂时无法读取，请稍后重试。" : "正在读取已确认资料…"}</p>
-      {state.status === "error" && <button type="button" onClick={() => void load()}>重新读取</button>}
+      <p role={state.status === "error" ? "alert" : "status"} aria-live={state.status === "error" ? undefined : "polite"}>{state.status === "not-found" ? "找不到这段资料。" : state.status === "error" ? "资料暂时无法读取，请稍后重试。" : "正在读取已确认资料…"}</p>
+      {state.status === "error" && <button type="button" style={{ minHeight: 44 }} onClick={() => void load()}>重新读取</button>}
       <Link href={`/memory-chat/${id}`}>返回相伴</Link>
     </main>;
   }

@@ -137,7 +137,7 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
     }
   };
 
-  if (state !== "ready") return <main style={{ maxWidth: 720, margin: "0 auto", padding: 28 }}><p>{state === "not-found" ? "找不到这位 TA。" : state === "error" ? "拾忆暂时无法打开。" : "正在打开拾忆…"}</p>{state === "error" && <TouchButton type="button" onClick={() => void initialize()}>重新读取</TouchButton>}<Link href="/memory">返回拾忆</Link></main>;
+  if (state !== "ready") return <main style={{ maxWidth: 720, margin: "0 auto", padding: 28 }}><p role={state === "error" ? "alert" : "status"} aria-live={state === "error" ? undefined : "polite"}>{state === "not-found" ? "找不到这位 TA。" : state === "error" ? "拾忆暂时无法打开。" : "正在打开拾忆…"}</p>{state === "error" && <TouchButton type="button" onClick={() => void initialize()}>重新读取</TouchButton>}<Link href="/memory">返回拾忆</Link></main>;
 
   return <main style={{ maxWidth: 720, margin: "0 auto", padding: "28px 20px 96px", lineHeight: 1.7 }}>
     <Link href="/memory">返回拾忆</Link>
