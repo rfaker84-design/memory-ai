@@ -126,6 +126,12 @@ function requireVideoInternalAccess(environment) {
   required(environment, "YIJIAN_VIDEO_RECONCILIATION_ACCOUNT");
 }
 
+function requireReportReviewAccess(environment) {
+  requireExact(environment, "YIJIAN_REPORT_REVIEW_INTERNAL_ENABLED", "true");
+  requireInternalControlTokenRotation(environment, "REPORT_REVIEW_ACCESS_TOKEN");
+  required(environment, "REPORT_REVIEW_ACCOUNT");
+}
+
 function requireStagingContract(environment) {
   requireExact(environment, "AUTH_ALLOWED_ORIGIN", "https://app.staging.yijianmemory.cn");
   requireExact(environment, "STAGING_DATABASE_ISOLATION", "isolated");
@@ -184,6 +190,7 @@ function assertProductionRuntimeContract(environment = process.env) {
   requireInternalControlTokenRotation(environment, "REFUND_REVIEW_ACCESS_TOKEN");
   requireEnabled(environment, "AUTH_TRUST_NGINX_PROXY", "AUTH_TRUST_NGINX_PROXY_NOT_CONFIGURED");
   requireEnabled(environment, "AUTH_PROXY_LOOPBACK_ONLY", "AUTH_PROXY_LOOPBACK_CONTRACT_NOT_CONFIGURED");
+  requireReportReviewAccess(environment);
   requireVideoInternalAccess(environment);
 
   const deployment = environment.DEPLOYMENT_ENV && environment.DEPLOYMENT_ENV.trim();

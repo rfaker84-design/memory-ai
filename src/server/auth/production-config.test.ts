@@ -17,6 +17,9 @@ const productionEnvironment: NodeJS.ProcessEnv = {
   AUTH_VERIFICATION_PEPPER: "p".repeat(32),
   SESSION_SECRET: "s".repeat(32),
   REFUND_REVIEW_ACCESS_TOKEN: "r".repeat(48),
+  YIJIAN_REPORT_REVIEW_INTERNAL_ENABLED: "true",
+  REPORT_REVIEW_ACCESS_TOKEN: "report-review-A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0Uv",
+  REPORT_REVIEW_ACCOUNT: "report-reviewer@yijian.test",
   YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED: "true",
   VIDEO_REVIEW_ACCESS_TOKEN: "review-A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0Uv",
   YIJIAN_VIDEO_REVIEW_ACCOUNT: "video-reviewer@yijian.test",
@@ -47,6 +50,8 @@ test("production authentication startup configuration fails closed for every req
     ["AUTH_VERIFICATION_PEPPER", "AUTH_VERIFICATION_PEPPER_NOT_CONFIGURED"],
     ["SESSION_SECRET", "SESSION_SECRET_NOT_CONFIGURED"],
     ["REFUND_REVIEW_ACCESS_TOKEN", "REFUND_REVIEW_ACCESS_TOKEN_NOT_CONFIGURED"],
+    ["REPORT_REVIEW_ACCESS_TOKEN", "REPORT_REVIEW_ACCESS_TOKEN_NOT_CONFIGURED"],
+    ["REPORT_REVIEW_ACCOUNT", "REPORT_REVIEW_ACCOUNT_NOT_CONFIGURED"],
     ["VIDEO_REVIEW_ACCESS_TOKEN", "VIDEO_REVIEW_ACCESS_TOKEN_NOT_CONFIGURED"],
     ["VIDEO_RECONCILIATION_ACCESS_TOKEN", "VIDEO_RECONCILIATION_ACCESS_TOKEN_NOT_CONFIGURED"],
     ["AUTH_ALLOWED_ORIGIN", "AUTH_ALLOWED_ORIGIN_NOT_CONFIGURED"],
@@ -78,6 +83,7 @@ test("production authentication startup configuration rejects weak secrets and u
     ["AUTH_VERIFICATION_PEPPER", "too-short", "AUTH_VERIFICATION_PEPPER_NOT_CONFIGURED"],
     ["SESSION_SECRET", "too-short", "SESSION_SECRET_NOT_CONFIGURED"],
     ["REFUND_REVIEW_ACCESS_TOKEN", "too-short", "REFUND_REVIEW_ACCESS_TOKEN_NOT_CONFIGURED"],
+    ["REPORT_REVIEW_ACCESS_TOKEN", "too-short", "REPORT_REVIEW_ACCESS_TOKEN_NOT_CONFIGURED"],
     ["DATABASE_URL", "mysql://example.test/auth", "DATABASE_URL_INVALID"],
     ["AUTH_ALLOWED_ORIGIN", "http://memoryai.test", "AUTH_ALLOWED_ORIGIN_INVALID"],
     ["TTS_PROVIDER", "mock", "TENCENT_TTS_PROVIDER_REQUIRED"],
@@ -171,6 +177,26 @@ test("production startup rejects incomplete, expired, or overlong refund-review 
   }
 });
 
+test("production startup rejects incomplete, expired, or overlong report-review token rotation", () => {
+  for (const override of [
+    { REPORT_REVIEW_ACCESS_TOKEN_PREVIOUS: "p".repeat(48) },
+    {
+      REPORT_REVIEW_ACCESS_TOKEN_PREVIOUS: "p".repeat(48),
+      REPORT_REVIEW_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL: new Date(Date.now() - 1_000).toISOString(),
+    },
+    {
+      REPORT_REVIEW_ACCESS_TOKEN_PREVIOUS: "p".repeat(48),
+      REPORT_REVIEW_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL: new Date(Date.now() + 15 * 60 * 1000 + 1_000).toISOString(),
+    },
+  ]) {
+    assert.throws(
+      () => assertProductionAuthConfiguration({ ...productionEnvironment, ...override }),
+      (error: unknown) => error instanceof ProductionAuthConfigurationError
+        && error.code === "REPORT_REVIEW_ACCESS_TOKEN_PREVIOUS_CONFIGURATION_INVALID",
+    );
+  }
+});
+
 test("production startup rejects incomplete, too-short and expired verification pepper rotation configuration", () => {
   for (const override of [
     { AUTH_VERIFICATION_PEPPER_PREVIOUS: "p".repeat(32) },
@@ -206,6 +232,9 @@ test("the environment example documents every bounded rotation input without a s
     "AUTH_VERIFICATION_PEPPER_PREVIOUS",
     "AUTH_VERIFICATION_PEPPER_PREVIOUS_KID",
     "AUTH_VERIFICATION_PEPPER_PREVIOUS_VALID_UNTIL",
+    "REPORT_REVIEW_ACCESS_TOKEN",
+    "REPORT_REVIEW_ACCESS_TOKEN_PREVIOUS",
+    "REPORT_REVIEW_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL",
     "VIDEO_REVIEW_ACCESS_TOKEN",
     "VIDEO_REVIEW_ACCESS_TOKEN_PREVIOUS",
     "VIDEO_REVIEW_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL",
@@ -216,6 +245,7 @@ test("the environment example documents every bounded rotation input without a s
     assert.match(environmentExample, new RegExp(`^${name}=$`, "m"), name);
   }
   assert.match(environmentExample, /^AUTH_VERIFICATION_PEPPER_KID=current$/m);
+  assert.match(environmentExample, /^YIJIAN_REPORT_REVIEW_INTERNAL_ENABLED=false$/m);
   assert.match(environmentExample, /^YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED=false$/m);
   assert.match(environmentExample, /^YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED=false$/m);
 });
