@@ -5,6 +5,8 @@ const test = require("node:test");
 
 const root = join(__dirname, "..", "..");
 const template = readFileSync(join(root, "docs/Release/wave1/05-photo-blind-test-authorization.md"), "utf8");
+const deceasedStatement = readFileSync(join(root, "docs/Release/wave1/06-deceased-next-of-kin-rights-statement.md"), "utf8");
+const takedownSop = readFileSync(join(root, "docs/Release/wave1/07-rights-dispute-takedown-sop.md"), "utf8");
 const register = readFileSync(join(root, "docs/Release/wave1/05-photo-blind-test-register.csv"), "utf8").trim().split(/\r?\n/);
 
 test("photo blind-test authorization materials are signature-gated and do not advertise an unverified privacy contact", () => {
@@ -13,6 +15,12 @@ test("photo blind-test authorization materials are signature-gated and do not ad
   assert.match(template, /公开展示/);
   assert.match(template, /已验证的隐私联系渠道/);
   assert.doesNotMatch(template, /privacy@yijianmemory\.cn/);
+  assert.match(deceasedStatement, /已验证后填写/);
+  assert.match(takedownSop, /已验证后填写/);
+  assert.doesNotMatch(deceasedStatement, /privacy@yijianmemory\.cn/);
+  assert.doesNotMatch(takedownSop, /privacy@yijianmemory\.cn/);
+  assert.doesNotMatch(deceasedStatement, /legal@yijianmemory\.cn/);
+  assert.doesNotMatch(takedownSop, /legal@yijianmemory\.cn/);
   assert.equal(register.length, 21, "register must include exactly PBT-01 through PBT-20 plus header");
   for (let index = 1; index <= 20; index += 1) {
     const row = register[index];
