@@ -7,6 +7,8 @@ test("global accessibility keeps browser zoom, focus visibility, and a keyboard 
   const css = readFileSync("app/globals.css", "utf8");
   assert.match(css, /:focus-visible/);
   assert.match(css, /\.skip-link/);
+  assert.match(css, /html\s*\{[\s\S]*?font-size:100%;[\s\S]*?-webkit-text-size-adjust:100%;/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?animation-duration:0\.01ms !important;[\s\S]*?transition-duration:0\.01ms !important;[\s\S]*?scroll-behavior:auto !important;/);
   const shell = readFileSync("src/components/MobileAppShell.tsx", "utf8");
   assert.match(shell, /href="#main-content"/);
   assert.match(shell, /id="main-content"/);

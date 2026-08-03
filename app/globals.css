@@ -60,6 +60,7 @@
 *, *::before, *::after { box-sizing:border-box; }
 html {
   color-scheme: light;
+  font-size:100%;
   -webkit-text-size-adjust:100%;
   -webkit-tap-highlight-color:transparent;
 }
@@ -92,6 +93,18 @@ button, a[role="button"], .clickable { min-height:44px; min-width:44px; }
 @keyframes spin-ring { to { transform: rotate(360deg); } }
 @keyframes breathe { 0%,100% { opacity:0.5; transform:scale(1); } 50% { opacity:0.9; transform:scale(1.04); } }
 @keyframes fade-up { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+
+/* Component-level motion states remain responsible for their own semantics.
+   This is the final safety net for CSS-only motion on every product surface. */
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within { scroll-behavior:auto; }
+  *, *::before, *::after {
+    animation-duration:0.01ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:0.01ms !important;
+    scroll-behavior:auto !important;
+  }
+}
 
 .stagger > *:nth-child(1) { animation-delay:0.05s; }
 .stagger > *:nth-child(2) { animation-delay:0.1s; }
