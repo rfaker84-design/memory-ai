@@ -36,4 +36,6 @@ test("retired consciousness and autonomous splash surfaces cannot be reconnected
   assert.equal(existsSync(new URL("../../core/personality/entity-personality-core.ts", root)), false, "retired entity personality remains");
   assert.equal(existsSync(new URL("../../../_create_dream.js", root)), false, "retired world generator remains");
   assert.equal(existsSync(new URL("../../../_create_mementity.js", root)), false, "retired entity generator remains");
+  assert.equal(existsSync(new URL("../lib/orchestrator.ts", root)), false, "retired AI growth orchestrator remains");
+  assert.equal(existsSync(new URL("../lib/ai/presenceController.ts", root)), false, "retired AI presence controller remains");
 });
