@@ -15,6 +15,9 @@ test("021 creates an opaque, revocable, candidate-only video share link without 
   assert.match(migration, /revoked_at TIMESTAMPTZ/);
   assert.match(migration, /watermark_download_enabled BOOLEAN NOT NULL DEFAULT FALSE/);
   assert.match(migration, /uq_video_share_links_public_id/);
+  assert.match(migration, /ux_video_share_links_active_video_job/);
+  assert.match(migration, /WHERE revoked_at IS NULL/);
+  assert.doesNotMatch(migration, /uq_video_share_links_video_job/);
   assert.doesNotMatch(migration, /provider_url|artifact_key|storage_key|playback_url/i);
   assert.doesNotMatch(runner, /021_video_share_links/);
 });

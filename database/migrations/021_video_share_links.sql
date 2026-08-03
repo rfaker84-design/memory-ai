@@ -31,7 +31,6 @@ CREATE TABLE IF NOT EXISTS public.video_share_links (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT pk_video_share_links PRIMARY KEY (id),
   CONSTRAINT uq_video_share_links_public_id UNIQUE (public_id),
-  CONSTRAINT uq_video_share_links_video_job UNIQUE (video_job_id),
   CONSTRAINT fk_video_share_links_user FOREIGN KEY (user_id)
     REFERENCES public.users(id) ON DELETE CASCADE,
   CONSTRAINT fk_video_share_links_memory FOREIGN KEY (memory_id)
@@ -43,6 +42,12 @@ CREATE TABLE IF NOT EXISTS public.video_share_links (
 
 CREATE INDEX IF NOT EXISTS ix_video_share_links_owner_memory
   ON public.video_share_links (user_id, memory_id, created_at DESC)
+  WHERE revoked_at IS NULL;
+
+-- A revoked link is retained as an audit record, but never prevents the owner
+-- from creating one new active link for the same approved video.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_video_share_links_active_video_job
+  ON public.video_share_links (video_job_id)
   WHERE revoked_at IS NULL;
 
 DROP TRIGGER IF EXISTS trg_video_share_links_updated_at ON public.video_share_links;
