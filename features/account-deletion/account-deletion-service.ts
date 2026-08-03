@@ -150,7 +150,10 @@ export class PostgresAccountDeletionService {
           await client.query(
             `INSERT INTO public.account_deletion_tasks (deletion_request_id, kind, idempotency_key, next_attempt_at)
              VALUES ($1::uuid, $2, $3, $4)`,
-            [row.id, kind, `account-deletion:${row.id}:${kind}`, kind === "content_online" ? now : kind === "cos_provider" ? schedule.provider : kind === "backup_retention" ? schedule.backup : now],
+            // Provider/COS deletion is an immediate durable attempt with a
+            // 30-day completion deadline, not work that first begins on day
+            // 30. Backups alone wait for their natural rotation horizon.
+            [row.id, kind, `account-deletion:${row.id}:${kind}`, kind === "backup_retention" ? schedule.backup : now],
           );
         }
       }

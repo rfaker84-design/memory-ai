@@ -103,16 +103,18 @@ test("Migration 017 PostgreSQL 14 first-run, replay, rollback, concurrent deleti
       externalUserId: "pg14-concurrent-delete",
       now: new Date(),
     }), { status: "account_deletion_pending" });
-    const schedule = await target.query<{ kind: string; next_attempt_at: Date; content_delete_after: Date; provider_delete_after: Date; backup_expire_after: Date }>(
-      `SELECT t.kind, t.next_attempt_at, r.content_delete_after, r.provider_delete_after, r.backup_expire_after
+    const schedule = await target.query<{ kind: string; next_attempt_at: Date; requested_at: Date; content_delete_after: Date; provider_delete_after: Date; backup_expire_after: Date }>(
+      `SELECT t.kind, t.next_attempt_at, r.requested_at, r.content_delete_after, r.provider_delete_after, r.backup_expire_after
        FROM account_deletion_tasks t JOIN account_deletion_requests r ON r.id=t.deletion_request_id
        WHERE t.deletion_request_id=$1 AND t.kind IN ('cos_provider','backup_retention') ORDER BY t.kind`,
       [first.requestId],
     );
-    assert.deepEqual(schedule.rows.map((row) => ({ kind: row.kind, scheduled: row.next_attempt_at.toISOString(), expected: (row.kind === "cos_provider" ? row.provider_delete_after : row.backup_expire_after).toISOString() })), [
-      { kind: "backup_retention", scheduled: schedule.rows[0]!.backup_expire_after.toISOString(), expected: schedule.rows[0]!.backup_expire_after.toISOString() },
-      { kind: "cos_provider", scheduled: schedule.rows[1]!.provider_delete_after.toISOString(), expected: schedule.rows[1]!.provider_delete_after.toISOString() },
-    ]);
+    const backup = schedule.rows.find((row) => row.kind === "backup_retention");
+    const provider = schedule.rows.find((row) => row.kind === "cos_provider");
+    assert.ok(backup && provider);
+    assert.equal(backup.next_attempt_at.toISOString(), backup.backup_expire_after.toISOString());
+    assert.equal(provider.next_attempt_at.toISOString(), provider.requested_at.toISOString());
+    assert.ok(provider.next_attempt_at < provider.provider_delete_after);
 
     const guardianAccount = (await target.query<{ id: string }>("INSERT INTO users(external_id) VALUES ('pg14-guardian-account') RETURNING id")).rows[0]!;
     const guardian = (await target.query<{ id: string }>("INSERT INTO users(external_id, profile) VALUES ('pg14-guardian-delete', $1::jsonb) RETURNING id", [JSON.stringify({ guardian_deletion_confirmation_required: true, guardian_user_id: guardianAccount.id })])).rows[0]!;
