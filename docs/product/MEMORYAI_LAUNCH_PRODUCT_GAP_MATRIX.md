@@ -9,7 +9,7 @@ P-17 仍为 `PARTIAL`，但候选代码现已明确：仅人工审核通过、�
 | ID | 冻结规则 | 当前证据 | 差异状态 | 后续动作 |
 |---|---|---|---|---|
 | P-01 | 18+、生日可改、无家人协作 | Owner-only profile API 与设置/创建页生日入口已接通；服务端按日历生日判断且聊天/创建要求当前合格生日与 consent | IMPLEMENTED_NOT_REAL_E2E | 仍需真实 UI/设备与 Staging 验收 |
-| P-02 | 最多 3 TA、统一授权、无生死询问 | Commerce 合同已有 3 TA 约束；公开创建页已移除声音文件采集与克隆暗示 | PARTIAL | 继续核验创建界面、授权文案和真实 UI |
+| P-02 | 最多 3 TA、统一授权、无生死询问 | 服务端对第四个 TA 返回 409 且原 idempotency key 可安全重放；公开创建页只收集文字与照片、先记录版本化统一授权确认，正式创建路径不含在世/离世询问或声音采集/克隆入口 | IMPLEMENTED_NOT_REAL_E2E | 20 项创建、授权、年龄与所有权契约已通过；仍需真实 UI/设备与 Staging 验收 |
 | P-03 | 首 TA 一次免费首影像 | Commerce `first_preview` 账本已有 | IMPLEMENTED_NOT_REAL_E2E | 对照首次影像入口和失败释放 |
 | P-04 | 固定 8 秒克制模板、不可保存 | 视频产品回归与模板已有 | IMPLEMENTED_NOT_REAL_E2E | 保留真实 Provider/人工审核为外部门 |
 | P-05 | 轻量动画、reduced-motion、无重型 3D | quiet companion 与 motion fallback 已有；旧 3D 世界已退休 | IMPLEMENTED_NOT_REAL_E2E | 真实 Android/设备验收 |
