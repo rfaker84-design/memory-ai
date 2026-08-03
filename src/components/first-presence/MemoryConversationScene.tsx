@@ -29,7 +29,7 @@ import {
 import {
   ConversationMessage,
   ConversationRequestError,
-  fetchConversationRequest,
+  fetchConversationJson,
   loadConversation,
   restoreConversationWithFirstGreeting,
   sendConversationMessage,
@@ -336,18 +336,18 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     setCorrectionPhase("saving");
     setCorrectionError("");
     try {
-      const currentResponse = await fetchConversationRequest(`/api/memories/${encodeURIComponent(memoryId)}`, {
+      const { response: currentResponse, body: current } = await fetchConversationJson(`/api/memories/${encodeURIComponent(memoryId)}`, {
         credentials: "same-origin",
       });
       if (!currentResponse.ok) throw new Error("memory-read-failed");
-      const current = await currentResponse.json() as FormalMemoryProfile;
+      const currentProfile = current as FormalMemoryProfile;
       const field = correctionSuggestion.field;
-      const currentValue = current[field];
+      const currentValue = currentProfile[field];
 
       // A retry after an uncertain response first checks the formal profile,
       // so it cannot append the same user-confirmed correction twice.
       if (!currentValue?.includes(correctionSuggestion.text)) {
-        const updateResponse = await fetchConversationRequest(`/api/memories/${encodeURIComponent(memoryId)}`, {
+        const { response: updateResponse } = await fetchConversationJson(`/api/memories/${encodeURIComponent(memoryId)}`, {
           method: "PATCH",
           credentials: "same-origin",
           headers: { "content-type": "application/json" },

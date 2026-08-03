@@ -33,10 +33,6 @@ function asRecord(value: unknown): UnknownRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as UnknownRecord : {};
 }
 
-async function responseBody(response: Response): Promise<UnknownRecord> {
-  return asRecord(await response.json().catch(() => ({})));
-}
-
 function responseRequestId(response: Response): string | undefined {
   const requestId = response.headers.get("x-request-id")?.trim();
   return requestId && REQUEST_ID_PATTERN.test(requestId) ? requestId.toLowerCase() : undefined;
@@ -70,12 +66,13 @@ function toRequestError(response: Response, body: UnknownRecord, fallback: strin
  * request. Callers must recover the formal conversation before offering a
  * user-controlled retry.
  */
-export async function fetchConversationRequest(
+async function withConversationRequestTimeout<T>(
   input: string,
   init: RequestInit,
   parentSignal?: AbortSignal,
   timeoutMs = CONVERSATION_REQUEST_TIMEOUT_MS,
-): Promise<Response> {
+  consume?: (response: Response, signal: AbortSignal) => Promise<T>,
+): Promise<T> {
   const controller = new AbortController();
   let timedOut = false;
   const abortFromParent = () => controller.abort();
@@ -83,7 +80,8 @@ export async function fetchConversationRequest(
   else parentSignal?.addEventListener("abort", abortFromParent, { once: true });
   const timer = globalThis.setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    const response = await fetch(input, { ...init, signal: controller.signal });
+    return await (consume ? consume(response, controller.signal) : Promise.resolve(response as T));
   } catch (error) {
     if (timedOut) throw new ConversationRequestError("CHAT_REQUEST_TIMEOUT", 408);
     throw error;
@@ -93,18 +91,52 @@ export async function fetchConversationRequest(
   }
 }
 
+/**
+ * Bounds the request handshake. Callers that consume a JSON response body must
+ * use fetchConversationJson so the same timeout also covers a stalled body.
+ */
+export async function fetchConversationRequest(
+  input: string,
+  init: RequestInit,
+  parentSignal?: AbortSignal,
+  timeoutMs = CONVERSATION_REQUEST_TIMEOUT_MS,
+): Promise<Response> {
+  return withConversationRequestTimeout<Response>(input, init, parentSignal, timeoutMs);
+}
+
+/**
+ * Formal conversation reads and mutations are bounded across both connection
+ * and JSON-body consumption. A timeout remains uncertain for mutations: this
+ * helper never retries or treats a partial body as success.
+ */
+export async function fetchConversationJson(
+  input: string,
+  init: RequestInit,
+  parentSignal?: AbortSignal,
+  timeoutMs = CONVERSATION_REQUEST_TIMEOUT_MS,
+): Promise<{ response: Response; body: UnknownRecord }> {
+  return withConversationRequestTimeout(input, init, parentSignal, timeoutMs, async (response, signal) => {
+    try {
+      return { response, body: asRecord(await response.json()) };
+    } catch (error) {
+      if (signal.aborted) throw error;
+      // Preserve the existing formal contract for a non-JSON error response.
+      return { response, body: {} };
+    }
+  });
+}
+
 export async function loadConversation(
   memoryId: string,
   signal?: AbortSignal
 ): Promise<ConversationSnapshot> {
-  const response = await fetchConversationRequest(`/api/memories/${encodeURIComponent(memoryId)}/chat-session`, {
+  const { response, body } = await fetchConversationJson(`/api/memories/${encodeURIComponent(memoryId)}/chat-session`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "same-origin",
     cache: "no-store",
     body: JSON.stringify({}),
   }, signal);
-  const body = await responseBody(response);
   if (!response.ok) throw toRequestError(response, body, "CHAT_SESSION_FAILED");
   const session = asRecord(body.session);
   const messages = Array.isArray(body.messages)
@@ -119,14 +151,13 @@ export async function requestFirstGreeting(
   idempotencyKey: string,
   signal?: AbortSignal
 ): Promise<ConversationMessage> {
-  const response = await fetchConversationRequest(`/api/memories/${encodeURIComponent(memoryId)}/first-greeting`, {
+  const { response, body } = await fetchConversationJson(`/api/memories/${encodeURIComponent(memoryId)}/first-greeting`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
     credentials: "same-origin",
     cache: "no-store",
     body: JSON.stringify({}),
   }, signal);
-  const body = await responseBody(response);
   if (!response.ok) throw toRequestError(response, body, "FIRST_GREETING_FAILED");
   const greeting = normalizeMessage(body.greeting, 0);
   if (!greeting || greeting.role !== "assistant") {
@@ -152,7 +183,7 @@ export async function sendConversationMessage(
   idempotencyKey: string,
   signal?: AbortSignal
 ): Promise<void> {
-  const response = await fetchConversationRequest("/api/memory-chat", {
+  const { response, body } = await fetchConversationJson("/api/memory-chat", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
     credentials: "same-origin",
@@ -162,6 +193,5 @@ export async function sendConversationMessage(
       question: message,
     }),
   }, signal);
-  const body = await responseBody(response);
   if (!response.ok) throw toRequestError(response, body, "CHAT_SEND_FAILED");
 }

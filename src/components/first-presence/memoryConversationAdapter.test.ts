@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   ConversationRequestError,
+  fetchConversationJson,
   loadConversation,
   fetchConversationRequest,
   requestFirstGreeting,
@@ -214,6 +215,27 @@ test("a client timeout is explicit and does not turn an uncertain request into a
   try {
     await assert.rejects(
       fetchConversationRequest("/api/memory-chat", { method: "POST" }, undefined, 1),
+      (error: unknown) => error instanceof Error && error.message === "CHAT_REQUEST_TIMEOUT" && (error as { status?: unknown }).status === 408,
+    );
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("a stalled formal JSON body shares the request timeout and never becomes a successful read", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_input, init) => {
+    const stalledBody = new Promise<unknown>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+    });
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => stalledBody,
+    } as Response;
+  };
+  try {
+    await assert.rejects(
+      fetchConversationJson("/api/memories/memory-1/chat-session", { method: "POST" }, undefined, 1),
       (error: unknown) => error instanceof Error && error.message === "CHAT_REQUEST_TIMEOUT" && (error as { status?: unknown }).status === 408,
     );
   } finally { globalThis.fetch = originalFetch; }

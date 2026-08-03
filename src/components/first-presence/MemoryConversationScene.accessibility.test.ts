@@ -13,8 +13,8 @@ test("reply correction is an honestly non-modal panel with keyboard focus recove
   assert.doesNotMatch(scene, /aria-modal="true"/);
 });
 
-test("reply correction uses the bounded request transport for its owner-only read and write", () => {
-  assert.match(scene, /fetchConversationRequest\(`\/api\/memories\/\$\{encodeURIComponent\(memoryId\)\}`, \{/);
+test("reply correction uses the bounded JSON transport for its owner-only read and write", () => {
+  assert.match(scene, /fetchConversationJson\(`\/api\/memories\/\$\{encodeURIComponent\(memoryId\)\}`, \{/);
   assert.match(scene, /method: "PATCH"/);
   assert.doesNotMatch(scene, /const currentResponse = await fetch\(/);
   assert.doesNotMatch(scene, /const updateResponse = await fetch\(/);
