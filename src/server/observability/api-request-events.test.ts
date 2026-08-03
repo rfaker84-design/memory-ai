@@ -5,6 +5,10 @@ import { observabilityRoute } from "./api-request-events";
 
 test("API observability uses stable route templates and never logs dynamic identifiers", () => {
   const cases = [
+    ["/api/memories/00000000-0000-4000-8000-000000000001/video-shares/11111111-1111-4111-8111-111111111111", "/api/memories/:memoryId/video-shares/:publicId"],
+    ["/api/memories/00000000-0000-4000-8000-000000000001/video-shares", "/api/memories/:memoryId/video-shares"],
+    ["/api/video-shares/11111111-1111-4111-8111-111111111111/playback", "/api/video-shares/:publicId/playback"],
+    ["/api/video-shares/11111111-1111-4111-8111-111111111111", "/api/video-shares/:publicId"],
     ["/api/memories/00000000-0000-4000-8000-000000000001", "/api/memories/:memoryId"],
     ["/api/memories/00000000-0000-4000-8000-000000000001/first-presence-video/00000000-0000-4000-8000-000000000002/playback", "/api/memories/:memoryId/first-presence-video/:jobId/playback"],
     ["/api/first-presence-video/playback/signed-provider-token", "/api/first-presence-video/playback/:token"],

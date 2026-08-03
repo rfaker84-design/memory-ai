@@ -8,6 +8,8 @@ type ApiRequestEvent = {
 };
 
 const DYNAMIC_ROUTES: Array<[RegExp, string]> = [
+  [/^\/api\/memories\/[^/]+\/video-shares\/[^/]+$/, "/api/memories/:memoryId/video-shares/:publicId"],
+  [/^\/api\/memories\/[^/]+\/video-shares$/, "/api/memories/:memoryId/video-shares"],
   [/^\/api\/memories\/[^/]+\/chat-session$/, "/api/memories/:memoryId/chat-session"],
   [/^\/api\/memories\/[^/]+\/first-greeting$/, "/api/memories/:memoryId/first-greeting"],
   [/^\/api\/memories\/[^/]+\/first-presence-video\/[^/]+\/playback$/, "/api/memories/:memoryId/first-presence-video/:jobId/playback"],
@@ -18,6 +20,8 @@ const DYNAMIC_ROUTES: Array<[RegExp, string]> = [
   [/^\/api\/memories\/[^/]+\/pickups$/, "/api/memories/:memoryId/pickups"],
   [/^\/api\/memories\/[^/]+$/, "/api/memories/:memoryId"],
   [/^\/api\/media\/[^/]+$/, "/api/media/:assetId"],
+  [/^\/api\/video-shares\/[^/]+\/playback$/, "/api/video-shares/:publicId/playback"],
+  [/^\/api\/video-shares\/[^/]+$/, "/api/video-shares/:publicId"],
   [/^\/api\/first-presence-video\/playback\/[^/]+$/, "/api/first-presence-video/playback/:token"],
 ];
 
