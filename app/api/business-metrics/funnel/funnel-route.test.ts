@@ -36,3 +36,17 @@ test("business funnel aggregation rejects malformed dates instead of broadening 
   assert.equal(response.status, 400);
   assert.equal(called, false);
 });
+
+test("business funnel fails closed for a malformed internal token configuration", async () => {
+  const prior = process.env.BUSINESS_METRICS_ACCESS_TOKEN;
+  try {
+    process.env.BUSINESS_METRICS_ACCESS_TOKEN = `${"d".repeat(32)} `;
+    let called = false;
+    const handler = createBusinessFunnelHandler(() => ({ funnelReport: async () => { called = true; return report; } }));
+    const response = await handler(new NextRequest("https://memoryai.test/api/business-metrics/funnel", { headers: { "x-business-metrics-token": `${"d".repeat(32)} ` } }));
+    assert.equal(response.status, 401);
+    assert.equal(called, false);
+  } finally {
+    process.env.BUSINESS_METRICS_ACCESS_TOKEN = prior;
+  }
+});

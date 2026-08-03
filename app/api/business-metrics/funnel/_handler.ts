@@ -11,7 +11,7 @@ type FunnelReader = Pick<BusinessMetricsPostgresDataSource, "funnelReport">;
 function authorized(request: NextRequest): boolean {
   const expected = process.env.BUSINESS_METRICS_ACCESS_TOKEN;
   const supplied = request.headers.get("x-business-metrics-token");
-  if (!expected || expected.length < 32 || !supplied) return false;
+  if (!expected || expected !== expected.trim() || Buffer.byteLength(expected, "utf8") < 32 || !supplied) return false;
   const left = Buffer.from(expected);
   const right = Buffer.from(supplied);
   return left.length === right.length && timingSafeEqual(left, right);
