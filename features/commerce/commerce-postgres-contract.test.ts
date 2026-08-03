@@ -44,3 +44,11 @@ test("reconciliation remains read-only", () => {
   assert.match(method, /SELECT o\.order_no/);
   assert.doesNotMatch(method, /\b(?:UPDATE|INSERT|DELETE)\b/);
 });
+
+test("reconciliation reports stale unlinked reservations without releasing credit", () => {
+  const method = source.slice(source.indexOf("async reconcileOrders"));
+  assert.match(method, /STALE_RESERVATION_WITHOUT_VIDEO_JOB/);
+  assert.match(method, /r\.created_at < \$1::timestamptz - INTERVAL '30 minutes'/);
+  assert.match(method, /NOT EXISTS \(\s*SELECT 1 FROM public\.video_generation_jobs j WHERE j\.reservation_id = r\.id\s*\)/);
+  assert.doesNotMatch(method, /UPDATE public\.commerce_generation_reservations|DELETE FROM public\.commerce_generation_reservations/);
+});

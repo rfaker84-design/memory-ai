@@ -1398,6 +1398,27 @@ export class CommercePostgresDataSource implements CommerceDataSource {
         });
       }
     }
+    // Do not release a stale reservation here: a provider submission could be
+    // unknown. This read-only signal isolates the crash window where a credit
+    // was reserved but no durable video job was ever linked to it.
+    const staleReservations = await queryPostgres<{ id: string }>(
+      `SELECT r.id
+       FROM public.commerce_generation_reservations r
+       WHERE r.status = 'reserved'
+         AND r.created_at < $1::timestamptz - INTERVAL '30 minutes'
+         AND NOT EXISTS (
+           SELECT 1 FROM public.video_generation_jobs j WHERE j.reservation_id = r.id
+         )
+       ORDER BY r.created_at ASC, r.id ASC`,
+      [now.toISOString()],
+    );
+    for (const reservation of staleReservations.rows) {
+      issues.push({
+        code: "STALE_RESERVATION_WITHOUT_VIDEO_JOB",
+        orderNo: reservation.id,
+        detail: "Reserved generation credit has no durable video job; manual reconciliation required",
+      });
+    }
     return {
       checkedAt: now.toISOString(),
       ordersChecked: result.rows.length,
