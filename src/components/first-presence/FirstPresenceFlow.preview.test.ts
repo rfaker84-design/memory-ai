@@ -186,3 +186,14 @@ test("ordinary chat offers pickup once per browser session and never writes it a
   assert.match(conversation, /\/memory\/\$\{memoryId\}\/pickup/);
   assert.doesNotMatch(conversation, /long-term-memories/);
 });
+
+test("greeting notification permission is optional and requires both a completed preview and completed chat round", () => {
+  assert.match(conversation, /completedConversationRounds\(messages, activeSessionId\) < 1/);
+  assert.match(conversation, /hasCompletedInitialPreview\(memoryId\)/);
+  assert.match(conversation, /Notification\.permission !== "default"/);
+  assert.match(conversation, /Notification\.requestPermission\(\)/);
+  assert.match(conversation, /忆见里有一份新的问候。/);
+  assert.match(conversation, /不会显示 TA 姓名或内容/);
+  assert.match(conversation, /memoryai\.greeting-notification-dismissed/);
+  assert.doesNotMatch(conversation, /notification\/push/);
+});

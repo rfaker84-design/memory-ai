@@ -186,6 +186,35 @@
   color: #f2c0aa;
 }
 
+.notificationPrompt {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0.75rem 0;
+  border: 1px solid rgba(215, 177, 132, 0.28);
+  border-radius: 0.9rem;
+  padding: 0.85rem;
+  background: rgba(214, 168, 110, 0.08);
+  color: #efd1b1;
+  font-size: 0.84rem;
+  line-height: 1.6;
+}
+
+.notificationPrompt p {
+  margin: 0;
+}
+
+.notificationDismiss {
+  justify-self: start;
+  min-height: 44px;
+  border: 0;
+  padding: 0.35rem 0.2rem;
+  background: transparent;
+  color: #efd1b1;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .empty {
   border-block: 1px solid rgba(255, 210, 166, 0.12);
   color: rgba(226, 200, 177, 0.62);

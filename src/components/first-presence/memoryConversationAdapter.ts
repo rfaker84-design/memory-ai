@@ -14,6 +14,12 @@ export type ConversationSnapshot = {
   messages: ConversationMessage[];
 };
 
+type OwnedFirstPresenceVideo = {
+  intent?: unknown;
+  status?: unknown;
+  artifactAvailable?: unknown;
+};
+
 export class ConversationRequestError extends Error {
   constructor(
     message: string,
@@ -195,4 +201,27 @@ export async function sendConversationMessage(
   }, signal);
   if (!response.ok) throw toRequestError(response, body, "CHAT_SEND_FAILED");
   return { freeChatWarning: body.freeChatWarning === true };
+}
+
+/**
+ * Notification permission is only a presentation opt-in. The eligibility
+ * predicate is nevertheless read from the formal owner-only video route so a
+ * browser cache cannot claim that a first preview completed.
+ */
+export async function hasCompletedInitialPreview(
+  memoryId: string,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const { response, body } = await fetchConversationJson(
+    `/api/memories/${encodeURIComponent(memoryId)}/first-presence-video`,
+    { method: "GET", credentials: "same-origin", cache: "no-store" },
+    signal,
+  );
+  if (!response.ok) throw toRequestError(response, body, "FIRST_PRESENCE_VIDEO_STATUS_FAILED");
+  const jobs = Array.isArray(body.jobs) ? body.jobs as OwnedFirstPresenceVideo[] : [];
+  return jobs.some((job) =>
+    job.intent === "initial_preview"
+    && job.status === "succeeded"
+    && job.artifactAvailable === true,
+  );
 }

@@ -30,6 +30,7 @@ import {
   ConversationMessage,
   ConversationRequestError,
   fetchConversationJson,
+  hasCompletedInitialPreview,
   loadConversation,
   restoreConversationWithFirstGreeting,
   sendConversationMessage,
@@ -39,6 +40,7 @@ import styles from "./MemoryConversationScene.module.css";
 type ConversationPhase = "loading" | "greeting" | "ready" | "sending" | "replying" | "recovering" | "error";
 type PendingMessage = PendingConversationMessage;
 type CorrectionPhase = "idle" | "saving";
+type NotificationPromptState = "hidden" | "available" | "requesting" | "granted" | "denied";
 type FormalMemoryProfile = {
   personalityProfile?: string | null;
   speechStyle?: string | null;
@@ -72,6 +74,10 @@ function pickupHintViewKey(value: string): string {
   return `memoryai.pickup-hint:${value}`;
 }
 
+function notificationPromptDismissalKey(memoryId: string): string {
+  return `memoryai.greeting-notification-dismissed:${memoryId}`;
+}
+
 function isSafetyAssistantMessage(message: ConversationMessage): boolean {
   return message.role === "assistant" && message.content === CRISIS_RESPONSE;
 }
@@ -97,6 +103,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   const [correctionSuggestion, setCorrectionSuggestion] = useState<ReplyCorrectionSuggestion | null>(null);
   const [correctionPhase, setCorrectionPhase] = useState<CorrectionPhase>("idle");
   const [correctionError, setCorrectionError] = useState("");
+  const [notificationPrompt, setNotificationPrompt] = useState<NotificationPromptState>("hidden");
   const portraitUrl = initialPortraitUrl;
   const [controlsVisible, setControlsVisible] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -107,6 +114,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   const retryCandidateRef = useRef<PendingMessage | null>(null);
   const greetingViewedRef = useRef(false);
   const replyPulseTimer = useRef<number | null>(null);
+  const notificationEligibilityCheckedRef = useRef(false);
   const [replyPulse, setReplyPulse] = useState(false);
   const titleId = useId();
 
@@ -184,6 +192,32 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
       recordBusinessView("first_greeting_viewed", memoryId);
     }
   }, [memoryId, messages]);
+
+  useEffect(() => {
+    if (notificationEligibilityCheckedRef.current || !activeSessionId || completedConversationRounds(messages, activeSessionId) < 1) return;
+    if (typeof window === "undefined" || !("Notification" in window) || Notification.permission !== "default") return;
+    if (window.sessionStorage.getItem(notificationPromptDismissalKey(memoryId)) === "dismissed") return;
+    notificationEligibilityCheckedRef.current = true;
+    let live = true;
+    void hasCompletedInitialPreview(memoryId).then((completed) => {
+      if (live && completed) setNotificationPrompt("available");
+    }).catch(() => {
+      // A notification preference is never important enough to surface an
+      // unrelated read failure or to infer a completed preview locally.
+    });
+    return () => { live = false; };
+  }, [activeSessionId, memoryId, messages]);
+
+  const requestGreetingNotifications = async () => {
+    if (notificationPrompt !== "available" || typeof window === "undefined" || !("Notification" in window)) return;
+    setNotificationPrompt("requesting");
+    try {
+      const permission = await Notification.requestPermission();
+      setNotificationPrompt(permission === "granted" ? "granted" : "denied");
+    } catch {
+      setNotificationPrompt("denied");
+    }
+  };
 
   useEffect(() => {
     if (controlsVisible || !hasPersistedFirstGreeting(messages)) return;
@@ -395,6 +429,19 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
         <h1 id={titleId}>第一句之后，慢慢说。</h1>
         <p className={styles.intro}>离开再回来，你们说过的话仍会留在这里。</p>
         <AiGeneratedLabel />
+
+        {notificationPrompt === "available" && (
+          <aside className={styles.notificationPrompt} aria-label="问候通知选择">
+            <p>如果你愿意，可以在这里开启忆见的问候提醒。锁屏提醒只会显示“忆见里有一份新的问候。”，不会显示 TA 姓名或内容。</p>
+            <MemoryButton variant="secondary" onClick={() => void requestGreetingNotifications()}>开启问候提醒</MemoryButton>
+            <button type="button" className={styles.notificationDismiss} onClick={() => {
+              window.sessionStorage.setItem(notificationPromptDismissalKey(memoryId), "dismissed");
+              setNotificationPrompt("hidden");
+            }}>现在不用</button>
+          </aside>
+        )}
+        {notificationPrompt === "granted" && <p className={styles.status} role="status">已允许问候提醒。你可以随时在设备设置中更改。</p>}
+        {notificationPrompt === "denied" && <p className={styles.status} role="status">提醒未开启；这不会影响你在忆见中的阅读和对话。</p>}
 
         {status && <p className={styles.status} role="status" aria-live="polite">{status}</p>}
         {notice && <p className={styles.alert} role="alert">{notice}</p>}

@@ -6,6 +6,7 @@ import {
   fetchConversationJson,
   loadConversation,
   fetchConversationRequest,
+  hasCompletedInitialPreview,
   requestFirstGreeting,
   restoreConversationWithFirstGreeting,
   sendConversationMessage,
@@ -214,6 +215,30 @@ test("a near-limit warning is explicit metadata, never fabricated from local cou
       await sendConversationMessage("memory-1", "想和你说件事", "message-1"),
       { freeChatWarning: true },
     );
+  } finally { restore(); }
+});
+
+test("notification eligibility reads only the Owner-scoped succeeded initial-preview status", async () => {
+  const restore = withFetch(Response.json({ jobs: [
+    { intent: "initial_preview", status: "succeeded", artifactAvailable: true },
+    { intent: "additional_generation", status: "succeeded", artifactAvailable: true },
+  ] }), (input, init) => {
+    assert.equal(input, "/api/memories/memory-1/first-presence-video");
+    assert.equal(init?.method, "GET");
+    assert.equal(init?.credentials, "same-origin");
+  });
+  try {
+    assert.equal(await hasCompletedInitialPreview("memory-1"), true);
+  } finally { restore(); }
+});
+
+test("notification eligibility rejects a non-successful or non-initial video", async () => {
+  const restore = withFetch(Response.json({ jobs: [
+    { intent: "initial_preview", status: "manual_review_required", artifactAvailable: true },
+    { intent: "additional_generation", status: "succeeded", artifactAvailable: true },
+  ] }), () => {});
+  try {
+    assert.equal(await hasCompletedInitialPreview("memory-1"), false);
   } finally { restore(); }
 });
 
