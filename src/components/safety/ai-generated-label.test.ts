@@ -12,6 +12,7 @@ test("generated canonical surfaces retain the non-impersonation disclosure and l
   assert.match(label, /AI 生成内容/);
   assert.match(label, /不代表真实人物/);
   assert.match(label, /AI生成 · 基于已确认资料/);
+  assert.match(label, /aria-label=\{label\}/);
   for (const source of ["app/avatar/[id]/page.tsx", "app/heirloom/[id]/page.tsx", "app/share/[id]/page.tsx"]) {
     const page = readFileSync(source, "utf8");
     assert.match(page, /redirect\("\/"\)/);
