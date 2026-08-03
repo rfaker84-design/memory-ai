@@ -35,3 +35,16 @@ test("profile reads retain their timeout through a stalled JSON body", async () 
     (error: unknown) => error instanceof AccountProfileRequestError && error.code === "PROFILE_REQUEST_TIMEOUT",
   );
 });
+
+test("profile reads relay page unmount aborts to their request", async () => {
+  const parent = new AbortController();
+  let requestSignal: AbortSignal | undefined;
+  const blocked = async (_input: RequestInfo | URL, init?: RequestInit) => {
+    requestSignal = init?.signal ?? undefined;
+    return new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true }));
+  };
+  const pending = readAdultProfile(blocked as typeof fetch, 12_000, parent.signal);
+  parent.abort();
+  await assert.rejects(pending, (error: unknown) => error instanceof DOMException && error.name === "AbortError");
+  assert.equal(requestSignal?.aborted, true);
+});

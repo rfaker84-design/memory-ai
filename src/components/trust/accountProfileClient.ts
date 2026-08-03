@@ -16,9 +16,13 @@ async function request<T>(
   fetcher: typeof fetch,
   readResponse: ProfileResponseReader<T>,
   timeoutMs = PROFILE_TIMEOUT_MS,
+  parentSignal?: AbortSignal,
 ): Promise<T> {
   const controller = new AbortController();
   let timedOut = false;
+  const relayAbort = () => controller.abort();
+  if (parentSignal?.aborted) controller.abort();
+  else parentSignal?.addEventListener("abort", relayAbort, { once: true });
   const timeout = globalThis.setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   try {
     const response = await fetcher(path, { ...init, credentials: "same-origin", signal: controller.signal });
@@ -28,6 +32,7 @@ async function request<T>(
     throw error;
   } finally {
     globalThis.clearTimeout(timeout);
+    parentSignal?.removeEventListener("abort", relayAbort);
   }
 }
 
@@ -49,14 +54,14 @@ async function parseProfile(response: Response, signal: AbortSignal): Promise<Ad
   return { birthDate: body.birthDate as string | null, adultEligible: body.adultEligible };
 }
 
-export function readAdultProfile(fetcher: typeof fetch = fetch, timeoutMs = PROFILE_TIMEOUT_MS) {
-  return request("/api/account/profile", { cache: "no-store" }, fetcher, parseProfile, timeoutMs);
+export function readAdultProfile(fetcher: typeof fetch = fetch, timeoutMs = PROFILE_TIMEOUT_MS, parentSignal?: AbortSignal) {
+  return request("/api/account/profile", { cache: "no-store" }, fetcher, parseProfile, timeoutMs, parentSignal);
 }
 
-export function saveAdultBirthDate(birthDate: string, fetcher: typeof fetch = fetch, timeoutMs = PROFILE_TIMEOUT_MS) {
+export function saveAdultBirthDate(birthDate: string, fetcher: typeof fetch = fetch, timeoutMs = PROFILE_TIMEOUT_MS, parentSignal?: AbortSignal) {
   return request("/api/account/profile", {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ birthDate }),
-  }, fetcher, parseProfile, timeoutMs);
+  }, fetcher, parseProfile, timeoutMs, parentSignal);
 }
