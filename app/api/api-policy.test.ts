@@ -97,6 +97,8 @@ test("middleware enforces the formal API allowlist before route execution", asyn
   assert.equal(isFormalApiPath("/api/memories/00000000-0000-4000-8000-000000000001/first-greeting"), true);
   assert.equal(isFormalApiPath("/api/memories/00000000-0000-4000-8000-000000000001/first-presence-video"), true);
   assert.equal(isFormalApiPath("/api/memories/00000000-0000-4000-8000-000000000001/first-presence-video/00000000-0000-4000-8000-000000000002/playback"), true);
+  assert.equal(isFormalApiPath("/api/memories/00000000-0000-4000-8000-000000000001/video-shares"), true);
+  assert.equal(isFormalApiPath("/api/memories/00000000-0000-4000-8000-000000000001/video-shares/00000000-0000-4000-8000-000000000002"), true);
   assert.equal(isFormalApiPath("/api/memories/00000000-0000-4000-8000-000000000001/pickups"), true);
   assert.equal(isFormalApiPath("/api/memories/00000000-0000-4000-8000-000000000001/pickups/00000000-0000-4000-8000-000000000002"), true);
   assert.equal(isFormalApiPath("/api/first-presence-video/playback/signed-token"), true);
@@ -114,6 +116,7 @@ test("middleware enforces the formal API allowlist before route execution", asyn
     "/api/memories/id/first-presence-video-suffix",
     "/api/memories/id/first-presence-video/job/playback/extra",
     "/api/memories/id/first-presence-video/job/not-playback",
+    "/api/memories/id/video-shares/extra/path",
     "/api/first-presence-video/playback/",
     "/api/first-presence-video/playback/token/extra",
     "/api/media/",
@@ -153,7 +156,7 @@ test("video reconciliation is an explicitly audited formal internal route", () =
 
 test("every tracked non-formal Route Handler is a route-level 410", async () => {
   const routes = trackedRoutes();
-  assert.equal(routes.length, 128, "the audit must enumerate the complete tracked API surface");
+  assert.equal(routes.length, 130, "the audit must enumerate the complete tracked API surface");
 
   for (const { file, pathname } of routes) {
     const formal = isFormalApiPath(pathname);
@@ -205,6 +208,8 @@ test("formal Session ownership and public health contracts remain explicit", asy
     firstPresencePlayback: readFileSync("app/api/memories/[id]/first-presence-video/[jobId]/playback/_handler.ts", "utf8"),
     signedFirstPresencePlayback: readFileSync("app/api/first-presence-video/playback/[token]/_handler.ts", "utf8"),
     firstPresencePlaybackService: readFileSync("features/video/first-presence-video-playback.ts", "utf8"),
+    ownerVideoShares: readFileSync("app/api/memories/[id]/video-shares/_handler.ts", "utf8"),
+    ownerVideoShareRevocation: readFileSync("app/api/memories/[id]/video-shares/[publicId]/_handler.ts", "utf8"),
     pickups: readFileSync("app/api/memories/[id]/pickups/_handlers.ts", "utf8"),
     memoryChat: readFileSync("app/api/memory-chat/route.ts", "utf8"),
     consents: readFileSync("app/api/consents/route.ts", "utf8"),
@@ -246,6 +251,12 @@ test("formal Session ownership and public health contracts remain explicit", asy
   assert.match(sources.signedFirstPresencePlayback, /verifyRequestSession/);
   assert.doesNotMatch(sources.signedFirstPresencePlayback, /nextUrl\.searchParams\.get\(["'](?:key|path)/);
   assert.match(sources.firstPresencePlaybackService, /findApprovedForOwner/);
+  for (const source of [sources.ownerVideoShares, sources.ownerVideoShareRevocation]) {
+    assert.match(source, /verifyRequestSession/);
+    assert.match(source, /requireAllowedOrigin/);
+    assert.match(source, /applyAuthNoStore/);
+  }
+  assert.doesNotMatch(sources.ownerVideoShares, /artifactKey|providerTaskId|storage_key/);
   for (const source of [sources.memoryChat, sources.media]) assert.match(source, /verifyRequestSession/);
   assert.match(sources.consents, /createConsentsHandler/);
   assert.match(sources.reports, /verifyRequestSession/);
