@@ -29,7 +29,7 @@ import {
 import styles from "./FirstPresenceFlow.module.css";
 import { AiGeneratedLabel } from "../safety/AiGeneratedLabel";
 import { resolveSmsLoginAction } from "../auth/loginExperienceClient";
-import { fetchAuthRequest } from "../auth/authRequestClient";
+import { fetchAuthRequestJson } from "../auth/authRequestClient";
 
 type EntryStage = "create" | "login-phone" | "preview-create";
 type FlowStage =
@@ -236,12 +236,12 @@ export function FirstPresenceFlow({
   useEffect(() => {
     if (previewMode) return;
     const controller = new AbortController();
-    void fetchAuthRequest("/api/auth/session", {
+    void fetchAuthRequestJson("/api/auth/session", {
       cache: "no-store",
       credentials: "same-origin",
     }, fetch, controller.signal)
-      .then(async (response) => {
-        const payload = await responsePayload(response);
+      .then(({ response, body }) => {
+        const payload = body as ApiPayload;
         if (controller.signal.aborted) return;
         if (response.ok && payload.authenticated) {
           setAuthState("authenticated");
@@ -304,13 +304,13 @@ export function FirstPresenceFlow({
     setBusy(true);
     setError("");
     try {
-      const response = await fetchAuthRequest("/api/auth/send-code", {
+      const { response, body } = await fetchAuthRequestJson("/api/auth/send-code", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: phone.trim() }),
       });
-      const payload = await responsePayload(response);
+      const payload = body as ApiPayload;
       if (response.status === 503) {
         setError("短信登录暂未开放。当前不会创建会话、TA 资料或任何素材。");
         setStage("sms-unavailable");
@@ -343,22 +343,22 @@ export function FirstPresenceFlow({
     setBusy(true);
     setError("");
     try {
-      const response = await fetchAuthRequest("/api/auth/verify-code", {
+      const { response, body } = await fetchAuthRequestJson("/api/auth/verify-code", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: phone.trim(), challengeId, code: code.trim() }),
       });
-      const payload = await responsePayload(response);
+      const payload = body as ApiPayload;
       if (!response.ok || !payload.authenticated) {
         setError("验证码无效或已过期，请重新获取。");
         return;
       }
-      const sessionResponse = await fetchAuthRequest("/api/auth/session", {
+      const { response: sessionResponse, body: sessionBody } = await fetchAuthRequestJson("/api/auth/session", {
         cache: "no-store",
         credentials: "same-origin",
       });
-      const sessionPayload = await responsePayload(sessionResponse);
+      const sessionPayload = sessionBody as ApiPayload;
       const authenticated = sessionResponse.ok && Boolean(sessionPayload.authenticated);
       if (!authenticated) {
         setError("登录状态未能确认，请重新验证短信。");

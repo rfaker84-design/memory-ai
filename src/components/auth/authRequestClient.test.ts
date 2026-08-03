@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AuthRequestError, fetchAuthRequest } from "./authRequestClient";
+import { AuthRequestError, fetchAuthRequest, fetchAuthRequestJson } from "./authRequestClient";
 
 test("auth request preserves caller payload and same-origin boundary", async () => {
   let captured: RequestInit | undefined;
@@ -23,6 +23,16 @@ test("auth request times out without an automatic retry", async () => {
     fetchAuthRequest("/api/auth/session", {}, (_input, init) => new Promise<Response>((_resolve, reject) => {
       init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
     }), undefined, 1),
+    (error: unknown) => error instanceof AuthRequestError && error.code === "AUTH_REQUEST_TIMEOUT",
+  );
+});
+
+test("auth JSON reads retain the timeout through a stalled response body", async () => {
+  await assert.rejects(
+    fetchAuthRequestJson("/api/auth/session", {}, async (_input, init) => ({
+      ok: true, status: 200, headers: new Headers(),
+      json: () => new Promise((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true })),
+    }) as Response, undefined, 1),
     (error: unknown) => error instanceof AuthRequestError && error.code === "AUTH_REQUEST_TIMEOUT",
   );
 });

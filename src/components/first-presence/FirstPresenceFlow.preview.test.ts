@@ -39,7 +39,7 @@ test("preview is explicit, zero-write, and production-gated", () => {
   assert.match(flow, /NEXT_PUBLIC_MEMORYAI_ENABLE_PRESENCE_PREVIEW === "true"/);
   assert.match(page, /initialStage="preview-create"/);
   assert.match(flow, /开发预览 · 内容不保存/);
-  assert.match(flow, /if \(previewMode\) return;[\s\S]*?fetchAuthRequest\("\/api\/auth\/session"/);
+  assert.match(flow, /if \(previewMode\) return;[\s\S]*?fetchAuthRequestJson\("\/api\/auth\/session"/);
   assert.match(
     flow,
     /if \(previewMode && VISUAL_PREVIEW_ENABLED\) \{\s*setStage\("preview-forming"\);\s*return;/,
@@ -60,10 +60,10 @@ test("home cold start is a disclosed static loading state, not a blank client-on
 test("direct SMS login exposes both policies and cannot request or verify without agreement", () => {
   const sendCode = flow.slice(flow.indexOf("const sendCode"), flow.indexOf("const verifyCode"));
   const verifyCode = flow.slice(flow.indexOf("const verifyCode"), flow.indexOf("const reviseText"));
-  assert.match(sendCode, /resolveSmsLoginAction\(loginAgreementAccepted\)[\s\S]*?fetchAuthRequest\("\/api\/auth\/send-code"/);
-  assert.match(verifyCode, /resolveSmsLoginAction\(loginAgreementAccepted\)[\s\S]*?fetchAuthRequest\("\/api\/auth\/verify-code"/);
-  assert.match(verifyCode, /fetchAuthRequest\("\/api\/auth\/session"/);
-  assert.match(flow, /fetchAuthRequest\("\/api\/auth\/session"[\s\S]*?fetch, controller\.signal/);
+  assert.match(sendCode, /resolveSmsLoginAction\(loginAgreementAccepted\)[\s\S]*?fetchAuthRequestJson\("\/api\/auth\/send-code"/);
+  assert.match(verifyCode, /resolveSmsLoginAction\(loginAgreementAccepted\)[\s\S]*?fetchAuthRequestJson\("\/api\/auth\/verify-code"/);
+  assert.match(verifyCode, /fetchAuthRequestJson\("\/api\/auth\/session"/);
+  assert.match(flow, /fetchAuthRequestJson\("\/api\/auth\/session"[\s\S]*?fetch, controller\.signal/);
   assert.match(flow, /href="\/terms"/);
   assert.match(flow, /href="\/privacy"/);
   assert.match(flow, /disabled=\{!loginAgreementAccepted\}/);
@@ -127,7 +127,7 @@ test("handoff failures never enter a local conversation or local greeting", () =
   assert.doesNotMatch(formalCreate, /previewGreeting/);
   assert.match(mediaRecoveryGate, /if \(!record \|\| record\.memoryId !== memory\.id\)[\s\S]*?setPhase\("error"\)/);
   assert.match(chatPage, /requiresMediaRecovery: readCreationRecovery\(\)\?\.memoryId === memory\.id/);
-  assert.match(conversationAdapter, /fetchConversationRequest\(`\/api\/memories\/\$\{encodeURIComponent\(memoryId\)\}\/first-greeting`/);
+  assert.match(conversationAdapter, /fetchConversationJson\(`\/api\/memories\/\$\{encodeURIComponent\(memoryId\)\}\/first-greeting`/);
   assert.match(conversationAdapter, /CHAT_REQUEST_TIMEOUT/);
 });
 
