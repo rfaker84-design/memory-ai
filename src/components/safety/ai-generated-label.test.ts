@@ -6,6 +6,7 @@ test("generated canonical surfaces retain the non-impersonation disclosure and l
   for (const source of [
     "src/components/first-presence/FirstPresenceFlow.tsx",
     "src/components/first-presence/MemoryConversationScene.tsx",
+    "app/memory/[id]/encounter/page.tsx",
   ]) assert.match(readFileSync(source, "utf8"), /AiGeneratedLabel/);
   const label = readFileSync("src/components/safety/AiGeneratedLabel.tsx", "utf8");
   assert.match(label, /AI 生成内容/);

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { loadOwnedMemory, loadOwnedMediaUrl } from "@/src/components/memory/ownedMemoryClient";
 import { fetchPickupRequest } from "@/src/components/memory/pickupRequestClient";
+import { AiGeneratedLabel } from "@/src/components/safety/AiGeneratedLabel";
 
 type VideoJob = {
   id: string;
@@ -81,6 +82,7 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
   return <main style={{ minHeight: "100dvh", display: "grid", placeItems: "center", padding: 24, background: "#090807", color: "#fff" }}>
     <section style={{ width: "min(100%, 520px)", display: "grid", gap: 16 }}>
       <p style={{ margin: 0, color: "#d6b675" }}>AI纪念陪伴</p>
+      <AiGeneratedLabel confirmedSources />
       <h1 style={{ margin: 0 }}>与 {state.name} 的第一次遇见</h1>
       {playbackComplete && <p role="status" aria-live="polite">影像播放结束，正在进入相伴。</p>}
       {state.playbackUrl ? <video src={state.playbackUrl} autoPlay playsInline controls={false} controlsList="nodownload noremoteplayback" disablePictureInPicture onEnded={afterPlayback} style={{ width: "100%", borderRadius: 20, background: "#15120e" }} aria-label={`${state.name} 的首次相遇影像`} /> : <>
