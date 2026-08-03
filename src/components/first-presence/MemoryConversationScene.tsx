@@ -29,6 +29,7 @@ import {
 import {
   ConversationMessage,
   ConversationRequestError,
+  fetchConversationRequest,
   loadConversation,
   restoreConversationWithFirstGreeting,
   sendConversationMessage,
@@ -100,6 +101,8 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   const [controlsVisible, setControlsVisible] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const correctionTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const correctionCloseRef = useRef<HTMLButtonElement | null>(null);
   const inFlightRef = useRef(false);
   const retryCandidateRef = useRef<PendingMessage | null>(null);
   const greetingViewedRef = useRef(false);
@@ -282,13 +285,36 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     setPickupSuggestionVisible(false);
   };
 
-  const openReplyCorrection = (message: ConversationMessage) => {
+  const closeReplyCorrection = useCallback(() => {
+    setCorrectionMessage(null);
+    setCorrectionSuggestion(null);
+    setCorrectionError("");
+    // The correction panel is intentionally non-modal: chat remains readable,
+    // but keyboard users should return to the exact reply they corrected.
+    queueMicrotask(() => correctionTriggerRef.current?.focus());
+  }, []);
+
+  const openReplyCorrection = (message: ConversationMessage, trigger: HTMLButtonElement) => {
+    correctionTriggerRef.current = trigger;
     setCorrectionMessage(message);
     setCorrectionReason("称呼不对");
     setCorrectionDetail("");
     setCorrectionSuggestion(null);
     setCorrectionError("");
   };
+
+  useEffect(() => {
+    if (!correctionMessage) return;
+    correctionCloseRef.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && correctionPhase !== "saving") {
+        event.preventDefault();
+        closeReplyCorrection();
+      }
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [closeReplyCorrection, correctionMessage, correctionPhase]);
 
   const generateReplyCorrectionSuggestion = () => {
     if (!correctionMessage) return;
@@ -310,7 +336,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     setCorrectionPhase("saving");
     setCorrectionError("");
     try {
-      const currentResponse = await fetch(`/api/memories/${encodeURIComponent(memoryId)}`, {
+      const currentResponse = await fetchConversationRequest(`/api/memories/${encodeURIComponent(memoryId)}`, {
         credentials: "same-origin",
       });
       if (!currentResponse.ok) throw new Error("memory-read-failed");
@@ -321,7 +347,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
       // A retry after an uncertain response first checks the formal profile,
       // so it cannot append the same user-confirmed correction twice.
       if (!currentValue?.includes(correctionSuggestion.text)) {
-        const updateResponse = await fetch(`/api/memories/${encodeURIComponent(memoryId)}`, {
+        const updateResponse = await fetchConversationRequest(`/api/memories/${encodeURIComponent(memoryId)}`, {
           method: "PATCH",
           credentials: "same-origin",
           headers: { "content-type": "application/json" },
@@ -332,8 +358,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
         if (!updateResponse.ok) throw new Error("memory-update-failed");
       }
 
-      setCorrectionMessage(null);
-      setCorrectionSuggestion(null);
+      closeReplyCorrection();
       setNotice("你的校正已写入 TA 的已确认资料；历史对话没有被改写。");
     } catch {
       setCorrectionError("校正尚未写入。请稍后重试；在确认保存前，TA 的资料不会改变。");
@@ -400,7 +425,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
                 <button
                   type="button"
                   className={styles.replyCorrection}
-                  onClick={() => openReplyCorrection(message)}
+                  onClick={(event) => openReplyCorrection(message, event.currentTarget)}
                 >
                   这句话不太像 {memoryName}
                 </button>
@@ -437,7 +462,6 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
           <aside
             className={styles.correctionDialog}
             role="dialog"
-            aria-modal="true"
             aria-labelledby={`${titleId}-correction-title`}
           >
             <div className={styles.correctionHeading}>
@@ -445,7 +469,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
                 <p>校正 TA</p>
                 <h2 id={`${titleId}-correction-title`}>这句话哪里不太像 {memoryName}？</h2>
               </div>
-              <button type="button" onClick={() => setCorrectionMessage(null)} disabled={correctionPhase === "saving"}>关闭</button>
+              <button ref={correctionCloseRef} type="button" onClick={closeReplyCorrection} disabled={correctionPhase === "saving"}>关闭</button>
             </div>
             <p className={styles.correctionQuote}>“{correctionMessage.content}”</p>
             <fieldset disabled={correctionPhase === "saving"}>
