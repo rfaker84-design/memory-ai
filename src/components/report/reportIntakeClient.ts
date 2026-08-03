@@ -11,6 +11,10 @@ export type PendingReportSubmission = {
 
 const REPORT_REQUEST_TIMEOUT_MS = 12_000;
 
+export type ReportJsonResponse = { response: Response; body: unknown };
+
+type ReportResponseReader<T> = (response: Response, signal: AbortSignal) => Promise<T>;
+
 export class ReportRequestError extends Error {
   constructor(readonly code: "REPORT_REQUEST_TIMEOUT") {
     super(code);
@@ -23,13 +27,14 @@ export class ReportRequestError extends Error {
  * an explicit same-draft retry. It never persists the draft or starts a new
  * submission behind the user's back.
  */
-export async function fetchReportRequest(
+async function fetchReport<T = Response>(
   input: string,
   init: RequestInit,
   request: typeof fetch = fetch,
   parentSignal?: AbortSignal,
   timeoutMs = REPORT_REQUEST_TIMEOUT_MS,
-): Promise<Response> {
+  readResponse?: ReportResponseReader<T>,
+): Promise<T> {
   const controller = new AbortController();
   let timedOut = false;
   const abortFromParent = () => controller.abort();
@@ -37,7 +42,8 @@ export async function fetchReportRequest(
   else parentSignal?.addEventListener("abort", abortFromParent, { once: true });
   const timer = globalThis.setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   try {
-    return await request(input, { ...init, signal: controller.signal });
+    const response = await request(input, { ...init, signal: controller.signal });
+    return readResponse ? await readResponse(response, controller.signal) : response as T;
   } catch (error) {
     if (timedOut) throw new ReportRequestError("REPORT_REQUEST_TIMEOUT");
     throw error;
@@ -45,6 +51,40 @@ export async function fetchReportRequest(
     globalThis.clearTimeout(timer);
     parentSignal?.removeEventListener("abort", abortFromParent);
   }
+}
+
+async function readReportJson(response: Response, signal: AbortSignal): Promise<ReportJsonResponse> {
+  try {
+    return { response, body: await response.json() };
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return { response, body: {} };
+  }
+}
+
+export function fetchReportRequest(
+  input: string,
+  init: RequestInit,
+  request: typeof fetch = fetch,
+  parentSignal?: AbortSignal,
+  timeoutMs = REPORT_REQUEST_TIMEOUT_MS,
+): Promise<Response> {
+  return fetchReport(input, init, request, parentSignal, timeoutMs);
+}
+
+/**
+ * Keeps the timeout active while parsing a report response.  The UI can then
+ * preserve the same in-memory idempotency key after an uncertain POST instead
+ * of hanging or issuing an implicit duplicate submission.
+ */
+export function fetchReportJson(
+  input: string,
+  init: RequestInit,
+  request: typeof fetch = fetch,
+  parentSignal?: AbortSignal,
+  timeoutMs = REPORT_REQUEST_TIMEOUT_MS,
+): Promise<ReportJsonResponse> {
+  return fetchReport(input, init, request, parentSignal, timeoutMs, readReportJson);
 }
 
 function sameDraft(left: ReportDraft, right: ReportDraft): boolean {

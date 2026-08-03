@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { fetchReportRequest, prepareReportSubmission, ReportRequestError, type ReportDraft } from "./reportIntakeClient";
+import { fetchReportJson, fetchReportRequest, prepareReportSubmission, ReportRequestError, type ReportDraft } from "./reportIntakeClient";
 
 const draft: ReportDraft = {
   category: "rights",
@@ -35,6 +35,17 @@ test("a report request timeout preserves the explicit in-memory retry boundary",
   );
 });
 
+test("a stalled report JSON body also times out without creating a second submission", async () => {
+  await assert.rejects(
+    () => fetchReportJson("/api/reports", { method: "POST" }, (async (_input: URL | RequestInfo, init?: RequestInit) => ({
+      ok: true,
+      status: 200,
+      json: () => new Promise((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true })),
+    }) as unknown as Response) as unknown as typeof fetch, undefined, 1),
+    (error) => error instanceof ReportRequestError && error.code === "REPORT_REQUEST_TIMEOUT",
+  );
+});
+
 test("report UI gates submission on a confirmed session and serializes an in-flight retry", () => {
   const source = readFileSync(new URL("./ReportIntake.tsx", import.meta.url), "utf8");
   assert.match(source, /暂时无法读取工单状态；尚未提交新的工单/);
@@ -48,5 +59,5 @@ test("report UI gates submission on a confirmed session and serializes an in-fli
   assert.match(source, /重新读取/);
   assert.match(source, /if \(submitting\) return/);
   assert.match(source, /disabled=\{submitting\}/);
-  assert.match(source, /fetchReportRequest\("\/api\/reports"/);
+  assert.match(source, /fetchReportJson\("\/api\/reports"/);
 });

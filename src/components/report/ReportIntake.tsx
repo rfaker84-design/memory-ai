@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
-import { fetchReportRequest, prepareReportSubmission, type PendingReportSubmission } from "./reportIntakeClient";
+import { fetchReportJson, prepareReportSubmission, type PendingReportSubmission } from "./reportIntakeClient";
 
 type Report = { id: string; category: string; requestedAction: string; status: string; createdAt: string; resolvedAt: string | null };
 
@@ -20,13 +20,13 @@ export function ReportIntake() {
   const load = useCallback(async () => {
     setLoadState("loading");
     try {
-      const response = await fetchReportRequest("/api/reports", { credentials: "include", cache: "no-store" });
-      const body = await response.json().catch(() => ({})) as { reports?: Report[]; error?: string };
+      const { response, body } = await fetchReportJson("/api/reports", { credentials: "include", cache: "no-store" });
+      const reportBody = body as { reports?: Report[]; error?: string };
       if (response.ok) {
-        setReports(body.reports ?? []);
+        setReports(reportBody.reports ?? []);
         setMessage(null);
         setLoadState("ready");
-      } else if (body.error === "UNAUTHENTICATED") {
+      } else if (reportBody.error === "UNAUTHENTICATED") {
         setMessage("请先登录后提交应用内工单。非登录状态的权利或隐私请求渠道尚未配置；请勿向未核验地址发送身份材料、照片、声音或聊天内容。");
         setLoadState("unauthenticated");
       } else {
@@ -47,10 +47,10 @@ export function ReportIntake() {
     const submission = prepareReportSubmission(pendingSubmission.current, { category, requestedAction, details });
     pendingSubmission.current = submission;
     try {
-      const response = await fetchReportRequest("/api/reports", { method: "POST", credentials: "include", headers: { "content-type": "application/json", "idempotency-key": submission.idempotencyKey }, body: JSON.stringify({ category, subjectType: "other", subjectId: null, requestedAction, details }) });
-      const body = await response.json().catch(() => ({})) as { report?: Report; error?: string };
+      const { response, body } = await fetchReportJson("/api/reports", { method: "POST", credentials: "include", headers: { "content-type": "application/json", "idempotency-key": submission.idempotencyKey }, body: JSON.stringify({ category, subjectType: "other", subjectId: null, requestedAction, details }) });
+      const reportBody = body as { report?: Report; error?: string };
       if (!response.ok) {
-        if (body.error === "UNAUTHENTICATED") {
+        if (reportBody.error === "UNAUTHENTICATED") {
           setMessage("登录状态已失效。请重新登录后再提交；这份尚未确认受理的说明仍只保留在当前页面内。");
           setLoadState("unauthenticated");
         } else {
@@ -59,7 +59,7 @@ export function ReportIntake() {
         return;
       }
       pendingSubmission.current = null;
-      setReports((current) => [body.report!, ...current]); setDetails(""); setMessage("已受理。工单状态会显示在此页面。"); setLoadState("ready");
+      setReports((current) => [reportBody.report!, ...current]); setDetails(""); setMessage("已受理。工单状态会显示在此页面。"); setLoadState("ready");
     } catch {
       setMessage("暂时无法确认是否已受理。请勿刷新或修改这份说明；恢复连接后再次提交会安全复用同一请求。");
     } finally {
