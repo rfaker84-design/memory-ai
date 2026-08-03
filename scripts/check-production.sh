@@ -1,9 +1,6 @@
-﻿#!/usr/bin/env bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-curl -I https://yijianmemory.cn
-curl -I https://yijianmemory.cn/api/health
-curl -I https://yijianmemory.cn/api/health/database
-curl -I https://yijianmemory.cn/api/health/ai
-pm2 status
-nginx -t
+echo "LEGACY_PRODUCTION_PREFLIGHT_RETIRED: direct production probing is forbidden." >&2
+echo "Use the immutable-artifact runbook after R-01 evidence, explicit Owner preflight authorization, and a declared target." >&2
+exit 64
