@@ -1,10 +1,12 @@
 import { closePostgresPool } from "../../src/server/database";
 import { PostgresAccountDeletionWorker } from "../../features/account-deletion/account-deletion-worker";
+import { assertFinancialArchiveConfiguration } from "../../features/account-deletion/financial-archive";
 
 async function main(): Promise<void> {
   if (process.env.ACCOUNT_DELETION_WORKER_ENABLED !== "true") {
     throw new Error("ACCOUNT_DELETION_WORKER_DISABLED");
   }
+  assertFinancialArchiveConfiguration();
   const worker = new PostgresAccountDeletionWorker();
   let completed = 0;
   let retry = 0;

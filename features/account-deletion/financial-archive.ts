@@ -67,6 +67,17 @@ function subjectReference(userId: string, environment: Environment): string {
   return createHmac("sha256", key).update(`memoryai:financial-archive:v1\0${userId}`).digest("hex");
 }
 
+/**
+ * Validates the isolated minimum-necessary archive before a deletion worker
+ * claims customer work.  A missing archive must stop the worker at startup,
+ * rather than creating retry-only requests that can never complete.
+ */
+export function assertFinancialArchiveConfiguration(environment: Environment = process.env): void {
+  assertIsolatedArchiveDatabase(environment);
+  subjectReference("financial-archive-configuration-probe", environment);
+  archiveRetentionDays(environment);
+}
+
 async function collectRecords(userId: string): Promise<Record<string, unknown>> {
   const result = await queryPostgres<FinancialRecordsRow>(
     `SELECT jsonb_build_object(
