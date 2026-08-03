@@ -8,21 +8,37 @@ export class AccountProfileRequestError extends Error {
 
 export type AdultProfile = { birthDate: string | null; adultEligible: boolean };
 
-async function request(path: string, init: RequestInit, fetcher: typeof fetch): Promise<Response> {
+type ProfileResponseReader<T> = (response: Response, signal: AbortSignal) => Promise<T>;
+
+async function request<T>(
+  path: string,
+  init: RequestInit,
+  fetcher: typeof fetch,
+  readResponse: ProfileResponseReader<T>,
+  timeoutMs = PROFILE_TIMEOUT_MS,
+): Promise<T> {
   const controller = new AbortController();
-  const timeout = globalThis.setTimeout(() => controller.abort(), PROFILE_TIMEOUT_MS);
+  let timedOut = false;
+  const timeout = globalThis.setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   try {
-    return await fetcher(path, { ...init, credentials: "same-origin", signal: controller.signal });
+    const response = await fetcher(path, { ...init, credentials: "same-origin", signal: controller.signal });
+    return await readResponse(response, controller.signal);
   } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") throw new AccountProfileRequestError("PROFILE_REQUEST_TIMEOUT");
+    if (timedOut) throw new AccountProfileRequestError("PROFILE_REQUEST_TIMEOUT");
     throw error;
   } finally {
     globalThis.clearTimeout(timeout);
   }
 }
 
-async function parseProfile(response: Response): Promise<AdultProfile> {
-  const body = await response.json().catch(() => null) as Record<string, unknown> | null;
+async function parseProfile(response: Response, signal: AbortSignal): Promise<AdultProfile> {
+  let body: Record<string, unknown> | null;
+  try {
+    body = await response.json() as Record<string, unknown>;
+  } catch (error) {
+    if (signal.aborted) throw error;
+    body = null;
+  }
   if (!response.ok) {
     const code = body && "error" in body && typeof body.error === "string" ? body.error : "PROFILE_REQUEST_FAILED";
     throw new AccountProfileRequestError(code);
@@ -33,14 +49,14 @@ async function parseProfile(response: Response): Promise<AdultProfile> {
   return { birthDate: body.birthDate as string | null, adultEligible: body.adultEligible };
 }
 
-export function readAdultProfile(fetcher: typeof fetch = fetch) {
-  return request("/api/account/profile", { cache: "no-store" }, fetcher).then(parseProfile);
+export function readAdultProfile(fetcher: typeof fetch = fetch, timeoutMs = PROFILE_TIMEOUT_MS) {
+  return request("/api/account/profile", { cache: "no-store" }, fetcher, parseProfile, timeoutMs);
 }
 
-export function saveAdultBirthDate(birthDate: string, fetcher: typeof fetch = fetch) {
+export function saveAdultBirthDate(birthDate: string, fetcher: typeof fetch = fetch, timeoutMs = PROFILE_TIMEOUT_MS) {
   return request("/api/account/profile", {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ birthDate }),
-  }, fetcher).then(parseProfile);
+  }, fetcher, parseProfile, timeoutMs);
 }

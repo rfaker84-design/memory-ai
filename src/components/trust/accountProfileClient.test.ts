@@ -24,3 +24,14 @@ test("profile client exposes a stable malformed-date rejection code", async () =
     (error: unknown) => error instanceof AccountProfileRequestError && error.code === "INVALID_BIRTH_DATE",
   );
 });
+
+test("profile reads retain their timeout through a stalled JSON body", async () => {
+  const stalledBody = async (_input: RequestInfo | URL, init?: RequestInit) => ({
+    ok: true, status: 200, headers: new Headers(),
+    json: () => new Promise((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true })),
+  }) as Response;
+  await assert.rejects(
+    readAdultProfile(stalledBody as typeof fetch, 1),
+    (error: unknown) => error instanceof AccountProfileRequestError && error.code === "PROFILE_REQUEST_TIMEOUT",
+  );
+});
