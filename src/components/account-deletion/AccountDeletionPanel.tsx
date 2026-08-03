@@ -18,6 +18,7 @@ type Progress = {
 
 const format = (value: string | null) => value ? new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "尚未完成";
 const ACCOUNT_DELETION_STATUS_TIMEOUT_MS = 12_000;
+const ACCOUNT_DELETION_SUBMIT_TIMEOUT_MS = 20_000;
 
 export function AccountDeletionPanel() {
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -67,12 +68,16 @@ export function AccountDeletionPanel() {
     if (submitting) return;
     setSubmitting(true);
     setMessage(null);
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = globalThis.setTimeout(() => { timedOut = true; controller.abort(); }, ACCOUNT_DELETION_SUBMIT_TIMEOUT_MS);
     try {
       const response = await fetch("/api/account/deletion", {
         method: "POST",
         credentials: "include",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ confirmation: "DELETE_ACCOUNT" }),
+        signal: controller.signal,
       });
       const body = await response.json().catch(() => ({})) as { deletion?: Progress; error?: string };
       if (response.status === 403 && body.error === "REAUTH_REQUIRED") {
@@ -89,8 +94,11 @@ export function AccountDeletionPanel() {
       setConfirming(false);
       setMessage("注销申请已受理。你已退出登录；本页会使用仅限注销进度的回执 Cookie 显示后续状态。");
     } catch {
-      setMessage("暂时无法提交注销申请，请检查网络后重试。不会创建第二份注销申请。");
+      setMessage(timedOut
+        ? "注销提交结果尚未确认。请刷新本页查看进度；系统不会自动重提。"
+        : "暂时无法提交注销申请，请检查网络后重试。不会创建第二份注销申请。");
     } finally {
+      globalThis.clearTimeout(timer);
       setSubmitting(false);
     }
   };

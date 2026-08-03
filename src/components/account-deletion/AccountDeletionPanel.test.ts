@@ -12,7 +12,9 @@ test("account deletion never renders a new request form before its status read i
   assert.match(source, /!progress\.completedAt[\s\S]*?刷新进度/);
   assert.match(source, /body\.error === "UNAUTHENTICATED"/);
   assert.match(source, /ACCOUNT_DELETION_STATUS_TIMEOUT_MS = 12_000/);
+  assert.match(source, /ACCOUNT_DELETION_SUBMIT_TIMEOUT_MS = 20_000/);
   assert.match(source, /signal: controller\.signal/);
   assert.match(source, /未创建新的注销申请/);
+  assert.match(source, /注销提交结果尚未确认/);
   assert.match(source, /new AbortController\(\)/);
 });

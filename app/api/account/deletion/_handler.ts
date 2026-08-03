@@ -36,6 +36,10 @@ function issueReceiptToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
+function isReceiptToken(value: string | undefined): value is string {
+  return Boolean(value && /^[A-Za-z0-9_-]{43}$/.test(value));
+}
+
 function setReceiptCookie(response: NextResponse, token: string): void {
   response.cookies.set({ name: RECEIPT_COOKIE, value: token, secure: true, httpOnly: true, sameSite: "lax", path: "/api/account/deletion", maxAge: RECEIPT_TTL_SECONDS });
 }
@@ -67,7 +71,11 @@ export function createAccountDeletionHandler(
         if (!deletionRuntimeEnabled()) return json({ error: "ACCOUNT_DELETION_UNAVAILABLE" }, { status: 503 });
         if (!accountDeletionSessionIsFresh(session)) return json({ error: "REAUTH_REQUIRED" }, { status: 403 });
         if (!parseConfirmation(await request.json().catch(() => null))) return json({ error: "INVALID_DELETION_CONFIRMATION" }, { status: 400 });
-        const receiptToken = issueReceiptToken();
+        // The status read performed before this confirmation pre-issues a
+        // receipt cookie.  Reusing it means an interrupted 202 response does
+        // not strand an already-revoked user without a way to read progress.
+        const cookieReceiptToken = request.cookies.get(RECEIPT_COOKIE)?.value;
+        const receiptToken = isReceiptToken(cookieReceiptToken) ? cookieReceiptToken : issueReceiptToken();
         const progress = await requestDeletion({ userId: session.userId, externalUserId: session.externalUserId, receiptToken });
         const response = json({ deletion: progress }, { status: 202 });
         clearSessionCookie(response);
@@ -83,7 +91,12 @@ export function createAccountDeletionHandler(
           ? await getProgress({ userId: session.userId, externalUserId: session.externalUserId })
           : receiptToken ? await getProgressByReceipt(receiptToken) : null;
         if (!session && !receiptToken) return json({ error: "UNAUTHENTICATED" }, { status: 401 });
-        return json({ deletion: progress });
+        const response = json({ deletion: progress });
+        // Do this before a deletion exists, while the authenticated account is
+        // still available.  Its opaque value is only bound to progress by the
+        // subsequent fresh-reauthenticated deletion request.
+        if (session && !progress && !isReceiptToken(receiptToken)) setReceiptCookie(response, issueReceiptToken());
+        return response;
       } catch (error) { return failure(error); }
     },
   };
