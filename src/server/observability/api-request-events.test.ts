@@ -15,4 +15,9 @@ test("API observability uses stable route templates and never logs dynamic ident
     assert.equal(route, expected);
     assert.doesNotMatch(route, /00000000|signed-provider-token/);
   }
+  assert.equal(observabilityRoute("/api/health"), "/api/health");
+  assert.equal(
+    observabilityRoute("/api/legacy/alice@example.test/signed-provider-token"),
+    "/api/:unknown",
+  );
 });

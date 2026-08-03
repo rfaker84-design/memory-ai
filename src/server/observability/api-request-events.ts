@@ -21,11 +21,59 @@ const DYNAMIC_ROUTES: Array<[RegExp, string]> = [
   [/^\/api\/first-presence-video\/playback\/[^/]+$/, "/api/first-presence-video/playback/:token"],
 ];
 
+const STATIC_ROUTES = new Set([
+  "/api/auth/send-code",
+  "/api/auth/verify-code",
+  "/api/auth/session",
+  "/api/auth/logout",
+  "/api/auth/wechat/status",
+  "/api/auth/wechat/start",
+  "/api/auth/wechat/callback",
+  "/api/auth/wechat/cancel",
+  "/api/auth/wechat/failure",
+  "/api/memories",
+  "/api/memories/recovery",
+  "/api/memory-chat",
+  "/api/consents",
+  "/api/reports",
+  "/api/account/export",
+  "/api/account/profile",
+  "/api/account/deletion",
+  "/api/account/deletion/guardian-confirmation",
+  "/api/business-events",
+  "/api/business-metrics/funnel",
+  "/api/payments/orders",
+  "/api/payments/refunds",
+  "/api/payments/entitlements",
+  "/api/commerce/catalog",
+  "/api/commerce/credits",
+  "/api/commerce/occasion-rewards",
+  "/api/commerce/orders",
+  "/api/commerce/refunds",
+  "/api/commerce/referrals/code",
+  "/api/commerce/referrals/qualifications",
+  "/api/commerce/testing/callbacks",
+  "/api/internal/commerce-reconciliation",
+  "/api/internal/operations/alerts",
+  "/api/internal/operations/summary",
+  "/api/internal/video-reviews",
+  "/api/internal/report-reviews",
+  "/api/internal/video-reconciliation",
+  "/api/media/upload",
+  "/api/media/local",
+  "/api/health",
+  "/api/health/database",
+  "/api/health/ai",
+]);
+
 export function observabilityRoute(pathname: string): string {
   for (const [pattern, route] of DYNAMIC_ROUTES) {
     if (pattern.test(pathname)) return route;
   }
-  return pathname;
+  // The middleware logs rejected legacy routes too. Never preserve their raw
+  // pathname: a caller controls it and could otherwise place an email, a
+  // signed token, or other sensitive material into production logs.
+  return STATIC_ROUTES.has(pathname) ? pathname : "/api/:unknown";
 }
 
 /**
