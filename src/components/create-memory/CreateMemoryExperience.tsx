@@ -46,6 +46,9 @@ export function CreateMemoryExperience() {
 
   const validate = () => {
     const validationError = validateStage(stage, draft);
+    if (stage === 0 && !birthDate) {
+      setError("请填写你的出生日期。忆见首发仅向年满 18 周岁的用户提供服务。"); return false;
+    }
     if (validationError === "identity-required") {
       setError("请先完成姓名、关系、称呼和创建目的。即使资料很少，也可以在下一步选择稍后补充。"); return false;
     }
@@ -75,9 +78,6 @@ export function CreateMemoryExperience() {
     } catch (error) {
       setUploadState("error");
       throw error;
-    }
-    if (stage === 0 && !birthDate) {
-      setError("请填写你的出生日期。忆见首发仅向年满 18 周岁的用户提供服务。"); return false;
     }
   };
 

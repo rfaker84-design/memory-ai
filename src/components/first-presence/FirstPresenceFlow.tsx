@@ -18,6 +18,7 @@ import { useReducedMotion } from "../../motion";
 
 import { buildConfirmedMemoryProfile } from "./confirmedMemoryProfile";
 import { recordTrustConsent, TrustConsentRequestError } from "../trust/trustConsentClient";
+import { AccountProfileRequestError, saveAdultBirthDate } from "../trust/accountProfileClient";
 import {
   clearCreationRecovery,
   fetchCreationJson,
@@ -123,11 +124,13 @@ function SceneField({
   value,
   onChange,
   multiline = false,
+  type = "text",
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   multiline?: boolean;
+  type?: "date" | "text";
 }) {
   return (
     <label className={styles.sceneField}>
@@ -141,6 +144,7 @@ function SceneField({
         />
       ) : (
         <input
+          type={type}
           value={value}
           onChange={(event) => onChange(event.currentTarget.value)}
           autoFocus
@@ -206,6 +210,7 @@ export function FirstPresenceFlow({
   const [catchPhrases, setCatchPhrases] = useState("");
   const [speechStyle, setSpeechStyle] = useState("");
   const [sharedMemory, setSharedMemory] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null);
   const [trustAccepted, setTrustAccepted] = useState(false);
@@ -408,6 +413,9 @@ export function FirstPresenceFlow({
     if (questionIndex === 7 && !trustAccepted) {
       return "请先确认 AI 身份、素材权利、隐私处理与成年要求。";
     }
+    if (questionIndex === 7 && !birthDate) {
+      return "请填写你的出生日期。忆见首发仅向年满 18 周岁的用户提供服务。";
+    }
     return "";
   };
 
@@ -507,6 +515,8 @@ export function FirstPresenceFlow({
     setStage("creating");
 
     try {
+      const adultProfile = await saveAdultBirthDate(birthDate);
+      if (!adultProfile.adultEligible) throw new AccountProfileRequestError("ADULT_ELIGIBILITY_REQUIRED");
       await recordTrustConsent("adult_eligibility");
       await recordTrustConsent("memory_profile");
       idempotencyKey.current ||= clientIdempotencyKey();
@@ -548,7 +558,13 @@ export function FirstPresenceFlow({
 
       await completeCreatedMemory(payload.id, idempotencyKey.current);
     } catch (cause) {
-      if (cause instanceof TrustConsentRequestError) {
+      if (cause instanceof AccountProfileRequestError) {
+        setError(cause.code === "ADULT_ELIGIBILITY_REQUIRED"
+          ? "忆见首发仅向年满 18 周岁的用户提供服务。"
+          : "出生日期尚未得到服务器确认；尚未创建 TA 或上传素材。请检查后明确重试。");
+        setQuestionIndex(7);
+        setStage("questions");
+      } else if (cause instanceof TrustConsentRequestError) {
         setError("刚才的确认还没有保存好。你的回答都还在这里。");
         setQuestionIndex(8);
         setStage("questions");
@@ -662,6 +678,7 @@ export function FirstPresenceFlow({
           description: "忆见会根据这些资料生成 AI 内容，但不会把它当作现实中的 TA 或医疗建议。",
           control: (
             <div className={styles.consentBlock}>
+              <SceneField type="date" label="你的出生日期" value={birthDate} onChange={(value) => { noteDraftRevision(); setBirthDate(value); }} />
               <p>照片只在正式创建后上传，并绑定你拥有的同一 TA。公开首发不收集声音、不录音，也不提供声音克隆。请阅读 <a href="/privacy">隐私政策</a>、<a href="/terms">用户协议</a> 与 <a href="/authorization">AI 内容和素材说明</a>。数据删除入口位于 <a href="/report">投诉与删除</a>。</p>
               <label className={styles.trustCheck}>
                 <input type="checkbox" checked={trustAccepted} onChange={(event) => { noteDraftRevision(); setTrustAccepted(event.currentTarget.checked); }} />

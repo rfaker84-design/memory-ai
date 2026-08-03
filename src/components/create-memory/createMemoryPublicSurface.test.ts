@@ -33,3 +33,10 @@ test("creation copy keeps AI responses grounded in confirmed material", () => {
   assert.match(source, /不是现实中的 TA/);
   assert.doesNotMatch(source, /逐渐清晰的存在体/);
 });
+
+test("both public creation routes require a birth date before an adult eligibility consent can be recorded", () => {
+  assert.match(source, /stage === 0 && !birthDate/);
+  assert.match(source, /请填写你的出生日期。忆见首发仅向年满 18 周岁的用户提供服务。/);
+  assert.match(source, /const adultProfile = await saveAdultBirthDate\(birthDate\);[\s\S]*?await recordTrustConsent\("adult_eligibility"\)/);
+  assert.doesNotMatch(source, /throw error;\s*}\s*if \(stage === 0 && !birthDate\)/);
+});
