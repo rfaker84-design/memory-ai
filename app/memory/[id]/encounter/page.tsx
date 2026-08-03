@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import { loadOwnedMemory, loadOwnedMediaUrl, OwnedMemoryRequestError } from "@/src/components/memory/ownedMemoryClient";
 import { fetchPickupRequestJson, PickupRequestError } from "@/src/components/memory/pickupRequestClient";
 import { AiGeneratedLabel } from "@/src/components/safety/AiGeneratedLabel";
+import { useQuietCompanionPresence } from "@/src/components/first-presence/quietCompanionPresence";
+import { useReducedMotion } from "@/src/motion";
 
 type VideoJob = {
   id: string;
@@ -33,6 +35,9 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
   const [state, setState] = useState<EncounterState>({ status: "loading" });
   const [playbackComplete, setPlaybackComplete] = useState(false);
   const leaveTimer = useRef<number | null>(null);
+  const reducedMotion = useReducedMotion();
+  const presence = useQuietCompanionPresence({ reducedMotion, replying: false });
+  const useStaticEncounter = presence === "static";
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setState({ status: "loading" });
@@ -94,9 +99,9 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
       <AiGeneratedLabel confirmedSources />
       <h1 style={{ margin: 0 }}>与 {state.name} 的第一次遇见</h1>
       {playbackComplete && <p role="status" aria-live="polite">影像播放结束，正在进入相伴。</p>}
-      {state.playbackUrl ? <video src={state.playbackUrl} autoPlay playsInline controls={false} controlsList="nodownload noremoteplayback" disablePictureInPicture onEnded={afterPlayback} style={{ width: "100%", borderRadius: 20, background: "#15120e" }} aria-label={`${state.name} 的首次相遇影像`} /> : <>
+      {state.playbackUrl && !useStaticEncounter ? <video src={state.playbackUrl} autoPlay playsInline controls={false} controlsList="nodownload noremoteplayback" disablePictureInPicture onEnded={afterPlayback} style={{ width: "100%", borderRadius: 20, background: "#15120e" }} aria-label={`${state.name} 的首次相遇影像`} /> : <>
         {state.portraitUrl ? <img src={state.portraitUrl} alt={`${state.name} 的照片`} style={{ width: "100%", aspectRatio: "9 / 16", objectFit: "cover", borderRadius: 20 }} /> : <div role="img" aria-label={`${state.name} 的静态形象`} style={{ minHeight: 360, display: "grid", placeItems: "center", borderRadius: 20, background: "#15120e" }}>{state.name}</div>}
-        <p>遇见影像暂时还不能播放。不会在这里创建生成任务；你可以先进入相伴。</p>
+        <p>{useStaticEncounter ? "当前设备已减少动态效果；首次相遇影像不会自动播放。你可以先进入相伴。" : "遇见影像暂时还不能播放。不会在这里创建生成任务；你可以先进入相伴。"}</p>
         <button type="button" style={{ minHeight: 44 }} onClick={continueToChat}>进入相伴</button>
       </>}
       {state.playbackUrl && <button type="button" style={{ minHeight: 44 }} onClick={continueToChat}>稍后再看，进入相伴</button>}

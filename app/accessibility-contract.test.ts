@@ -30,3 +30,11 @@ test("the retired four-tab navigation cannot be wired back into the first releas
   assert.equal(existsSync("src/components/BottomNav.tsx"), false);
   assert.equal(existsSync("src/components/BottomNavWrapper.tsx"), false);
 });
+
+test("first encounter respects the shared static fallback before it can autoplay a meeting video", () => {
+  const encounter = readFileSync("app/memory/[id]/encounter/page.tsx", "utf8");
+  assert.match(encounter, /useQuietCompanionPresence\(\{ reducedMotion, replying: false \}\)/);
+  assert.match(encounter, /const useStaticEncounter = presence === "static"/);
+  assert.match(encounter, /state\.playbackUrl && !useStaticEncounter \? <video/);
+  assert.match(encounter, /首次相遇影像不会自动播放/);
+});
