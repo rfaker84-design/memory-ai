@@ -7,6 +7,11 @@ type Memory = { id: string; name: string };
 type Job = { id: string; status: string; artifactAvailable: boolean; manualReviewRequired: boolean };
 type Share = { publicId: string; title: string; jobId: string };
 
+async function boundedFetch(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController(); const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+  try { return await fetch(input, { ...init, signal: controller.signal }); } finally { globalThis.clearTimeout(timer); }
+}
+
 export default function VideoShareSettingsPage() {
   const router = useRouter();
   const [memories, setMemories] = useState<Memory[]>([]); const [memoryId, setMemoryId] = useState("");
@@ -14,15 +19,15 @@ export default function VideoShareSettingsPage() {
   const [notice, setNotice] = useState(""); const [busy, setBusy] = useState<string | null>(null);
   const load = useCallback(async (id: string) => {
     if (!id) return; setNotice("");
-    const [jobResponse, shareResponse] = await Promise.all([fetch(`/api/memories/${encodeURIComponent(id)}/first-presence-video`, { credentials: "include", cache: "no-store" }), fetch(`/api/memories/${encodeURIComponent(id)}/video-shares`, { credentials: "include", cache: "no-store" })]);
+    const [jobResponse, shareResponse] = await Promise.all([boundedFetch(`/api/memories/${encodeURIComponent(id)}/first-presence-video`, { credentials: "include", cache: "no-store" }, 12_000), boundedFetch(`/api/memories/${encodeURIComponent(id)}/video-shares`, { credentials: "include", cache: "no-store" }, 12_000)]);
     if (!jobResponse.ok || !shareResponse.ok) { setNotice("暂时无法读取影像分享状态；未创建、撤销或修改任何分享。请稍后再试。"); return; }
     const jobBody = await jobResponse.json() as { jobs?: Job[] }; const shareBody = await shareResponse.json() as { shares?: Share[] };
     setJobs(Array.isArray(jobBody.jobs) ? jobBody.jobs : []); setShares(Array.isArray(shareBody.shares) ? shareBody.shares : []);
   }, []);
-  useEffect(() => { fetch("/api/memories", { credentials: "include", cache: "no-store" }).then(async r => r.ok ? r.json() : []).then((data: unknown) => { const list = Array.isArray(data) ? data as Memory[] : []; setMemories(list); const first = list[0]?.id ?? ""; setMemoryId(first); if (first) void load(first); }).catch(() => setNotice("暂时无法读取你的 TA；未修改任何分享。")); }, [load]);
+  useEffect(() => { boundedFetch("/api/memories", { credentials: "include", cache: "no-store" }, 12_000).then(async r => r.ok ? r.json() : []).then((data: unknown) => { const list = Array.isArray(data) ? data as Memory[] : []; setMemories(list); const first = list[0]?.id ?? ""; setMemoryId(first); if (first) void load(first); }).catch(() => setNotice("暂时无法读取你的 TA；未修改任何分享。")); }, [load]);
   const select = (id: string) => { setMemoryId(id); setTitle(""); void load(id); };
-  const create = async (jobId: string) => { if (!memoryId || !title.trim() || busy) return; setBusy(jobId); setNotice(""); try { const r = await fetch(`/api/memories/${encodeURIComponent(memoryId)}/video-shares`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ jobId, title: title.trim() }) }); if (!r.ok) { setNotice("分享结果尚未确认；请不要重复提交，刷新此页后再核对。 "); return; } setTitle(""); await load(memoryId); } catch { setNotice("分享结果尚未确认；请不要重复提交，刷新此页后再核对。"); } finally { setBusy(null); } };
-  const revoke = async (share: Share) => { if (!memoryId || busy || !window.confirm(`撤销“${share.title}”的公开链接？撤销后将立即不可查看。`)) return; setBusy(share.publicId); setNotice(""); try { const r = await fetch(`/api/memories/${encodeURIComponent(memoryId)}/video-shares/${encodeURIComponent(share.publicId)}`, { method: "DELETE", credentials: "include" }); if (!r.ok) { setNotice("撤销结果尚未确认；请不要重复点击，刷新此页后再核对。"); return; } await load(memoryId); } catch { setNotice("撤销结果尚未确认；请不要重复点击，刷新此页后再核对。"); } finally { setBusy(null); } };
+  const create = async (jobId: string) => { if (!memoryId || !title.trim() || busy) return; setBusy(jobId); setNotice(""); try { const r = await boundedFetch(`/api/memories/${encodeURIComponent(memoryId)}/video-shares`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ jobId, title: title.trim() }) }, 20_000); if (!r.ok) { setNotice("分享结果尚未确认；请不要重复提交，刷新此页后再核对。 "); return; } setTitle(""); await load(memoryId); } catch { setNotice("分享结果尚未确认；请不要重复提交，刷新此页后再核对。"); } finally { setBusy(null); } };
+  const revoke = async (share: Share) => { if (!memoryId || busy || !window.confirm(`撤销“${share.title}”的公开链接？撤销后将立即不可查看。`)) return; setBusy(share.publicId); setNotice(""); try { const r = await boundedFetch(`/api/memories/${encodeURIComponent(memoryId)}/video-shares/${encodeURIComponent(share.publicId)}`, { method: "DELETE", credentials: "include" }, 20_000); if (!r.ok) { setNotice("撤销结果尚未确认；请不要重复点击，刷新此页后再核对。"); return; } await load(memoryId); } catch { setNotice("撤销结果尚未确认；请不要重复点击，刷新此页后再核对。"); } finally { setBusy(null); } };
   const approved = jobs.filter(job => job.status === "succeeded" && job.artifactAvailable && !job.manualReviewRequired);
   return <main style={{ minHeight: "100dvh", padding: "24px 16px 96px", maxWidth: 640, margin: "auto" }}>
     <button type="button" onClick={() => router.push("/continuity")}>返回我的</button><h1>影像分享</h1><p>仅已人工审核通过的 AI 纪念影像可创建公开只读链接。链接默认不被搜索收录，撤销后立即失效。</p>

@@ -7,7 +7,7 @@ type State = { title: string } | "unavailable" | "loading";
 export default function ShareVideoClient({ publicId }: { publicId: string }) {
   const [state, setState] = useState<State>("loading");
   useEffect(() => {
-    const controller = new AbortController();
+    const controller = new AbortController(); const timer = globalThis.setTimeout(() => controller.abort(), 12_000);
     fetch(`/api/video-shares/${encodeURIComponent(publicId)}`, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => response.ok ? response.json() : null)
       .then((body: unknown) => {
@@ -15,7 +15,7 @@ export default function ShareVideoClient({ publicId }: { publicId: string }) {
           ? (body as { share: { title: string } }).share.title : null;
         setState(title ? { title } : "unavailable");
       }).catch(() => { if (!controller.signal.aborted) setState("unavailable"); });
-    return () => controller.abort();
+    return () => { globalThis.clearTimeout(timer); controller.abort(); };
   }, [publicId]);
 
   if (state === "loading") return <main aria-busy="true"><p>正在打开分享内容…</p></main>;
