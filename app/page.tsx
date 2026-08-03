@@ -23,7 +23,7 @@ function HomeLoadingFallback() {
 }
 
 const OriginalHomeLogin = dynamic(
-  () => import("../components/world/WorldShell").then((module) => module.OriginalHomeLogin),
+  () => import("../components/world/OriginalHomeLogin").then((module) => module.OriginalHomeLogin),
   { ssr: false, loading: () => <HomeLoadingFallback /> }
 );
 

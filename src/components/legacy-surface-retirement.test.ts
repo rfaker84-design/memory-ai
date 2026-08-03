@@ -28,4 +28,12 @@ test("retired consciousness and autonomous splash surfaces cannot be reconnected
   assert.equal(existsSync(new URL("../hooks/useDigitalEntity.ts", root)), false, "retired digital entity model remains");
   assert.equal(existsSync(new URL("../hooks/useDissolutionV8.ts", root)), false, "retired autonomous ecosystem loop remains");
   assert.equal(existsSync(new URL("../lib/entity-types.ts", root)), false, "retired digital entity types remain");
+  assert.equal(existsSync(new URL("../../../components/world/WorldShell.tsx", root)), false, "retired world shell remains");
+  assert.equal(existsSync(new URL("../../../components/world/HomeV3.tsx", root)), false, "retired world home remains");
+  assert.equal(existsSync(new URL("../../../components/world/MemoryEntity.tsx", root)), false, "retired world entity remains");
+  assert.equal(existsSync(new URL("../../../components/world/SoulSilhouette.tsx", root)), false, "retired world silhouette remains");
+  assert.equal(existsSync(new URL("../../core/personality/personality-core.ts", root)), false, "retired personality evolution remains");
+  assert.equal(existsSync(new URL("../../core/personality/entity-personality-core.ts", root)), false, "retired entity personality remains");
+  assert.equal(existsSync(new URL("../../../_create_dream.js", root)), false, "retired world generator remains");
+  assert.equal(existsSync(new URL("../../../_create_mementity.js", root)), false, "retired entity generator remains");
 });
