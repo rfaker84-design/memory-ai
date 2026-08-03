@@ -2,6 +2,10 @@
 
 本矩阵与 `MEMORYAI_LAUNCH_PRODUCT_RULES_V1.md` 配套；该规则源优先于所有历史产品叙述。状态只能使用规则源定义的七种值；`IMPLEMENTED_NOT_REAL_E2E` 不代表 Staging、真实设备或生产验收。
 
+## 2026-08-04 分享边界复审
+
+P-17 仍为 `PARTIAL`，但候选代码现已明确：仅人工审核通过、已结算、非 `first_preview` 且 `save_allowed=true` 的影像可创建或继续提供公开链接。每次公共元数据和播放读取都会重复该条件；首个 `saveAllowed=false` 影像不能分享。公开路由保持 noindex、无缓存、仅在线播放且不暴露 Provider 或对象存储键。带水印下载仍未实现，因为尚无可审计、可删除的派生产物生命周期；Migration 021 仍未获 Staging 批准或执行。
+
 | ID | 冻结规则 | 当前证据 | 差异状态 | 后续动作 |
 |---|---|---|---|---|
 | P-01 | 18+、生日可改、无家人协作 | Owner-only profile API 与设置/创建页生日入口已接通；服务端按日历生日判断且聊天/创建要求当前合格生日与 consent | IMPLEMENTED_NOT_REAL_E2E | 仍需真实 UI/设备与 Staging 验收 |
@@ -20,7 +24,7 @@
 | P-14 | 3 人邀请、反作弊、独立来源 | Commerce referral 已有 | PARTIAL | 保留真实设备证明外部门 |
 | P-15 | 生日/节日奖励独立记账 | Candidate 020 extends the existing Commerce ledger; China-time 30-day/no-cross-year windows, owner-scoped offers/claim, durable claim/video idempotency, explicit `occasion_reward` selection, saveable artifact contract, failed-generation release, and isolated PG14.23 first/replay/rollback/concurrency/postflight PASS | IMPLEMENTED_NOT_REAL_E2E | Keep 020 outside the automatic runner; Staging migration, real Provider/manual review and production evidence remain separate gates |
 | P-16 | 克制问候和通用通知 | 每日问候已有 | PARTIAL | 核验通知授权时机与文案 |
-| P-17 | noindex/revocable/view-only 分享 | 旧分享隔离；正式分享需核验 | PARTIAL | 审计分享路由/契约 |
+| P-17 | noindex/revocable/view-only 分享 | 候选 Migration 021 及 Owner/公共路由提供 noindex、无缓存、撤销后立即失效和仅在线播放；创建与每次公共读取均要求人工审核通过、已结算、非 `first_preview` 且 `save_allowed=true`，不暴露 Provider/对象键。 | PARTIAL | 带水印下载仍缺少可审计、可删除的派生产物生命周期；021 仍需独立 Staging/真实环境证据。 |
 | P-18 | 多 TA 底部选择器 | 主 TA 切换已有 | PARTIAL | 核验底部选择器体验 |
 | P-19 | 删除消息、fresh export、TA 删除确认 | fresh reauthentication export 与账户注销已存在；主 TA 列表提供显式 TA 删除确认，正式 DELETE 路由要求精确 `DELETE_MEMORY` 确认、Owner Session 和 Origin。聊天记录提供独立的显式清除确认：服务端在 Owner 范围内清除全部正文、排除 UI 与模型上下文，同时保留不含原文的外键账本引用；素材未清理、会话失效或网络不确定均不会显示删除成功 | IMPLEMENTED_NOT_REAL_E2E | 已通过聊天/TA 删除边界、TypeScript、production build 与安全回归；仍需真实 UI/Staging 验收 |
 | P-20 | 危机、预授权升级、未成年人隔离 | 危机退出人格与授权队列已有 | IMPLEMENTED_NOT_REAL_E2E | 外部资源/值班/法律复核 |
