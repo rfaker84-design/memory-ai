@@ -19,7 +19,8 @@ acceptance:
   - id: A-ADULT-ONLY
     requirement: "18+ current-birthday gate; birthday editable; no family coediting or privacy lock"
     evidence: [api_test, ui_preview, staging]
-    status: audit_required
+    status: code_candidate
+    candidate_evidence: "features/account-profile/adult-eligibility.test.ts; app/api/account/profile/profile-route.test.ts; src/components/trust/accountProfileClient.test.ts"
   - id: A-TA-CREATION
     requirement: "Maximum three TAs, natural short creation flow, authorization confirmation, no life/death question"
     evidence: [api_test, ui_preview, staging]

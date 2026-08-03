@@ -8,6 +8,7 @@ import { useCreateMemoryDraft } from "./useCreateMemoryDraft";
 import type { CreateStage } from "./types";
 import { canEnterConversation, completion, creationCompletionStatus, createMemoryRequestHeaders, validateStage } from "./createMemoryLogic";
 import { recordTrustConsent, TrustConsentRequestError } from "../trust/trustConsentClient";
+import { AccountProfileRequestError, saveAdultBirthDate } from "../trust/accountProfileClient";
 import {
   clearCreationRecovery,
   CreationRecoveryRequestError,
@@ -32,6 +33,7 @@ export function CreateMemoryExperience() {
   const { draft, status, setStatus, update, clear, idempotencyKey } = useCreateMemoryDraft();
   const [stage, setStage] = useState<CreateStage>(0);
   const [photo, setPhoto] = useState<File | null>(null);
+  const [birthDate, setBirthDate] = useState("");
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [error, setError] = useState("");
   const [created, setCreated] = useState<CreatedMemory | null>(null);
@@ -74,6 +76,9 @@ export function CreateMemoryExperience() {
       setUploadState("error");
       throw error;
     }
+    if (stage === 0 && !birthDate) {
+      setError("请填写你的出生日期。忆见首发仅向年满 18 周岁的用户提供服务。"); return false;
+    }
   };
 
   const completeCreation = async (createdMemory: CreatedMemory) => {
@@ -94,6 +99,8 @@ export function CreateMemoryExperience() {
     submitting.current = true; setError("");
     try {
       setStatus("submitting");
+      const adultProfile = await saveAdultBirthDate(birthDate);
+      if (!adultProfile.adultEligible) throw new AccountProfileRequestError("ADULT_ELIGIBILITY_REQUIRED");
       await recordTrustConsent("adult_eligibility");
       await recordTrustConsent("memory_profile");
       if (!writeCreationRecovery({ idempotencyKey, phase: "creating" })) {
@@ -116,6 +123,11 @@ export function CreateMemoryExperience() {
     } catch (cause) {
       if (cause instanceof TrustConsentRequestError) {
         setStatus("recoverable-error"); setError("确认记录暂未安全保存；尚未创建 TA 或上传素材。恢复连接后可明确重试。");
+        return;
+      }
+      if (cause instanceof AccountProfileRequestError) {
+        setStatus("recoverable-error");
+        setError(cause.code === "ADULT_ELIGIBILITY_REQUIRED" ? "忆见首发仅向年满 18 周岁的用户提供服务。" : "出生日期尚未安全保存；尚未创建 TA 或上传素材。请检查后明确重试。");
         return;
       }
       if (cause instanceof CreationRecoveryRequestError && cause.code === "CREATION_REQUEST_TIMEOUT") {
@@ -172,7 +184,7 @@ export function CreateMemoryExperience() {
           <div className={styles.eyebrow}>{stages[stage][0]}</div><h1 className={styles.title}>{stages[stage][1]}</h1>
           <p className={styles.desc}>{stage === 1 ? "所有内容都可以留空或稍后补充；空白不会被编造成事实。" : "资料越充实，未来回应越能贴近你确认的内容。"}</p>
           <div className={styles.step} key={reducedMotion ? "static" : stage}>
-            {stage === 0 && <><div className={styles.grid2}><MemoryInput label="姓名或昵称 *" value={draft.name} onChange={(e: ChangeEvent<HTMLInputElement>) => update("name", e.currentTarget.value)} autoFocus/><MemoryInput label="与你的关系 *" value={draft.relationship} onChange={(e: ChangeEvent<HTMLInputElement>) => update("relationship", e.currentTarget.value)}/></div><MemoryInput label="你希望如何称呼 TA *" value={draft.preferredAddress} onChange={(e: ChangeEvent<HTMLInputElement>) => update("preferredAddress", e.currentTarget.value)}/><MemoryInput label="创建目的 *" value={draft.purpose} onChange={(e: ChangeEvent<HTMLInputElement>) => update("purpose", e.currentTarget.value)} placeholder="例如：保存共同记忆、获得陪伴"/></>}
+            {stage === 0 && <><MemoryInput label="你的出生日期 *" type="date" value={birthDate} onChange={(e: ChangeEvent<HTMLInputElement>) => setBirthDate(e.currentTarget.value)} autoFocus/><div className={styles.grid2}><MemoryInput label="姓名或昵称 *" value={draft.name} onChange={(e: ChangeEvent<HTMLInputElement>) => update("name", e.currentTarget.value)}/><MemoryInput label="与你的关系 *" value={draft.relationship} onChange={(e: ChangeEvent<HTMLInputElement>) => update("relationship", e.currentTarget.value)}/></div><MemoryInput label="你希望如何称呼 TA *" value={draft.preferredAddress} onChange={(e: ChangeEvent<HTMLInputElement>) => update("preferredAddress", e.currentTarget.value)}/><MemoryInput label="创建目的 *" value={draft.purpose} onChange={(e: ChangeEvent<HTMLInputElement>) => update("purpose", e.currentTarget.value)} placeholder="例如：保存共同记忆、获得陪伴"/></>}
             {stage === 1 && <><MemoryInput multiline label="性格" value={draft.personality} onChange={(e: ChangeEvent<HTMLTextAreaElement>) => update("personality", e.currentTarget.value)}/><MemoryInput multiline label="常说的话" value={draft.catchPhrases} onChange={(e: ChangeEvent<HTMLTextAreaElement>) => update("catchPhrases", e.currentTarget.value)}/><MemoryInput multiline label="共同经历" value={draft.sharedExperiences} onChange={(e: ChangeEvent<HTMLTextAreaElement>) => update("sharedExperiences", e.currentTarget.value)}/><div className={styles.grid2}><MemoryInput multiline label="生活片段" value={draft.lifeMoments} onChange={(e: ChangeEvent<HTMLTextAreaElement>) => update("lifeMoments", e.currentTarget.value)}/><MemoryInput multiline label="兴趣爱好" value={draft.interests} onChange={(e: ChangeEvent<HTMLTextAreaElement>) => update("interests", e.currentTarget.value)}/></div></>}
             {stage === 2 && <><label className={styles.file}>选择照片<small>{photo?.name || "JPG、PNG 等，最大 20MB"}</small><input type="file" accept="image/*" onChange={choosePhoto}/></label><div className={styles.muted}>首发只收集你选择提交的照片和文字资料，不收集声音文件，也不提供声音克隆。忆见的回应由 AI 生成，不是现实中的 TA；素材只在创建后上传，不会写入 localStorage。请先阅读 <a href="/privacy">隐私政策</a>、<a href="/terms">用户协议</a> 和 <a href="/authorization">AI 内容和素材说明</a>。数据删除或退款相关请求可从 <a href="/report">投诉与删除</a> 提交。</div><label className={styles.consent}><input type="checkbox" checked={draft.consent} onChange={e => update("consent", e.target.checked)}/><span>我已年满 18 周岁，理解 AI 内容说明，确认拥有上述照片和资料的合法使用权，并同意按隐私政策处理；创建和上传前会记录本次确认。</span></label></>}
             {stage === 3 && <><div className={styles.summary}><div className={styles.metric}><strong>{completeness}%</strong><span>资料完整度</span></div><div className={styles.metric}><strong>{[draft.personality, draft.catchPhrases, photo].filter(Boolean).length}</strong><span>已确认资料项</span></div></div><div className={styles.metric}><strong>{draft.name}</strong><span>{draft.relationship} · 你称呼 TA 为 {draft.preferredAddress}</span></div><div className={styles.muted}>待完善：{[!draft.personality && "性格", !draft.catchPhrases && "常说的话", !photo && "照片"].filter(Boolean).join("、") || "基础资料已齐全"}</div></>}
