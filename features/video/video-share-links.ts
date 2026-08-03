@@ -71,9 +71,12 @@ export class VideoShareLinksPostgres {
          SELECT j.id, j.memory_id, j.user_id
          FROM public.video_generation_jobs j
          JOIN public.users u ON u.id = j.user_id
+         JOIN public.commerce_generation_reservations r ON r.id = j.reservation_id AND r.user_id = j.user_id
+         JOIN public.commerce_credit_lots l ON l.id = r.credit_lot_id AND l.user_id = j.user_id
          WHERE u.external_id = $1 AND j.memory_id = $2::uuid AND j.id = $3::uuid
            AND j.status = 'succeeded' AND j.quality_status = 'approved'
            AND j.entitlement_settlement = 'committed' AND j.artifact_key IS NOT NULL
+           AND r.purpose <> 'first_preview' AND l.save_allowed = TRUE
            AND EXISTS (SELECT 1 FROM public.video_generation_quality_reviews q
              WHERE q.job_id = j.id AND q.reviewer_kind = 'manual' AND q.decision = 'approved')
        )
@@ -117,9 +120,12 @@ export class VideoShareLinksPostgres {
       `SELECT s.public_id, s.title, j.id, j.memory_id, j.artifact_key
        FROM public.video_share_links s
        JOIN public.video_generation_jobs j ON j.id = s.video_job_id AND j.user_id = s.user_id AND j.memory_id = s.memory_id
+       JOIN public.commerce_generation_reservations r ON r.id = j.reservation_id AND r.user_id = j.user_id
+       JOIN public.commerce_credit_lots l ON l.id = r.credit_lot_id AND l.user_id = j.user_id
        WHERE s.public_id = $1::uuid AND s.revoked_at IS NULL
          AND j.status = 'succeeded' AND j.quality_status = 'approved'
          AND j.entitlement_settlement = 'committed' AND j.artifact_key IS NOT NULL
+         AND r.purpose <> 'first_preview' AND l.save_allowed = TRUE
          AND EXISTS (SELECT 1 FROM public.video_generation_quality_reviews q
            WHERE q.job_id = j.id AND q.reviewer_kind = 'manual' AND q.decision = 'approved')`,
       [publicId],

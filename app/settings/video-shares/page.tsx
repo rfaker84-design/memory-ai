@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Memory = { id: string; name: string };
-type Job = { id: string; status: string; artifactAvailable: boolean; manualReviewRequired: boolean };
+type Job = { id: string; status: string; saveAllowed: boolean; artifactAvailable: boolean; manualReviewRequired: boolean };
 type Share = { publicId: string; title: string; jobId: string };
 
 async function boundedFetch(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
@@ -28,7 +28,7 @@ export default function VideoShareSettingsPage() {
   const select = (id: string) => { setMemoryId(id); setTitle(""); void load(id); };
   const create = async (jobId: string) => { if (!memoryId || !title.trim() || busy) return; setBusy(jobId); setNotice(""); try { const r = await boundedFetch(`/api/memories/${encodeURIComponent(memoryId)}/video-shares`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ jobId, title: title.trim() }) }, 20_000); if (!r.ok) { setNotice("分享结果尚未确认；请不要重复提交，刷新此页后再核对。 "); return; } setTitle(""); await load(memoryId); } catch { setNotice("分享结果尚未确认；请不要重复提交，刷新此页后再核对。"); } finally { setBusy(null); } };
   const revoke = async (share: Share) => { if (!memoryId || busy || !window.confirm(`撤销“${share.title}”的公开链接？撤销后将立即不可查看。`)) return; setBusy(share.publicId); setNotice(""); try { const r = await boundedFetch(`/api/memories/${encodeURIComponent(memoryId)}/video-shares/${encodeURIComponent(share.publicId)}`, { method: "DELETE", credentials: "include" }, 20_000); if (!r.ok) { setNotice("撤销结果尚未确认；请不要重复点击，刷新此页后再核对。"); return; } await load(memoryId); } catch { setNotice("撤销结果尚未确认；请不要重复点击，刷新此页后再核对。"); } finally { setBusy(null); } };
-  const approved = jobs.filter(job => job.status === "succeeded" && job.artifactAvailable && !job.manualReviewRequired);
+  const approved = jobs.filter(job => job.status === "succeeded" && job.saveAllowed && job.artifactAvailable && !job.manualReviewRequired);
   const control = { minHeight: 44, padding: "0 12px" };
   return <main style={{ minHeight: "100dvh", padding: "24px 16px 96px", maxWidth: 640, margin: "auto" }}>
     <button type="button" style={control} onClick={() => router.push("/continuity")}>返回我的</button><h1>影像分享</h1><p>仅已人工审核通过的 AI 纪念影像可创建公开只读链接。链接默认不被搜索收录，撤销后立即失效。</p>
