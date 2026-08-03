@@ -6,6 +6,7 @@ export type OperationsAlertThresholds = {
   videoQualityPending: number;
   videoManualReview: number;
   videoTerminalP95Seconds: number;
+  videoCommittedCreditsLast24Hours: number;
   commercePendingOrders: number;
   commerceRefundsAwaitingResolution: number;
   accountDeletionRunnableTasks: number;
@@ -21,6 +22,7 @@ export type OperationsAlert = {
     | "VIDEO_QUALITY_BACKLOG"
     | "VIDEO_MANUAL_REVIEW_BACKLOG"
     | "VIDEO_TERMINAL_LATENCY_HIGH"
+    | "VIDEO_COMMITTED_CREDITS_HIGH"
     | "COMMERCE_PENDING_BACKLOG"
     | "COMMERCE_REFUND_BACKLOG"
     | "ACCOUNT_DELETION_BACKLOG"
@@ -38,6 +40,7 @@ const keys = [
   "videoQualityPending",
   "videoManualReview",
   "videoTerminalP95Seconds",
+  "videoCommittedCreditsLast24Hours",
   "commercePendingOrders",
   "commerceRefundsAwaitingResolution",
   "accountDeletionRunnableTasks",
@@ -91,6 +94,7 @@ export function evaluateOperationsAlerts(summary: OperationsSummary, thresholds:
     { code: "VIDEO_QUALITY_BACKLOG", severity: "warning", observed: summary.video.qualityPending, threshold: thresholds.videoQualityPending },
     { code: "VIDEO_MANUAL_REVIEW_BACKLOG", severity: "warning", observed: summary.video.manualReview, threshold: thresholds.videoManualReview },
     { code: "VIDEO_TERMINAL_LATENCY_HIGH", severity: "warning", observed: summary.video.terminalP95Seconds, threshold: thresholds.videoTerminalP95Seconds },
+    { code: "VIDEO_COMMITTED_CREDITS_HIGH", severity: "warning", observed: summary.video.committedCreditsLast24Hours, threshold: thresholds.videoCommittedCreditsLast24Hours },
     { code: "COMMERCE_PENDING_BACKLOG", severity: "warning", observed: summary.commerce.pendingOrders, threshold: thresholds.commercePendingOrders },
     { code: "COMMERCE_REFUND_BACKLOG", severity: "warning", observed: summary.commerce.refundsAwaitingResolution, threshold: thresholds.commerceRefundsAwaitingResolution },
     { code: "ACCOUNT_DELETION_BACKLOG", severity: "warning", observed: summary.accountDeletion.runnableTasks, threshold: thresholds.accountDeletionRunnableTasks },

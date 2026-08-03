@@ -8,7 +8,7 @@ import { createOperationsAlertsHandler } from "./_handler";
 const token = "o".repeat(32);
 const thresholds = JSON.stringify({
   videoActive: 2, videoSubmissionUncertain: 0, videoQualityPending: 2, videoManualReview: 2,
-  videoTerminalP95Seconds: 60, commercePendingOrders: 2, commerceRefundsAwaitingResolution: 2,
+  videoTerminalP95Seconds: 60, videoCommittedCreditsLast24Hours: 50, commercePendingOrders: 2, commerceRefundsAwaitingResolution: 2,
   accountDeletionRunnableTasks: 2, accountDeletionFailedTasks: 0,
   chatFailedLast24Hours: 2, chatPendingOverFiveMinutes: 0,
 });

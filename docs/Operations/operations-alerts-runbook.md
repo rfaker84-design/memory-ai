@@ -37,8 +37,12 @@ target is embedded in the application.
 
 `VIDEO_SUBMISSION_UNCERTAIN` and `ACCOUNT_DELETION_FAILED` are critical. A
 threshold of zero means "alert when any record exists", not "disable this
-alert". The remaining backlog and latency conditions are warnings. Values are
-observed aggregate counts or seconds; they are not queues to mutate and must
+alert". `VIDEO_COMMITTED_CREDITS_HIGH` is a warning based on the durable
+sum of `actual_credits` on committed Vidu jobs in the last 24 hours. It is
+usage monitoring, not a Provider balance: balance, invoices and billing
+reconciliation still require the Provider account and its external evidence.
+The remaining backlog and latency conditions are warnings. Values are
+observed aggregate counts, credits or seconds; they are not queues to mutate and must
 not trigger an automated Provider re-submit, user deletion, payment decision,
 or worker start.
 

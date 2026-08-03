@@ -12,6 +12,7 @@ const thresholds = {
   videoQualityPending: 4,
   videoManualReview: 4,
   videoTerminalP95Seconds: 120,
+  videoCommittedCreditsLast24Hours: 6,
   commercePendingOrders: 8,
   commerceRefundsAwaitingResolution: 2,
   accountDeletionRunnableTasks: 12,
@@ -22,7 +23,7 @@ const thresholds = {
 
 const summary: OperationsSummary = {
   observedAt: "2026-08-02T00:00:00.000Z",
-  video: { active: 10, submissionUncertain: 1, qualityPending: 3, manualReview: 4, terminalLast24Hours: 1, terminalP95Seconds: 120, committedCreditsLast24Hours: 0 },
+  video: { active: 10, submissionUncertain: 1, qualityPending: 3, manualReview: 4, terminalLast24Hours: 1, terminalP95Seconds: 120, committedCreditsLast24Hours: 6 },
   media: { uploadsLast24Hours: 1, uploadedBytesLast24Hours: 1 },
   commerce: { pendingOrders: 8, refundsAwaitingResolution: 1 },
   accountDeletion: { runnableTasks: 11, failedTasks: 1 },
@@ -46,6 +47,7 @@ test("the production environment example supplies every operations alert thresho
     videoQualityPending: 10,
     videoManualReview: 10,
     videoTerminalP95Seconds: 900,
+    videoCommittedCreditsLast24Hours: 100,
     commercePendingOrders: 20,
     commerceRefundsAwaitingResolution: 5,
     accountDeletionRunnableTasks: 20,
@@ -64,6 +66,7 @@ test("operations alert evaluator reports only aggregate, deterministic threshold
     { code: "VIDEO_ACTIVE_BACKLOG", severity: "warning", observed: 10, threshold: 10 },
     { code: "VIDEO_MANUAL_REVIEW_BACKLOG", severity: "warning", observed: 4, threshold: 4 },
     { code: "VIDEO_TERMINAL_LATENCY_HIGH", severity: "warning", observed: 120, threshold: 120 },
+    { code: "VIDEO_COMMITTED_CREDITS_HIGH", severity: "warning", observed: 6, threshold: 6 },
     { code: "COMMERCE_PENDING_BACKLOG", severity: "warning", observed: 8, threshold: 8 },
     { code: "CHAT_FAILURE_RATE_HIGH", severity: "warning", observed: 3, threshold: 3 },
   ]);
