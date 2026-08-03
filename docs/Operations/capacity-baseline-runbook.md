@@ -17,6 +17,14 @@ plan is rejected unless all of the following are true:
 - a Staging plan includes its distinct approved change identifier;
 - requests, concurrency, and image byte size are bounded.
 
+`npm run run:capacity-baseline -- '<plan-json>'` is deliberately stricter than
+the generic plan contract: it accepts only an isolated loopback target and
+reads only `GET /api/health`. It refuses every Staging plan, even one with an
+approval ID. Its aggregate-only output is suitable for a local readiness and
+concurrency baseline. The local regression mounts the actual health handler on
+an ephemeral loopback socket; it is not an upload, generation-latency, cost,
+Staging, or production run.
+
 A capacity baseline must not start a video worker, call Vidu, consume credits,
 or reuse any customer account, TA, media object, session, or job. A real
 first-presence Provider run remains governed by its separate product gate.

@@ -26,6 +26,7 @@ test("capacity baseline plans reject production, provider side effects, and unap
   const invalid = [
     { ...isolatedPlan, targetUrl: "https://yijianmemory.cn/" },
     { ...isolatedPlan, targetUrl: "https://staging.yijianmemory.cn/" },
+    { ...isolatedPlan, targetUrl: "https://isolated.memoryai.test/" },
     { ...isolatedPlan, providerSubmit: true },
     { ...isolatedPlan, syntheticDataOnly: false },
     { ...isolatedPlan, targetEnvironment: "staging" },

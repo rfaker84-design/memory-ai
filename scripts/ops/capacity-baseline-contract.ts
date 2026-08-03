@@ -63,6 +63,10 @@ function targetUrl(value: unknown): URL {
   return url;
 }
 
+function isLoopback(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+}
+
 /**
  * The plan must remain harmless by construction: capacity work is synthetic,
  * cannot submit a Provider job, and can never target production. Staging needs
@@ -87,8 +91,13 @@ export function parseCapacityBaselinePlan(value: unknown): CapacityBaselinePlan 
   const uploadBytes = boundedInteger(record.uploadBytes, 1, 20 * 1024 * 1024);
   if (!requests || !concurrency || !uploadBytes || concurrency > requests) throw new CapacityBaselinePlanError("CAPACITY_WORKLOAD_INVALID");
 
+  const parsedTargetUrl = targetUrl(record.targetUrl);
+  if (environment === "isolated" && !isLoopback(parsedTargetUrl.hostname)) {
+    throw new CapacityBaselinePlanError("CAPACITY_ISOLATED_TARGET_INVALID");
+  }
+
   return Object.freeze({
-    targetUrl: targetUrl(record.targetUrl),
+    targetUrl: parsedTargetUrl,
     targetEnvironment: environment,
     approvedChangeId: changeId,
     syntheticDataOnly: true,
