@@ -2,7 +2,8 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 
-import { getVideoArtifactStorageConfiguration } from "../../src/server/runtime/video-staging-contract";
+import { getVideoArtifactRuntimeConfiguration } from "./video-artifact-runtime";
+import { TencentCosVideoArtifactStorage } from "./tencent-cos-video-artifact-storage";
 import { FfmpegAiContentMarker, type AiContentMarker } from "./ai-content-marking";
 
 import { SecureVideoDownloader } from "./first-presence-media-inspection";
@@ -222,16 +223,12 @@ export function createVideoArtifactStorageFromEnvironment(
   environment: Record<string, string | undefined> = process.env,
 ): VideoArtifactStoragePort {
   try {
-    const configuration = getVideoArtifactStorageConfiguration(environment as NodeJS.ProcessEnv);
-    return new LocalStagingVideoArtifactStorage({
-      root: configuration.artifactRoot,
-      signingSecret: configuration.signingSecret,
-      playbackBaseUrl: configuration.playbackBaseUrl,
-      aiContentMarker: new FfmpegAiContentMarker({
-        providerName: configuration.aiContentProviderName,
-        providerCode: configuration.aiContentProviderCode,
-      }),
-    }, PRODUCTION_STAGING_CONSTRUCTOR);
+    const configuration = getVideoArtifactRuntimeConfiguration(environment);
+    const aiContentMarker = new FfmpegAiContentMarker({ providerName: configuration.aiContentProviderName, providerCode: configuration.aiContentProviderCode });
+    if (configuration.kind === "local-staging") {
+      return new LocalStagingVideoArtifactStorage({ root: configuration.artifactRoot!, signingSecret: configuration.signingSecret, playbackBaseUrl: configuration.playbackBaseUrl!, aiContentMarker }, PRODUCTION_STAGING_CONSTRUCTOR);
+    }
+    return new TencentCosVideoArtifactStorage({ secretId: configuration.secretId!, secretKey: configuration.secretKey!, bucket: configuration.bucket!, region: configuration.region!, signingSecret: configuration.signingSecret, playbackBaseUrl: configuration.playbackBaseUrl!, aiContentMarker, downloader: new SecureVideoDownloader() });
   } catch {
     throw new Error("VIDEO_ARTIFACT_STORAGE_UNAVAILABLE");
   }

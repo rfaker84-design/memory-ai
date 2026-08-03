@@ -14,7 +14,7 @@ import {
 } from "@/features/video";
 import { type AuthSession, verifyRequestSession } from "@/src/server/auth";
 import { DatabaseDependencyError } from "@/src/server/database";
-import { getVideoArtifactStorageConfiguration } from "@/src/server/runtime/video-staging-contract";
+import { getVideoArtifactRuntimeConfiguration } from "@/features/video/video-artifact-runtime";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 
 type Context = { params: Promise<{ token: string }> };
@@ -27,7 +27,7 @@ type PlaybackReadDependencies = {
 };
 
 function dependencies(): PlaybackReadDependencies {
-  const signing = getVideoArtifactStorageConfiguration();
+  const signing = getVideoArtifactRuntimeConfiguration();
   return {
     artifacts: new FirstPresenceVideoArtifactQueryPort(createVideoArtifactStorageFromEnvironment()),
     reader: new FirstPresenceVideoArtifactStorageReader(createVideoArtifactStorageFromEnvironment()),

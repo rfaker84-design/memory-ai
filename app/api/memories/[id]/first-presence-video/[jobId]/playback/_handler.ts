@@ -10,7 +10,7 @@ import {
 } from "@/features/video";
 import { AuthConfigurationError, type AuthSession, verifyRequestSession } from "@/src/server/auth";
 import { DatabaseDependencyError } from "@/src/server/database";
-import { getVideoArtifactStorageConfiguration } from "@/src/server/runtime/video-staging-contract";
+import { getVideoArtifactRuntimeConfiguration } from "@/features/video/video-artifact-runtime";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 
 type Context = { params: Promise<{ id: string; jobId: string }> };
@@ -21,7 +21,7 @@ const json = (body: Record<string, unknown>, init?: ResponseInit) =>
   applyAuthNoStore(NextResponse.json(body, init));
 
 function service(): PlaybackAuthorizationService {
-  const signing = getVideoArtifactStorageConfiguration();
+  const signing = getVideoArtifactRuntimeConfiguration();
   return new FirstPresencePlaybackAuthorizationService(
     new FirstPresenceVideoArtifactQueryPort(createVideoArtifactStorageFromEnvironment()),
     new FirstPresencePlaybackSigner(signing.signingSecret, signing.previousSigningSecret),

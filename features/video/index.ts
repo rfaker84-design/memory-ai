@@ -8,6 +8,8 @@ export * from "./first-presence-uncertain-reconciliation";
 export * from "./first-presence-video-postgres";
 export * from "./vidu-first-presence-provider";
 export * from "./video-artifact-storage";
+export * from "./video-artifact-runtime";
+export * from "./tencent-cos-video-artifact-storage";
 export * from "./video-artifact-query";
 export * from "./first-presence-video-worker";
 export * from "./ai-content-marking";

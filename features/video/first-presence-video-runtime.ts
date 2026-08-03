@@ -1,5 +1,5 @@
 import { createMediaStorage } from "../../src/server/storage";
-import { getVideoArtifactStorageConfiguration } from "../../src/server/runtime/video-staging-contract";
+import { getVideoArtifactRuntimeConfiguration } from "./video-artifact-runtime";
 
 import type { OwnerVideoInputStagingPort } from "./first-presence-video-owner-api";
 import {
@@ -21,7 +21,7 @@ export const VIDEO_INPUT_MAX_BYTES = 20 * 1024 * 1024;
 const VIDEO_INPUT_MAX_DATA_URL_LENGTH = Math.ceil(VIDEO_INPUT_MAX_BYTES * 4 / 3) + 128;
 
 function requiredEvidenceRoot(): string {
-  return getVideoArtifactStorageConfiguration().evidenceRoot;
+  return getVideoArtifactRuntimeConfiguration().evidenceRoot;
 }
 
 /** One composition root for the durable worker and internal review endpoint. */
