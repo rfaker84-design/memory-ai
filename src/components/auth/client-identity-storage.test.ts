@@ -25,6 +25,10 @@ function identityStorageFindings(source: string): string[] {
 
 function trackedTextFiles(): string[] {
   return sourceAuditFiles()
+    // `git ls-files` intentionally retains an index entry until a deletion is
+    // staged. Audit the current source tree rather than attempting to reopen a
+    // removed file from the index.
+    .filter((file) => fs.existsSync(path.resolve(file)))
     .filter((file) => !trackedBinaryExtensions.has(path.extname(file).toLowerCase()));
 }
 

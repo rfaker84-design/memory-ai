@@ -46,11 +46,8 @@ const eslintConfig = [
       "app/living-memory/**",
       "app/heirloom/**",
       "app/timeline/**",
-      // Archived splash experiments are not imported by the current app shell.
-      // Keep protected legacy visuals out of lint instead of mutating them.
-      "src/components/splash-v3/**",
-      "src/components/splash-v4/**",
-      "src/components/splash-v5/**",
+       // The remaining V3 visual archive is not imported by the current app shell.
+       "src/components/splash-v3/**",
       // One-off source generator; its template is not application code.
       "src/components/write-splash.js",
       // Unreferenced V8 simulation preserved as an archived legacy artifact.
