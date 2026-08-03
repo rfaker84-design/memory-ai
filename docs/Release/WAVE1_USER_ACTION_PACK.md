@@ -1,5 +1,7 @@
 # WAVE1_USER_ACTION_PACK
 
+> 历史材料说明：本包形成于 2026-07-27，文中的启动/完成日期仅保留当时的计划背景，不能作为当前执行排期或 Gate 状态。当前唯一有效状态以 `MEMORYAI_LAUNCH_GATES.yaml`、`MEMORYAI_OWNER_ACTIONS.yaml`、`MEMORYAI_CURRENT_STATE.yaml` 和 `MEMORYAI_EVIDENCE_LEDGER.yaml` 为准。
+
 任务：SPRINT21_EXTERNAL_GATES_WAVE1_CLOSEOUT
 
 文档日期：2026-07-27
