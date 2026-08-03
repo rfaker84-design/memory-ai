@@ -41,8 +41,8 @@ type Props = {
 
 const MAX_MEDIA_BYTES = 20 * 1024 * 1024;
 
-function mediaLabel(kind: CreationMediaKind) {
-  return kind === "photo" ? "照片" : "声音";
+function mediaLabel(_kind: CreationMediaKind) {
+  return "照片";
 }
 
 export function CreationMediaRecoveryGate({
@@ -80,7 +80,7 @@ export function CreationMediaRecoveryGate({
   ) => {
     const record = readCreationRecovery();
     if (!record || record.memoryId !== memory.id) {
-      setNotice("人物资料已经保存。请重新进入这段记忆后，再补充照片或声音。");
+      setNotice("人物资料已经保存。请重新进入这段记忆后，再补充照片。");
       setPhase("error");
       return;
     }
@@ -161,8 +161,7 @@ export function CreationMediaRecoveryGate({
           const recovered = await recoverCreatedMemory(record.idempotencyKey);
           const recoveredPhase = mediaPhase(
             Boolean(transient.photo),
-            Boolean(transient.voice),
-            !transient.photo && !transient.voice,
+            !transient.photo,
           );
           record = {
             idempotencyKey: record.idempotencyKey,
@@ -215,11 +214,8 @@ export function CreationMediaRecoveryGate({
   const chooseMedia = (kind: CreationMediaKind, event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0] ?? null;
     if (!file) return;
-    const valid = kind === "photo"
-      ? file.type.startsWith("image/")
-      : file.type.startsWith("audio/");
-    if (!valid || file.size > MAX_MEDIA_BYTES) {
-      setNotice("请选择 20MB 以内的照片或声音文件。");
+    if (!file.type.startsWith("image/") || file.size > MAX_MEDIA_BYTES) {
+      setNotice("请选择 20MB 以内的照片文件。");
       return;
     }
     const next = { ...selected, [kind]: file };
@@ -269,7 +265,7 @@ export function CreationMediaRecoveryGate({
       <div className={styles.copy}>
         <p className={styles.eyebrow}>人物资料已经保存</p>
         <h1>把尚未完成的素材留在这里。</h1>
-        <p>人物资料已经保存。照片或声音尚未完成，你可以重新选择，或稍后补充。</p>
+        <p>人物资料已经保存。照片尚未完成，你可以重新选择，或稍后补充。</p>
 
         {(phase === "checking" || phase === "uploading") && (
           <p className={styles.status} role="status">
@@ -291,11 +287,11 @@ export function CreationMediaRecoveryGate({
               {remaining.map((kind) => (
                 <label key={kind} className={styles.mediaChoice}>
                   <strong>{selected[kind] ? `重新选择${mediaLabel(kind)}` : `选择${mediaLabel(kind)}`}</strong>
-                  <span>{selected[kind]?.name ?? (kind === "photo" ? "JPG、PNG 等，最大 20MB" : "常见音频格式，最大 20MB")}</span>
+                  <span>{selected[kind]?.name ?? "JPG、PNG 等，最大 20MB"}</span>
                   <input
                     className={styles.fileInput}
                     type="file"
-                    accept={kind === "photo" ? "image/*" : "audio/*"}
+                    accept="image/*"
                     aria-label={`选择 TA 的${mediaLabel(kind)}`}
                     onChange={(event) => chooseMedia(kind, event)}
                   />

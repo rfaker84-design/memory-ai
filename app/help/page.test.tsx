@@ -5,7 +5,7 @@ import test from "node:test";
 const help = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 const footer = readFileSync(new URL("../../components/Footer.tsx", import.meta.url), "utf8");
 const continuity = readFileSync(new URL("../(continuity)/continuity/page.tsx", import.meta.url), "utf8");
-const login = readFileSync(new URL("../../components/world/WorldShell.tsx", import.meta.url), "utf8");
+const login = readFileSync(new URL("../../src/components/first-presence/FirstPresenceFlow.tsx", import.meta.url), "utf8");
 
 test("help content gives a real, safe support path for first-use and failures", () => {
   for (const value of [
@@ -23,6 +23,8 @@ test("help content gives a real, safe support path for first-use and failures", 
     "未发送的文字会保留在输入框中",
     "投诉、退款或数据权利请求",
   ]) assert.match(help, new RegExp(value));
+  assert.match(help, /公开首发不收集声音、不录音，也不提供声音克隆/);
+  assert.doesNotMatch(help, /照片和声音会在正式创建后上传/);
 });
 
 test("help is reachable from the shared footer, login, and personal settings", () => {

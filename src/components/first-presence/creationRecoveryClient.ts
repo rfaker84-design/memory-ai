@@ -18,7 +18,10 @@ export type CreationRecoveryRecord = {
   phase: CreationRecoveryPhase;
 };
 
-export type CreationMediaKind = "photo" | "voice";
+// Public first-release creation accepts a portrait only. `voice-pending` is
+// retained as a read-compatible historical recovery phase, but never creates
+// an audio upload affordance or outbound upload from the public client.
+export type CreationMediaKind = "photo";
 
 export type RecoveryStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 export type TransientCreationMedia = Partial<Record<CreationMediaKind, File>>;
@@ -108,12 +111,10 @@ export function clearCreationRecovery(
 
 export function mediaPhase(
   photoPending: boolean,
-  voicePending: boolean,
   unknownAfterRefresh = false,
 ): CreationRecoveryPhase {
-  if (unknownAfterRefresh || (photoPending && voicePending)) return "media-pending";
+  if (unknownAfterRefresh) return "media-pending";
   if (photoPending) return "photo-pending";
-  if (voicePending) return "voice-pending";
   return "created";
 }
 
@@ -122,10 +123,9 @@ export function remainingMediaKinds(
   hasPersistedPhoto: boolean,
 ): CreationMediaKind[] {
   if (phase === "photo-pending") return hasPersistedPhoto ? [] : ["photo"];
-  if (phase === "voice-pending") return ["voice"];
-  if (phase === "media-pending") {
-    return hasPersistedPhoto ? ["voice"] : ["photo", "voice"];
-  }
+  if (phase === "media-pending") return hasPersistedPhoto ? [] : ["photo"];
+  // A historical audio-only handoff must never re-expose public audio
+  // collection. It is safely retired to the normal conversation path.
   return [];
 }
 
@@ -133,7 +133,7 @@ export function phaseForRemainingMedia(
   remaining: Iterable<CreationMediaKind>,
 ): CreationRecoveryPhase {
   const kinds = new Set(remaining);
-  return mediaPhase(kinds.has("photo"), kinds.has("voice"));
+  return mediaPhase(kinds.has("photo"));
 }
 
 export function stageTransientCreationMedia(
@@ -144,8 +144,7 @@ export function stageTransientCreationMedia(
     ...(transientMedia.get(memoryId) ?? {}),
   };
   if (files.photo) selected.photo = files.photo;
-  if (files.voice) selected.voice = files.voice;
-  if (selected.photo || selected.voice) transientMedia.set(memoryId, selected);
+  if (selected.photo) transientMedia.set(memoryId, selected);
   else transientMedia.delete(memoryId);
 }
 
@@ -160,7 +159,7 @@ export function markTransientCreationMediaUploaded(
   const selected = transientMedia.get(memoryId);
   if (!selected) return;
   delete selected[kind];
-  if (!selected.photo && !selected.voice) transientMedia.delete(memoryId);
+  if (!selected.photo) transientMedia.delete(memoryId);
 }
 
 export function clearTransientCreationMedia(memoryId: string) {
@@ -313,8 +312,7 @@ export async function uploadCurrentCreationMedia(
   const confirmed: ConfirmedCreationMedia[] = [];
   for (const [kind, file] of selected) {
     const uploaded = await uploadCreationMedia(memoryId, file, options.request);
-    const expectedMediaType = kind === "photo" ? "image" : "audio";
-    if (uploaded.mediaType !== expectedMediaType) {
+    if (uploaded.mediaType !== "image") {
       throw new CreationMediaHandoffError("MEDIA_TYPE_MISMATCH");
     }
     confirmed.push({ kind, assetId: uploaded.assetId, mediaType: uploaded.mediaType });

@@ -10,8 +10,8 @@ test("the direct login URL enters the server-verified SMS flow before the first 
 
   assert.match(loginPage, /FirstPresenceFlow initialStage="login-phone"/);
   assert.doesNotMatch(loginPage, /router\.push\("\/"\)/);
-  assert.match(flow, /fetch\("\/api\/auth\/send-code"/);
-  assert.match(flow, /fetch\("\/api\/auth\/verify-code"/);
+  assert.match(flow, /fetchAuthRequest\("\/api\/auth\/send-code"/);
+  assert.match(flow, /fetchAuthRequest\("\/api\/auth\/verify-code"/);
   assert.match(flow, /const authenticated = sessionResponse\.ok && Boolean\(sessionPayload\.authenticated\)/);
   assert.match(flow, /if \(!authenticated\)/);
   assert.match(flow, /setStage\("questions"\)/);

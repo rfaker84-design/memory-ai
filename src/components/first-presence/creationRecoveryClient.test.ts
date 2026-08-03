@@ -172,15 +172,15 @@ test("404 preserves the original key while 401 clears it", async () => {
 });
 
 test("media phases retain only unfinished uploads", () => {
-  assert.equal(mediaPhase(true, true), "media-pending");
-  assert.equal(phaseForRemainingMedia(["voice"]), "voice-pending");
+  assert.equal(mediaPhase(true), "photo-pending");
+  assert.equal(phaseForRemainingMedia(["photo"]), "photo-pending");
   assert.deepEqual(
     remainingMediaKinds("media-pending", true),
-    ["voice"],
+    [],
     "a persisted photo is never selected for upload again",
   );
   assert.deepEqual(remainingMediaKinds("photo-pending", true), []);
-  assert.deepEqual(remainingMediaKinds("voice-pending", false), ["voice"]);
+  assert.deepEqual(remainingMediaKinds("voice-pending", false), []);
 });
 
 test("media upload stays scoped to the stable memory and accepts server deduplication", async () => {

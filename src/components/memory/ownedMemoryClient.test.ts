@@ -158,7 +158,7 @@ test("formal auth and Memory list clients use the cookie session boundary", () =
     readFileSync(new URL("../../../app/page.tsx", import.meta.url), "utf8"),
     readFileSync(new URL("../../../app/memory-world/page.tsx", import.meta.url), "utf8"),
     readFileSync(new URL("../../../app/(memory)/memory/page.tsx", import.meta.url), "utf8"),
-    readFileSync(new URL("../../../components/world/WorldShell.tsx", import.meta.url), "utf8"),
+    readFileSync(new URL("../first-presence/FirstPresenceFlow.tsx", import.meta.url), "utf8"),
   ];
   for (const source of sources) {
     assert.doesNotMatch(source, forbiddenListAuth);

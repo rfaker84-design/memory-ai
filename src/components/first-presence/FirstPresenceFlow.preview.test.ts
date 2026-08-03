@@ -20,12 +20,13 @@ test("immersive creation asks one question at a time and uses custom media entry
     "TA 的说话习惯",
     "一段共同回忆",
     "选择 TA 的照片",
-    "选择真实声音",
   ]) {
     assert.match(flow, new RegExp(copy));
   }
   assert.match(flow, /switch \(questionIndex\)/);
-  assert.match(flow, /没有声音也可以继续/);
+  assert.match(flow, /公开首发不收集声音、不录音，也不提供声音克隆/);
+  assert.doesNotMatch(flow, /accept="audio\/\*"/);
+  assert.doesNotMatch(flow, /voiceFile/);
   assert.match(flow, /没有照片时，会保留文字形象/);
   assert.match(flow, /className=\{styles\.fileInput\}/);
   assert.match(styles, /\.fileInput[\s\S]*clip-path: inset\(50%\)/);
@@ -108,7 +109,8 @@ test("formal creation uploads current selected media before the one stable chat 
   assert.match(recoveryClient, /payload\.asset\.status !== "uploaded"/);
   assert.match(recoveryClient, /clearCreationRecovery\(storage\)/);
   assert.match(mediaRecoveryGate, /uploadCreationMedia\(memory\.id, file\)/);
-  assert.match(mediaRecoveryGate, /人物资料已经保存。照片或声音尚未完成，你可以重新选择，或稍后补充。/);
+  assert.match(mediaRecoveryGate, /人物资料已经保存。照片尚未完成，你可以重新选择，或稍后补充。/);
+  assert.doesNotMatch(mediaRecoveryGate, /accept="audio\/\*"/);
   assert.match(
     mediaRecoveryGate,
     /if \(phase === "conversation"\) \{[\s\S]*?<MemoryConversationScene/,

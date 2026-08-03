@@ -24,7 +24,7 @@ export default function HelpPage() {
           <h2 className="text-xl font-semibold">创建与资料</h2>
           <ul className="mt-3 list-disc space-y-2 pl-5 leading-7 text-[#d8bfaa]">
             <li>先填写你确认的称呼、关系和一段真实资料；不确定时可以留空或稍后补充。</li>
-            <li>照片和声音会在正式创建后上传，并与同一个记忆体关联；请勿上传无授权素材。</li>
+            <li>照片会在正式创建后上传，并与同一个记忆体关联；请勿上传无授权素材。公开首发不收集声音、不录音，也不提供声音克隆。</li>
             <li>照片支持常见图片格式，单个文件上限为 20MB。上传失败时请保留原文件并稍后重试，不要把私密资料发给客服。</li>
           </ul>
         </section>

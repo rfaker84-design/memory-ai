@@ -57,7 +57,7 @@ type FirstPresenceFlowProps = {
   onLeaveHome?: () => void;
 };
 
-const QUESTION_COUNT = 9;
+const QUESTION_COUNT = 8;
 const VISUAL_PREVIEW_ENABLED =
   process.env.NODE_ENV !== "production"
   && process.env.NEXT_PUBLIC_MEMORYAI_ENABLE_PRESENCE_PREVIEW === "true";
@@ -211,7 +211,6 @@ export function FirstPresenceFlow({
   const [speechStyle, setSpeechStyle] = useState("");
   const [sharedMemory, setSharedMemory] = useState("");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [voiceFile, setVoiceFile] = useState<File | null>(null);
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null);
   const [trustAccepted, setTrustAccepted] = useState(false);
   const [loginAgreementAccepted, setLoginAgreementAccepted] = useState(false);
@@ -380,26 +379,21 @@ export function FirstPresenceFlow({
     setter(value);
   };
 
-  const chooseMedia = (kind: "photo" | "voice", event: ChangeEvent<HTMLInputElement>) => {
+  const chooseMedia = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0] ?? null;
-    const valid = kind === "photo" ? file?.type.startsWith("image/") : file?.type.startsWith("audio/");
-    if (file && (!valid || file.size > 20 * 1024 * 1024)) {
-      setError("请选择 20MB 以内的照片或声音文件。");
+    if (file && (!file.type.startsWith("image/") || file.size > 20 * 1024 * 1024)) {
+      setError("请选择 20MB 以内的照片文件。");
       return;
     }
     noteDraftRevision();
-    if (kind === "photo") {
-      releaseLocalPortrait();
-      setPhotoFile(file);
-      if (file) {
-        const url = URL.createObjectURL(file);
-        localPortraitUrl.current = url;
-        setPortraitUrl(url);
-      } else {
-        setPortraitUrl(null);
-      }
+    releaseLocalPortrait();
+    setPhotoFile(file);
+    if (file) {
+      const url = URL.createObjectURL(file);
+      localPortraitUrl.current = url;
+      setPortraitUrl(url);
     } else {
-      setVoiceFile(file);
+      setPortraitUrl(null);
     }
   };
 
@@ -415,7 +409,7 @@ export function FirstPresenceFlow({
     if (questionIndex <= 5 && !required[questionIndex][0].trim()) {
       return required[questionIndex][1];
     }
-    if (questionIndex === 8 && !trustAccepted) {
+    if (questionIndex === 7 && !trustAccepted) {
       return "请先确认 AI 身份、素材权利、隐私处理与成年要求。";
     }
     return "";
@@ -427,13 +421,12 @@ export function FirstPresenceFlow({
       idempotencyKey: key,
       files: {
         ...(photoFile ? { photo: photoFile } : {}),
-        ...(voiceFile ? { voice: voiceFile } : {}),
       },
     });
     if (conversationNavigationCommitted.current) return;
     conversationNavigationCommitted.current = true;
     router.replace(`/memory-chat/${encodeURIComponent(memoryId)}`);
-  }, [photoFile, router, voiceFile]);
+  }, [photoFile, router]);
 
   const continueRecoveredCreation = useCallback(async (unknownAfterRefresh = false) => {
     if (creationOperationInFlight.current) return;
@@ -462,7 +455,7 @@ export function FirstPresenceFlow({
       }
       if (result.status === "known") {
         idempotencyKey.current = result.record.idempotencyKey;
-        if (photoFile || voiceFile) {
+        if (photoFile) {
           await completeCreatedMemory(result.memoryId, result.record.idempotencyKey);
           return;
         }
@@ -471,7 +464,7 @@ export function FirstPresenceFlow({
       }
 
       idempotencyKey.current = result.record.idempotencyKey;
-      if (photoFile || voiceFile || !unknownAfterRefresh) {
+      if (photoFile || !unknownAfterRefresh) {
         await completeCreatedMemory(result.memory.id, result.record.idempotencyKey);
         return;
       }
@@ -492,7 +485,7 @@ export function FirstPresenceFlow({
       creationOperationInFlight.current = false;
       setBusy(false);
     }
-  }, [completeCreatedMemory, photoFile, router, voiceFile]);
+  }, [completeCreatedMemory, photoFile, router]);
 
   const createRealPresence = async () => {
     if (creationOperationInFlight.current) return;
@@ -664,14 +657,7 @@ export function FirstPresenceFlow({
           kicker: "一张照片",
           title: `让${displayName}先被看见。`,
           description: "照片只用于人物出现、第一句问候和聊天头像。没有照片时，会保留文字形象。",
-          control: <label className={styles.mediaChoice}><strong>{photoFile ? "重新选择照片" : "选择一张照片"}</strong><span>{photoFile?.name || "JPG、PNG 等，最大 20MB；可以稍后再上传"}</span><input className={styles.fileInput} aria-label="选择 TA 的照片" type="file" accept="image/*" onChange={(event) => chooseMedia("photo", event)} /></label>,
-        };
-      case 7:
-        return {
-          kicker: "一段声音 · 可选",
-          title: "你有一段真实声音吗？",
-          description: "这里只保存你有权使用的原始声音素材，不会改变或模仿它。没有声音也可以继续。",
-          control: <label className={styles.mediaChoice}><strong>{voiceFile ? "重新选择声音" : "选择一段声音"}</strong><span>{voiceFile?.name || "常见音频格式，最大 20MB；不上传也可继续"}</span><input className={styles.fileInput} aria-label="选择真实声音" type="file" accept="audio/*" onChange={(event) => chooseMedia("voice", event)} /></label>,
+          control: <label className={styles.mediaChoice}><strong>{photoFile ? "重新选择照片" : "选择一张照片"}</strong><span>{photoFile?.name || "JPG、PNG 等，最大 20MB；可以稍后再上传"}</span><input className={styles.fileInput} aria-label="选择 TA 的照片" type="file" accept="image/*" onChange={chooseMedia} /></label>,
         };
       default:
         return {
@@ -680,10 +666,10 @@ export function FirstPresenceFlow({
           description: "忆见会根据这些资料生成 AI 内容，但不会把它当作现实中的 TA 或医疗建议。",
           control: (
             <div className={styles.consentBlock}>
-              <p>照片和声音只在正式创建后上传，并绑定你拥有的同一 TA。请阅读 <a href="/privacy">隐私政策</a>、<a href="/terms">用户协议</a> 与 <a href="/authorization">AI 内容和素材说明</a>。数据删除入口位于 <a href="/report">投诉与删除</a>。</p>
+              <p>照片只在正式创建后上传，并绑定你拥有的同一 TA。公开首发不收集声音、不录音，也不提供声音克隆。请阅读 <a href="/privacy">隐私政策</a>、<a href="/terms">用户协议</a> 与 <a href="/authorization">AI 内容和素材说明</a>。数据删除入口位于 <a href="/report">投诉与删除</a>。</p>
               <label className={styles.trustCheck}>
                 <input type="checkbox" checked={trustAccepted} onChange={(event) => { noteDraftRevision(); setTrustAccepted(event.currentTarget.checked); }} />
-                <span>我已年满 18 周岁，理解 AI 身份与资料处理方式，并确认拥有上述内容、照片和声音的合法使用权。</span>
+                <span>我已年满 18 周岁，理解 AI 身份与资料处理方式，并确认拥有上述文字内容和照片的合法使用权。</span>
               </label>
             </div>
           ),
@@ -747,7 +733,7 @@ export function FirstPresenceFlow({
                   <h1 id={titleId}>先确认，是你。</h1>
                   <p id="flow-description">验证成功后，你会继续留在这片记忆空间。</p>
                   <MemoryInput label="手机号" type="tel" inputMode="numeric" autoComplete="tel" value={phone} onChange={(event: ChangeEvent<HTMLInputElement>) => setPhone(event.currentTarget.value)} autoFocus error={error || undefined} />
-                  <label className={styles.loginAgreement}><input type="checkbox" checked={loginAgreementAccepted} onChange={(event) => { setError(""); setLoginAgreementAccepted(event.currentTarget.checked); }} /><span>我已阅读并同意 <a href="/terms">《用户协议》</a> 与 <a href="/privacy">《隐私政策》</a>。</span></label>
+                  <label className={styles.loginAgreement}><input type="checkbox" checked={loginAgreementAccepted} onChange={(event) => { setError(""); setLoginAgreementAccepted(event.currentTarget.checked); }} /><span>我已阅读并同意 <a href="/terms">《用户协议》</a> 与 <a href="/privacy">《隐私政策》</a>；可查看 <a href="/help">帮助与安全说明</a>。</span></label>
                   <div className={styles.actions}><button className={styles.backButton} type="button" onClick={leaveFlow}>返回</button><MemoryButton type="submit" loading={busy} disabled={!loginAgreementAccepted}>发送验证码</MemoryButton></div>
                 </form>
               )}
