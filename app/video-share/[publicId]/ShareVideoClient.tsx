@@ -18,8 +18,8 @@ export default function ShareVideoClient({ publicId }: { publicId: string }) {
     return () => { globalThis.clearTimeout(timer); controller.abort(); };
   }, [publicId]);
 
-  if (state === "loading") return <main aria-busy="true"><p>正在打开分享内容…</p></main>;
-  if (state === "unavailable") return <main><h1>此分享内容已不可查看</h1><p>它可能已被所有者撤销或删除。</p></main>;
+  if (state === "loading") return <main aria-busy="true" aria-live="polite"><p>正在打开分享内容…</p></main>;
+  if (state === "unavailable") return <main><h1>此分享内容已不可查看</h1><p role="alert">它可能已被所有者撤销或删除。</p></main>;
   return <main>
     <p>AI 生成纪念影像</p>
     <h1>{state.title}</h1>
