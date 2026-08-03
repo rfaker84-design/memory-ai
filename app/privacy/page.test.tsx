@@ -10,4 +10,6 @@ test("privacy disclosure distinguishes content deletion, backup rotation, financ
   }
   assert.match(source, /href="\/report"/);
   assert.match(source, /href="\/authorization"/);
+  assert.match(source, /公开首发不收集声音、不录音，也不提供声音克隆/);
+  assert.doesNotMatch(source, /TA、聊天、照片、声音和视频会停止使用/);
 });

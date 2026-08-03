@@ -11,19 +11,19 @@ export const metadata: Metadata = {
 
 const values = [
   {
-    title: "温暖陪伴",
+    title: "温和支持",
     description:
-      "我们相信技术应当传递温度。忆见致力于让 AI 成为连接过去与未来的桥梁，而非冰冷的工具。",
+      "忆见用 AI 帮你整理已经确认的资料与故事，但不会替代现实中的亲人、朋友或支持系统。",
   },
   {
     title: "尊重隐私",
     description:
-      "每一份记忆都弥足珍贵。我们采用最高标准的数据安全与隐私保护措施，守护您最私密的情感寄托。",
+      "每一份资料都弥足珍贵。我们以最小化处理、明确确认和可追踪删除为原则；公开上线前仍会接受外部合规复核。",
   },
   {
-    title: "传承永恒",
+    title: "留住可确认的资料",
     description:
-      "声音、故事、笑容——这些看似微小的片段，构成了一个人独一无二的生命印记。我们帮助这些印记永存。",
+      "你可以保存自己确认过的照片、叙述和资料来源；忆见不会猜测补齐经历，也不会把 AI 内容说成真实人物。",
   },
 ];
 
@@ -39,8 +39,8 @@ export default function AboutPage() {
               关于我们
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-charcoal-light">
-              忆见 MemoryAI 诞生于一个朴素的愿望——
-              让逝去的亲人，以另一种方式继续陪伴我们所爱的人。
+              忆见 MemoryAI 源于一个朴素的愿望——
+              帮助人们把已经确认的珍贵资料妥善整理、保存，并以清晰标注的 AI 纪念内容重新阅读。
             </p>
           </div>
 
@@ -50,13 +50,12 @@ export default function AboutPage() {
             </h2>
             <p className="mt-4 text-base leading-relaxed text-charcoal-light">
               在快节奏的现代社会中，许多珍贵的家庭记忆正在悄然流失。
-              祖辈的故事、父母年轻时的声音、那些来不及记录的温暖瞬间——
-              它们构成了我们生命中最深刻的情感纽带。
+              家人的故事、旧照片和那些来不及记录的温暖瞬间——
+              都可能成为值得妥善保存的资料；不确定的部分可以留白，而不由系统猜测补齐。
             </p>
             <p className="mt-4 text-base leading-relaxed text-charcoal-light">
-              忆见运用前沿的人工智能技术，帮助您保存、整理并重现亲人的声音与故事，
-              创建一个属于您家庭的数字记忆体。这不仅是对过去的致敬，
-              更是留给后代最珍贵的礼物。
+              忆见运用人工智能技术，帮助你保存、整理并基于已确认资料生成纪念内容。
+              首发不收集声音、不录音，也不提供声音克隆；所有 AI 内容都不代表真实人物具有意识、意图或现实行动。
             </p>
           </div>
 
@@ -78,10 +77,10 @@ export default function AboutPage() {
 
           <div className="mt-16 text-center">
             <Link
-              href="/#experience"
+              href="/"
               className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-amber-deep to-amber-warm px-8 py-3.5 text-sm font-medium text-warm-white shadow-lg shadow-amber-warm/25 transition-all hover:brightness-105"
             >
-              创建我的记忆体
+              返回首页
               <svg
                 className="h-4 w-4"
                 fill="none"

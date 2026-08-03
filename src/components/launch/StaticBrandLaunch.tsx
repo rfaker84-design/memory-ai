@@ -22,8 +22,8 @@ export default function StaticBrandLaunch({ onComplete }: StaticBrandLaunchProps
           <span>忆见</span>
           <span className={styles.english}>MEMORYAI</span>
         </h1>
-        <p className={styles.tagline}>让想念的人，继续陪伴。</p>
-        <p className={styles.capabilities}>AI形象 · 声音 · 长期记忆</p>
+        <p className={styles.tagline}>把确认过的记忆，留在这里。</p>
+        <p className={styles.capabilities}>AI 纪念陪伴 · 已确认资料</p>
       </div>
     </section>
   );

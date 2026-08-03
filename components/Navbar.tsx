@@ -6,7 +6,7 @@ import { useState } from "react";
 const navLinks = [
   { href: "/", label: "首页" },
   { href: "/about", label: "关于我们" },
-  { href: "#experience", label: "开始体验" },
+  { href: "/", label: "进入忆见" },
 ];
 
 export default function Navbar() {

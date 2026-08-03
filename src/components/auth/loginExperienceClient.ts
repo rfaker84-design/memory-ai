@@ -14,14 +14,12 @@ export async function loadWeChatProviderState(
   signal?: AbortSignal,
 ): Promise<Exclude<WeChatProviderState, "checking">> {
   try {
-    const response = await fetchPort(WECHAT_AUTH_STATUS_PATH, {
+    const { response, body: payload } = await fetchAuthRequestJson(WECHAT_AUTH_STATUS_PATH, {
       method: "GET",
       credentials: "same-origin",
       cache: "no-store",
-      signal,
-    });
+    }, fetchPort as typeof fetch, signal);
     if (!response.ok) return "unavailable";
-    const payload: unknown = await response.json();
     if (
       typeof payload !== "object"
       || payload === null
@@ -61,3 +59,4 @@ export function smsSendFailureNotice(status: number) {
   if (status === 503) return "短信登录暂时不可用，请稍后重试。";
   return "短信登录暂时不可用，请稍后重试。";
 }
+import { fetchAuthRequestJson } from "./authRequestClient";

@@ -41,8 +41,9 @@ test("the brand layer is static, exact, and independent from network writes", ()
 
   assert.match(component, /忆见/);
   assert.match(component, /MEMORYAI/);
-  assert.match(component, /让想念的人，继续陪伴。/);
-  assert.match(component, /AI形象 · 声音 · 长期记忆/);
+  assert.match(component, /把确认过的记忆，留在这里。/);
+  assert.match(component, /AI 纪念陪伴 · 已确认资料/);
+  assert.doesNotMatch(component, /声音|长期记忆|继续陪伴/);
   assert.doesNotMatch(component, /fetch\(|button|progress|连接中|人物/);
   assert.doesNotMatch(styles, /animation|transition|@keyframes/);
 });

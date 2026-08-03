@@ -9,28 +9,13 @@ import {
   smsSendFailureNotice,
   type WeChatProviderState,
 } from "../../src/components/auth/loginExperienceClient";
+import { fetchAuthRequestJson } from "../../src/components/auth/authRequestClient";
 import homeLoginStyles from "./HomeLogin.module.css";
 
 const WECHAT_LOGIN_VISUAL_PREVIEW_AVAILABLE =
   process.env.NODE_ENV !== "production"
   && process.env.NEXT_PUBLIC_MEMORYAI_LOGIN_VISUAL_STATE === "wechat-available";
-const AUTH_REQUEST_TIMEOUT_MS = 12_000;
-
-async function authRequest(path: string, body: Record<string, string>) {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), AUTH_REQUEST_TIMEOUT_MS);
-  try {
-    return await fetch(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      signal: controller.signal,
-      body: JSON.stringify(body),
-    });
-  } finally {
-    window.clearTimeout(timeout);
-  }
-}
+type AuthPayload = { accepted?: unknown; challengeId?: unknown; authenticated?: unknown };
 
 function WeChatMark() {
   return (
@@ -95,9 +80,14 @@ export function OriginalHomeLogin({ onAuthenticated, onPreview }: { onAuthentica
     setSending(true);
     setNotice("");
     try {
-      const response = await authRequest("/api/auth/send-code", { phone });
-      const data = await response.json().catch(() => ({}));
-      if (response.status === 202 && data.accepted && data.challengeId) {
+      const { response, body } = await fetchAuthRequestJson("/api/auth/send-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ phone }),
+      });
+      const data = body as AuthPayload;
+      if (response.status === 202 && data.accepted === true && typeof data.challengeId === "string") {
         setChallengeId(data.challengeId);
         setStep("code");
         setCountdown(60);
@@ -116,8 +106,13 @@ export function OriginalHomeLogin({ onAuthenticated, onPreview }: { onAuthentica
     setSending(true);
     setNotice("");
     try {
-      const response = await authRequest("/api/auth/verify-code", { phone, code, challengeId });
-      const data = await response.json().catch(() => ({}));
+      const { response, body } = await fetchAuthRequestJson("/api/auth/verify-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ phone, code, challengeId }),
+      });
+      const data = body as AuthPayload;
       if (response.ok && data.authenticated) {
         setStep("phone");
         setPhone("");
