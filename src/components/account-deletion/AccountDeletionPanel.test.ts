@@ -16,5 +16,7 @@ test("account deletion never renders a new request form before its status read i
   assert.match(source, /signal: controller\.signal/);
   assert.match(source, /未创建新的注销申请/);
   assert.match(source, /注销提交结果尚未确认/);
+  assert.match(source, /ACCOUNT_DELETION_RECEIPT_REQUIRED/);
+  assert.match(source, /安全回执已准备好/);
   assert.match(source, /new AbortController\(\)/);
 });

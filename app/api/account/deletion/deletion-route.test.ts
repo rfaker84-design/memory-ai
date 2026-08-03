@@ -53,12 +53,31 @@ test("commits the server-bound account request and clears the current session co
     getProgress: async () => progress,
     getProgressByReceipt: async () => progress,
   }, freshSession);
-  const response = await handler.POST(request("POST", { confirmation: ACCOUNT_DELETION_CONFIRMATION }));
+  const response = await handler.POST(new NextRequest("https://memoryai.test/api/account/deletion", {
+    method: "POST",
+    headers: { origin: "https://memoryai.test", "content-type": "application/json", cookie: "memoryai_deletion_receipt=" + "b".repeat(43) },
+    body: JSON.stringify({ confirmation: ACCOUNT_DELETION_CONFIRMATION }),
+  }));
   assert.equal(response.status, 202);
   assert.deepEqual(received && { userId: (received as { userId: string }).userId, externalUserId: (received as { externalUserId: string }).externalUserId }, { userId: "00000000-0000-4000-8000-000000000001", externalUserId: "phone:13800138000" });
   assert.match(response.headers.get("set-cookie") ?? "", /memoryai_session=;/);
   assert.match(response.headers.get("set-cookie") ?? "", /memoryai_deletion_receipt=/);
   assert.deepEqual(await response.json(), { deletion: progress });
+});
+
+test("pre-issues a progress receipt before it can revoke sessions or create a deletion request", async () => {
+  let requested = false;
+  const handler = createAccountDeletionHandler({
+    request: async () => { requested = true; return progress; },
+    getProgress: async () => null,
+    getProgressByReceipt: async () => null,
+  }, freshSession);
+  const response = await handler.POST(request("POST", { confirmation: ACCOUNT_DELETION_CONFIRMATION }));
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { error: "ACCOUNT_DELETION_RECEIPT_REQUIRED" });
+  assert.match(response.headers.get("set-cookie") ?? "", /memoryai_deletion_receipt=/);
+  assert.doesNotMatch(response.headers.get("set-cookie") ?? "", /memoryai_session=;/);
+  assert.equal(requested, false);
 });
 
 test("returns deletion progress to either the account or its opaque receipt cookie", async () => {

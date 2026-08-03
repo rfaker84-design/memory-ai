@@ -85,6 +85,11 @@ export function AccountDeletionPanel() {
         setConfirming(false);
         return;
       }
+      if (response.status === 409 && body.error === "ACCOUNT_DELETION_RECEIPT_REQUIRED") {
+        setMessage("为确保你能在提交后持续查看进度，安全回执已准备好。请再次点击确认注销账户；系统不会自动提交。");
+        setConfirming(false);
+        return;
+      }
       if (!response.ok) {
         setMessage(body.error ?? "提交注销申请失败，请稍后重试。");
         return;

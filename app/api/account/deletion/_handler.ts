@@ -71,11 +71,19 @@ export function createAccountDeletionHandler(
         if (!deletionRuntimeEnabled()) return json({ error: "ACCOUNT_DELETION_UNAVAILABLE" }, { status: 503 });
         if (!accountDeletionSessionIsFresh(session)) return json({ error: "REAUTH_REQUIRED" }, { status: 403 });
         if (!parseConfirmation(await request.json().catch(() => null))) return json({ error: "INVALID_DELETION_CONFIRMATION" }, { status: 400 });
-        // The status read performed before this confirmation pre-issues a
-        // receipt cookie.  Reusing it means an interrupted 202 response does
-        // not strand an already-revoked user without a way to read progress.
+        // A receipt must exist before the irreversible transaction. If a
+        // first 202 response is lost after all sessions are revoked, a token
+        // generated only in that response would strand the user without a
+        // progress channel. GET pre-issues this opaque cookie; a direct POST
+        // receives one but does not create a request until the user confirms
+        // again explicitly.
         const cookieReceiptToken = request.cookies.get(RECEIPT_COOKIE)?.value;
-        const receiptToken = isReceiptToken(cookieReceiptToken) ? cookieReceiptToken : issueReceiptToken();
+        if (!isReceiptToken(cookieReceiptToken)) {
+          const response = json({ error: "ACCOUNT_DELETION_RECEIPT_REQUIRED" }, { status: 409 });
+          setReceiptCookie(response, issueReceiptToken());
+          return response;
+        }
+        const receiptToken = cookieReceiptToken;
         const progress = await requestDeletion({ userId: session.userId, externalUserId: session.externalUserId, receiptToken });
         const response = json({ deletion: progress }, { status: 202 });
         clearSessionCookie(response);
