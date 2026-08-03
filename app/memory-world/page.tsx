@@ -17,7 +17,7 @@ import {
   selectPrimaryCompanion,
   serializeCompanionPosition,
 } from "../../src/components/companion/companionHomeState";
-import { CompanionHomeRequestError, fetchCompanionHomeMemories } from "../../src/components/companion/companionHomeRequest";
+import { CompanionHomeRequestError, fetchCompanionHomeMemoriesJson } from "../../src/components/companion/companionHomeRequest";
 
 type MemoryWorldItem = {
   id: string;
@@ -40,14 +40,13 @@ function MemoryWorldContent() {
   const load = useCallback(async (signal?: AbortSignal) => {
     setState("loading");
     try {
-      const response = await fetchCompanionHomeMemories(fetch, signal);
-      const data = await response.json();
+      const { response, body: data } = await fetchCompanionHomeMemoriesJson(fetch, signal);
       if (signal?.aborted) return;
       if (response.status === 401) {
         setState("unauthenticated");
         return;
       }
-      if (!response.ok) throw new Error(data?.error || "load failed");
+      if (!response.ok) throw new Error(typeof data === "object" && data !== null && typeof (data as Record<string, unknown>).error === "string" ? (data as Record<string, string>).error : "load failed");
       const list = Array.isArray(data) ? data : [];
       const primary = selectPrimaryCompanion(list, window.localStorage.getItem(COMPANION_PRIMARY_KEY));
       setMemories(list);

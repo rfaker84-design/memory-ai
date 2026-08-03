@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
 import { loadOwnedMemory, OwnedMemoryRequestError } from "@/src/components/memory/ownedMemoryClient";
-import { fetchPickupRequest } from "@/src/components/memory/pickupRequestClient";
+import { fetchPickupRequest, fetchPickupRequestJson } from "@/src/components/memory/pickupRequestClient";
 import { pickupDeleteWasPersisted, pickupEditWasPersisted } from "../../pickupRecovery";
 
 type Pickup = { id: string; originalText: string; organizedText: string; createdAt: string; updatedAt: string };
@@ -47,14 +47,15 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
   const pendingRequestKey = useRef<string | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal): Promise<Pickup[]> => {
-    const [memory, response] = await Promise.all([
+    const [memory, result] = await Promise.all([
       loadOwnedMemory(memoryId, signal),
-      fetchPickupRequest(`/api/memories/${encodeURIComponent(memoryId)}/pickups`, {}, signal),
+      fetchPickupRequestJson(`/api/memories/${encodeURIComponent(memoryId)}/pickups`, {}, signal),
     ]);
+    const { response, body } = result;
     if (!response.ok) throw new Error("PICKUPS_UNAVAILABLE");
-    const body = await response.json() as { pickups?: Pickup[] };
+    const pickupsBody = body as { pickups?: Pickup[] };
     setName(memory.name);
-    const next = Array.isArray(body.pickups) ? body.pickups : [];
+    const next = Array.isArray(pickupsBody.pickups) ? pickupsBody.pickups : [];
     setPickups(next);
     return next;
   }, [memoryId]);
@@ -82,14 +83,14 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
     if (!confirmed || !originalText.trim() || !organizedText.trim() || submitting) return;
     setSubmitting(true); setMessage("");
     try {
-      const response = await fetchPickupRequest(`/api/memories/${encodeURIComponent(memoryId)}/pickups`, {
+      const { response, body } = await fetchPickupRequestJson(`/api/memories/${encodeURIComponent(memoryId)}/pickups`, {
         method: "POST", credentials: "same-origin",
         headers: { "content-type": "application/json", "idempotency-key": pendingRequestKey.current ??= requestKey() },
         body: JSON.stringify({ originalText, organizedText, confirmed: true }),
       });
       if (!response.ok) throw new Error("PICKUP_CONFIRM_FAILED");
-      const body = await response.json() as { pickup: Pickup };
-      setPickups((current) => [body.pickup, ...current.filter((entry) => entry.id !== body.pickup.id)]);
+      const pickup = (body as { pickup: Pickup }).pickup;
+      setPickups((current) => [pickup, ...current.filter((entry) => entry.id !== pickup.id)]);
       setOriginalText(""); setOrganizedText(""); setConfirmed(false);
       pendingRequestKey.current = null;
       setMessage("已经替你收好了。这条资料现在可作为可追溯来源使用。");
@@ -102,13 +103,13 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
     if (!editing || !originalText.trim() || !organizedText.trim()) return;
     setSubmitting(true); setMessage("");
     try {
-      const response = await fetchPickupRequest(`/api/memories/${encodeURIComponent(memoryId)}/pickups/${encodeURIComponent(editing.id)}`, {
+      const { response, body } = await fetchPickupRequestJson(`/api/memories/${encodeURIComponent(memoryId)}/pickups/${encodeURIComponent(editing.id)}`, {
         method: "PATCH", credentials: "same-origin", headers: { "content-type": "application/json" },
         body: JSON.stringify({ originalText, organizedText }),
       });
       if (!response.ok) throw new Error("PICKUP_EDIT_FAILED");
-      const body = await response.json() as { pickup: Pickup };
-      setPickups((current) => current.map((entry) => entry.id === body.pickup.id ? body.pickup : entry));
+      const pickup = (body as { pickup: Pickup }).pickup;
+      setPickups((current) => current.map((entry) => entry.id === pickup.id ? pickup : entry));
       setEditing(null); setOriginalText(""); setOrganizedText(""); setConfirmed(false);
       setMessage("已更新确认资料。");
     } catch {

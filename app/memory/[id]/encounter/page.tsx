@@ -4,7 +4,7 @@ import { use, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { loadOwnedMemory, loadOwnedMediaUrl } from "@/src/components/memory/ownedMemoryClient";
-import { fetchPickupRequest } from "@/src/components/memory/pickupRequestClient";
+import { fetchPickupRequestJson } from "@/src/components/memory/pickupRequestClient";
 import { AiGeneratedLabel } from "@/src/components/safety/AiGeneratedLabel";
 
 type VideoJob = {
@@ -35,23 +35,24 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
     setState({ status: "loading" });
     setPlaybackComplete(false);
     try {
-        const [memory, jobsResponse] = await Promise.all([
+        const [memory, jobsResult] = await Promise.all([
           loadOwnedMemory(memoryId, signal),
-          fetchPickupRequest(`/api/memories/${encodeURIComponent(memoryId)}/first-presence-video`, {}, signal),
+          fetchPickupRequestJson(`/api/memories/${encodeURIComponent(memoryId)}/first-presence-video`, {}, signal),
         ]);
+        const { response: jobsResponse, body: jobsBody } = jobsResult;
         if (!jobsResponse.ok) throw new Error("VIDEO_LIST_UNAVAILABLE");
-        const jobsBody = await jobsResponse.json() as { jobs?: VideoJob[] };
-        const preview = Array.isArray(jobsBody.jobs)
-          ? jobsBody.jobs.find((job) => job.intent === "initial_preview" && job.status === "succeeded" && job.artifactAvailable && !job.manualReviewRequired)
+        const jobs = jobsBody as { jobs?: VideoJob[] };
+        const preview = Array.isArray(jobs.jobs)
+          ? jobs.jobs.find((job) => job.intent === "initial_preview" && job.status === "succeeded" && job.artifactAvailable && !job.manualReviewRequired)
           : undefined;
         let portraitUrl = memory.photoUrl ?? null;
         if (memory.photoAssetId) portraitUrl = await loadOwnedMediaUrl(memory.photoAssetId, signal).catch(() => portraitUrl);
         let playbackUrl: string | null = null;
         if (preview) {
-          const playbackResponse = await fetchPickupRequest(`/api/memories/${encodeURIComponent(memoryId)}/first-presence-video/${encodeURIComponent(preview.id)}/playback`, {}, signal);
+          const { response: playbackResponse, body: playbackBody } = await fetchPickupRequestJson(`/api/memories/${encodeURIComponent(memoryId)}/first-presence-video/${encodeURIComponent(preview.id)}/playback`, {}, signal);
           if (playbackResponse.ok) {
-            const playbackBody = await playbackResponse.json() as { playback?: { url?: unknown; saveAllowed?: unknown } };
-            if (typeof playbackBody.playback?.url === "string" && playbackBody.playback.saveAllowed === false) playbackUrl = playbackBody.playback.url;
+            const playback = playbackBody as { playback?: { url?: unknown; saveAllowed?: unknown } };
+            if (typeof playback.playback?.url === "string" && playback.playback.saveAllowed === false) playbackUrl = playback.playback.url;
           }
         }
         if (!signal?.aborted) setState({ status: "ready", name: memory.name, portraitUrl, playbackUrl });

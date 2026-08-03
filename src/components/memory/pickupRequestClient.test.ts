@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { fetchPickupRequest, PickupRequestError } from "./pickupRequestClient";
+import { fetchPickupRequest, fetchPickupRequestJson, PickupRequestError } from "./pickupRequestClient";
 
 test("pickup requests keep owner-session boundaries and supplied mutation details", async () => {
   let captured: RequestInit | undefined;
@@ -26,6 +26,16 @@ test("pickup requests time out without autonomous replay", async () => {
     fetchPickupRequest("/api/memories/memory-1/pickups", {}, undefined, (_input, init) => new Promise<Response>((_resolve, reject) => {
       init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
     }), 1),
+    (error: unknown) => error instanceof PickupRequestError && error.code === "PICKUP_REQUEST_TIMEOUT",
+  );
+});
+
+test("pickup JSON reads hold the same timeout through a stalled response body", async () => {
+  await assert.rejects(
+    fetchPickupRequestJson("/api/memories/memory-1/pickups", {}, undefined, async (_input, init) => ({
+      ok: true, status: 200, headers: new Headers(),
+      json: () => new Promise((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true })),
+    }) as Response, 1),
     (error: unknown) => error instanceof PickupRequestError && error.code === "PICKUP_REQUEST_TIMEOUT",
   );
 });

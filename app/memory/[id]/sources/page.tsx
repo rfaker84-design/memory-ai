@@ -5,7 +5,7 @@ import Link from "next/link";
 
 import type { Memory } from "@/features/memory/types";
 import { loadOwnedMemory, OwnedMemoryRequestError } from "@/src/components/memory/ownedMemoryClient";
-import { fetchPickupRequest } from "@/src/components/memory/pickupRequestClient";
+import { fetchPickupRequestJson } from "@/src/components/memory/pickupRequestClient";
 
 type ViewState =
   | { status: "loading" }
@@ -42,14 +42,15 @@ export default function MemorySourcesPage({ params }: { params: Promise<{ id: st
   const load = useCallback(async (signal?: AbortSignal) => {
     setState({ status: "loading" });
     try {
-      const [memory, response] = await Promise.all([
+      const [memory, result] = await Promise.all([
         loadOwnedMemory(id, signal),
-        fetchPickupRequest(`/api/memories/${encodeURIComponent(id)}/pickups`, {}, signal),
+        fetchPickupRequestJson(`/api/memories/${encodeURIComponent(id)}/pickups`, {}, signal),
       ]);
+      const { response, body } = result;
       if (!response.ok) throw new Error("PICKUP_SOURCES_UNAVAILABLE");
-      const body = await response.json() as { pickups?: Pickup[] };
+      const pickupsBody = body as { pickups?: Pickup[] };
       if (signal?.aborted) return;
-      setPickups(Array.isArray(body.pickups) ? body.pickups : []);
+      setPickups(Array.isArray(pickupsBody.pickups) ? pickupsBody.pickups : []);
       setState({ status: "ready", memory });
     } catch (error) {
       if (signal?.aborted) return;
