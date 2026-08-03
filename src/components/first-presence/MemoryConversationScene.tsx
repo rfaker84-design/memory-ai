@@ -15,6 +15,10 @@ import {
 import { useReducedMotion } from "../../motion";
 import { useQuietCompanionPresence } from "./quietCompanionPresence";
 import {
+  hasPersistedPendingConversationMessage,
+  type PendingConversationMessage,
+} from "./memoryConversationRecovery";
+import {
   REPLY_CORRECTION_REASONS,
   appendConfirmedCorrection,
   createReplyCorrectionSuggestion,
@@ -32,7 +36,7 @@ import {
 import styles from "./MemoryConversationScene.module.css";
 
 type ConversationPhase = "loading" | "greeting" | "ready" | "sending" | "replying" | "recovering" | "error";
-type PendingMessage = { content: string; idempotencyKey: string };
+type PendingMessage = PendingConversationMessage;
 type CorrectionPhase = "idle" | "saving";
 type FormalMemoryProfile = {
   personalityProfile?: string | null;
@@ -46,10 +50,6 @@ type Props = {
   initialPortraitUrl?: string | null;
   onLeave: () => void;
 };
-
-function hasServerMessage(messages: ConversationMessage[], content: string) {
-  return messages.some((message) => message.role === "user" && message.content === content);
-}
 
 function createMessageIdempotencyKey() {
   const random = typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -248,7 +248,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     setFailureRequestId(null);
     try {
       const restored = await restore();
-      if (hasServerMessage(restored, candidate.content)) {
+      if (hasPersistedPendingConversationMessage(restored, candidate)) {
         retryCandidateRef.current = null;
         setPendingMessage(null);
         setPhase("ready");
