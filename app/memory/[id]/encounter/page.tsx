@@ -76,7 +76,7 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
   };
 
   if (state.status === "loading") return <main><p role="status" aria-live="polite">正在准备这次遇见…</p></main>;
-  if (state.status === "error") return <main><p role="alert">暂时无法打开遇见页面。</p><button type="button" onClick={() => void load()}>重新读取</button><button type="button" onClick={continueToChat}>直接进入相伴</button></main>;
+  if (state.status === "error") return <main><p role="alert">暂时无法打开遇见页面。</p><button type="button" style={{ minHeight: 44 }} onClick={() => void load()}>重新读取</button><button type="button" style={{ minHeight: 44 }} onClick={continueToChat}>直接进入相伴</button></main>;
 
   return <main style={{ minHeight: "100dvh", display: "grid", placeItems: "center", padding: 24, background: "#090807", color: "#fff" }}>
     <section style={{ width: "min(100%, 520px)", display: "grid", gap: 16 }}>
@@ -86,9 +86,9 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
       {state.playbackUrl ? <video src={state.playbackUrl} autoPlay playsInline controls={false} controlsList="nodownload noremoteplayback" disablePictureInPicture onEnded={afterPlayback} style={{ width: "100%", borderRadius: 20, background: "#15120e" }} aria-label={`${state.name} 的首次相遇影像`} /> : <>
         {state.portraitUrl ? <img src={state.portraitUrl} alt={`${state.name} 的照片`} style={{ width: "100%", aspectRatio: "9 / 16", objectFit: "cover", borderRadius: 20 }} /> : <div role="img" aria-label={`${state.name} 的静态形象`} style={{ minHeight: 360, display: "grid", placeItems: "center", borderRadius: 20, background: "#15120e" }}>{state.name}</div>}
         <p>遇见影像暂时还不能播放。不会在这里创建生成任务；你可以先进入相伴。</p>
-        <button type="button" onClick={continueToChat}>进入相伴</button>
+        <button type="button" style={{ minHeight: 44 }} onClick={continueToChat}>进入相伴</button>
       </>}
-      {state.playbackUrl && <button type="button" onClick={continueToChat}>稍后再看，进入相伴</button>}
+      {state.playbackUrl && <button type="button" style={{ minHeight: 44 }} onClick={continueToChat}>稍后再看，进入相伴</button>}
     </section>
   </main>;
 }

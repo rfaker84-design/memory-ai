@@ -16,6 +16,7 @@ test("encounter only reads an approved owner preview and never submits a generat
   assert.match(source, /const load = useCallback/);
   assert.match(source, /void load\(controller\.signal\)/);
   assert.match(source, /state\.status === "error"[\s\S]*?重新读取/);
+  assert.match(source, /<button type="button" style=\{\{ minHeight: 44 \}\} onClick=\{continueToChat\}>/);
   assert.doesNotMatch(source, /method:\s*"POST"/);
   assert.doesNotMatch(source, /loop=/);
 });
