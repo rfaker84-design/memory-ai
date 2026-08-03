@@ -10,4 +10,5 @@ test("the primary first-presence route saves and verifies adult eligibility befo
   assert.match(source, /questionIndex === 7 && !birthDate/);
   assert.match(source, /const adultProfile = await saveAdultBirthDate\(birthDate\);[\s\S]*?if \(!adultProfile\.adultEligible\) throw new AccountProfileRequestError\("ADULT_ELIGIBILITY_REQUIRED"\);[\s\S]*?await recordTrustConsent\("adult_eligibility"\)/);
   assert.match(source, /cause instanceof AccountProfileRequestError/);
+  assert.match(source, /如资料涉及其他可识别个人，我已依法完成必要告知并取得相应授权/);
 });

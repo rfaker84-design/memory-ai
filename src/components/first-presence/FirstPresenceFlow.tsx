@@ -682,7 +682,7 @@ export function FirstPresenceFlow({
               <p>照片只在正式创建后上传，并绑定你拥有的同一 TA。公开首发不收集声音、不录音，也不提供声音克隆。请阅读 <a href="/privacy">隐私政策</a>、<a href="/terms">用户协议</a> 与 <a href="/authorization">AI 内容和素材说明</a>。数据删除入口位于 <a href="/report">投诉与删除</a>。</p>
               <label className={styles.trustCheck}>
                 <input type="checkbox" checked={trustAccepted} onChange={(event) => { noteDraftRevision(); setTrustAccepted(event.currentTarget.checked); }} />
-                <span>我已年满 18 周岁，理解 AI 身份与资料处理方式，并确认拥有上述文字内容和照片的合法使用权。</span>
+                <span>我已年满 18 周岁，理解 AI 身份与资料处理方式；我确认有权使用所提交的照片和资料，如资料涉及其他可识别个人，我已依法完成必要告知并取得相应授权。</span>
               </label>
             </div>
           ),
