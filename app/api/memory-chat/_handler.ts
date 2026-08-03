@@ -26,6 +26,7 @@ import {
   verifyRequestSession,
 } from "../../../src/server/auth";
 import { DatabaseDependencyError, safeDatabaseErrorLog } from "../../../src/server/database";
+import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 
 type MemoryChatRequest = { memoryId: string; question: string };
 type MemoryOwnershipService = Pick<MemoryService, "getMemoryForUser">;
@@ -93,9 +94,13 @@ export const createPaymentQuotaService = (): QuotaService => {
   };
 };
 
+function json(body: unknown, init?: ResponseInit) {
+  return applyAuthNoStore(NextResponse.json(body, init));
+}
+
 function response(result: MemoryChatTurnResult) {
   const answer = result.assistantMessage.content;
-  return NextResponse.json({
+  return json({
     answer,
     reply: answer,
     text: answer,
@@ -148,36 +153,36 @@ export function createMemoryChatHandler(
     try {
       const session = await sessionResolver(request);
       if (!session) {
-        return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
+        return json({ error: "UNAUTHENTICATED" }, { status: 401 });
       }
       requireAllowedOrigin(request);
       if (!(await chatEligibility(session.externalUserId))) {
-        return NextResponse.json({ error: "ADULT_ELIGIBILITY_REQUIRED" }, { status: 403 });
+        return json({ error: "ADULT_ELIGIBILITY_REQUIRED" }, { status: 403 });
       }
 
       const idempotencyKey = request.headers.get("idempotency-key");
       if (!idempotencyKey) {
-        return NextResponse.json({ error: "IDEMPOTENCY_KEY_REQUIRED" }, { status: 400 });
+        return json({ error: "IDEMPOTENCY_KEY_REQUIRED" }, { status: 400 });
       }
       if (!IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
-        return NextResponse.json({ error: "INVALID_IDEMPOTENCY_KEY" }, { status: 400 });
+        return json({ error: "INVALID_IDEMPOTENCY_KEY" }, { status: 400 });
       }
       if (!request.headers.get("content-type")?.toLowerCase().includes("application/json")) {
-        return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 });
+        return json({ error: "INVALID_JSON" }, { status: 400 });
       }
 
       let body: unknown;
       try {
         body = await request.json();
       } catch {
-        return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 });
+        return json({ error: "INVALID_JSON" }, { status: 400 });
       }
       const parsed = parseBody(body);
-      if (!parsed) return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400 });
+      if (!parsed) return json({ error: "INVALID_REQUEST" }, { status: 400 });
 
       const userId = session.externalUserId;
       const memory = await memoryServiceFactory().getMemoryForUser(parsed.memoryId, userId);
-      if (!memory) return NextResponse.json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
+      if (!memory) return json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
 
       const turnInput = { userId, memoryId: parsed.memoryId, idempotencyKey, question: parsed.question };
       const turnService = turnServiceFactory();
@@ -187,7 +192,7 @@ export function createMemoryChatHandler(
         return response(claim.result);
       }
       if (claim.status === "in_progress") {
-        return NextResponse.json({ error: "CHAT_TURN_IN_PROGRESS" }, { status: 409 });
+        return json({ error: "CHAT_TURN_IN_PROGRESS" }, { status: 409 });
       }
 
       const quotaService = quotaServiceFactory();
@@ -202,7 +207,7 @@ export function createMemoryChatHandler(
       }
       if (quota === "unavailable") {
         await turnService.fail(turnInput);
-        return NextResponse.json({ error: "PAYMENT_ENTITLEMENT_REQUIRED" }, { status: 402 });
+        return json({ error: "PAYMENT_ENTITLEMENT_REQUIRED" }, { status: 402 });
       }
       let quotaReleased = false;
       const releaseQuota = async () => {
@@ -217,13 +222,13 @@ export function createMemoryChatHandler(
         await turnService.fail(turnInput);
         await releaseQuota();
         const answer = "忆见服务暂时繁忙，请稍后重试。";
-        return NextResponse.json({ answer, reply: answer, text: answer });
+        return json({ answer, reply: answer, text: answer });
       }
       if (!admission.concurrencyAllowed) {
         await turnService.fail(turnInput);
         await releaseQuota();
         const answer = "忆见正在处理上一条请求，请稍后重试。";
-        return NextResponse.json({ answer, reply: answer, text: answer });
+        return json({ answer, reply: answer, text: answer });
       }
 
       const crisisResponse = crisisResponseFor(parsed.question);
@@ -270,7 +275,7 @@ export function createMemoryChatHandler(
         } catch {
           console.warn("[memory-chat] CHAT_TURN_FAILURE_MARK_UNAVAILABLE");
         }
-        return NextResponse.json({ error: "AI_UNAVAILABLE" }, { status: 503 });
+        return json({ error: "AI_UNAVAILABLE" }, { status: 503 });
       }
 
       const result = await turnService.complete({
@@ -281,23 +286,23 @@ export function createMemoryChatHandler(
       return response(result);
     } catch (error) {
       if (error instanceof MemoryValidationError || error instanceof ChatNotFoundError) {
-        return NextResponse.json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
+        return json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
       }
       if (error instanceof ChatValidationError) {
-        return NextResponse.json({ error: "IDEMPOTENCY_KEY_CONFLICT" }, { status: 409 });
+        return json({ error: "IDEMPOTENCY_KEY_CONFLICT" }, { status: 409 });
       }
       if (error instanceof DatabaseDependencyError) {
         console.warn("[memory-chat] DATABASE_UNAVAILABLE", safeDatabaseErrorLog(error));
-        return NextResponse.json({ error: "DATABASE_UNAVAILABLE" }, { status: 503 });
+        return json({ error: "DATABASE_UNAVAILABLE" }, { status: 503 });
       }
       if (error instanceof AuthConfigurationError) {
-        return NextResponse.json(
+        return json(
           { error: error.code === "ORIGIN_NOT_ALLOWED" ? "ORIGIN_NOT_ALLOWED" : "AUTH_UNAVAILABLE" },
           { status: error.code === "ORIGIN_NOT_ALLOWED" ? 403 : 503 }
         );
       }
       console.error("[api:memory-chat] unexpected request failure");
-      return NextResponse.json({ error: "CHAT_REQUEST_FAILED" }, { status: 500 });
+      return json({ error: "CHAT_REQUEST_FAILED" }, { status: 500 });
     }
   };
 }

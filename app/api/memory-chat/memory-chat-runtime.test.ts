@@ -112,6 +112,8 @@ test("memory-chat handler completes a fully injected turn without automatically 
 
   const response = await handler(request({ memoryId, question: "Hello" }));
   assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0");
+  assert.equal(response.headers.get("vary"), "Cookie, Origin");
   assert.deepEqual(await response.json(), {
     answer: assistantMessage.content,
     reply: assistantMessage.content,
@@ -178,6 +180,22 @@ test("memory-chat provider failures leave no messages and the same key can retry
   assert.equal(providerCalls, 2);
   assert.equal(failCalls, 1);
   assert.equal(completeCalls, 1);
+});
+
+test("memory-chat returns a non-cacheable rejection before any work when the Session is missing", async () => {
+  let memoryReads = 0;
+  const handler = createMemoryChatHandler(
+    () => ({ async getMemoryForUser() { memoryReads += 1; return memory; } }),
+    () => ({ async claim() { throw new Error("must not claim"); }, async complete() { throw new Error("must not complete"); }, async fail() { throw new Error("must not fail"); } }) as never,
+    () => ({ async generateReply() { throw new Error("must not generate"); } }),
+    async () => null,
+  );
+  const response = await handler(request({ memoryId, question: "Hello" }));
+  assert.equal(response.status, 401);
+  assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0");
+  assert.equal(response.headers.get("vary"), "Cookie, Origin");
+  assert.deepEqual(await response.json(), { error: "UNAUTHENTICATED" });
+  assert.equal(memoryReads, 0);
 });
 
 test("memory-chat rejects a session without server-recorded adult and profile authorization before it claims a turn", async () => {

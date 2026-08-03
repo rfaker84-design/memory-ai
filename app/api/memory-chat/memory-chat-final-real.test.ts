@@ -129,6 +129,8 @@ test("memory-chat replays one completed turn without duplicate messages or provi
   const replay = await handler(request({ memoryId, question: "A safe question" }));
 
   assert.equal(first.status, 200);
+  assert.equal(first.headers.get("cache-control"), "private, no-store, max-age=0");
+  assert.equal(first.headers.get("vary"), "Cookie, Origin");
   assert.equal(replay.status, 200);
   assert.deepEqual(await replay.json(), firstBody);
   assert.equal(providerCalls, 1);
