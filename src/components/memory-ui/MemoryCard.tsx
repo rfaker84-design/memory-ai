@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import type { CSSProperties, HTMLAttributes } from "react";
+import type { CSSProperties, HTMLAttributes, KeyboardEvent } from "react";
 
 import { MemoryCard as MemoryCardTokens, MemoryMotion, MemoryOpacity, MemorySurface } from "../../design";
 import { usePressMotion, useRevealMotion, useReducedMotion } from "../../motion";
@@ -29,16 +29,32 @@ export function MemoryCard({
   reveal = false,
   style,
   children,
+  onClick,
+  onKeyDown,
+  role,
+  tabIndex,
   ...props
 }: MemoryCardProps) {
   const press = usePressMotion();
   const revealMotion = useRevealMotion();
   const reducedMotion = useReducedMotion();
+  const keyboardInteractive = interactive && typeof onClick === "function";
+
+  const activateOnKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
+    onKeyDown?.(event);
+    if (event.defaultPrevented || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    event.currentTarget.click();
+  };
 
   return (
     <div
       {...props}
       {...(interactive ? press.props : {})}
+      onClick={onClick}
+      onKeyDown={keyboardInteractive ? activateOnKeyboard : onKeyDown}
+      role={keyboardInteractive ? role ?? "button" : role}
+      tabIndex={keyboardInteractive ? tabIndex ?? 0 : tabIndex}
       style={{
         borderStyle: "solid",
         borderWidth: 1,
