@@ -289,10 +289,9 @@ export class FirstPresenceVideoService {
     }
     try {
       await this.artifacts.deleteInput({ jobId: job.id });
-    } catch (error) {
+    } catch {
       console.error("[video] submitted input cleanup failed", {
-        jobId: job.id,
-        error: error instanceof Error ? error.message : "VIDEO_INPUT_CLEANUP_FAILED",
+        error: "VIDEO_INPUT_CLEANUP_FAILED",
       });
     }
     return submitted;
