@@ -48,6 +48,7 @@ acceptance:
     requirement: "Free base chat, cost-derived abuse limit, one warning, crisis always free"
     evidence: [configuration_review, load_test, staging]
     status: PARTIAL
+    candidate_evidence: "Migration 023 is manual-only; features/chat/free-chat-daily-admission.test.ts; app/api/memory-chat/memory-chat-runtime.test.ts; src/components/first-presence/memoryConversationAdapter.test.ts. Real cost/load calibration, isolated PG14 and Staging evidence remain required."
   - id: A-ADDITIONAL-VIDEO-ENTRY
     requirement: "Additional video entry appears only after two completed valid user/TA rounds in the canonical formal conversation; first greeting, blank, failed, duplicate, and legacy non-default turns do not unlock it"
     evidence: [unit_test, route_test, postgres_gate, ui_preview, staging]

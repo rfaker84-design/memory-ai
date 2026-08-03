@@ -5,6 +5,7 @@ import { MemoryChatTurnPostgresDataSource } from "../../../features/chat/memory-
 import { MemoryChatTurnRepository } from "../../../features/chat/memory-chat-turn-repository";
 import { MemoryChatTurnService } from "../../../features/chat/memory-chat-turn-service";
 import type { MemoryChatTurnResult } from "../../../features/chat/memory-chat-turn-types";
+import { FreeChatAdmissionConfigurationError, FreeChatDailyAdmissionService } from "../../../features/chat/free-chat-daily-admission";
 import { MemoryEngineService } from "../../../features/memory-engine/memory-engine-service";
 import { assertSafeMemorialResponse } from "../../../features/memory-engine/response-pipeline";
 import { crisisResponseFor } from "../../../features/memory-engine/crisis-response";
@@ -38,13 +39,14 @@ type PersistCompletedTurn = (input: {
   memoryId: string;
   result: MemoryChatTurnResult;
 }) => Promise<boolean>;
-type AdmissionDecision = { rateAllowed: boolean; concurrencyAllowed: boolean };
+type AdmissionDecision = { concurrencyAllowed: boolean };
 type AdmissionControl = (externalUserId: string) => Promise<AdmissionDecision>;
 type QuotaReservation = "free" | "reserved" | "unavailable";
 type QuotaService = {
   reserveChatQuota(input: { externalUserId: string; memoryId: string; idempotencyKey: string }): Promise<QuotaReservation>;
   releaseChatQuota(input: { externalUserId: string; memoryId: string; idempotencyKey: string }): Promise<void>;
 };
+type DailyAdmissionService = Pick<FreeChatDailyAdmissionService, "reserve" | "commit" | "release">;
 type LongTermMemoryAccess = (externalUserId: string) => boolean;
 type CrisisSupportEscalation = (input: { userId: string; externalUserId: string; memoryId: string; idempotencyKey: string }) => Promise<boolean>;
 type ChatEligibility = (externalUserId: string) => Promise<boolean>;
@@ -62,12 +64,8 @@ const createTurnService = (): TurnService =>
 const createEngineService = (): EngineService => new MemoryEngineService();
 
 const checkAdmission: AdmissionControl = async (externalUserId) => {
-  const [{ checkRateLimit }, { checkConcurrency }] = await Promise.all([
-    import("../../../src/lib/cost-control"),
-    import("../../../src/lib/concurrency-control"),
-  ]);
+  const { checkConcurrency } = await import("../../../src/lib/concurrency-control");
   return {
-    rateAllowed: checkRateLimit(externalUserId).allowed,
     concurrencyAllowed: checkConcurrency(externalUserId, "ai").allowed,
   };
 };
@@ -76,6 +74,17 @@ const freeQuotaService: QuotaService = {
   reserveChatQuota: async () => "free",
   releaseChatQuota: async () => undefined,
 };
+
+const localDailyAdmissionService: DailyAdmissionService = {
+  reserve: async () => ({ status: "admitted", remaining: Number.MAX_SAFE_INTEGER }),
+  commit: async () => undefined,
+  release: async () => undefined,
+};
+
+const createDailyAdmissionService = (): DailyAdmissionService =>
+  process.env.NODE_ENV === "production"
+    ? new FreeChatDailyAdmissionService()
+    : localDailyAdmissionService;
 
 export const createPaymentQuotaService = (): QuotaService => {
   let legacyService: PaymentService | undefined;
@@ -98,13 +107,14 @@ function json(body: unknown, init?: ResponseInit) {
   return applyAuthNoStore(NextResponse.json(body, init));
 }
 
-function response(result: MemoryChatTurnResult) {
+function response(result: MemoryChatTurnResult, freeChatWarning = false) {
   const answer = result.assistantMessage.content;
   return json({
     answer,
     reply: answer,
     text: answer,
     sessionId: result.conversation.id,
+    ...(freeChatWarning ? { freeChatWarning: true } : {}),
   });
 }
 
@@ -146,6 +156,7 @@ export function createMemoryChatHandler(
   longTermMemoryAccess: LongTermMemoryAccess = () => false,
   crisisSupportEscalation: CrisisSupportEscalation = queueCrisisSupportIfAuthorized,
   chatEligibility: ChatEligibility = async () => true,
+  dailyAdmissionServiceFactory: () => DailyAdmissionService = createDailyAdmissionService,
 ) {
   return async function POST(request: NextRequest) {
     void persistTurn;
@@ -202,6 +213,15 @@ export function createMemoryChatHandler(
       let quota: QuotaReservation = "free";
       let quotaService: QuotaService | null = null;
       let quotaReleased = false;
+      let dailyAdmissionService: DailyAdmissionService | null = null;
+      let dailyAdmissionReserved = false;
+      let freeChatWarning = false;
+      const releaseDailyAdmission = async () => {
+        if (dailyAdmissionReserved && dailyAdmissionService) {
+          dailyAdmissionReserved = false;
+          await dailyAdmissionService.release({ externalUserId: userId, memoryId: parsed.memoryId, idempotencyKey });
+        }
+      };
       const releaseQuota = async () => {
         if (quota === "reserved" && quotaService && !quotaReleased) {
           quotaReleased = true;
@@ -210,6 +230,25 @@ export function createMemoryChatHandler(
       };
 
       if (!crisisResponse) {
+        dailyAdmissionService = dailyAdmissionServiceFactory();
+        let dailyAdmission;
+        try {
+          dailyAdmission = await dailyAdmissionService.reserve({
+            externalUserId: userId, memoryId: parsed.memoryId, idempotencyKey,
+          });
+        } catch (error) {
+          try { await turnService.fail(turnInput); } catch { console.warn("[memory-chat] CHAT_TURN_FAILURE_MARK_UNAVAILABLE"); }
+          throw error;
+        }
+        if (dailyAdmission.status === "limit_reached") {
+          await turnService.fail(turnInput);
+          return json({ error: "FREE_CHAT_DAILY_LIMIT_REACHED" }, { status: 429 });
+        }
+        dailyAdmissionReserved = true;
+        // The warning is a single, neutral heads-up on the last available
+        // ordinary free reply. It never promotes payment and crisis bypasses
+        // this whole path.
+        freeChatWarning = dailyAdmission.remaining === 1;
         quotaService = quotaServiceFactory();
         try {
           quota = await quotaService.reserveChatQuota({
@@ -221,19 +260,15 @@ export function createMemoryChatHandler(
         }
         if (quota === "unavailable") {
           await turnService.fail(turnInput);
+          await releaseDailyAdmission();
           return json({ error: "PAYMENT_ENTITLEMENT_REQUIRED" }, { status: 402 });
         }
 
         const admission = await admissionControl(userId);
-        if (!admission.rateAllowed) {
-          await turnService.fail(turnInput);
-          await releaseQuota();
-          const answer = "忆见服务暂时繁忙，请稍后重试。";
-          return json({ answer, reply: answer, text: answer });
-        }
         if (!admission.concurrencyAllowed) {
           await turnService.fail(turnInput);
           await releaseQuota();
+          await releaseDailyAdmission();
           const answer = "忆见正在处理上一条请求，请稍后重试。";
           return json({ answer, reply: answer, text: answer });
         }
@@ -278,6 +313,7 @@ export function createMemoryChatHandler(
         try {
           await turnService.fail(turnInput);
           await releaseQuota();
+          await releaseDailyAdmission();
         } catch {
           console.warn("[memory-chat] CHAT_TURN_FAILURE_MARK_UNAVAILABLE");
         }
@@ -289,7 +325,17 @@ export function createMemoryChatHandler(
         conversationId: claim.conversation.id,
         answer,
       });
-      return response(result);
+      if (dailyAdmissionReserved && dailyAdmissionService) {
+        try {
+          await dailyAdmissionService.commit({ externalUserId: userId, memoryId: parsed.memoryId, idempotencyKey });
+          dailyAdmissionReserved = false;
+        } catch {
+          // The completed turn is authoritative. Leaving its short reservation
+          // counted is conservative; the bounded reclaimer can later release it.
+          console.warn("[memory-chat] FREE_CHAT_ADMISSION_COMMIT_UNAVAILABLE");
+        }
+      }
+      return response(result, freeChatWarning);
     } catch (error) {
       if (error instanceof MemoryValidationError || error instanceof ChatNotFoundError) {
         return json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
@@ -300,6 +346,9 @@ export function createMemoryChatHandler(
       if (error instanceof DatabaseDependencyError) {
         console.warn("[memory-chat] DATABASE_UNAVAILABLE", safeDatabaseErrorLog(error));
         return json({ error: "DATABASE_UNAVAILABLE" }, { status: 503 });
+      }
+      if (error instanceof FreeChatAdmissionConfigurationError) {
+        return json({ error: error.code }, { status: 503 });
       }
       if (error instanceof AuthConfigurationError) {
         return json(

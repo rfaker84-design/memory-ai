@@ -11,6 +11,7 @@ test("external video, payment, and product capabilities are documented as empty 
     "YIJIAN_EXPERIENCE_PRICE_FEN",
     "YIJIAN_EXPERIENCE_DURATION_DAYS",
     "YIJIAN_EXPERIENCE_CHAT_QUOTA",
+    "MEMORYAI_FREE_CHAT_DAILY_LIMIT",
     "WECHAT_PAY_NOTIFY_URL",
     "WECHAT_PAY_API_V3_KEY",
     "WECHAT_PAY_APP_ID",

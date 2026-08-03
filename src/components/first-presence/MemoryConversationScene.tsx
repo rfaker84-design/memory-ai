@@ -227,10 +227,13 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     const replyingTimer = window.setTimeout(() => setPhase("replying"), reducedMotion ? 0 : 360);
 
     try {
-      await sendConversationMessage(memoryId, message, idempotencyKey);
+      const admission = await sendConversationMessage(memoryId, message, idempotencyKey);
       await restore();
       setPendingMessage(null);
       setPhase("ready");
+      if (admission.freeChatWarning) {
+        setNotice("今天的免费陪伴次数快用完了。你仍可以慢慢说；危机支持不受这个限制。");
+      }
     } catch (error) {
       inFlightRef.current = false;
       setFailureRequestId(supportRequestId(error));

@@ -268,6 +268,12 @@ test("memory-chat short-circuits immediate crisis language without a role-model 
     }),
     () => true,
     async (input) => { escalation = input; return true; },
+    async () => true,
+    () => ({
+      async reserve() { throw new Error("crisis must not reserve a daily admission"); },
+      async commit() { throw new Error("crisis must not commit a daily admission"); },
+      async release() { throw new Error("crisis must not release a daily admission"); },
+    }),
   );
 
   const response = await handler(request({ memoryId, question: "我不想活了" }));
@@ -289,8 +295,7 @@ test("memory-chat short-circuits immediate crisis language without a role-model 
 
 test("memory-chat admission fallbacks remain platform messages and never impersonate the TA", async () => {
   for (const [admission, expected] of [
-    [{ rateAllowed: false, concurrencyAllowed: true }, "忆见服务暂时繁忙，请稍后重试。"],
-    [{ rateAllowed: true, concurrencyAllowed: false }, "忆见正在处理上一条请求，请稍后重试。"],
+    [{ concurrencyAllowed: false }, "忆见正在处理上一条请求，请稍后重试。"],
   ] as const) {
     let providerCalls = 0;
     let failedCalls = 0;
@@ -316,6 +321,100 @@ test("memory-chat admission fallbacks remain platform messages and never imperso
     assert.equal(failedCalls, 1);
     assert.doesNotMatch(expected, /TA|再见|马上就好/);
   }
+});
+
+test("ordinary chat releases no Provider work when its durable daily admission is full", async () => {
+  let providerCalls = 0;
+  let failedCalls = 0;
+  let dailyReservations = 0;
+  const handler = createMemoryChatHandler(
+    () => ({ async getMemoryForUser() { return memory; } }),
+    () => ({
+      async claim() { return { status: "claimed" as const, conversation }; },
+      async complete() { throw new Error("complete should not run"); },
+      async fail() { failedCalls += 1; },
+    }),
+    () => ({ async generateReply() { providerCalls += 1; return { content: "unexpected" }; } }),
+    sessionResolver,
+    async () => false,
+    allowAdmission,
+    undefined,
+    () => false,
+    async () => false,
+    async () => true,
+    () => ({
+      async reserve() { dailyReservations += 1; return { status: "limit_reached" as const }; },
+      async commit() { throw new Error("commit should not run"); },
+      async release() { throw new Error("release should not run"); },
+    }),
+  );
+
+  const response = await handler(request({ memoryId, question: "Hello" }));
+  assert.equal(response.status, 429);
+  assert.deepEqual(await response.json(), { error: "FREE_CHAT_DAILY_LIMIT_REACHED" });
+  assert.equal(dailyReservations, 1);
+  assert.equal(providerCalls, 0);
+  assert.equal(failedCalls, 1);
+});
+
+test("ordinary chat commits its durable admission and returns one neutral near-limit warning", async () => {
+  let committed = 0;
+  const handler = createMemoryChatHandler(
+    () => ({ async getMemoryForUser() { return memory; } }),
+    () => ({
+      async claim() { return { status: "claimed" as const, conversation }; },
+      async complete() { return result; },
+      async fail() { throw new Error("fail should not run"); },
+    }),
+    () => ({ async generateReply() { return { content: assistantMessage.content }; } }),
+    sessionResolver,
+    async () => false,
+    allowAdmission,
+    undefined,
+    () => false,
+    async () => false,
+    async () => true,
+    () => ({
+      async reserve() { return { status: "admitted" as const, remaining: 1 }; },
+      async commit() { committed += 1; },
+      async release() { throw new Error("release should not run"); },
+    }),
+  );
+
+  const response = await handler(request({ memoryId, question: "Hello" }));
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).freeChatWarning, true);
+  assert.equal(committed, 1);
+});
+
+test("ordinary chat releases its durable admission when Provider work fails", async () => {
+  let released = 0;
+  const handler = createMemoryChatHandler(
+    () => ({ async getMemoryForUser() { return memory; } }),
+    () => ({
+      async claim() { return { status: "claimed" as const, conversation }; },
+      async complete() { throw new Error("complete should not run"); },
+      async fail() {},
+    }),
+    () => ({ async generateReply() { throw new Error("provider unavailable"); } }),
+    sessionResolver,
+    async () => false,
+    allowAdmission,
+    undefined,
+    () => false,
+    async () => false,
+    async () => true,
+    () => ({
+      async reserve() { return { status: "admitted" as const, remaining: 2 }; },
+      async commit() { throw new Error("commit should not run"); },
+      async release() { released += 1; },
+    }),
+  );
+
+  const response = await handler(request({ memoryId, question: "Hello" }));
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "AI_UNAVAILABLE" });
+  assert.equal(released, 1);
 });
 
 test("memory-chat validates Unicode length and dangerous question content before service work", async () => {

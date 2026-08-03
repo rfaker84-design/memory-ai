@@ -182,7 +182,7 @@ export async function sendConversationMessage(
   message: string,
   idempotencyKey: string,
   signal?: AbortSignal
-): Promise<void> {
+): Promise<{ freeChatWarning: boolean }> {
   const { response, body } = await fetchConversationJson("/api/memory-chat", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
@@ -194,4 +194,5 @@ export async function sendConversationMessage(
     }),
   }, signal);
   if (!response.ok) throw toRequestError(response, body, "CHAT_SEND_FAILED");
+  return { freeChatWarning: body.freeChatWarning === true };
 }
