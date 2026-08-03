@@ -12,6 +12,11 @@ process.env.AUTH_SESSION_REVOCATION_ENFORCED = "true";
 const exportBody = {
   schemaVersion: "memoryai-account-data-export-v1" as const,
   generatedAt: "2026-08-02T00:00:00.000Z",
+  aiDisclosure: {
+    label: "AI生成纪念内容" as const,
+    appliesTo: ["assistant_messages", "video_jobs"] as ["assistant_messages", "video_jobs"],
+    basis: "基于当时可用且经确认的资料生成，不代表真实人物或其真实表达" as const,
+  },
   account: { id: "00000000-0000-4000-8000-000000000001", createdAt: "2026-08-01T00:00:00.000Z" },
   memories: [], memoryFragments: [], conversations: [], messages: [], firstGreetings: [], media: [], videoJobs: [], consents: [], payments: [], refunds: [], notices: [],
 };

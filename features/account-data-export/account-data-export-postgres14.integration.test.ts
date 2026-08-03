@@ -82,6 +82,11 @@ test("account data export uses a read-only PG14 snapshot and excludes internal/p
     const service = new PostgresAccountDataExportService();
     const exported = await service.create({ userId: user.id, externalUserId: "export-owner", now: new Date("2026-08-02T00:00:00.000Z") });
     assert.equal(exported.schemaVersion, "memoryai-account-data-export-v1");
+    assert.deepEqual(exported.aiDisclosure, {
+      label: "AI生成纪念内容",
+      appliesTo: ["assistant_messages", "video_jobs"],
+      basis: "基于当时可用且经确认的资料生成，不代表真实人物或其真实表达",
+    });
     assert.equal(exported.messages[0]?.content, "private message");
     assert.equal(exported.messages[0]?.aiGenerated, false);
     assert.match(exported.notices.join(" "), /AI 生成内容/);

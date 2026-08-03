@@ -7,6 +7,11 @@ type JsonRow = { value: Record<string, unknown> };
 export type AccountDataExport = {
   schemaVersion: "memoryai-account-data-export-v1";
   generatedAt: string;
+  aiDisclosure: {
+    label: "AI生成纪念内容";
+    appliesTo: ["assistant_messages", "video_jobs"];
+    basis: "基于当时可用且经确认的资料生成，不代表真实人物或其真实表达";
+  };
   account: { id: string; createdAt: string };
   memories: Record<string, unknown>[];
   memoryFragments: Record<string, unknown>[];
@@ -134,6 +139,11 @@ export class PostgresAccountDataExportService {
       return {
         schemaVersion: "memoryai-account-data-export-v1",
         generatedAt: now.toISOString(),
+        aiDisclosure: {
+          label: "AI生成纪念内容",
+          appliesTo: ["assistant_messages", "video_jobs"],
+          basis: "基于当时可用且经确认的资料生成，不代表真实人物或其真实表达",
+        },
         account: { id: account.rows[0].id, createdAt: account.rows[0].created_at.toISOString() },
         memories,
         memoryFragments,
