@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { MemoryTheme as T } from "@/src/lib/design-system/memory-theme";
@@ -11,12 +12,16 @@ type Memory = { id: string; name: string; relationship: string | null };
 export default function PickupIndexPage() {
   const router = useRouter();
   const [memories, setMemories] = useState<Memory[]>([]);
-  const [state, setState] = useState<"loading" | "ready" | "error" | "timeout">("loading");
+  const [state, setState] = useState<"loading" | "ready" | "unauthenticated" | "error" | "timeout">("loading");
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setState("loading");
     try {
       const { response, body: value } = await fetchPickupIndexMemories(fetch, signal);
+      if (response.status === 401) {
+        if (!signal?.aborted) setState("unauthenticated");
+        return;
+      }
       if (!response.ok) throw new Error("MEMORIES_UNAVAILABLE");
       if (!signal?.aborted) {
         setMemories(Array.isArray(value) ? value : []);
@@ -38,6 +43,7 @@ export default function PickupIndexPage() {
     <h1 style={{ margin: "6px 0 10px", color: T.colors.text, fontSize: 28 }}>把想起的事留在这里。</h1>
     <p style={{ margin: "0 0 24px", color: T.colors.textMuted, lineHeight: 1.7 }}>你说，忆见帮你整理。只有经过你确认，才会成为TA可以引用的记忆。</p>
     {state === "loading" && <p role="status" aria-live="polite">正在读取你的 TA…</p>}
+    {state === "unauthenticated" && <section role="alert"><p>请先登录，再查看或整理已确认资料。当前没有读取或修改任何资料。</p><Link href="/login">前往登录</Link></section>}
     {(state === "error" || state === "timeout") && <section role="alert"><p>{state === "timeout" ? "读取等待过久，尚未修改任何资料。" : "暂时无法读取 TA。"}</p><button type="button" style={{ minHeight: 44 }} onClick={() => void load()}>重试</button></section>}
     {state === "ready" && memories.length === 0 && <section style={{ padding: 20, borderRadius: T.radius.lg, background: T.colors.card }}><p>先创建 TA，才能将资料关联到对应的相伴对象。</p><button type="button" style={{ minHeight: 44 }} onClick={() => router.push("/create-memory")}>创建 TA</button></section>}
     {state === "ready" && memories.map((memory) => <section key={memory.id} style={{ display: "flex", width: "100%", flexWrap: "wrap", alignItems: "center", gap: 12, margin: "0 0 12px", padding: 16, border: `1px solid ${T.colors.border}`, borderRadius: T.radius.lg, background: T.colors.card, color: T.colors.text, minHeight: 64 }}>

@@ -31,5 +31,8 @@ test("pickup is an explicit-confirmation flow and never relies on ordinary-chat 
   assert.match(index, /flexWrap: "wrap"/);
   assert.match(index, /暂时无法读取 TA/);
   assert.match(index, /onClick=\{\(\) => void load\(\)\}/);
+  assert.match(index, /response\.status === 401/);
+  assert.match(index, /setState\("unauthenticated"\)/);
+  assert.match(index, /state === "unauthenticated"[\s\S]*?<Link href="\/login">/);
   assert.match(index, /\/pickup/);
 });
