@@ -2,8 +2,9 @@ import { queryPostgres, withPostgresTransaction } from "@/src/server/database";
 import { createMediaStorage } from "@/src/server/storage";
 import { createVideoArtifactStorageFromEnvironment } from "@/features/video/video-artifact-storage";
 import { archiveFinancialRecords, FinancialArchiveRefundPendingError, purgeLiveFinancialProductRecords } from "./financial-archive";
+import { legalHoldClaimPredicate, type AccountDeletionTaskKind } from "./legal-hold-scope";
 
-type TaskKind = "revoke_sessions" | "content_online" | "cos_provider" | "backup_retention" | "financial_archive" | "audit_receipt";
+type TaskKind = AccountDeletionTaskKind;
 type ClaimedTask = { id: string; deletionRequestId: string; userId: string; kind: TaskKind };
 type ObjectRow = { id: string; object_kind: "media_object" | "video_artifact" | "provider_task"; object_key: string | null; provider: string | null; provider_task_id: string | null };
 
@@ -63,7 +64,7 @@ export class PostgresAccountDeletionWorker {
          WHERE (
            (t.status IN ('pending','retry') AND t.next_attempt_at <= NOW())
            OR (t.status='running' AND t.claimed_at < NOW() - INTERVAL '10 minutes')
-         ) AND NOT r.legal_hold
+         ) AND ${legalHoldClaimPredicate("t", "r")}
          ORDER BY t.next_attempt_at,
            CASE t.kind
              WHEN 'revoke_sessions' THEN 1
