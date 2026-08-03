@@ -1,0 +1,64 @@
+version: 1
+status: ACTIVE
+authority: docs/product/MEMORYAI_LAUNCH_PRODUCT_RULES_V1.md
+production: PRODUCTION_RELEASE_NO_GO
+evidence_rule: "Code, tests, screenshots, simulations, devices, Staging, and production are distinct evidence classes."
+historical_conflicts_invalid:
+  - "49元 / 30天 / 1个TA / 100次回复"
+  - "purchase_required_for_chat"
+  - "two_chat_rounds_required_for_first_preview"
+  - "automatic_chat_to_long_term_memory"
+  - "public_voice_clone_lipsync_or_realtime_digital_human"
+  - "user_authored_video_prompt_or_action_choice"
+  - "recreated_ta_regrants_first_preview"
+acceptance:
+  - id: A-POSITIONING
+    requirement: "AI memorial companion; no resurrection, consciousness, or reality-substitution claim"
+    evidence: [code_candidate, manual_copy_review, staging]
+    status: audit_required
+  - id: A-ADULT-ONLY
+    requirement: "18+ current-birthday gate; birthday editable; no family coediting or privacy lock"
+    evidence: [api_test, ui_preview, staging]
+    status: audit_required
+  - id: A-TA-CREATION
+    requirement: "Maximum three TAs, natural short creation flow, authorization confirmation, no life/death question"
+    evidence: [api_test, ui_preview, staging]
+    status: audit_required
+  - id: A-FIRST-PREVIEW
+    requirement: "First TA only, one lifetime free non-saveable controlled 8-second preview, failed jobs release opportunity"
+    evidence: [postgres_gate, video_test, staging_provider, manual_review]
+    status: audit_required
+  - id: A-CHAT-DISCLOSURE
+    requirement: "Continuous AI disclosure, source view, no fabricated memories/reality claims, crisis persona exit"
+    evidence: [route_test, ui_preview, staging_manual_safety_review]
+    status: audit_required
+  - id: A-TA-CORRECTION
+    requirement: "Every TA response offers restrained correction; only explicit confirmation changes future profile material; history is immutable"
+    evidence: [unit_test, route_test, ui_preview, staging]
+    status: code_candidate
+    priority: P0
+    candidate_evidence: "src/components/first-presence/memoryReplyCorrection.test.ts; app/api/memories/memory-item-route.test.ts"
+  - id: A-CONFIRMED-PICKUP
+    requirement: "Original plus organized pickup text becomes referencable only after explicit confirmation"
+    evidence: [postgres_gate, route_test, ui_preview]
+    status: audit_required
+  - id: A-CHAT-LIMITS
+    requirement: "Free base chat, cost-derived abuse limit, one warning, crisis always free"
+    evidence: [configuration_review, load_test, staging]
+    status: audit_required
+  - id: A-COMMERCE
+    requirement: "49/99/199 permanent account credit lots using existing reservation/commit/release ledger"
+    evidence: [postgres_gate, route_test, payment_provider, staging]
+    status: audit_required
+  - id: A-DATA-CONTROL
+    requirement: "Fresh-auth owner-only export; delete message/TA/account confirmation; no internal identifiers exported"
+    evidence: [postgres_gate, route_test, ui_preview, staging]
+    status: audit_required
+  - id: A-SAFETY
+    requirement: "Crisis, preauthorized escalation, no dependency manipulation, minor isolation and no commercial pressure during risk"
+    evidence: [route_test, safety_review, staffing_sop, staging]
+    status: audit_required
+  - id: A-ACCESSIBILITY
+    requirement: "Reduced motion, low-end fallback, focus, reader, contrast, 44px targets, recovery paths"
+    evidence: [unit_test, ui_preview, device_test]
+    status: audit_required

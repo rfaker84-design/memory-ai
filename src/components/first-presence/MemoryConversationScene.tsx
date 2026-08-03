@@ -14,6 +14,13 @@ import {
 } from "../memory/conversationExperience";
 import { useReducedMotion } from "../../motion";
 import { useQuietCompanionPresence } from "./quietCompanionPresence";
+import {
+  REPLY_CORRECTION_REASONS,
+  appendConfirmedCorrection,
+  createReplyCorrectionSuggestion,
+  type ReplyCorrectionReason,
+  type ReplyCorrectionSuggestion,
+} from "./memoryReplyCorrection";
 
 import {
   ConversationMessage,
@@ -26,6 +33,11 @@ import styles from "./MemoryConversationScene.module.css";
 
 type ConversationPhase = "loading" | "greeting" | "ready" | "sending" | "replying" | "recovering" | "error";
 type PendingMessage = { content: string; idempotencyKey: string };
+type CorrectionPhase = "idle" | "saving";
+type FormalMemoryProfile = {
+  personalityProfile?: string | null;
+  speechStyle?: string | null;
+};
 
 type Props = {
   memoryId: string;
@@ -78,6 +90,12 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   const [failureRequestId, setFailureRequestId] = useState<string | null>(null);
   const [networkOffline, setNetworkOffline] = useState(false);
   const [pickupSuggestionVisible, setPickupSuggestionVisible] = useState(false);
+  const [correctionMessage, setCorrectionMessage] = useState<ConversationMessage | null>(null);
+  const [correctionReason, setCorrectionReason] = useState<ReplyCorrectionReason>("称呼不对");
+  const [correctionDetail, setCorrectionDetail] = useState("");
+  const [correctionSuggestion, setCorrectionSuggestion] = useState<ReplyCorrectionSuggestion | null>(null);
+  const [correctionPhase, setCorrectionPhase] = useState<CorrectionPhase>("idle");
+  const [correctionError, setCorrectionError] = useState("");
   const portraitUrl = initialPortraitUrl;
   const [controlsVisible, setControlsVisible] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -264,6 +282,66 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     setPickupSuggestionVisible(false);
   };
 
+  const openReplyCorrection = (message: ConversationMessage) => {
+    setCorrectionMessage(message);
+    setCorrectionReason("称呼不对");
+    setCorrectionDetail("");
+    setCorrectionSuggestion(null);
+    setCorrectionError("");
+  };
+
+  const generateReplyCorrectionSuggestion = () => {
+    if (!correctionMessage) return;
+    const suggestion = createReplyCorrectionSuggestion(
+      correctionReason,
+      correctionDetail,
+      correctionMessage.content,
+    );
+    if (!suggestion) {
+      setCorrectionError("请先写下你确认的正确说法或资料，不会替你猜测。");
+      return;
+    }
+    setCorrectionError("");
+    setCorrectionSuggestion(suggestion);
+  };
+
+  const confirmReplyCorrection = async () => {
+    if (!correctionSuggestion || correctionPhase === "saving") return;
+    setCorrectionPhase("saving");
+    setCorrectionError("");
+    try {
+      const currentResponse = await fetch(`/api/memories/${encodeURIComponent(memoryId)}`, {
+        credentials: "same-origin",
+      });
+      if (!currentResponse.ok) throw new Error("memory-read-failed");
+      const current = await currentResponse.json() as FormalMemoryProfile;
+      const field = correctionSuggestion.field;
+      const currentValue = current[field];
+
+      // A retry after an uncertain response first checks the formal profile,
+      // so it cannot append the same user-confirmed correction twice.
+      if (!currentValue?.includes(correctionSuggestion.text)) {
+        const updateResponse = await fetch(`/api/memories/${encodeURIComponent(memoryId)}`, {
+          method: "PATCH",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            [field]: appendConfirmedCorrection(currentValue, correctionSuggestion.text),
+          }),
+        });
+        if (!updateResponse.ok) throw new Error("memory-update-failed");
+      }
+
+      setCorrectionMessage(null);
+      setCorrectionSuggestion(null);
+      setNotice("你的校正已写入 TA 的已确认资料；历史对话没有被改写。");
+    } catch {
+      setCorrectionError("校正尚未写入。请稍后重试；在确认保存前，TA 的资料不会改变。");
+    } finally {
+      setCorrectionPhase("idle");
+    }
+  };
+
   const isBusy = phase === "loading" || phase === "greeting" || phase === "sending" || phase === "replying" || phase === "recovering";
   const quietPresence = useQuietCompanionPresence({ reducedMotion, replying: replyPulse });
   const completedRounds = completedConversationRounds(messages, activeSessionId);
@@ -318,6 +396,15 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
                 </span>
               )}
               <p>{message.content}</p>
+              {message.role === "assistant" && !isSafetyAssistantMessage(message) && (
+                <button
+                  type="button"
+                  className={styles.replyCorrection}
+                  onClick={() => openReplyCorrection(message)}
+                >
+                  这句话不太像 {memoryName}
+                </button>
+              )}
             </article>
           ))}
           {pendingMessage && <article className={styles.pendingMessage} aria-label="正在确认的消息"><p>{pendingMessage.content}</p></article>}
@@ -343,6 +430,75 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
               <Link href={`/memory/${memoryId}/pickup`} onClick={dismissPickupSuggestion}>去拾忆</Link>
               <button type="button" onClick={dismissPickupSuggestion}>这次先不用</button>
             </div>
+          </aside>
+        )}
+
+        {correctionMessage && (
+          <aside
+            className={styles.correctionDialog}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`${titleId}-correction-title`}
+          >
+            <div className={styles.correctionHeading}>
+              <div>
+                <p>校正 TA</p>
+                <h2 id={`${titleId}-correction-title`}>这句话哪里不太像 {memoryName}？</h2>
+              </div>
+              <button type="button" onClick={() => setCorrectionMessage(null)} disabled={correctionPhase === "saving"}>关闭</button>
+            </div>
+            <p className={styles.correctionQuote}>“{correctionMessage.content}”</p>
+            <fieldset disabled={correctionPhase === "saving"}>
+              <legend>选择一个原因</legend>
+              <div className={styles.correctionReasons}>
+                {REPLY_CORRECTION_REASONS.map((reason) => (
+                  <label key={reason}>
+                    <input
+                      type="radio"
+                      name={`${titleId}-correction-reason`}
+                      value={reason}
+                      checked={correctionReason === reason}
+                      onChange={() => {
+                        setCorrectionReason(reason);
+                        setCorrectionSuggestion(null);
+                      }}
+                    />
+                    {reason}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <label className={styles.correctionDetail} htmlFor={`${titleId}-correction-detail`}>
+              请写下你确认的正确说法或资料
+              <textarea
+                id={`${titleId}-correction-detail`}
+                value={correctionDetail}
+                onChange={(event) => {
+                  setCorrectionDetail(event.currentTarget.value);
+                  setCorrectionSuggestion(null);
+                }}
+                rows={3}
+                disabled={correctionPhase === "saving"}
+                placeholder="例如：她会称我小林，语气更克制，不会这样说。"
+              />
+            </label>
+            {correctionError && <p className={styles.correctionError} role="alert">{correctionError}</p>}
+            {!correctionSuggestion ? (
+              <button type="button" className={styles.correctionAction} onClick={generateReplyCorrectionSuggestion} disabled={correctionPhase === "saving"}>
+                生成校正建议
+              </button>
+            ) : (
+              <div className={styles.correctionReview}>
+                <p>建议写入（请先核对）：{correctionSuggestion.text}</p>
+                <p>只有确认后才会写入 TA 的正式资料；这不会改写已经发生的对话。</p>
+                <div>
+                  <button type="button" onClick={() => setCorrectionSuggestion(null)} disabled={correctionPhase === "saving"}>返回修改</button>
+                  <button type="button" className={styles.correctionAction} onClick={() => void confirmReplyCorrection()} disabled={correctionPhase === "saving"}>
+                    {correctionPhase === "saving" ? "正在确认保存…" : "确认写入 TA 资料"}
+                  </button>
+                </div>
+              </div>
+            )}
           </aside>
         )}
 
