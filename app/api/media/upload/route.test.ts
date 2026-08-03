@@ -38,6 +38,8 @@ test("a direct media upload cannot bypass its TA-bound media consent", async () 
 
   const response = await handler(request());
   assert.equal(response.status, 403);
+  assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0");
+  assert.equal(response.headers.get("vary"), "Cookie, Origin");
   assert.deepEqual(await response.json(), { error: "MEDIA_CONSENT_REQUIRED" });
   assert.equal(uploadCalls, 0);
 });
@@ -54,6 +56,8 @@ test("the public media route rejects audio before consent, storage, or database 
 
   const response = await handler(audioRequest());
   assert.equal(response.status, 415);
+  assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0");
+  assert.equal(response.headers.get("vary"), "Cookie, Origin");
   assert.deepEqual(await response.json(), { error: "AUDIO_UPLOAD_NOT_AVAILABLE" });
   assert.equal(consentCalls, 0);
   assert.equal(uploadCalls, 0);

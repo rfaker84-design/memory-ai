@@ -3,6 +3,7 @@ import { MediaPostgresDataSource, MediaRepository, MediaService, MediaServiceErr
 import { requireAllowedOrigin, verifyRequestSession } from "../../../src/server/auth";
 import { DatabaseDependencyError } from "../../../src/server/database";
 import { createMediaStorage } from "../../../src/server/storage";
+import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 
 export function safeMediaAsset(asset: {
   id: string;
@@ -27,12 +28,16 @@ export async function authenticate(req: NextRequest): Promise<string | null> {
   return session?.externalUserId ?? null;
 }
 
+export function mediaJson(body: unknown, init?: ResponseInit): NextResponse {
+  return applyAuthNoStore(NextResponse.json(body, init));
+}
+
 export function requireMediaMutationOrigin(req: NextRequest): NextResponse | null {
   try {
     requireAllowedOrigin(req);
     return null;
   } catch {
-    return NextResponse.json({ error: "ORIGIN_NOT_ALLOWED" }, { status: 403 });
+    return mediaJson({ error: "ORIGIN_NOT_ALLOWED" }, { status: 403 });
   }
 }
 
@@ -46,18 +51,18 @@ export function mediaService(): MediaService {
 export function mediaError(error: unknown): NextResponse {
   if (error instanceof DatabaseDependencyError) {
     console.error("[media] database request failed", { category: error.category });
-    return NextResponse.json({ error: "DATABASE_UNAVAILABLE" }, { status: 503 });
+    return mediaJson({ error: "DATABASE_UNAVAILABLE" }, { status: 503 });
   }
   if (error instanceof MediaValidationError || error instanceof MediaServiceError) {
-    return NextResponse.json({ error: error.code }, { status: error.httpStatus });
+    return mediaJson({ error: error.code }, { status: error.httpStatus });
   }
   if (error instanceof Error && error.message === "MEDIA_MEMORY_NOT_OWNED") {
-    return NextResponse.json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
+    return mediaJson({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
   }
   if (error instanceof Error && error.message.startsWith("STORAGE_CONFIGURATION_MISSING")) {
     console.error("[media] storage configuration is incomplete");
-    return NextResponse.json({ error: "STORAGE_UNAVAILABLE" }, { status: 503 });
+    return mediaJson({ error: "STORAGE_UNAVAILABLE" }, { status: 503 });
   }
   console.error("[media] request failed", error instanceof Error ? error.message : "unknown error");
-  return NextResponse.json({ error: "MEDIA_OPERATION_FAILED" }, { status: 500 });
+  return mediaJson({ error: "MEDIA_OPERATION_FAILED" }, { status: 500 });
 }
