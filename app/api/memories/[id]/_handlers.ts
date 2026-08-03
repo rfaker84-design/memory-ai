@@ -19,6 +19,7 @@ import {
   resolveSessionOwner,
   type SessionResolver,
 } from "../_session-user-boundary";
+import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 
 type Context = { params: Promise<{ id: string }> };
 type MemoryItemService = Pick<
@@ -29,6 +30,12 @@ type ServiceFactory = () => MemoryItemService;
 
 const createMemoryService: ServiceFactory = () =>
   new MemoryService(new MemoryRepository(new MemoryPostgresDataSource()));
+
+const json = (body: unknown, init?: ResponseInit) =>
+  applyAuthNoStore(NextResponse.json(body, init));
+
+const noContent = (init?: ResponseInit) =>
+  applyAuthNoStore(new NextResponse(null, init));
 
 const allowedUpdateFields = new Set([
   "name",
@@ -48,16 +55,16 @@ const allowedUpdateFields = new Set([
 
 function errorResponse(error: unknown) {
   if (error instanceof MemoryValidationError) {
-    return NextResponse.json(
+    return json(
       { error: "INVALID_REQUEST", message: error.message },
       { status: 400 }
     );
   }
   if (error instanceof MemoryNotFoundError) {
-    return NextResponse.json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
+    return json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
   }
   if (error instanceof MemoryMediaConflictError) {
-    return NextResponse.json(
+    return json(
       {
         error: "MEMORY_MEDIA_NOT_CLEAN",
         message: "Delete media and wait for object cleanup before deleting this memory",
@@ -70,19 +77,19 @@ function errorResponse(error: unknown) {
       "[api:memory-item] database request failed",
       safeDatabaseErrorLog(error)
     );
-    return NextResponse.json(
+    return json(
       { error: "Database dependency unavailable" },
       { status: 503 }
     );
   }
   if (error instanceof AuthConfigurationError) {
-    return NextResponse.json(
+    return json(
       { error: error.code === "ORIGIN_NOT_ALLOWED" ? "ORIGIN_NOT_ALLOWED" : "AUTH_UNAVAILABLE" },
       { status: error.code === "ORIGIN_NOT_ALLOWED" ? 403 : 503 }
     );
   }
   console.error("[api:memory-item] unexpected request failure");
-  return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  return json({ error: "Internal server error" }, { status: 500 });
 }
 
 function isStringOrNull(value: unknown): value is string | null {
@@ -189,7 +196,7 @@ export function createMemoryItemHandlers(
         const { id } = await context.params;
         const memory = await serviceFactory().getMemoryForUser(id, owner.externalUserId);
         if (!memory) throw new MemoryNotFoundError("Memory not found");
-        return NextResponse.json(memory);
+        return json(memory);
       } catch (error) {
         return errorResponse(error);
       }
@@ -210,7 +217,7 @@ export function createMemoryItemHandlers(
         try {
           rawBody = await req.json();
         } catch {
-          return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 });
+          return json({ error: "INVALID_JSON" }, { status: 400 });
         }
         const body = validateUpdateBody(rawBody);
         const { id } = await context.params;
@@ -219,7 +226,7 @@ export function createMemoryItemHandlers(
           owner.externalUserId,
           body
         );
-        return NextResponse.json(memory);
+        return json(memory);
       } catch (error) {
         return errorResponse(error);
       }
@@ -238,7 +245,7 @@ export function createMemoryItemHandlers(
         requireAllowedOrigin(req);
         const { id } = await context.params;
         await serviceFactory().deleteMemoryForUser(id, owner.externalUserId);
-        return new NextResponse(null, { status: 204 });
+        return noContent({ status: 204 });
       } catch (error) {
         return errorResponse(error);
       }

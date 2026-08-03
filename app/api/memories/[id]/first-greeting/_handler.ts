@@ -25,6 +25,7 @@ import {
   resolveSessionOwner,
   type SessionResolver,
 } from "../../_session-user-boundary";
+import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 
 type Context = { params: Promise<{ id: string }> };
 type MemoryOwnershipService = Pick<MemoryService, "getMemoryForUser">;
@@ -49,6 +50,9 @@ const createFirstGreetingService = (): GreetingService =>
     new ChatService(new ChatRepository(new ChatPostgresDataSource()))
   );
 
+const json = (body: unknown, init?: ResponseInit) =>
+  applyAuthNoStore(NextResponse.json(body, init));
+
 export function createFirstGreetingHandler(
   memoryServiceFactory: () => MemoryOwnershipService = createMemoryService,
   greetingServiceFactory: () => GreetingService = createFirstGreetingService,
@@ -62,20 +66,20 @@ export function createFirstGreetingHandler(
 
       const idempotencyKey = request.headers.get("idempotency-key");
       if (!idempotencyKey) {
-        return NextResponse.json({ error: "IDEMPOTENCY_KEY_REQUIRED" }, { status: 400 });
+        return json({ error: "IDEMPOTENCY_KEY_REQUIRED" }, { status: 400 });
       }
       if (!IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
-        return NextResponse.json({ error: "INVALID_IDEMPOTENCY_KEY" }, { status: 400 });
+        return json({ error: "INVALID_IDEMPOTENCY_KEY" }, { status: 400 });
       }
 
       let body: unknown;
       try {
         body = await request.json();
       } catch {
-        return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 });
+        return json({ error: "INVALID_JSON" }, { status: 400 });
       }
       if (!isEmptyJsonObject(body)) {
-        return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 });
+        return json({ error: "INVALID_JSON" }, { status: 400 });
       }
 
       const { id: memoryId } = await params;
@@ -84,7 +88,7 @@ export function createFirstGreetingHandler(
         owner.externalUserId
       );
       if (!memory) {
-        return NextResponse.json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
+        return json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
       }
 
       const greeting = await greetingServiceFactory().create({
@@ -93,7 +97,7 @@ export function createFirstGreetingHandler(
         idempotencyKey,
         memory,
       });
-      return NextResponse.json(
+      return json(
         {
           session: {
             id: greeting.sessionId,
@@ -115,29 +119,29 @@ export function createFirstGreetingHandler(
       );
     } catch (error) {
       if (error instanceof FirstGreetingInProgressError) {
-        return NextResponse.json({ error: "FIRST_GREETING_IN_PROGRESS" }, { status: 409 });
+        return json({ error: "FIRST_GREETING_IN_PROGRESS" }, { status: 409 });
       }
       if (error instanceof FirstGreetingProviderError) {
-        return NextResponse.json(
+        return json(
           { error: "AI_UNAVAILABLE" },
           { status: 503 }
         );
       }
       if (error instanceof MemoryValidationError) {
-        return NextResponse.json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
+        return json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
       }
       if (error instanceof ChatNotFoundError) {
-        return NextResponse.json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
+        return json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
       }
       if (error instanceof DatabaseDependencyError) {
         console.error(
           "[api:first-greeting] database request failed",
           safeDatabaseErrorLog(error)
         );
-        return NextResponse.json({ error: "DATABASE_UNAVAILABLE" }, { status: 503 });
+        return json({ error: "DATABASE_UNAVAILABLE" }, { status: 503 });
       }
       if (error instanceof AuthConfigurationError) {
-        return NextResponse.json(
+        return json(
           {
             error:
               error.code === "ORIGIN_NOT_ALLOWED"
@@ -148,7 +152,7 @@ export function createFirstGreetingHandler(
         );
       }
       console.error("[api:first-greeting] unexpected request failure");
-      return NextResponse.json({ error: "FIRST_GREETING_FAILED" }, { status: 500 });
+      return json({ error: "FIRST_GREETING_FAILED" }, { status: 500 });
     }
   };
 }

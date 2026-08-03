@@ -20,6 +20,7 @@ import {
   resolveSessionOwner,
   type SessionResolver,
 } from "../../_session-user-boundary";
+import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 
 type Context = { params: Promise<{ id: string }> };
 type MemoryOwnershipService = Pick<MemoryService, "getMemoryForUser">;
@@ -34,6 +35,9 @@ const createChatService = (): ChatSessionService =>
 const createMemoryService = (): MemoryOwnershipService =>
   new MemoryService(new MemoryRepository(new MemoryPostgresDataSource()));
 
+const json = (body: unknown, init?: ResponseInit) =>
+  applyAuthNoStore(NextResponse.json(body, init));
+
 export function createChatSessionHandler(
   memoryServiceFactory: () => MemoryOwnershipService = createMemoryService,
   chatServiceFactory: () => ChatSessionService = createChatService,
@@ -46,7 +50,7 @@ export function createChatSessionHandler(
       try {
         body = await req.json();
       } catch {
-        return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 });
+        return json({ error: "INVALID_JSON" }, { status: 400 });
       }
       const compatibilityUserId = body && typeof body === "object" && !Array.isArray(body)
         && "userId" in body ? (body as Record<string, unknown>).userId : undefined;
@@ -60,7 +64,7 @@ export function createChatSessionHandler(
         userId
       );
       if (!memory) {
-        return NextResponse.json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
+        return json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
       }
 
       const chatService = chatServiceFactory();
@@ -69,10 +73,10 @@ export function createChatSessionHandler(
         memoryId
       );
       const messages = await chatService.listMessages(session.id);
-      return NextResponse.json({ session, messages });
+      return json({ session, messages });
     } catch (error) {
       if (error instanceof MemoryValidationError || error instanceof ChatValidationError) {
-        return NextResponse.json(
+        return json(
           { error: "INVALID_REQUEST", message: error.message },
           { status: 400 }
         );
@@ -82,19 +86,19 @@ export function createChatSessionHandler(
           "[api:memory-chat-session] database request failed",
           safeDatabaseErrorLog(error)
         );
-        return NextResponse.json(
+        return json(
           { error: "Database dependency unavailable" },
           { status: 503 }
         );
       }
       if (error instanceof AuthConfigurationError) {
-        return NextResponse.json(
+        return json(
           { error: error.code === "ORIGIN_NOT_ALLOWED" ? "ORIGIN_NOT_ALLOWED" : "AUTH_UNAVAILABLE" },
           { status: error.code === "ORIGIN_NOT_ALLOWED" ? 403 : 503 }
         );
       }
       console.error("[api:memory-chat-session] unexpected request failure");
-      return NextResponse.json(
+      return json(
         { error: "Internal server error" },
         { status: 500 }
       );

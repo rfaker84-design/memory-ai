@@ -75,6 +75,8 @@ test("first greeting uses only the HttpOnly session identity and accepts the emp
     context
   );
   assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0");
+  assert.equal(response.headers.get("vary"), "Cookie, Origin");
   assert.deepEqual(await response.json(), {
     session: {
       id: greetingMessage.sessionId,

@@ -4,6 +4,7 @@ import {
   type AuthSession,
   verifyRequestSession,
 } from "@/src/server/auth";
+import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 
 export type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
 
@@ -19,7 +20,7 @@ export async function resolveSessionOwner(
   const session = await sessionResolver(request);
   if (!session) {
     return {
-      response: NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 }),
+      response: applyAuthNoStore(NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 })),
     };
   }
 
@@ -29,7 +30,7 @@ export async function resolveSessionOwner(
       || compatibilityUserId.trim() !== session.externalUserId)
   ) {
     return {
-      response: NextResponse.json({ error: "SESSION_USER_MISMATCH" }, { status: 403 }),
+      response: applyAuthNoStore(NextResponse.json({ error: "SESSION_USER_MISMATCH" }, { status: 403 })),
     };
   }
 

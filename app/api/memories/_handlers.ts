@@ -19,6 +19,7 @@ import {
   requireAllowedOrigin,
 } from "../../../src/server/auth";
 import { hasApprovedMemoryCreationConsents } from "../../../features/consent/trust-consent-postgres";
+import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 
 import { resolveSessionOwner } from "./_session-user-boundary";
 
@@ -31,6 +32,9 @@ const createMemoryService = () => {
 const createAuditService = () =>
   new AuditService(new AuditRepository(new AuditPostgresDataSource()));
 
+const json = (body: unknown, init?: ResponseInit) =>
+  applyAuthNoStore(NextResponse.json(body, init));
+
 type MemoryServiceFactory = () => Pick<
   MemoryService,
   "createMemory" | "listUserMemories"
@@ -40,33 +44,33 @@ type MemoryProfileConsentVerifier = (externalUserId: string) => Promise<boolean>
 
 function databaseErrorResponse(error: unknown) {
   if (error instanceof MemoryLimitError) {
-    return NextResponse.json(
+    return json(
       { error: "MEMORY_LIMIT_REACHED" },
       { status: 409 }
     );
   }
 
   if (error instanceof MemoryValidationError) {
-    return NextResponse.json({ error: "INVALID_MEMORY_REQUEST" }, { status: 400 });
+    return json({ error: "INVALID_MEMORY_REQUEST" }, { status: 400 });
   }
 
   if (error instanceof DatabaseDependencyError) {
     console.error("[api:memories] database request failed", safeDatabaseErrorLog(error));
-    return NextResponse.json(
+    return json(
       { error: "DATABASE_UNAVAILABLE" },
       { status: 503 }
     );
   }
 
   if (error instanceof AuthConfigurationError) {
-    return NextResponse.json(
+    return json(
       { error: error.code === "ORIGIN_NOT_ALLOWED" ? "ORIGIN_NOT_ALLOWED" : "AUTH_UNAVAILABLE" },
       { status: error.code === "ORIGIN_NOT_ALLOWED" ? 403 : 503 }
     );
   }
 
   console.error("[api:memories] unexpected request failure");
-  return NextResponse.json({ error: "MEMORY_REQUEST_FAILED" }, { status: 500 });
+  return json({ error: "MEMORY_REQUEST_FAILED" }, { status: 500 });
 }
 
 export function createMemoriesHandlers(
@@ -87,7 +91,7 @@ export function createMemoriesHandlers(
         if ("response" in owner) return owner.response;
         const memories = await memoryServiceFactory().listUserMemories(owner.externalUserId);
 
-        return NextResponse.json(memories);
+        return json(memories);
       } catch (error) {
         return databaseErrorResponse(error);
       }
@@ -103,7 +107,7 @@ export function createMemoriesHandlers(
         const idempotencyKey = req.headers.get("idempotency-key") ?? undefined;
         const userId = owner.externalUserId;
         if (!(await memoryProfileConsentVerifier(userId))) {
-          return NextResponse.json(
+          return json(
             { error: "MEMORY_CREATION_CONSENT_REQUIRED" },
             { status: 403 }
           );
@@ -127,7 +131,7 @@ export function createMemoriesHandlers(
         } = body;
 
         if (!name) {
-          return NextResponse.json(
+          return json(
             { error: "INVALID_MEMORY_REQUEST" },
             { status: 400 }
           );
@@ -163,7 +167,7 @@ export function createMemoriesHandlers(
           );
         }
 
-        return NextResponse.json(memory);
+        return json(memory);
       } catch (error) {
         return databaseErrorResponse(error);
       }

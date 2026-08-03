@@ -79,6 +79,8 @@ test("three Memories succeed, a fourth returns 409, and an original key still re
   for (const key of keys) {
     const response = await handlers.POST(request(key));
     assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0");
+    assert.equal(response.headers.get("vary"), "Cookie, Origin");
     responses.push(await response.json() as Memory);
   }
 

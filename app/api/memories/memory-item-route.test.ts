@@ -101,6 +101,8 @@ test("GET returns the formal Memory DTO for the owning external user", async () 
   const handlers = createMemoryItemHandlers(() => fakeService(), sessionResolver());
   const response = await handlers.GET(request("GET"), context());
   assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0");
+  assert.equal(response.headers.get("vary"), "Cookie, Origin");
   assert.deepEqual(await response.json(), memory());
 });
 
@@ -126,11 +128,13 @@ test("missing session is 401 and a forged compatibility user is rejected", async
   const unauthenticated = createMemoryItemHandlers(() => fakeService(), async () => null);
   const missing = await unauthenticated.GET(request("GET"), context());
   assert.equal(missing.status, 401);
+  assert.equal(missing.headers.get("cache-control"), "private, no-store, max-age=0");
   assert.equal((await missing.json()).error, "UNAUTHENTICATED");
 
   const authenticated = createMemoryItemHandlers(() => fakeService(), sessionResolver());
   const forged = await authenticated.GET(request("GET", undefined, "another-user"), context());
   assert.equal(forged.status, 403);
+  assert.equal(forged.headers.get("cache-control"), "private, no-store, max-age=0");
   assert.equal((await forged.json()).error, "SESSION_USER_MISMATCH");
 });
 

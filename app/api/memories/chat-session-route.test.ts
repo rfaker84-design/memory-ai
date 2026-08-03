@@ -80,6 +80,8 @@ test("chat session returns PostgreSQL conversation messages after owned Memory v
   );
   const response = await handler(request({}), context);
   assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0");
+  assert.equal(response.headers.get("vary"), "Cookie, Origin");
   assert.deepEqual(await response.json(), { session, messages });
   assert.deepEqual(ownershipCalls, [[memoryId, userId]]);
   assert.deepEqual(chatCalls, [[userId, memoryId]]);
