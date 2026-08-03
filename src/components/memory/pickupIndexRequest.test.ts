@@ -7,11 +7,13 @@ test("pickup entry read uses the owner-scoped memories endpoint and preserves re
   let input = "";
   let init: RequestInit | undefined;
   const response = new Response("[]", { status: 200 });
-  assert.equal(await fetchPickupIndexMemories(async (nextInput, nextInit) => {
+  const result = await fetchPickupIndexMemories(async (nextInput, nextInit) => {
     input = String(nextInput);
     init = nextInit;
     return response;
-  }), response);
+  });
+  assert.equal(result.response, response);
+  assert.deepEqual(result.body, []);
   assert.equal(input, "/api/memories");
   assert.equal(init?.credentials, "same-origin");
   assert.equal(init?.cache, "no-store");

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { MemoryButton } from "../memory-ui";
-import { fetchOwnedMemoryList } from "../memory/ownedMemoryClient";
+import { fetchOwnedMemoryListJson } from "../memory/ownedMemoryClient";
 import {
   createRefundIdempotencyKey,
   createRefundRequest,
@@ -19,6 +19,12 @@ import styles from "./RefundCenter.module.css";
 import { refundPolicy } from "./refundPolicy";
 
 type OwnedMemory = { id: string; name: string };
+
+function bodyErrorCode(body: unknown, fallback: string): string {
+  return typeof body === "object" && body !== null && typeof (body as Record<string, unknown>).error === "string"
+    ? (body as Record<string, string>).error
+    : fallback;
+}
 
 function toMemories(value: unknown): OwnedMemory[] {
   return Array.isArray(value)
@@ -48,10 +54,9 @@ export function RefundCenter() {
     setLoading(true); setStatusReady(false); setLoadedMemoryId(null); setSnapshot(null); setRefunds([]); setNotice("");
     try {
       if (!selected) {
-        const response = await fetchOwnedMemoryList();
-        const body = await response.json().catch(() => ({}));
+        const { response, body } = await fetchOwnedMemoryListJson();
         if (!isCurrent()) return;
-        if (!response.ok) throw new PaymentExperienceRequestError(response.status, typeof body.error === "string" ? body.error : "MEMORIES_UNAVAILABLE");
+        if (!response.ok) throw new PaymentExperienceRequestError(response.status, bodyErrorCode(body, "MEMORIES_UNAVAILABLE"));
         const nextMemories = toMemories(body);
         setMemories(nextMemories);
         const first = nextMemories[0]?.id ?? "";

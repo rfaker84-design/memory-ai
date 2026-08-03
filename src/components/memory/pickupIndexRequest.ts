@@ -1,4 +1,4 @@
-import { fetchOwnedMemoryList, OwnedMemoryRequestError } from "./ownedMemoryClient";
+import { fetchOwnedMemoryListJson, OwnedMemoryRequestError, type OwnedMemoryJsonResponse } from "./ownedMemoryClient";
 
 export class PickupIndexRequestError extends Error {
   constructor(readonly code: "PICKUP_INDEX_TIMEOUT") {
@@ -15,9 +15,9 @@ export async function fetchPickupIndexMemories(
   request: typeof fetch = fetch,
   parentSignal?: AbortSignal,
   timeoutMs = 12_000,
-): Promise<Response> {
+): Promise<OwnedMemoryJsonResponse> {
   try {
-    return await fetchOwnedMemoryList(parentSignal, request, timeoutMs);
+    return await fetchOwnedMemoryListJson(parentSignal, request, timeoutMs);
   } catch (error) {
     if (error instanceof OwnedMemoryRequestError && error.status === 408) {
       throw new PickupIndexRequestError("PICKUP_INDEX_TIMEOUT");

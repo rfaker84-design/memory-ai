@@ -6,6 +6,7 @@ import {
   loadOwnedMediaUrl,
   loadOwnedMemory,
   fetchOwnedMemoryList,
+  fetchOwnedMemoryListJson,
   OwnedMemoryRequestError,
 } from "./ownedMemoryClient";
 
@@ -63,6 +64,29 @@ test("owned Memory reads time out without widening the session boundary or retry
     loadOwnedMemory(memory.id, undefined, ((_input, init) => new Promise<Response>((_resolve, reject) => {
       init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
     })) as typeof fetch, 1),
+    (error) => error instanceof OwnedMemoryRequestError
+      && error.status === 408
+      && error.code === "MEMORY_READ_TIMEOUT",
+  );
+});
+
+test("owned Memory JSON reads retain the timeout through a stalled response body", async () => {
+  const stalledBody = async (_input: string | URL | Request, init?: RequestInit) => ({
+    ok: true,
+    status: 200,
+    headers: new Headers(),
+    json: () => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+    }),
+  }) as Response;
+  await assert.rejects(
+    loadOwnedMemory(memory.id, undefined, stalledBody as typeof fetch, 1),
+    (error) => error instanceof OwnedMemoryRequestError
+      && error.status === 408
+      && error.code === "MEMORY_READ_TIMEOUT",
+  );
+  await assert.rejects(
+    fetchOwnedMemoryListJson(undefined, stalledBody as typeof fetch, 1),
     (error) => error instanceof OwnedMemoryRequestError
       && error.status === 408
       && error.code === "MEMORY_READ_TIMEOUT",

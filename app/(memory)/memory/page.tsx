@@ -16,9 +16,8 @@ export default function PickupIndexPage() {
   const load = useCallback(async (signal?: AbortSignal) => {
     setState("loading");
     try {
-      const response = await fetchPickupIndexMemories(fetch, signal);
+      const { response, body: value } = await fetchPickupIndexMemories(fetch, signal);
       if (!response.ok) throw new Error("MEMORIES_UNAVAILABLE");
-      const value = await response.json();
       if (!signal?.aborted) {
         setMemories(Array.isArray(value) ? value : []);
         setState("ready");
