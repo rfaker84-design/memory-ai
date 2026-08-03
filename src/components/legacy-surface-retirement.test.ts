@@ -15,5 +15,8 @@ test("retired consciousness and autonomous splash surfaces cannot be reconnected
   ]) {
     assert.equal(existsSync(new URL(relative, root)), false, `retired surface remains: ${relative}`);
   }
+  assert.equal(existsSync(new URL("ConsciousnessFieldRenderer.tsx", root)), false, "retired consciousness field remains");
+  assert.equal(existsSync(new URL("../hooks/useConvergenceEngine.ts", root)), false, "retired convergence engine remains");
+  assert.equal(existsSync(new URL("../lib/consciousness-types.ts", root)), false, "retired consciousness model remains");
   assert.equal(existsSync(new URL("../lib/recursion-types.ts", root)), false, "retired recursion model remains");
 });
