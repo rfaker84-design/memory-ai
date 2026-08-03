@@ -11,7 +11,7 @@
 | P-05 | 轻量动画、reduced-motion、无重型 3D | quiet companion 与 motion fallback 已有；旧 3D 世界已退休 | IMPLEMENTED_NOT_REAL_E2E | 真实 Android/设备验收 |
 | P-06 | 持续 AI 标识、来源可查看、无捏造 | 聊天安全管线与来源页已有 | IMPLEMENTED_NOT_REAL_E2E | 人工安全评估为外部门 |
 | **P-07** | **“这句话不太像 TA”纠正入口和确认链** | 每条非安全 TA 回复均有入口；五类原因、用户补充、建议预览、确认后 Owner PATCH 已接通；历史消息没有写接口 | **IMPLEMENTED_NOT_REAL_E2E** | 已通过建议单测、Owner 范围 Memory PATCH 测试；仍需 UI/真实环境验收 |
-| P-08 | 仅确认后拾忆、半屏编辑、自然归类 | 确认拾忆已有；半屏/归类需核验 | PARTIAL | 对照 UI 与数据模型 |
+| P-08 | 仅确认后拾忆、半屏编辑、自然归类 | 可达拾忆页以“忆见整理助手”明确标识：用户主动输入原话，最多自选一次自然追问，生成可编辑整理稿；确认前不写入，确认后以 `user_confirmed_pickup` 可追溯来源保存。聊天只读取该确认来源，编辑/删除 Owner 限定且删除后不再召回；页面展示原话、整理稿、叙述者和时间，并明确不读取相册、麦克风或录音 | IMPLEMENTED_NOT_REAL_E2E | 已有隔离 PG14.23 confirmation/replay/edit/delete 与产品回归；仍需真实 UI/Staging 验收 |
 | P-09 | 免费聊天、成本测算上限、安全免费 | 安全/额度边界已有 | PARTIAL | 配置必须待真实成本测算 |
 | P-10 | 两轮有效对话后后续影像入口 | Web 仅在当前默认正式会话的两轮完整持久化 user/TA 对话后，于输入区后的自然停顿显示入口；客户端排除首句、空白、失败和重复，服务端再次只计默认会话完成轮次，旧非默认会话不能绕过；入口使用冻结文案且没有提示词或动作选择 | IMPLEMENTED_NOT_REAL_E2E | 已通过定向单测、路由边界与隔离 PG14.23；仍需真实 UI/Staging 验收 |
 | P-11 | 49/99/199 永久额度、同账本 | `sprint21-commerce-contract.md` 一致 | IMPLEMENTED_NOT_REAL_E2E | 不新增账本 |
