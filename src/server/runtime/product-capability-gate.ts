@@ -21,16 +21,18 @@ export class ProductCapabilityUnavailableError extends Error {
 }
 
 /**
- * A missing flag preserves the already-configured capability. Operators can
- * stop a single mutation path immediately with an exact `false`; malformed
- * values fail closed rather than silently enabling it.
+ * Development and test preserve the existing local default. Production must
+ * opt into each mutating capability with an exact `true`, so an omitted or
+ * malformed deployment variable cannot silently enable registration, video
+ * submission, or a new purchase path.
  */
 export function assertProductCapabilityEnabled(
   capability: ProductCapability,
   environment: CapabilityEnvironment = process.env,
 ): void {
   const value = environment[ENVIRONMENT_KEYS[capability]];
-  if (value === undefined || value === "true") return;
+  if (value === "true") return;
+  if (value === undefined && environment.NODE_ENV !== "production") return;
   throw new ProductCapabilityUnavailableError(PUBLIC_ERROR_CODES[capability]);
 }
 

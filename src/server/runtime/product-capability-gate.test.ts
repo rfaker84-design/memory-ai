@@ -7,7 +7,7 @@ import {
   ProductCapabilityUnavailableError,
 } from "./product-capability-gate";
 
-test("product capability gates preserve defaults and fail closed when disabled or malformed", () => {
+test("product capability gates preserve local defaults and require explicit production enablement", () => {
   assert.doesNotThrow(() => assertProductCapabilityEnabled("video_generation", {}));
   assert.doesNotThrow(() => assertProductCapabilityEnabled("commerce_purchase", {
     YIJIAN_COMMERCE_PURCHASE_ENABLED: "true",
@@ -23,4 +23,22 @@ test("product capability gates preserve defaults and fail closed when disabled o
     );
   }
   assert.equal(isProductCapabilityEnabled("registration", { YIJIAN_REGISTRATION_ENABLED: "false" }), false);
+  for (const [capability, code] of [
+    ["registration", "REGISTRATION_DISABLED"],
+    ["video_generation", "VIDEO_GENERATION_DISABLED"],
+    ["commerce_purchase", "COMMERCE_PURCHASES_DISABLED"],
+  ] as const) {
+    assert.throws(
+      () => assertProductCapabilityEnabled(capability, { NODE_ENV: "production" }),
+      (error: unknown) => error instanceof ProductCapabilityUnavailableError && error.code === code,
+    );
+    assert.doesNotThrow(() => assertProductCapabilityEnabled(capability, {
+      NODE_ENV: "production",
+      [
+        capability === "registration" ? "YIJIAN_REGISTRATION_ENABLED"
+          : capability === "video_generation" ? "YIJIAN_VIDEO_GENERATION_ENABLED"
+            : "YIJIAN_COMMERCE_PURCHASE_ENABLED"
+      ]: "true",
+    }));
+  }
 });
