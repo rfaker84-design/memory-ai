@@ -15,6 +15,7 @@
     "ios:sync": "npm run sync && cap sync ios",
     "ios:open": "cap open ios",
     "verify:config": "tsx scripts/verify-mobile-config.ts",
+    "test": "npm run typecheck && npm run test:secure-session-contract && npm run test:incomplete-ta-resume && npm run test:video-opportunity && npm run test:navigation-contract && npm run test:ios-media-contract",
     "test:secure-session-contract": "tsx --test scripts/session-origin.test.ts",
     "test:incomplete-ta-resume": "tsx --test src/product/incomplete-memory.test.ts",
     "test:video-opportunity": "tsx --test src/product/video-opportunity.test.ts",
