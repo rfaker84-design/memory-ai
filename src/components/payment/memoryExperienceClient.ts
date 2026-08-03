@@ -1,5 +1,8 @@
 export type PaymentOrderStatus = "pending" | "paid" | "failed" | "cancelled" | "refunded" | "expired";
 
+// CONFLICTING_LEGACY: this client is retained only for historical record
+// compatibility and is forbidden from public first-release UI.
+
 export type PaymentOrder = {
   orderNo: string;
   status: PaymentOrderStatus;

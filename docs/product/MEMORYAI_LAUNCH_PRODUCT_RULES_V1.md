@@ -81,3 +81,14 @@
 视觉为暖黑、暖金、星空、克制、电影感；不是后台、测试台、廉价 AI 工具或长表单。静态照片不得称数字人；未真实生成的动态必须标“动态效果演示 / 非真实 AI 生成视频”。
 
 Android 是首发第一优先级，iOS 第二，微信小程序第三，Web 为补充。任何 UI 仍需真实预览/模拟器/设备证据；代码、截图和测试不得冒充线上验收。
+
+## 9. 冲突历史规则与证据分类
+
+下列保留文件属于 `CONFLICTING_LEGACY`，不得被首发公开页面、路由或测试作为产品规则引用：
+
+- `src/components/payment/MemoryExperienceOffer.tsx` 与 `memoryExperienceClient.ts` 中的 `49 元 / 30 天 / 1 个 TA / 100 次回复` 体验卡；
+- `src/lib/payment.ts` 中的历史“每日 100 次对话”描述；
+- 历史治理文档中“数字生命、公开声音克隆、实时数字人、自动长期记忆”的首发叙述；
+- 历史两轮聊天后才可获取首次影像的任何实现或测试假设。
+
+差距矩阵和验收清单只能使用以下状态：`IMPLEMENTED_AND_PROVEN`、`IMPLEMENTED_NOT_REAL_E2E`、`PARTIAL`、`MISSING`、`CONFLICTING_LEGACY`、`EXTERNAL_GATE`、`OUT_OF_SCOPE`。其中代码、测试、截图或本地模拟均不能替代真实设备、Staging、Provider 或生产证据。

@@ -151,6 +151,9 @@ test("Terms delegates its no-reason refund wording to refundPolicy", () => {
 
 test("the purchase surface uses the frozen emotional handoff title", () => {
   const purchaseSurface = readFileSync(new URL("./MemoryExperienceOffer.tsx", import.meta.url), "utf8");
+  const legacyClient = readFileSync(new URL("./memoryExperienceClient.ts", import.meta.url), "utf8");
+  assert.match(purchaseSurface, /CONFLICTING_LEGACY/);
+  assert.match(legacyClient, /CONFLICTING_LEGACY/);
   assert.match(purchaseSurface, /想继续和TA说说话/);
   assert.match(purchaseSurface, /49元 · 30天 · 1个 TA · 100次 AI 回复/);
 });

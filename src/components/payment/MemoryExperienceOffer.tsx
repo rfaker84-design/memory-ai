@@ -1,5 +1,10 @@
 "use client";
 
+// CONFLICTING_LEGACY: this historical 49 yuan / 30 day / 100 reply offer is
+// retained only for record compatibility. No first-release route may import or
+// render it; the authoritative public credit policy is 49/99/199 permanent
+// video credits in docs/product/MEMORYAI_LAUNCH_PRODUCT_RULES_V1.md.
+
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { MemoryButton } from "../memory-ui";
