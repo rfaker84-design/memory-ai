@@ -222,6 +222,10 @@ export class CommerceService {
     });
   }
 
+  listRefunds(externalUserId: string) {
+    return this.repository.listRefunds(text(externalUserId, "userId", 255));
+  }
+
   listOpenOccasionRewardOffers(input: {
     externalUserId: string;
     now?: Date;

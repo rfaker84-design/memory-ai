@@ -135,12 +135,11 @@ test("frozen refund rules have one shared source for purchase and refund surface
     assert.match(reportSurface, new RegExp(`refundPolicy\\.${field}`));
   }
   for (const surface of [purchaseSurface, refundSurface, termsSurface, reportSurface]) assert.doesNotMatch(surface, /退款结果异常/);
-  assert.match(refundSurface, /setStatusReady\(false\); setLoadedMemoryId\(null\); setSnapshot\(null\); setRefunds\(\[\]\)/);
-  assert.match(refundSurface, /const request = \+\+statusRequest\.current/);
-  assert.match(refundSurface, /fetchOwnedMemoryListJson\(\)/);
-  assert.match(refundSurface, /if \(!isCurrent\(\)\) return/);
-  assert.match(refundSurface, /loadedMemoryId !== memoryId/);
-  assert.match(refundSurface, /statusReady && loadedMemoryId === memoryId && !latestRefund && latestOrder/);
+  assert.match(refundSurface, /"\/api\/commerce\/orders"/);
+  assert.match(refundSurface, /"\/api\/commerce\/refunds"/);
+  assert.doesNotMatch(refundSurface, /\/api\/payments\//);
+  assert.match(refundSurface, /不会自动重试/);
+  assert.match(reportSurface, /<RefundCenter \/>/);
 });
 
 test("Terms delegates its no-reason refund wording to refundPolicy", () => {

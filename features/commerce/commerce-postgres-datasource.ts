@@ -1178,6 +1178,21 @@ export class CommercePostgresDataSource implements CommerceDataSource {
     };
   }
 
+  async listRefunds(externalUserId: string): Promise<CommerceRefundRequest[]> {
+    const user = required(externalUserId, "userId");
+    const result = await queryPostgres<RefundRow>(
+      `SELECT r.id, o.order_no, r.request_key, r.request_no, r.reason, r.status,
+              r.created_at, r.resolved_at
+       FROM public.commerce_refund_requests r
+       JOIN public.commerce_orders o ON o.id = r.order_id
+       JOIN public.users u ON u.id = r.user_id
+       WHERE u.external_id = $1
+       ORDER BY r.created_at DESC, r.id DESC`,
+      [user],
+    );
+    return result.rows.map(refund);
+  }
+
   async claimOccasionReward(input: {
     externalUserId: string;
     requestKey: string;

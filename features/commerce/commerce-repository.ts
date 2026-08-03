@@ -33,6 +33,9 @@ export class CommerceRepository {
   }) {
     return this.dataSource.requestRefund(input);
   }
+  listRefunds(externalUserId: string) {
+    return this.dataSource.listRefunds(externalUserId);
+  }
   getCreditBalance(externalUserId: string) {
     return this.dataSource.getCreditBalance(externalUserId);
   }

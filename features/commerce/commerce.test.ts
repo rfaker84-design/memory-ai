@@ -222,6 +222,10 @@ class TestLedger implements CommerceDataSource {
     return created;
   }
 
+  async listRefunds(externalUserId: string): Promise<CommerceRefundRequest[]> {
+    return [...this.refunds.values()].filter((refund) => this.orderOwners.get(refund.orderNo) === externalUserId);
+  }
+
   async getCreditBalance(externalUserId: string): Promise<CreditBalance> {
     const sums = new Map<CreditSourceKind, number>();
     for (const lot of this.lots.get(externalUserId) ?? []) {

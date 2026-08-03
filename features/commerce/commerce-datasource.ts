@@ -32,6 +32,7 @@ export interface CommerceDataSource {
     requestKey: string;
     reason: CommerceRefundRequest["reason"];
   }): Promise<CommerceRefundRequest>;
+  listRefunds(externalUserId: string): Promise<CommerceRefundRequest[]>;
   getCreditBalance(externalUserId: string): Promise<CreditBalance>;
   reserveGeneration(input: {
     externalUserId: string;

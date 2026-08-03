@@ -1,4 +1,5 @@
 import { refundPolicy } from "@/src/components/payment/refundPolicy";
+import { RefundCenter } from "@/src/components/payment/RefundCenter";
 import { ReportIntake } from "@/src/components/report/ReportIntake";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -21,6 +22,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
             正式法务、隐私和客服联系渠道必须在主体与值班安排完成核验后才会公布。当前尚未配置时，请勿向未核验地址发送身份材料、关系证明或原始照片；该事项仍是公开上线前的 Owner 配置门。
           </p>
         </section>
+        <RefundCenter />
         <section className="mt-8 rounded-xl border border-[#d5b172]/25 p-5">
           <h2 className="text-xl font-semibold">退款规则</h2>
           <p className="mt-3 whitespace-pre-wrap leading-7 text-[#d8bfaa]">
