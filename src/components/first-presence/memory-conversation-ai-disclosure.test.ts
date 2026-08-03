@@ -12,6 +12,8 @@ test("continuous memorial chat keeps an accessible AI identity disclosure visibl
     "disclosure must precede conversation messages",
   );
   assert.match(source, /<AiGeneratedLabel compact confirmedSources \/>/);
+  assert.match(source, /function supportRequestId\(error: unknown\): string \| null/);
+  assert.match(source, /failureRequestId && <p className=\{styles\.alert\} role="status">请求编号：\{failureRequestId\}<\/p>/);
   assert.match(source, /查看资料来源/);
   assert.match(source, /\/memory\/\$\{memoryId\}\/sources/);
   assert.match(source, /import \{ CRISIS_RESPONSE \} from "@\/features\/memory-engine\/crisis-response"/);

@@ -63,6 +63,10 @@ function isSafetyAssistantMessage(message: ConversationMessage): boolean {
   return message.role === "assistant" && message.content === CRISIS_RESPONSE;
 }
 
+function supportRequestId(error: unknown): string | null {
+  return error instanceof ConversationRequestError && error.requestId ? error.requestId : null;
+}
+
 export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey, initialPortraitUrl = null, onLeave }: Props) {
   const reducedMotion = useReducedMotion();
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -71,6 +75,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   const [draft, setDraft] = useState("");
   const [pendingMessage, setPendingMessage] = useState<PendingMessage | null>(null);
   const [notice, setNotice] = useState("");
+  const [failureRequestId, setFailureRequestId] = useState<string | null>(null);
   const [networkOffline, setNetworkOffline] = useState(false);
   const [pickupSuggestionVisible, setPickupSuggestionVisible] = useState(false);
   const portraitUrl = initialPortraitUrl;
@@ -94,6 +99,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   const loadOrRequestGreeting = useCallback(async (signal?: AbortSignal) => {
     setPhase("loading");
     setNotice("");
+    setFailureRequestId(null);
     try {
       setPhase("greeting");
       const restored = await restoreConversationWithFirstGreeting(
@@ -107,6 +113,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     } catch (error) {
       if (signal?.aborted) return;
       setNotice(readableFailure(error));
+      setFailureRequestId(supportRequestId(error));
       setPhase("error");
     }
   }, [firstGreetingKey, memoryId]);
@@ -194,6 +201,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     setDraft("");
     setPendingMessage({ content: message, idempotencyKey });
     setNotice("");
+    setFailureRequestId(null);
     setPhase("sending");
     const replyingTimer = window.setTimeout(() => setPhase("replying"), reducedMotion ? 0 : 360);
 
@@ -204,6 +212,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
       setPhase("ready");
     } catch (error) {
       inFlightRef.current = false;
+      setFailureRequestId(supportRequestId(error));
       setNotice(`${readableFailure(error)} 已保留原文，但不会自动重发。`);
       setPhase("error");
     } finally {
@@ -218,6 +227,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     inFlightRef.current = true;
     setPhase("recovering");
     setNotice("");
+    setFailureRequestId(null);
     try {
       const restored = await restore();
       if (hasServerMessage(restored, candidate.content)) {
@@ -236,6 +246,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     } catch (error) {
       setPhase("error");
       setNotice(readableFailure(error));
+      setFailureRequestId(supportRequestId(error));
     } finally {
       inFlightRef.current = false;
     }
@@ -281,6 +292,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
 
         {status && <p className={styles.status} role="status" aria-live="polite">{status}</p>}
         {notice && <p className={styles.alert} role="alert">{notice}</p>}
+        {failureRequestId && <p className={styles.alert} role="status">请求编号：{failureRequestId}</p>}
 
         <div className={styles.messages} aria-live="polite" aria-relevant="additions text">
           {messages.length === 0 && phase !== "loading" && phase !== "greeting" && (

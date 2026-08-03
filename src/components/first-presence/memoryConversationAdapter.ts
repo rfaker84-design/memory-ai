@@ -17,7 +17,8 @@ export type ConversationSnapshot = {
 export class ConversationRequestError extends Error {
   constructor(
     message: string,
-    readonly status: number
+    readonly status: number,
+    readonly requestId?: string
   ) {
     super(message);
     this.name = "ConversationRequestError";
@@ -26,6 +27,7 @@ export class ConversationRequestError extends Error {
 
 type UnknownRecord = Record<string, unknown>;
 const CONVERSATION_REQUEST_TIMEOUT_MS = 20_000;
+const REQUEST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function asRecord(value: unknown): UnknownRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as UnknownRecord : {};
@@ -33,6 +35,11 @@ function asRecord(value: unknown): UnknownRecord {
 
 async function responseBody(response: Response): Promise<UnknownRecord> {
   return asRecord(await response.json().catch(() => ({})));
+}
+
+function responseRequestId(response: Response): string | undefined {
+  const requestId = response.headers.get("x-request-id")?.trim();
+  return requestId && REQUEST_ID_PATTERN.test(requestId) ? requestId.toLowerCase() : undefined;
 }
 
 function normalizeMessage(value: unknown, index: number): ConversationMessage | null {
@@ -50,10 +57,11 @@ function normalizeMessage(value: unknown, index: number): ConversationMessage | 
   };
 }
 
-function toRequestError(body: UnknownRecord, status: number, fallback: string) {
+function toRequestError(response: Response, body: UnknownRecord, fallback: string) {
   return new ConversationRequestError(
     typeof body.error === "string" ? body.error : fallback,
-    status
+    response.status,
+    responseRequestId(response),
   );
 }
 
@@ -97,7 +105,7 @@ export async function loadConversation(
     body: JSON.stringify({}),
   }, signal);
   const body = await responseBody(response);
-  if (!response.ok) throw toRequestError(body, response.status, "CHAT_SESSION_FAILED");
+  if (!response.ok) throw toRequestError(response, body, "CHAT_SESSION_FAILED");
   const session = asRecord(body.session);
   const messages = Array.isArray(body.messages)
     ? body.messages.map(normalizeMessage).filter((message): message is ConversationMessage => Boolean(message))
@@ -119,7 +127,7 @@ export async function requestFirstGreeting(
     body: JSON.stringify({}),
   }, signal);
   const body = await responseBody(response);
-  if (!response.ok) throw toRequestError(body, response.status, "FIRST_GREETING_FAILED");
+  if (!response.ok) throw toRequestError(response, body, "FIRST_GREETING_FAILED");
   const greeting = normalizeMessage(body.greeting, 0);
   if (!greeting || greeting.role !== "assistant") {
     throw new ConversationRequestError("FIRST_GREETING_INVALID", 502);
@@ -155,5 +163,5 @@ export async function sendConversationMessage(
     }),
   }, signal);
   const body = await responseBody(response);
-  if (!response.ok) throw toRequestError(body, response.status, "CHAT_SEND_FAILED");
+  if (!response.ok) throw toRequestError(response, body, "CHAT_SEND_FAILED");
 }

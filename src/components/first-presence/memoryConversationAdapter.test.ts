@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  ConversationRequestError,
   loadConversation,
   fetchConversationRequest,
   requestFirstGreeting,
@@ -216,4 +217,22 @@ test("a client timeout is explicit and does not turn an uncertain request into a
       (error: unknown) => error instanceof Error && error.message === "CHAT_REQUEST_TIMEOUT" && (error as { status?: unknown }).status === 408,
     );
   } finally { globalThis.fetch = originalFetch; }
+});
+
+test("formal conversation failures preserve only a server-generated request ID for user support", async () => {
+  const restore = withFetch(
+    Response.json({ error: "CHAT_SEND_FAILED" }, {
+      status: 503,
+      headers: { "x-request-id": "2c6a0caa-2cbf-4a1c-8eaf-5df64d2541f1" },
+    }),
+    () => {},
+  );
+  try {
+    await assert.rejects(
+      sendConversationMessage("memory-1", "test", "message-1"),
+      (error: unknown) => error instanceof ConversationRequestError
+        && error.status === 503
+        && error.requestId === "2c6a0caa-2cbf-4a1c-8eaf-5df64d2541f1",
+    );
+  } finally { restore(); }
 });
