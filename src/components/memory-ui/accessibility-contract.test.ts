@@ -10,6 +10,7 @@ const flowStyles = readFileSync("src/components/first-presence/FirstPresenceFlow
 
 test("core input controls preserve keyboard focus and expose validation to assistive technology", () => {
   assert.match(globalCss, /:focus-visible\s*\{\s*outline: 3px solid/);
+  assert.match(globalCss, /body\s*\{[\s\S]*?background:var\(--bg-warm\);[\s\S]*?color:var\(--text-primary\);/);
   assert.match(input, /useId/);
   assert.match(input, /"aria-invalid"/);
   assert.match(input, /"aria-describedby"/);
