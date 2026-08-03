@@ -12,3 +12,17 @@ test("session-gated legacy surfaces fail closed after a bounded session check", 
   assert.match(source, /role="status" aria-live="polite"/);
   assert.match(source, /setState\("unavailable"\)/);
 });
+
+test("publicly reachable admin aliases contain only the disabled session gate, never an operations dashboard", () => {
+  for (const page of [
+    "app/admin/page.tsx",
+    "app/admin/dashboard/page.tsx",
+    "app/admin/analytics/page.tsx",
+    "app/admin/revenue/page.tsx",
+    "app/admin/viral/page.tsx",
+  ]) {
+    const content = readFileSync(page, "utf8");
+    assert.match(content, /SessionGateUnavailable/);
+    assert.doesNotMatch(content, /fetch\(|\/api\/internal|\/api\/admin/);
+  }
+});
