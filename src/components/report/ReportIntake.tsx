@@ -17,10 +17,11 @@ export function ReportIntake() {
   const [loadState, setLoadState] = useState<"loading" | "ready" | "unauthenticated" | "unavailable">("loading");
   const pendingSubmission = useRef<PendingReportSubmission | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoadState("loading");
     try {
-      const { response, body } = await fetchReportJson("/api/reports", { credentials: "include", cache: "no-store" });
+      const { response, body } = await fetchReportJson("/api/reports", { credentials: "include", cache: "no-store" }, fetch, signal);
+      if (signal?.aborted) return;
       const reportBody = body as { reports?: Report[]; error?: string };
       if (response.ok) {
         setReports(reportBody.reports ?? []);
@@ -34,11 +35,16 @@ export function ReportIntake() {
         setLoadState("unavailable");
       }
     } catch {
+      if (signal?.aborted) return;
       setMessage("暂时无法读取工单状态；尚未提交新的工单。请恢复网络后刷新。");
       setLoadState("unavailable");
     }
   }, []);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [load]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();

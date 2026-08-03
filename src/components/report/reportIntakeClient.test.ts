@@ -60,4 +60,7 @@ test("report UI gates submission on a confirmed session and serializes an in-fli
   assert.match(source, /if \(submitting\) return/);
   assert.match(source, /disabled=\{submitting\}/);
   assert.match(source, /fetchReportJson\("\/api\/reports"/);
+  assert.match(source, /const controller = new AbortController\(\)/);
+  assert.match(source, /void load\(controller\.signal\)/);
+  assert.match(source, /if \(signal\?\.aborted\) return/);
 });
