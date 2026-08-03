@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import test from "node:test";
 
 import { register } from "@/instrumentation";
@@ -196,6 +198,26 @@ test("production startup rejects incomplete, too-short and expired verification 
     AUTH_VERIFICATION_PEPPER_PREVIOUS_KID: "previous-v1",
     AUTH_VERIFICATION_PEPPER_PREVIOUS_VALID_UNTIL: new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toISOString(),
   }));
+});
+
+test("the environment example documents every bounded rotation input without a secret value", () => {
+  const environmentExample = readFileSync(resolve(process.cwd(), ".env.example"), "utf8");
+  for (const name of [
+    "AUTH_VERIFICATION_PEPPER_PREVIOUS",
+    "AUTH_VERIFICATION_PEPPER_PREVIOUS_KID",
+    "AUTH_VERIFICATION_PEPPER_PREVIOUS_VALID_UNTIL",
+    "VIDEO_REVIEW_ACCESS_TOKEN",
+    "VIDEO_REVIEW_ACCESS_TOKEN_PREVIOUS",
+    "VIDEO_REVIEW_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL",
+    "VIDEO_RECONCILIATION_ACCESS_TOKEN",
+    "VIDEO_RECONCILIATION_ACCESS_TOKEN_PREVIOUS",
+    "VIDEO_RECONCILIATION_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL",
+  ]) {
+    assert.match(environmentExample, new RegExp(`^${name}=$`, "m"), name);
+  }
+  assert.match(environmentExample, /^AUTH_VERIFICATION_PEPPER_KID=current$/m);
+  assert.match(environmentExample, /^YIJIAN_VIDEO_REVIEW_INTERNAL_ENABLED=false$/m);
+  assert.match(environmentExample, /^YIJIAN_VIDEO_RECONCILIATION_INTERNAL_ENABLED=false$/m);
 });
 
 test("production instrumentation invokes the startup gate before serving requests", async () => {
