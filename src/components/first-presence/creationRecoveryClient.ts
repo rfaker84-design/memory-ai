@@ -176,18 +176,23 @@ export class CreationRecoveryRequestError extends Error {
   }
 }
 
+export type CreationJsonResponse = { response: Response; body: Record<string, unknown> };
+
+type CreationResponseReader<T> = (response: Response, signal: AbortSignal) => Promise<T>;
+
 /**
  * A timeout is intentionally uncertain: callers must retain the original
  * idempotency key and use the formal recovery endpoint instead of submitting
  * another creation or media request.
  */
-export async function fetchCreationRequest(
+async function fetchCreation<T = Response>(
   input: string,
   init: RequestInit,
   request: typeof fetch = fetch,
   parentSignal?: AbortSignal,
   timeoutMs = CREATION_REQUEST_TIMEOUT_MS,
-): Promise<Response> {
+  readResponse?: CreationResponseReader<T>,
+): Promise<T> {
   const controller = new AbortController();
   let timedOut = false;
   const abortFromParent = () => controller.abort();
@@ -195,7 +200,8 @@ export async function fetchCreationRequest(
   else parentSignal?.addEventListener("abort", abortFromParent, { once: true });
   const timer = globalThis.setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   try {
-    return await request(input, { ...init, signal: controller.signal });
+    const response = await request(input, { ...init, signal: controller.signal });
+    return readResponse ? await readResponse(response, controller.signal) : response as T;
   } catch (error) {
     if (timedOut) throw new CreationRecoveryRequestError(408, "CREATION_REQUEST_TIMEOUT");
     throw error;
@@ -205,18 +211,50 @@ export async function fetchCreationRequest(
   }
 }
 
+async function readCreationJson(response: Response, signal: AbortSignal): Promise<CreationJsonResponse> {
+  try {
+    const parsed: unknown = await response.json();
+    return {
+      response,
+      body: parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {},
+    };
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return { response, body: {} };
+  }
+}
+
+export function fetchCreationRequest(
+  input: string,
+  init: RequestInit,
+  request: typeof fetch = fetch,
+  parentSignal?: AbortSignal,
+  timeoutMs = CREATION_REQUEST_TIMEOUT_MS,
+): Promise<Response> {
+  return fetchCreation(input, init, request, parentSignal, timeoutMs);
+}
+
+export function fetchCreationJson(
+  input: string,
+  init: RequestInit,
+  request: typeof fetch = fetch,
+  parentSignal?: AbortSignal,
+  timeoutMs = CREATION_REQUEST_TIMEOUT_MS,
+): Promise<CreationJsonResponse> {
+  return fetchCreation(input, init, request, parentSignal, timeoutMs, readCreationJson);
+}
+
 export async function recoverCreatedMemory(
   idempotencyKey: string,
   request: typeof fetch = fetch,
 ): Promise<Memory> {
-  const response = await fetchCreationRequest("/api/memories/recovery", {
+  const { response, body: payload } = await fetchCreationJson("/api/memories/recovery", {
     method: "POST",
     credentials: "same-origin",
     cache: "no-store",
     headers: createMemoryRequestHeaders(idempotencyKey),
     body: JSON.stringify({}),
   }, request);
-  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
   if (!response.ok) {
     throw new CreationRecoveryRequestError(
       response.status,
@@ -242,31 +280,31 @@ export async function uploadCreationMedia(
   const body = new FormData();
   body.append("file", file);
   body.append("memoryId", memoryId);
-  const response = await fetchCreationRequest("/api/media/upload", {
+  const { response, body: payload } = await fetchCreationJson("/api/media/upload", {
     method: "POST",
     credentials: "same-origin",
     body,
   }, request);
-  const payload = await response.json().catch(() => ({})) as {
+  const uploadPayload = payload as {
     error?: unknown;
     asset?: { id?: unknown; mediaType?: unknown; status?: unknown };
     duplicate?: unknown;
   };
   if (
     !response.ok
-    || typeof payload.asset?.id !== "string"
-    || typeof payload.asset.mediaType !== "string"
-    || payload.asset.status !== "uploaded"
+    || typeof uploadPayload.asset?.id !== "string"
+    || typeof uploadPayload.asset.mediaType !== "string"
+    || uploadPayload.asset.status !== "uploaded"
   ) {
     throw new CreationRecoveryRequestError(
       response.status || 502,
-      typeof payload.error === "string" ? payload.error : "MEDIA_UPLOAD_FAILED",
+      typeof uploadPayload.error === "string" ? uploadPayload.error : "MEDIA_UPLOAD_FAILED",
     );
   }
   return {
-    assetId: payload.asset.id,
-    mediaType: payload.asset.mediaType,
-    duplicate: payload.duplicate === true,
+    assetId: uploadPayload.asset.id,
+    mediaType: uploadPayload.asset.mediaType,
+    duplicate: uploadPayload.duplicate === true,
   };
 }
 

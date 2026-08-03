@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   clearCreationRecovery,
+  fetchCreationJson,
   fetchCreationRequest,
   CreationRecoveryRequestError,
   mediaPhase,
@@ -80,6 +81,18 @@ test("creation timeout remains uncertain and exposes no automatic retry path", a
     fetchCreationRequest("/api/memories", { method: "POST" }, ((_input, init) => new Promise<Response>((_resolve, reject) => {
       init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
     })) as typeof fetch, undefined, 1),
+    (error) => error instanceof CreationRecoveryRequestError
+      && error.status === 408
+      && error.code === "CREATION_REQUEST_TIMEOUT",
+  );
+});
+
+test("creation JSON responses remain timeout-bound through a stalled body", async () => {
+  await assert.rejects(
+    fetchCreationJson("/api/memories", { method: "POST" }, async (_input, init) => ({
+      ok: true, status: 201, headers: new Headers(),
+      json: () => new Promise((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true })),
+    }) as Response, undefined, 1),
     (error) => error instanceof CreationRecoveryRequestError
       && error.status === 408
       && error.code === "CREATION_REQUEST_TIMEOUT",

@@ -20,7 +20,7 @@ import { buildConfirmedMemoryProfile } from "./confirmedMemoryProfile";
 import { recordTrustConsent, TrustConsentRequestError } from "../trust/trustConsentClient";
 import {
   clearCreationRecovery,
-  fetchCreationRequest,
+  fetchCreationJson,
   readCreationRecovery,
   recoverPendingCreation,
   uploadCurrentCreationMedia,
@@ -61,10 +61,6 @@ const QUESTION_COUNT = 8;
 const VISUAL_PREVIEW_ENABLED =
   process.env.NODE_ENV !== "production"
   && process.env.NEXT_PUBLIC_MEMORYAI_ENABLE_PRESENCE_PREVIEW === "true";
-
-async function responsePayload(response: Response): Promise<ApiPayload> {
-  return response.json().catch(() => ({})) as Promise<ApiPayload>;
-}
 
 function clientIdempotencyKey() {
   const random = typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -522,7 +518,7 @@ export function FirstPresenceFlow({
         setStage("network-failed");
         return;
       }
-      const response = await fetchCreationRequest("/api/memories", {
+      const { response, body } = await fetchCreationJson("/api/memories", {
         method: "POST",
         credentials: "same-origin",
         headers: createMemoryRequestHeaders(idempotencyKey.current),
@@ -537,7 +533,7 @@ export function FirstPresenceFlow({
           }),
         }),
       });
-      const payload = await responsePayload(response);
+      const payload = body as ApiPayload;
       if (response.status === 401) {
         clearCreationRecovery();
         setAuthState("unauthenticated");

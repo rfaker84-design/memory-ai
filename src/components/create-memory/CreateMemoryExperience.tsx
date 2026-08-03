@@ -12,7 +12,7 @@ import { AccountProfileRequestError, saveAdultBirthDate } from "../trust/account
 import {
   clearCreationRecovery,
   CreationRecoveryRequestError,
-  fetchCreationRequest,
+  fetchCreationJson,
   recoverCreatedMemory,
   uploadCurrentCreationMedia,
   writeCreationRecovery,
@@ -110,15 +110,16 @@ export function CreateMemoryExperience() {
         ["personality", draft.personality], ["catch_phrase", draft.catchPhrases], ["shared_experience", draft.sharedExperiences],
         ["life_moment", draft.lifeMoments], ["interest", draft.interests], ["purpose", draft.purpose], ["preferred_address", draft.preferredAddress],
       ].filter(([, content]) => content.trim()).map(([sourceType, content]) => ({ sourceType, content }));
-      const response = await fetchCreationRequest("/api/memories", { method: "POST", credentials: "same-origin", headers: createMemoryRequestHeaders(idempotencyKey), body: JSON.stringify({
+      const { response, body: data } = await fetchCreationJson("/api/memories", { method: "POST", credentials: "same-origin", headers: createMemoryRequestHeaders(idempotencyKey), body: JSON.stringify({
         name: draft.name.trim(), relationship: draft.relationship.trim(),
         lifeStory: [draft.sharedExperiences, draft.lifeMoments].filter(Boolean).join("\n\n") || null,
         personalityProfile: draft.personality.trim() || null, catchPhrases: draft.catchPhrases.trim() || null,
         personalityTags: draft.interests.split(/[，,、\n]/).map(v => v.trim()).filter(Boolean), photoUrl: null, fragments,
       }) });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || "创建失败，请重试。");
-      const createdMemory = { id: data.id as string, name: data.name || draft.name };
+      if (!response.ok || typeof data.id !== "string") {
+        throw new Error(typeof data.error === "string" ? data.error : "创建失败，请重试。");
+      }
+      const createdMemory = { id: data.id, name: typeof data.name === "string" ? data.name : draft.name };
       await completeCreation(createdMemory);
     } catch (cause) {
       if (cause instanceof TrustConsentRequestError) {

@@ -99,14 +99,14 @@ test("formal creation leaves React memory state for the stable owned chat URL", 
 test("formal creation uploads current selected media before the one stable chat navigation", () => {
   assert.match(flow, /writeCreationRecovery\(\{\s*idempotencyKey: idempotencyKey\.current,\s*phase: "creating"/);
   assert.match(flow, /recoverPendingCreation\(\)/);
-  assert.match(recoveryClient, /fetchCreationRequest\("\/api\/memories\/recovery"/);
+  assert.match(recoveryClient, /fetchCreationJson\("\/api\/memories\/recovery"/);
   assert.match(recoveryClient, /body: JSON\.stringify\(\{\}\)/);
   assert.match(flow, /await uploadCurrentCreationMedia\(/);
   assert.match(flow, /await completeCreatedMemory\(payload\.id, idempotencyKey\.current\)/);
   const completion = flow.slice(flow.indexOf("const completeCreatedMemory"), flow.indexOf("const continueRecoveredCreation"));
   assert.match(completion, /await uploadCurrentCreationMedia\([\s\S]*?router\.replace\(`\/memory-chat\//);
   assert.match(flow, /creationOperationInFlight\.current/);
-  assert.match(recoveryClient, /payload\.asset\.status !== "uploaded"/);
+  assert.match(recoveryClient, /uploadPayload\.asset\.status !== "uploaded"/);
   assert.match(recoveryClient, /clearCreationRecovery\(storage\)/);
   assert.match(mediaRecoveryGate, /uploadCreationMedia\(memory\.id, file\)/);
   assert.match(mediaRecoveryGate, /人物资料已经保存。照片尚未完成，你可以重新选择，或稍后补充。/);
