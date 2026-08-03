@@ -46,7 +46,7 @@ runtime contract.
 
 The candidate fails closed on missing or malformed rotation configuration and
 supports one explicitly-versioned previous Session key, identity pepper,
-internal video-control token, and Staging media/access signing value. New
+internal video/reconciliation/refund/complaint-control token, and Staging media/access signing value. New
 Sessions and signatures always use the current value. The old Session key may
 remain valid for no more than the seven-day Session TTL plus 30 seconds of
 clock tolerance; Staging media and video playback keys use their 900-second
