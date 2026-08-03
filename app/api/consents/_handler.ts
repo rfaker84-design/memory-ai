@@ -7,30 +7,34 @@ import {
   TRUST_CONSENT_VERSION,
   type TrustConsentType,
 } from "@/features/consent/trust-consent-postgres";
+import { MEMORY_CREATION_AUTHORIZATION_ACKNOWLEDGEMENT } from "@/features/consent/memory-creation-authorization";
 
 const CONSENT_TYPES = new Set(["adult_eligibility", "memory_profile", "media_asset", "commercial_use", "crisis_support_escalation"]);
 const REQUEST_KEY = /^[A-Za-z0-9._:-]{16,128}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-type RecordConsent = (input: { externalUserId: string; consentType: TrustConsentType; memoryId: string | null; requestKey: string }) => Promise<void>;
+type RecordConsent = (input: { externalUserId: string; consentType: TrustConsentType; memoryId: string | null; requestKey: string; acknowledgement: string | null }) => Promise<void>;
 type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
 type RevokeConsent = (input: { externalUserId: string }) => Promise<void>;
 type ReadCrisisSupportConsent = (input: { externalUserId: string }) => Promise<boolean>;
 
 const json = (body: Record<string, unknown>, init?: ResponseInit) => applyAuthNoStore(NextResponse.json(body, init));
 
-function parseBody(value: unknown): { consentType: TrustConsentType; memoryId: string | null } | null {
+function parseBody(value: unknown): { consentType: TrustConsentType; memoryId: string | null; acknowledgement: string | null } | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const body = value as Record<string, unknown>;
   const keys = Object.keys(body).sort();
-  if (keys.join(",") !== "consentType" && keys.join(",") !== "consentType,memoryId") return null;
+  const allowedKeys = body.consentType === "memory_profile" ? "acknowledgement,consentType" : "consentType";
+  if (keys.join(",") !== allowedKeys && keys.join(",") !== "consentType,memoryId") return null;
   if (typeof body.consentType !== "string" || !CONSENT_TYPES.has(body.consentType)) return null;
   const memoryId = body.memoryId;
   if (memoryId !== undefined && (typeof memoryId !== "string" || !UUID.test(memoryId))) return null;
   if ((body.consentType === "media_asset" || body.consentType === "commercial_use") && memoryId === undefined) return null;
-  return { consentType: body.consentType as TrustConsentType, memoryId: typeof memoryId === "string" ? memoryId : null };
+  const acknowledgement = typeof body.acknowledgement === "string" ? body.acknowledgement : null;
+  if (body.consentType === "memory_profile" && acknowledgement !== MEMORY_CREATION_AUTHORIZATION_ACKNOWLEDGEMENT) return null;
+  return { consentType: body.consentType as TrustConsentType, memoryId: typeof memoryId === "string" ? memoryId : null, acknowledgement };
 }
 
-const recordConsent: RecordConsent = async ({ externalUserId, consentType, memoryId, requestKey }) => {
+const recordConsent: RecordConsent = async ({ externalUserId, consentType, memoryId, requestKey, acknowledgement }) => {
   await withPostgresTransaction(async (client) => {
     const user = await client.query<{ id: string }>(
       `INSERT INTO users (external_id) VALUES ($1)
@@ -57,7 +61,7 @@ const recordConsent: RecordConsent = async ({ externalUserId, consentType, memor
     await client.query(
       `INSERT INTO consent_records (user_id, memory_id, consent_type, status, notes, metadata)
        VALUES ($1, $2, $3, 'approved', $4, $5::jsonb)`,
-      [userId, memoryId, consentType, TRUST_CONSENT_VERSION, JSON.stringify({ requestKey, version: TRUST_CONSENT_VERSION })],
+      [userId, memoryId, consentType, TRUST_CONSENT_VERSION, JSON.stringify({ requestKey, version: TRUST_CONSENT_VERSION, acknowledgement })],
     );
   });
 };

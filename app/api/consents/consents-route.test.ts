@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { NextRequest } from "next/server";
+import { MEMORY_CREATION_AUTHORIZATION_ACKNOWLEDGEMENT } from "@/features/consent/memory-creation-authorization";
 
 import { createConsentsHandler, createCrisisSupportConsentRevocationHandler, createCrisisSupportConsentStatusHandler } from "./_handler";
 
@@ -17,10 +18,10 @@ const request = (body: unknown, headers: Record<string, string> = {}) => new Nex
 test("records a session-bound trust acknowledgement without client identity", async () => {
   let written: unknown;
   const handler = createConsentsHandler(async (input) => { written = input; }, session);
-  const response = await handler(request({ consentType: "memory_profile" }));
+  const response = await handler(request({ consentType: "memory_profile", acknowledgement: MEMORY_CREATION_AUTHORIZATION_ACKNOWLEDGEMENT }));
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { recorded: true });
-  assert.deepEqual(written, { externalUserId: "phone:13800138000", consentType: "memory_profile", memoryId: null, requestKey: "consent-1234567890abcd" });
+  assert.deepEqual(written, { externalUserId: "phone:13800138000", consentType: "memory_profile", memoryId: null, requestKey: "consent-1234567890abcd", acknowledgement: MEMORY_CREATION_AUTHORIZATION_ACKNOWLEDGEMENT });
 });
 
 test("records the adult self-attestation as a distinct account-level consent", async () => {
@@ -28,7 +29,7 @@ test("records the adult self-attestation as a distinct account-level consent", a
   const handler = createConsentsHandler(async (input) => { written = input; }, session);
   const response = await handler(request({ consentType: "adult_eligibility" }));
   assert.equal(response.status, 200);
-  assert.deepEqual(written, { externalUserId: "phone:13800138000", consentType: "adult_eligibility", memoryId: null, requestKey: "consent-1234567890abcd" });
+  assert.deepEqual(written, { externalUserId: "phone:13800138000", consentType: "adult_eligibility", memoryId: null, requestKey: "consent-1234567890abcd", acknowledgement: null });
 });
 
 test("records a separately explicit crisis support escalation authorization", async () => {
@@ -36,7 +37,7 @@ test("records a separately explicit crisis support escalation authorization", as
   const handler = createConsentsHandler(async (input) => { written = input; }, session);
   const response = await handler(request({ consentType: "crisis_support_escalation" }));
   assert.equal(response.status, 200);
-  assert.deepEqual(written, { externalUserId: "phone:13800138000", consentType: "crisis_support_escalation", memoryId: null, requestKey: "consent-1234567890abcd" });
+  assert.deepEqual(written, { externalUserId: "phone:13800138000", consentType: "crisis_support_escalation", memoryId: null, requestKey: "consent-1234567890abcd", acknowledgement: null });
 });
 
 test("revokes crisis support authorization only for the current session", async () => {
@@ -74,5 +75,7 @@ test("requires a memory for media and commerce acknowledgement", async () => {
 test("rejects client supplied identity and malformed keys", async () => {
   const handler = createConsentsHandler(async () => {}, session);
   assert.equal((await handler(request({ consentType: "memory_profile", userId: "forged" }))).status, 400);
-  assert.equal((await handler(request({ consentType: "memory_profile" }, { "idempotency-key": "short" }))).status, 400);
+  assert.equal((await handler(request({ consentType: "memory_profile" }))).status, 400);
+  assert.equal((await handler(request({ consentType: "memory_profile", acknowledgement: "wrong" }))).status, 400);
+  assert.equal((await handler(request({ consentType: "memory_profile", acknowledgement: MEMORY_CREATION_AUTHORIZATION_ACKNOWLEDGEMENT }, { "idempotency-key": "short" }))).status, 400);
 });

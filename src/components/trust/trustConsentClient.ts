@@ -65,7 +65,9 @@ export async function recordTrustConsent(
       "Content-Type": "application/json",
       "Idempotency-Key": idempotencyKey(),
     },
-    body: JSON.stringify(memoryId ? { consentType, memoryId } : { consentType }),
+    body: JSON.stringify(memoryId ? { consentType, memoryId } : consentType === "memory_profile"
+      ? { consentType, acknowledgement: MEMORY_CREATION_AUTHORIZATION_ACKNOWLEDGEMENT }
+      : { consentType }),
   }, request, TRUST_CONSENT_TIMEOUT_MS, readConsentJson);
 
   if (!response.ok) {
@@ -77,3 +79,4 @@ export async function revokeCrisisSupportConsent(request: typeof fetch = fetch):
   const response = await requestWithTimeout("/api/consents", { method: "DELETE", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ consentType: "crisis_support_escalation" }) }, request);
   if (!response.ok) throw new TrustConsentRequestError("CONSENT_REVOKE_FAILED");
 }
+import { MEMORY_CREATION_AUTHORIZATION_ACKNOWLEDGEMENT } from "@/features/consent/memory-creation-authorization";
