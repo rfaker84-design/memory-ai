@@ -6,6 +6,7 @@ import {
   clearCommerceVideoOrderRecovery,
   clearOccasionVideoRecovery,
   COMMERCE_VIDEO_ORDER_RECOVERY_STORAGE_KEY,
+  COMMERCE_REQUEST_TIMEOUT_MS,
   commercePlatform,
   claimOccasionReward,
   createCommerceVideoOrder,
@@ -182,6 +183,25 @@ test("an invalid balance payload is unavailable instead of becoming zero credits
     })) as typeof fetch),
     /INVALID_COMMERCE_BALANCE/,
   );
+});
+
+test("Commerce reads and writes keep one timeout through a stalled JSON body", async () => {
+  const stalledBody = async (_input: RequestInfo | URL, init?: RequestInit) => ({
+    ok: false,
+    status: 503,
+    json: () => new Promise((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true })),
+  }) as unknown as Response;
+  const originalSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = ((callback: (...args: never[]) => void) => originalSetTimeout(callback, 0)) as unknown as typeof setTimeout;
+  try {
+    await assert.rejects(
+      loadCommerceCreditBalance(stalledBody as unknown as typeof fetch),
+      (error: unknown) => error instanceof Error && error.message === "COMMERCE_REQUEST_TIMEOUT",
+    );
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+  }
+  assert.equal(COMMERCE_REQUEST_TIMEOUT_MS, 20_000);
 });
 
 test("the visible package labels come from the immutable new Commerce catalog", () => {

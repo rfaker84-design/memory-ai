@@ -50,6 +50,9 @@ function unavailableCopy(error: unknown) {
   if (error instanceof CommerceVideoEntryError && error.code === "COMMERCE_TEST_PAYMENT_DISABLED") {
     return "当前环境尚未配置支付，订单不会被提交。";
   }
+  if (error instanceof CommerceVideoEntryError && error.code === "COMMERCE_REQUEST_TIMEOUT") {
+    return "本次结果尚未确认。不会自动重试；若是订单或纪念影像请求，原恢复标识会保留，稍后请明确重试。";
+  }
   return "影像机会暂时无法读取，请稍后再试。";
 }
 

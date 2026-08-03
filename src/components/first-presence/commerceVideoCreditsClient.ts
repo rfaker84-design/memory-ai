@@ -40,6 +40,7 @@ export type OccasionVideoRecovery = {
 
 export const COMMERCE_VIDEO_ORDER_RECOVERY_STORAGE_KEY = "memoryai:commerce-video-order-recovery:v1";
 export const OCCASION_VIDEO_RECOVERY_STORAGE_KEY = "memoryai:occasion-video-recovery:v1";
+export const COMMERCE_REQUEST_TIMEOUT_MS = 20_000;
 
 export type CommerceVideoOrderRecovery = {
   memoryId: string;
@@ -194,10 +195,15 @@ export function clearOccasionVideoRecovery(
   }
 }
 
-async function body(response: Response): Promise<ResponseBody> {
-  const parsed = await response.json().catch(() => ({}));
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
-  return parsed as ResponseBody;
+async function body(response: Response, signal: AbortSignal): Promise<ResponseBody> {
+  try {
+    const parsed: unknown = await response.json();
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+    return parsed as ResponseBody;
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return {};
+  }
 }
 
 async function requestJson(
@@ -205,18 +211,29 @@ async function requestJson(
   init: RequestInit | undefined,
   request: typeof fetch,
 ) {
-  const response = await request(input, {
-    credentials: "same-origin",
-    cache: "no-store",
-    ...init,
-  });
-  const parsed = await body(response);
-  if (!response.ok) {
-    throw new CommerceVideoEntryError(
-      typeof parsed.error === "string" ? parsed.error : "COMMERCE_UNAVAILABLE",
-    );
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = globalThis.setTimeout(() => { timedOut = true; controller.abort(); }, COMMERCE_REQUEST_TIMEOUT_MS);
+  try {
+    const response = await request(input, {
+      credentials: "same-origin",
+      cache: "no-store",
+      ...init,
+      signal: controller.signal,
+    });
+    const parsed = await body(response, controller.signal);
+    if (!response.ok) {
+      throw new CommerceVideoEntryError(
+        typeof parsed.error === "string" ? parsed.error : "COMMERCE_UNAVAILABLE",
+      );
+    }
+    return parsed;
+  } catch (error) {
+    if (timedOut) throw new CommerceVideoEntryError("COMMERCE_REQUEST_TIMEOUT");
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timer);
   }
-  return parsed;
 }
 
 function isNonNegativeInteger(value: unknown) {
