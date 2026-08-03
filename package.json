@@ -43,6 +43,7 @@
     "test:operations": "tsx --test features/operations/operations-alert-evaluator.test.ts app/api/internal/operations/summary/summary-route.test.ts app/api/internal/operations/alerts/alerts-route.test.ts scripts/ops/collect-operations-alerts.test.ts",
     "test:capacity-baseline": "tsx --test scripts/ops/capacity-baseline-contract.test.ts scripts/ops/run-capacity-baseline.test.ts",
     "run:capacity-baseline": "tsx scripts/ops/run-capacity-baseline.ts",
+    "test:free-chat-postgres": "tsx --test features/chat/free-chat-daily-admission-postgres14.integration.test.ts",
     "test:video-product": "tsx --test features/video/first-presence-video-service.test.ts features/video/video-artifact-pipeline.test.ts features/video/ai-content-marking.test.ts src/server/runtime/video-staging-contract.test.ts app/api/internal/video-reconciliation/reconciliation-handler.test.ts app/api/first-presence-video/playback/playback-route.test.ts && tsx \"app/api/memories/[id]/first-presence-video/first-presence-video-route.test.ts\" && node --test database/tests/016-video-job-postgres-ledger.test.cjs",
     "test:video-postgres": "tsx --test features/video/first-presence-video-postgres.integration.test.ts",
     "test:account-deletion-postgres": "tsx --test features/account-deletion/account-deletion-postgres14.integration.test.ts && node --test database/tests/017-account-deletion.test.cjs",
