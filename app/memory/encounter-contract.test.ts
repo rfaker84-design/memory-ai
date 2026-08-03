@@ -5,7 +5,7 @@ import test from "node:test";
 const source = readFileSync(new URL("./[id]/encounter/page.tsx", import.meta.url), "utf8");
 
 test("encounter only reads an approved owner preview and never submits a generation", () => {
-  assert.match(source, /fetchPickupRequest\(`\/api\/memories/);
+  assert.match(source, /fetchPickupRequestJson\(`\/api\/memories/);
   assert.match(source, /intent === "initial_preview"/);
   assert.match(source, /job\.status === "succeeded"/);
   assert.match(source, /artifactAvailable/);
@@ -16,6 +16,12 @@ test("encounter only reads an approved owner preview and never submits a generat
   assert.match(source, /const load = useCallback/);
   assert.match(source, /void load\(controller\.signal\)/);
   assert.match(source, /state\.status === "error"[\s\S]*?重新读取/);
+  assert.match(source, /OwnedMemoryRequestError && error\.status === 401/);
+  assert.match(source, /setState\(\{ status: "unauthenticated" \}\)/);
+  assert.match(source, /PickupRequestError/);
+  assert.match(source, /setState\(\{ status: "timeout" \}\)/);
+  assert.match(source, /state\.status === "unauthenticated"[\s\S]*?<Link href="\/login">/);
+  assert.match(source, /state\.status === "timeout"[\s\S]*?重新读取/);
   assert.match(source, /<button type="button" style=\{\{ minHeight: 44 \}\} onClick=\{continueToChat\}>/);
   assert.doesNotMatch(source, /method:\s*"POST"/);
   assert.doesNotMatch(source, /loop=/);

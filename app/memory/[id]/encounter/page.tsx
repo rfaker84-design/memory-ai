@@ -1,10 +1,11 @@
 "use client";
 
 import { use, useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import { loadOwnedMemory, loadOwnedMediaUrl } from "@/src/components/memory/ownedMemoryClient";
-import { fetchPickupRequestJson } from "@/src/components/memory/pickupRequestClient";
+import { loadOwnedMemory, loadOwnedMediaUrl, OwnedMemoryRequestError } from "@/src/components/memory/ownedMemoryClient";
+import { fetchPickupRequestJson, PickupRequestError } from "@/src/components/memory/pickupRequestClient";
 import { AiGeneratedLabel } from "@/src/components/safety/AiGeneratedLabel";
 
 type VideoJob = {
@@ -18,6 +19,8 @@ type VideoJob = {
 type EncounterState =
   | { status: "loading" }
   | { status: "ready"; name: string; portraitUrl: string | null; playbackUrl: string | null }
+  | { status: "unauthenticated" }
+  | { status: "timeout" }
   | { status: "error" };
 
 /**
@@ -56,8 +59,11 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
           }
         }
         if (!signal?.aborted) setState({ status: "ready", name: memory.name, portraitUrl, playbackUrl });
-    } catch {
-      if (!signal?.aborted) setState({ status: "error" });
+    } catch (error) {
+      if (signal?.aborted) return;
+      if (error instanceof OwnedMemoryRequestError && error.status === 401) setState({ status: "unauthenticated" });
+      else if (error instanceof OwnedMemoryRequestError && error.status === 408 || error instanceof PickupRequestError) setState({ status: "timeout" });
+      else setState({ status: "error" });
     }
   }, [memoryId]);
 
@@ -78,6 +84,8 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
   };
 
   if (state.status === "loading") return <main><p role="status" aria-live="polite">正在准备这次遇见…</p></main>;
+  if (state.status === "unauthenticated") return <main><p role="alert">请先登录，再打开属于你的遇见页面。当前没有读取、创建或播放任何内容。</p><Link href="/login">前往登录</Link></main>;
+  if (state.status === "timeout") return <main><p role="alert">读取等待过久，尚未创建或修改任何内容。</p><button type="button" style={{ minHeight: 44 }} onClick={() => void load()}>重新读取</button><button type="button" style={{ minHeight: 44 }} onClick={continueToChat}>直接进入相伴</button></main>;
   if (state.status === "error") return <main><p role="alert">暂时无法打开遇见页面。</p><button type="button" style={{ minHeight: 44 }} onClick={() => void load()}>重新读取</button><button type="button" style={{ minHeight: 44 }} onClick={continueToChat}>直接进入相伴</button></main>;
 
   return <main style={{ minHeight: "100dvh", display: "grid", placeItems: "center", padding: 24, background: "#090807", color: "#fff" }}>
