@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useState } from "react";
 
 const navLinks = [
-  { href: "/", label: "首页" },
-  { href: "/about", label: "关于我们" },
-  { href: "/", label: "进入忆见" },
+  { id: "home", href: "/", label: "首页" },
+  { id: "about", href: "/about", label: "关于我们" },
+  { id: "enter", href: "/", label: "进入忆见" },
 ];
 
 export default function Navbar() {
@@ -37,7 +37,7 @@ export default function Navbar() {
 
         <ul className="hidden items-center gap-10 md:flex">
           {navLinks.map((link) => (
-            <li key={link.href}>
+            <li key={link.id}>
               <Link
                 href={link.href}
                 className="text-sm font-medium text-charcoal-light transition-colors hover:text-charcoal"
@@ -87,7 +87,7 @@ export default function Navbar() {
         >
           <ul className="flex flex-col px-6 py-4">
             {navLinks.map((link) => (
-              <li key={link.href}>
+              <li key={link.id}>
                 <Link
                   href={link.href}
                   className="block py-3 text-sm font-medium text-charcoal-light transition-colors hover:text-charcoal"

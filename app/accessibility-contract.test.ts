@@ -12,6 +12,7 @@ test("global accessibility keeps browser zoom, focus visibility, and a keyboard 
   assert.match(shell, /id="main-content"/);
   assert.match(shell, /aria-label="主导航"/);
   assert.match(shell, /aria-current=\{a \? "page" : undefined\}/);
+  assert.match(shell, /<motion\.button key=\{t\.key\} type="button"/);
   assert.doesNotMatch(shell, /outline:"none"/);
 });
 

@@ -11,4 +11,8 @@ test("the reachable about surface preserves the frozen first-release truth bound
   assert.match(about, /href="\/"/);
   assert.doesNotMatch(about, /重现亲人的声音|继续陪伴|\/#experience/);
   assert.doesNotMatch(navigation, /href: "#experience"/);
+  assert.match(navigation, /\{ id: "home", href: "\/"/);
+  assert.match(navigation, /\{ id: "enter", href: "\/"/);
+  assert.match(navigation, /key=\{link\.id\}/);
+  assert.doesNotMatch(navigation, /key=\{link\.href\}/);
 });

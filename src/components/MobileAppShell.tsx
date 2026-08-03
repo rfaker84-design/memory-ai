@@ -47,7 +47,7 @@ export default function MobileAppShell({ children }:{ children:React.ReactNode }
         {TABS.map(t => {
           const a = active(t);
           return (
-            <motion.button key={t.key} onClick={() => router.push(t.path)} aria-current={a ? "page" : undefined} whileTap={{ scale:0.96 }}
+            <motion.button key={t.key} type="button" onClick={() => router.push(t.path)} aria-current={a ? "page" : undefined} whileTap={{ scale:0.96 }}
               style={{
                 display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,
                 background:"none",border:"none",cursor:"pointer",padding:"6px 10px",minWidth:56,minHeight:44,
