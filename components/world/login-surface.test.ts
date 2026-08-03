@@ -15,9 +15,13 @@ test("the login surface keeps its formal consent, session, and recovery contract
     assert.match(loginSurface, new RegExp(copy));
   }
   assert.match(loginSurface, /if \(!agreementAccepted\)/);
-  assert.match(loginSurface, /fetch\("\/api\/auth\/send-code"/);
-  assert.match(loginSurface, /fetch\("\/api\/auth\/verify-code"/);
+  assert.match(loginSurface, /authRequest\("\/api\/auth\/send-code"/);
+  assert.match(loginSurface, /authRequest\("\/api\/auth\/verify-code"/);
   assert.match(loginSurface, /credentials: "same-origin"/);
+  assert.match(loginSurface, /AUTH_REQUEST_TIMEOUT_MS = 12_000/);
+  assert.match(loginSurface, /AbortController/);
+  assert.match(loginSurface, /signal: controller\.signal/);
+  assert.match(loginSurface, /if \(sending \|\| code\.length !== 6 \|\| !challengeId\) return/);
   assert.match(loginSurface, /smsSendFailureNotice/);
   assert.match(loginSurface, /网络连接暂时中断/);
 });

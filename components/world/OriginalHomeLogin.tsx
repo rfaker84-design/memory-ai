@@ -14,6 +14,23 @@ import homeLoginStyles from "./HomeLogin.module.css";
 const WECHAT_LOGIN_VISUAL_PREVIEW_AVAILABLE =
   process.env.NODE_ENV !== "production"
   && process.env.NEXT_PUBLIC_MEMORYAI_LOGIN_VISUAL_STATE === "wechat-available";
+const AUTH_REQUEST_TIMEOUT_MS = 12_000;
+
+async function authRequest(path: string, body: Record<string, string>) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), AUTH_REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      signal: controller.signal,
+      body: JSON.stringify(body),
+    });
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
 
 function WeChatMark() {
   return (
@@ -78,12 +95,7 @@ export function OriginalHomeLogin({ onAuthenticated, onPreview }: { onAuthentica
     setSending(true);
     setNotice("");
     try {
-      const response = await fetch("/api/auth/send-code", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ phone }),
-      });
+      const response = await authRequest("/api/auth/send-code", { phone });
       const data = await response.json().catch(() => ({}));
       if (response.status === 202 && data.accepted && data.challengeId) {
         setChallengeId(data.challengeId);
@@ -100,15 +112,11 @@ export function OriginalHomeLogin({ onAuthenticated, onPreview }: { onAuthentica
   };
 
   const verifyCode = async () => {
-    if (code.length !== 6 || !challengeId) return;
+    if (sending || code.length !== 6 || !challengeId) return;
+    setSending(true);
     setNotice("");
     try {
-      const response = await fetch("/api/auth/verify-code", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ phone, code, challengeId }),
-      });
+      const response = await authRequest("/api/auth/verify-code", { phone, code, challengeId });
       const data = await response.json().catch(() => ({}));
       if (response.ok && data.authenticated) {
         setStep("phone");
@@ -121,6 +129,8 @@ export function OriginalHomeLogin({ onAuthenticated, onPreview }: { onAuthentica
       }
     } catch {
       setNotice("网络连接暂时中断，请检查网络后重试。");
+    } finally {
+      setSending(false);
     }
   };
 
@@ -157,7 +167,7 @@ export function OriginalHomeLogin({ onAuthenticated, onPreview }: { onAuthentica
           </> : <>
             <p style={{ margin: 0, color: "#8a7060", fontSize: 12, textAlign: "center" }}>验证码已发送至 {phone}</p>
             <input type="text" value={code} onChange={(event) => setCode(event.currentTarget.value.replace(/\D/g, "").slice(0, 6))} placeholder="输入验证码" inputMode="numeric" autoComplete="one-time-code" autoFocus maxLength={6} className={homeLoginStyles.phoneInput} />
-            <button type="button" onClick={() => void verifyCode()} disabled={code.length !== 6} data-active={code.length === 6} className={homeLoginStyles.smsButton}>进入忆见</button>
+            <button type="button" onClick={() => void verifyCode()} disabled={code.length !== 6 || sending} data-active={code.length === 6 && !sending} className={homeLoginStyles.smsButton}>{sending ? "确认中..." : "进入忆见"}</button>
             <button type="button" onClick={() => { if (countdown === 0) void sendCode(); else setStep("phone"); }} disabled={sending} className={homeLoginStyles.previewButton}>{countdown > 0 ? `${countdown}s 后更换手机号` : "重新发送验证码"}</button>
           </>}
         </div>
