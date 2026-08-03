@@ -48,3 +48,19 @@ test("operations collector rejects unsafe endpoints, weak secrets, response iden
     (error: unknown) => error instanceof OperationsAlertCollectorError && error.code === "OPERATIONS_ALERT_COLLECTOR_HTTP_503",
   );
 });
+
+test("operations collector classifies a stalled response body as unavailable rather than malformed telemetry", async () => {
+  await assert.rejects(
+    collectOperationsAlerts(environment, async (_input, init) => {
+      const stalled = new Promise<unknown>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+      });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => stalled,
+      } as Response;
+    }, 1),
+    (error: unknown) => error instanceof OperationsAlertCollectorError && error.code === "OPERATIONS_ALERT_COLLECTOR_UNAVAILABLE",
+  );
+});

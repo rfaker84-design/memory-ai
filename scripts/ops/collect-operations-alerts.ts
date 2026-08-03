@@ -90,21 +90,29 @@ function parseCollection(value: unknown): OperationsAlertCollection {
 export async function collectOperationsAlerts(
   environment: Readonly<Record<string, string | undefined>> = process.env,
   fetcher: FetchLike = fetch,
+  timeoutMs = 10_000,
 ): Promise<OperationsAlertCollection> {
   const { endpoint, token } = parseCollectorConfiguration(environment);
+  const timeout = AbortSignal.timeout(timeoutMs);
   let response: Response;
   try {
     response = await fetcher(endpoint, {
       method: "GET",
       headers: { "x-operations-metrics-token": token, accept: "application/json" },
       redirect: "error",
-      signal: AbortSignal.timeout(10_000),
+      signal: timeout,
     });
   } catch {
     throw new OperationsAlertCollectorError("OPERATIONS_ALERT_COLLECTOR_UNAVAILABLE");
   }
   if (!response.ok) throw new OperationsAlertCollectorError(`OPERATIONS_ALERT_COLLECTOR_HTTP_${response.status}`);
-  return parseCollection(await response.json().catch(() => null));
+  try {
+    return parseCollection(await response.json());
+  } catch (error) {
+    if (timeout.aborted) throw new OperationsAlertCollectorError("OPERATIONS_ALERT_COLLECTOR_UNAVAILABLE");
+    if (error instanceof OperationsAlertCollectorError) throw error;
+    throw new OperationsAlertCollectorError("OPERATIONS_ALERT_COLLECTOR_RESPONSE_INVALID");
+  }
 }
 
 export function collectorExitCode(collection: OperationsAlertCollection): number {
