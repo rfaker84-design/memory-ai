@@ -11,7 +11,9 @@ test("retired consciousness and autonomous splash surfaces cannot be reconnected
     "splash-v8/ConsciousnessBootScreen.tsx",
     "splash-v9/MindBootScreen.tsx",
     "splash-v10/ConsciousnessOntologyScreen.tsx",
+    "splash-vinf/InfiniteRecursionScreen.tsx",
   ]) {
     assert.equal(existsSync(new URL(relative, root)), false, `retired surface remains: ${relative}`);
   }
+  assert.equal(existsSync(new URL("../lib/recursion-types.ts", root)), false, "retired recursion model remains");
 });

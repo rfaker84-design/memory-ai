@@ -38,7 +38,6 @@ const eslintConfig = [
       "app/components/splash-v8/**",
       "app/components/splash-v9/**",
       "app/components/splash-v10/**",
-      "app/components/splash-vinf/**",
       "app/consciousness/**",
       "app/infinite/**",
       "app/ontology/**",
