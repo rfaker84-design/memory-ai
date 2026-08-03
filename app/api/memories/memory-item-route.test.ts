@@ -10,7 +10,7 @@ import {
   MemoryValidationError,
 } from "../../../features/memory/errors";
 import type { Memory, UpdateOwnedMemoryInput } from "../../../features/memory/types";
-import { createMemoryItemHandlers } from "./[id]/_handlers";
+import { MEMORY_DELETION_CONFIRMATION, createMemoryItemHandlers } from "./[id]/_handlers";
 
 const memoryId = "11111111-1111-4111-8111-111111111111";
 const ownerId = "synthetic-owner";
@@ -188,11 +188,23 @@ test("PATCH hides ownership mismatch behind 404", async () => {
   assert.deepEqual(await response.json(), { error: "MEMORY_NOT_FOUND" });
 });
 
-test("DELETE succeeds once, then returns the deterministic 404 contract", async () => {
+test("DELETE requires an exact explicit confirmation before it can remove a TA", async () => {
   const service = fakeService();
   const handlers = createMemoryItemHandlers(() => service, sessionResolver());
-  const deleted = await handlers.DELETE(request("DELETE"), context());
-  const repeated = await handlers.DELETE(request("DELETE"), context());
+  for (const body of [undefined, JSON.stringify({}), JSON.stringify({ confirmation: "DELETE_ACCOUNT" }), JSON.stringify({ confirmation: MEMORY_DELETION_CONFIRMATION, extra: true })]) {
+    const response = await handlers.DELETE(request("DELETE", body), context());
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: "MEMORY_DELETION_CONFIRMATION_REQUIRED" });
+  }
+  assert.equal((await handlers.GET(request("GET"), context())).status, 200);
+});
+
+test("DELETE succeeds once after explicit confirmation, then returns the deterministic 404 contract", async () => {
+  const service = fakeService();
+  const handlers = createMemoryItemHandlers(() => service, sessionResolver());
+  const body = JSON.stringify({ confirmation: MEMORY_DELETION_CONFIRMATION });
+  const deleted = await handlers.DELETE(request("DELETE", body), context());
+  const repeated = await handlers.DELETE(request("DELETE", body), context());
   assert.equal(deleted.status, 204);
   assert.equal(repeated.status, 404);
   assert.deepEqual(await repeated.json(), { error: "MEMORY_NOT_FOUND" });
@@ -201,7 +213,7 @@ test("DELETE succeeds once, then returns the deterministic 404 contract", async 
 test("DELETE hides ownership mismatch behind 404", async () => {
   const handlers = createMemoryItemHandlers(() => fakeService(), sessionResolver("another-user"));
   const response = await handlers.DELETE(
-    request("DELETE"),
+    request("DELETE", JSON.stringify({ confirmation: MEMORY_DELETION_CONFIRMATION })),
     context()
   );
   assert.equal(response.status, 404);
@@ -209,7 +221,7 @@ test("DELETE hides ownership mismatch behind 404", async () => {
 
 test("DELETE returns 409 while media objects are not cleaned", async () => {
   const handlers = createMemoryItemHandlers(() => fakeService({ mediaConflict: true }), sessionResolver());
-  const response = await handlers.DELETE(request("DELETE"), context());
+  const response = await handlers.DELETE(request("DELETE", JSON.stringify({ confirmation: MEMORY_DELETION_CONFIRMATION })), context());
   assert.equal(response.status, 409);
   assert.equal((await response.json()).error, "MEMORY_MEDIA_NOT_CLEAN");
 });

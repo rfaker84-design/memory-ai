@@ -52,6 +52,13 @@ const allowedUpdateFields = new Set([
   "personalityType",
   "fragments",
 ]);
+export const MEMORY_DELETION_CONFIRMATION = "DELETE_MEMORY";
+
+function hasDeletionConfirmation(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const body = value as Record<string, unknown>;
+  return Object.keys(body).length === 1 && body.confirmation === MEMORY_DELETION_CONFIRMATION;
+}
 
 function errorResponse(error: unknown) {
   if (error instanceof MemoryValidationError) {
@@ -243,6 +250,10 @@ export function createMemoryItemHandlers(
       if ("response" in owner) return owner.response;
       try {
         requireAllowedOrigin(req);
+        const rawBody = await req.json().catch(() => null);
+        if (!hasDeletionConfirmation(rawBody)) {
+          return json({ error: "MEMORY_DELETION_CONFIRMATION_REQUIRED" }, { status: 400 });
+        }
         const { id } = await context.params;
         await serviceFactory().deleteMemoryForUser(id, owner.externalUserId);
         return noContent({ status: 204 });

@@ -22,7 +22,7 @@
 | P-16 | 克制问候和通用通知 | 每日问候已有 | PARTIAL | 核验通知授权时机与文案 |
 | P-17 | noindex/revocable/view-only 分享 | 旧分享隔离；正式分享需核验 | PARTIAL | 审计分享路由/契约 |
 | P-18 | 多 TA 底部选择器 | 主 TA 切换已有 | PARTIAL | 核验底部选择器体验 |
-| P-19 | 删除消息、fresh export、TA 删除确认 | 账户导出/注销已有 | PARTIAL | 审计消息删除与 TA 删除 UI |
+| P-19 | 删除消息、fresh export、TA 删除确认 | fresh reauthentication export 与账户注销已存在；主 TA 列表现在提供显式删除确认，正式 DELETE 路由要求精确 `DELETE_MEMORY` 确认、Owner Session 和 Origin，且素材未清理、会话失效或网络不确定均不会显示删除成功 | PARTIAL | 普通聊天逐条删除尚未实现；仍需真实 UI/Staging 验收 |
 | P-20 | 危机、预授权升级、未成年人隔离 | 危机退出人格与授权队列已有 | IMPLEMENTED_NOT_REAL_E2E | 外部资源/值班/法律复核 |
 
 ## 外部或生产门

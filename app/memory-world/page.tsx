@@ -35,6 +35,9 @@ function MemoryWorldContent() {
   const [memories, setMemories] = useState<MemoryWorldItem[]>([]);
   const [primaryId, setPrimaryId] = useState<string | null>(null);
   const [dailyGreetingVisible, setDailyGreetingVisible] = useState(false);
+  const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
   const restoredPosition = useRef(false);
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -73,6 +76,49 @@ function MemoryWorldContent() {
     setPrimaryId(memory.id);
     window.localStorage.setItem(COMPANION_PRIMARY_KEY, memory.id);
     setDailyGreetingVisible(false);
+  };
+
+  const deleteMemory = async (memory: MemoryWorldItem) => {
+    if (deletingId || deleteConfirmationId !== memory.id) return;
+    setDeletingId(memory.id);
+    setDeleteMessage(null);
+    const controller = new AbortController();
+    const timer = globalThis.setTimeout(() => controller.abort(), 20_000);
+    try {
+      const response = await fetch(`/api/memories/${encodeURIComponent(memory.id)}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ confirmation: "DELETE_MEMORY" }),
+        signal: controller.signal,
+      });
+      const body = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) {
+        if (body.error === "MEMORY_MEDIA_NOT_CLEAN") {
+          setDeleteMessage("这位 TA 的素材仍在清理中，尚未删除。请先完成素材删除并等待清理确认。");
+        } else if (body.error === "UNAUTHENTICATED") {
+          setDeleteMessage("登录状态已失效；尚未删除任何 TA。请重新登录后再确认。");
+        } else {
+          setDeleteMessage("暂时无法确认是否已删除。请不要重复点击；刷新列表后再核对。");
+        }
+        return;
+      }
+      setMemories((current) => current.filter((item) => item.id !== memory.id));
+      if (window.localStorage.getItem(COMPANION_PRIMARY_KEY) === memory.id) {
+        window.localStorage.removeItem(COMPANION_PRIMARY_KEY);
+      }
+      if (primaryId === memory.id) {
+        setPrimaryId(null);
+        setDailyGreetingVisible(false);
+      }
+      setDeleteConfirmationId(null);
+      setDeleteMessage(`${memory.name} 已删除。`);
+    } catch {
+      setDeleteMessage("删除结果尚未确认。请不要重复点击；刷新列表后再核对。");
+    } finally {
+      globalThis.clearTimeout(timer);
+      setDeletingId(null);
+    }
   };
 
   useEffect(() => {
@@ -174,8 +220,16 @@ function MemoryWorldContent() {
                     <div style={{ marginTop: 4, color: SurfaceToken.content.muted, fontSize: MemoryTypography.size.meta }}>{memory.relationship || "关系待补充"}</div>
                   </div>
                 </div>
+                {deleteConfirmationId === memory.id ? <section aria-label={`删除 ${memory.name} 确认`} style={{ display: "grid", gap: MemorySpacing.sm, marginTop: MemorySpacing.md }} onClick={(event) => event.stopPropagation()}>
+                  <p style={{ margin: 0, color: SurfaceToken.content.secondary, lineHeight: MemoryTypography.lineHeight.normal }}>确认删除 {memory.name}？此操作不可恢复；系统会先核验素材已完成清理。</p>
+                  <div style={{ display: "flex", gap: MemorySpacing.sm, flexWrap: "wrap" }}>
+                    <MemoryButton variant="primary" onClick={() => void deleteMemory(memory)} disabled={deletingId === memory.id}>{deletingId === memory.id ? "正在确认…" : "确认删除 TA"}</MemoryButton>
+                    <MemoryButton variant="secondary" onClick={() => setDeleteConfirmationId(null)} disabled={deletingId === memory.id}>取消</MemoryButton>
+                  </div>
+                </section> : <button type="button" onClick={(event) => { event.stopPropagation(); setDeleteConfirmationId(memory.id); setDeleteMessage(null); }} style={{ minHeight: 44, marginTop: MemorySpacing.md, border: `1px solid ${SurfaceToken.border.subtle}`, borderRadius: MemoryRadius.full, background: "transparent", color: SurfaceToken.content.muted, cursor: "pointer", padding: "0 14px" }}>删除 TA</button>}
               </MemoryCard>
             ))}
+            {deleteMessage ? <p role="status" aria-live="polite" style={{ margin: 0, color: SurfaceToken.content.secondary }}>{deleteMessage}</p> : null}
           </div>
         )}
       </MemorySection>
