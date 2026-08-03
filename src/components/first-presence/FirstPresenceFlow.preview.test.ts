@@ -76,7 +76,10 @@ test("formal creation leaves React memory state for the stable owned chat URL", 
   assert.match(chatPage, /loadOwnedMediaUrl\(memory\.photoAssetId/);
   assert.match(chatPage, /const load = useCallback/);
   assert.match(chatPage, /void load\(controller\.signal\)/);
-  assert.match(chatPage, /state\.status === "error" && <button[^>]*onClick=\{\(\) => void load\(\)\}>重新读取<\/button>/);
+  assert.match(chatPage, /\(state\.status === "timeout" \|\| state\.status === "error"\) && <button[^>]*onClick=\{\(\) => void load\(\)\}>重新读取<\/button>/);
+  assert.match(chatPage, /error instanceof OwnedMemoryRequestError && error\.status === 408/);
+  assert.match(chatPage, /state\.status === "timeout"/);
+  assert.match(chatPage, /读取等待过久，尚未创建或修改任何内容。/);
   assert.match(chatPage, /clearCreationRecovery\(\)/);
   assert.match(chatPage, /router\.replace\("\/login"\)/);
   assert.match(chatPage, /firstGreetingKey\(state\.memory\.id\)/);

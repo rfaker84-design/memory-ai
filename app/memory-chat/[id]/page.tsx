@@ -21,7 +21,7 @@ import styles from "./page.module.css";
 type PageState =
   | { status: "loading" }
   | { status: "ready"; memory: Memory; portraitUrl: string | null; requiresMediaRecovery: boolean }
-  | { status: "unauthenticated" | "not-found" | "error" };
+  | { status: "unauthenticated" | "not-found" | "timeout" | "error" };
 
 function firstGreetingKey(memoryId: string) {
   return `first-greeting-${memoryId}`;
@@ -62,6 +62,8 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
           clearCreationRecovery();
         }
         setState({ status: "not-found" });
+      } else if (error instanceof OwnedMemoryRequestError && error.status === 408) {
+        setState({ status: "timeout" });
       } else {
         setState({ status: "error" });
       }
@@ -79,6 +81,8 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
       ? "请先重新登录，再回到这段记忆。"
       : state.status === "not-found"
         ? "暂时找不到这段记忆。"
+        : state.status === "timeout"
+          ? "读取等待过久，尚未创建或修改任何内容。"
         : state.status === "error"
           ? "这段记忆暂时没有打开，请稍后再试。"
           : "正在回到这段记忆…";
@@ -89,7 +93,7 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
           role={state.status === "loading" ? "status" : "alert"}
           aria-live={state.status === "loading" ? "polite" : "assertive"}
         >{copy}</p>
-        {state.status === "error" && <button type="button" onClick={() => void load()}>重新读取</button>}
+        {(state.status === "timeout" || state.status === "error") && <button type="button" onClick={() => void load()}>重新读取</button>}
         {state.status !== "loading" && (
           <button type="button" onClick={() => router.replace("/memory-world")}>返回相伴</button>
         )}
