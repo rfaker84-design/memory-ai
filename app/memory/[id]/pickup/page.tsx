@@ -146,15 +146,15 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
     <h1>把想起的事留在这里。</h1>
     <p>你说，忆见帮你整理。只有经过你确认，才会成为TA可以引用的记忆。忆见不是 TA，不会从普通聊天自动收集资料，也不会猜测空缺。</p>
     {startsFromPhoto && <p role="note">从一张照片说起：看着你手边的照片，把想起的事写下来。此页面不会读取相册、麦克风或录音。</p>}
-    <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
+    {!editing && <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
       <label>你的原话<textarea value={originalText} onChange={(event) => { pendingRequestKey.current = null; setOriginalText(event.currentTarget.value); }} maxLength={8000} rows={5} required /></label>
       {!followUpAsked && originalText.trim() && <TouchButton type="button" onClick={() => setFollowUpAsked(true)}>忆见可以追问一件事</TouchButton>}
       {followUpAsked && <p role="note">忆见想确认一件事：这件事大约发生在什么时候？你可以直接补充在原话里。每次整理最多提出这一项追问。</p>}
       <TouchButton type="button" onClick={() => { pendingRequestKey.current = null; setOrganizedText(organizationDraft(originalText)); }} disabled={!originalText.trim()}>按原话分段整理草稿</TouchButton>
       <label>整理稿（请核对后编辑）<textarea value={organizedText} onChange={(event) => { pendingRequestKey.current = null; setOrganizedText(event.currentTarget.value); }} maxLength={8000} rows={6} required /></label>
-      {!editing && <label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.currentTarget.checked)} /> 我确认原话与整理稿准确，允许忆见将此资料作为可追溯的回复来源。</label>}
-      <TouchButton type="submit" disabled={(editing ? !originalText.trim() || !organizedText.trim() : !confirmed) || submitting}>{submitting ? "正在保存…" : editing ? "保存编辑" : "确认并保存"}</TouchButton>
-    </form>
+      <label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.currentTarget.checked)} /> 我确认原话与整理稿准确，允许忆见将此资料作为可追溯的回复来源。</label>
+      <TouchButton type="submit" disabled={!confirmed || submitting}>{submitting ? "正在保存…" : "确认并保存"}</TouchButton>
+    </form>}
     {message && <p role="status">{message}</p>}
     <h2 style={{ marginTop: 36 }}>已确认资料</h2>
     {pickups.length === 0 && <p>还没有已确认资料。</p>}
@@ -165,10 +165,14 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
       <TouchButton type="button" onClick={() => { setEditing(pickup); setOriginalText(pickup.originalText); setOrganizedText(pickup.organizedText); setConfirmed(true); }}>编辑</TouchButton>{" "}
       <TouchButton type="button" onClick={() => void remove(pickup)}>删除</TouchButton>
     </article>)}
-    {editing && <section aria-label="编辑已确认资料" style={{ position: "sticky", bottom: 12, padding: 16, border: "1px solid #bda", background: "#fff" }}>
+    {editing && <section role="dialog" aria-modal="true" aria-label="编辑已确认资料" style={{ position: "fixed", zIndex: 20, left: 0, right: 0, bottom: 0, maxHeight: "65dvh", overflowY: "auto", padding: 20, borderTop: "1px solid #bda", background: "#fff", boxShadow: "0 -16px 40px rgba(0,0,0,.18)" }}>
       <p>正在编辑已确认资料。修改后请保存；未保存不会影响当前资料。</p>
-      <TouchButton type="button" onClick={() => void saveEdit()} disabled={submitting}>保存编辑</TouchButton>{" "}
-      <TouchButton type="button" onClick={() => { setEditing(null); setOriginalText(""); setOrganizedText(""); setConfirmed(false); }}>取消编辑</TouchButton>
+      <form onSubmit={(event) => { event.preventDefault(); void saveEdit(); }} style={{ display: "grid", gap: 12 }}>
+        <label>你的原话<textarea value={originalText} onChange={(event) => setOriginalText(event.currentTarget.value)} maxLength={8000} rows={4} required /></label>
+        <label>整理稿<textarea value={organizedText} onChange={(event) => setOrganizedText(event.currentTarget.value)} maxLength={8000} rows={5} required /></label>
+        <div><TouchButton type="submit" disabled={submitting || !originalText.trim() || !organizedText.trim()}>保存编辑</TouchButton>{" "}
+        <TouchButton type="button" onClick={() => { setEditing(null); setOriginalText(""); setOrganizedText(""); setConfirmed(false); }}>取消编辑</TouchButton></div>
+      </form>
     </section>}
   </main>;
 }

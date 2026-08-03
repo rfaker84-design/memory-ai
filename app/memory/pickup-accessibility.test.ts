@@ -12,6 +12,9 @@ test("pickup surfaces announce loading and errors and preserve minimum touch tar
   assert.match(pickup, /role=\{state === "error" \? "alert" : "status"\}/);
   assert.match(pickup, /aria-live=\{state === "error" \? undefined : "polite"\}/);
   assert.match(pickup, /function TouchButton[\s\S]*?minHeight: 44/);
+  assert.match(pickup, /role="dialog" aria-modal="true"/);
+  assert.match(pickup, /maxHeight: "65dvh"/);
+  assert.match(pickup, /!editing && <form/);
   assert.match(sources, /role=\{state\.status === "error" \? "alert" : "status"\}/);
   assert.match(sources, /aria-live=\{state\.status === "error" \? undefined : "polite"\}/);
   assert.match(sources, /style=\{\{ minHeight: 44 \}\}/);
