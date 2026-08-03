@@ -13,6 +13,7 @@ test("public video share page is noindex, view-only and does not use legacy shar
   assert.match(client, /pointerEvents: "none"/);
   assert.match(client, /\/api\/video-shares\//);
   assert.match(client, /12_000/);
+  assert.match(client, /globalThis\.setTimeout\(\(\) => \{\s*controller\.abort\(\);\s*setState\("unavailable"\);\s*\}, 12_000\)/);
   assert.match(client, /publicShare=/);
   assert.match(client, /aria-live="polite"/);
   assert.match(client, /role="alert"/);

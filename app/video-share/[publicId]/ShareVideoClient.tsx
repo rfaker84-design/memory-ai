@@ -7,7 +7,11 @@ type State = { title: string } | "unavailable" | "loading";
 export default function ShareVideoClient({ publicId }: { publicId: string }) {
   const [state, setState] = useState<State>("loading");
   useEffect(() => {
-    const controller = new AbortController(); const timer = globalThis.setTimeout(() => controller.abort(), 12_000);
+    const controller = new AbortController();
+    const timer = globalThis.setTimeout(() => {
+      controller.abort();
+      setState("unavailable");
+    }, 12_000);
     fetch(`/api/video-shares/${encodeURIComponent(publicId)}`, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => response.ok ? response.json() : null)
       .then((body: unknown) => {
