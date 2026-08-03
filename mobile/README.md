@@ -60,12 +60,17 @@ npm run android:debug
 # Install a built debug APK on a connected device/emulator
 npm run android:install
 
-# Build and audit an unsigned release APK without environment injection.
-# Release fails closed if either Debug variable is still defined.
+# Build and audit a signed release APK. Signing is fail-closed: these references
+# must be supplied from a protected local secret store, never committed or pasted
+# into a shell history, .env file, or Gradle properties file.
+# Release also fails closed if any Debug variable is still defined.
 Remove-Item Env:VITE_MOBILE_API_BASE_URL -ErrorAction SilentlyContinue
 Remove-Item Env:VITE_MOBILE_TEST_VIDEO_URL -ErrorAction SilentlyContinue
 Remove-Item Env:VITE_MOBILE_STAGING_ACCESS_TOKEN -ErrorAction SilentlyContinue
 Remove-Item Env:MOBILE_APP_ORIGIN_HOST -ErrorAction SilentlyContinue
+# Set MEMORYAI_RELEASE_STORE_FILE, MEMORYAI_RELEASE_STORE_PASSWORD,
+# MEMORYAI_RELEASE_KEY_ALIAS and MEMORYAI_RELEASE_KEY_PASSWORD through the
+# protected CI or local secret-store integration before invoking this command.
 npm run android:release-audit
 
 # On a macOS machine with Xcode and CocoaPods

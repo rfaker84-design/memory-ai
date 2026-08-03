@@ -1,5 +1,19 @@
 apply plugin: 'com.android.application'
 
+def releaseSigningEnvironment = [
+    MEMORYAI_RELEASE_STORE_FILE: System.getenv("MEMORYAI_RELEASE_STORE_FILE"),
+    MEMORYAI_RELEASE_STORE_PASSWORD: System.getenv("MEMORYAI_RELEASE_STORE_PASSWORD"),
+    MEMORYAI_RELEASE_KEY_ALIAS: System.getenv("MEMORYAI_RELEASE_KEY_ALIAS"),
+    MEMORYAI_RELEASE_KEY_PASSWORD: System.getenv("MEMORYAI_RELEASE_KEY_PASSWORD"),
+]
+def releaseRequested = gradle.startParameter.taskNames.any { taskName -> taskName.toLowerCase().contains("release") }
+if (releaseRequested) {
+    def missingReleaseSigningEnvironment = releaseSigningEnvironment.findAll { key, value -> !value || value.trim().isEmpty() }.keySet()
+    if (!missingReleaseSigningEnvironment.isEmpty()) {
+        throw new GradleException("Release signing is required; configure only the missing environment references: ${missingReleaseSigningEnvironment.join(', ')}")
+    }
+}
+
 android {
     namespace "cn.yijianmemory.mobile"
     compileSdk rootProject.ext.compileSdkVersion
@@ -16,9 +30,18 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            storeFile file(releaseSigningEnvironment.MEMORYAI_RELEASE_STORE_FILE ?: "release-signing-unavailable")
+            storePassword releaseSigningEnvironment.MEMORYAI_RELEASE_STORE_PASSWORD ?: "release-signing-unavailable"
+            keyAlias releaseSigningEnvironment.MEMORYAI_RELEASE_KEY_ALIAS ?: "release-signing-unavailable"
+            keyPassword releaseSigningEnvironment.MEMORYAI_RELEASE_KEY_PASSWORD ?: "release-signing-unavailable"
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
+            signingConfig signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
