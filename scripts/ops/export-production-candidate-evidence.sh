@@ -9,7 +9,7 @@ source_tree=$(git -C "$root" rev-parse 'HEAD^{tree}')
 test -z "$(git -C "$root" status --porcelain)"
 
 mkdir -p "$output"
-exec docker build \
+exec docker buildx build \
   --pull=false \
   --build-arg "PRODUCTION_CANDIDATE_SOURCE_COMMIT=$source_commit" \
   --build-arg "PRODUCTION_CANDIDATE_SOURCE_TREE=$source_tree" \

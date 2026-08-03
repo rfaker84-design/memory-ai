@@ -7,6 +7,10 @@ const workflow = readFileSync(
   path.join(__dirname, "../../.github/workflows/production-candidate-evidence.yml"),
   "utf8",
 );
+const exporter = readFileSync(
+  path.join(__dirname, "export-production-candidate-evidence.sh"),
+  "utf8",
+);
 
 test("candidate workflow accepts only an explicit immutable commit and exports BuildKit evidence", () => {
   assert.match(workflow, /workflow_dispatch:/);
@@ -15,6 +19,10 @@ test("candidate workflow accepts only an explicit immutable commit and exports B
   assert.match(workflow, /test "\$\{\{ inputs\.source_commit \}\}" = "\$\(git rev-parse HEAD\)"/);
   assert.match(workflow, /scripts\/ops\/export-production-candidate-evidence\.sh/);
   assert.match(workflow, /sha256sum --check SHA256SUMS/);
+  assert.match(exporter, /exec docker buildx build/);
+  assert.match(exporter, /--target production-candidate-evidence-export/);
+  assert.match(exporter, /--output "type=local,dest=\$output"/);
+  assert.doesNotMatch(exporter, /exec docker build \\/);
 });
 
 test("candidate workflow is read-only toward deployment systems", () => {
