@@ -26,7 +26,25 @@ test("consent writes do not remain pending after their bounded wait", async () =
   try {
     await assert.rejects(
       recordTrustConsent("memory_profile", undefined, request as typeof fetch),
-      (error: unknown) => error instanceof DOMException && error.name === "AbortError",
+      (error: unknown) => error instanceof Error && error.message === "CONSENT_REQUEST_TIMEOUT",
+    );
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+  }
+});
+
+test("consent writes keep their timeout through a stalled error response body", async () => {
+  const request = async (_input: RequestInfo | URL, init?: RequestInit) => ({
+    ok: false,
+    status: 503,
+    json: () => new Promise((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true })),
+  }) as unknown as Response;
+  const originalSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = ((callback: (...args: never[]) => void) => originalSetTimeout(callback, 0)) as unknown as typeof setTimeout;
+  try {
+    await assert.rejects(
+      recordTrustConsent("memory_profile", undefined, request as unknown as typeof fetch),
+      (error: unknown) => error instanceof Error && error.message === "CONSENT_REQUEST_TIMEOUT",
     );
   } finally {
     globalThis.setTimeout = originalSetTimeout;

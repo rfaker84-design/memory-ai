@@ -8,6 +8,8 @@ export class TrustConsentRequestError extends Error {
 
 export const TRUST_CONSENT_TIMEOUT_MS = 20_000;
 
+type ConsentResponseReader<T> = (response: Response, signal: AbortSignal) => Promise<T>;
+
 function idempotencyKey() {
   const random = typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -15,18 +17,39 @@ function idempotencyKey() {
   return `consent-${random}`;
 }
 
-async function requestWithTimeout(
+async function requestWithTimeout<T = Response>(
   input: RequestInfo | URL,
   init: RequestInit,
   request: typeof fetch,
   timeoutMs = TRUST_CONSENT_TIMEOUT_MS,
-): Promise<Response> {
+  readResponse?: ConsentResponseReader<T>,
+): Promise<T> {
   const controller = new AbortController();
-  const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+  const timer = globalThis.setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   try {
-    return await request(input, { ...init, signal: controller.signal });
+    const response = await request(input, { ...init, signal: controller.signal });
+    return readResponse ? await readResponse(response, controller.signal) : response as T;
+  } catch (error) {
+    if (timedOut) throw new TrustConsentRequestError("CONSENT_REQUEST_TIMEOUT");
+    throw error;
   } finally {
     globalThis.clearTimeout(timer);
+  }
+}
+
+async function readConsentJson(response: Response, signal: AbortSignal): Promise<{ response: Response; body: Record<string, unknown> }> {
+  try {
+    const parsed: unknown = await response.json();
+    return {
+      response,
+      body: typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : {},
+    };
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return { response, body: {} };
   }
 }
 
@@ -35,7 +58,7 @@ export async function recordTrustConsent(
   memoryId?: string,
   request: typeof fetch = fetch,
 ): Promise<void> {
-  const response = await requestWithTimeout("/api/consents", {
+  const { response, body } = await requestWithTimeout("/api/consents", {
     method: "POST",
     credentials: "same-origin",
     headers: {
@@ -43,10 +66,9 @@ export async function recordTrustConsent(
       "Idempotency-Key": idempotencyKey(),
     },
     body: JSON.stringify(memoryId ? { consentType, memoryId } : { consentType }),
-  }, request);
+  }, request, TRUST_CONSENT_TIMEOUT_MS, readConsentJson);
 
   if (!response.ok) {
-    const body = await response.json().catch(() => ({})) as { error?: unknown };
     throw new TrustConsentRequestError(typeof body.error === "string" ? body.error : "CONSENT_RECORD_FAILED");
   }
 }
