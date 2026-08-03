@@ -38,4 +38,18 @@ test("retired consciousness and autonomous splash surfaces cannot be reconnected
   assert.equal(existsSync(new URL("../../../_create_mementity.js", root)), false, "retired entity generator remains");
   assert.equal(existsSync(new URL("../lib/orchestrator.ts", root)), false, "retired AI growth orchestrator remains");
   assert.equal(existsSync(new URL("../lib/ai/presenceController.ts", root)), false, "retired AI presence controller remains");
+  for (const relative of [
+    "../lib/emotionalStickiness.ts",
+    "../lib/userProgress.ts",
+    "../lib/engagementLoop.ts",
+    "../lib/ltv.ts",
+    "../lib/growth.ts",
+    "../lib/emotionPaywall.ts",
+    "../lib/conversion.ts",
+    "../lib/referral.ts",
+    "../lib/viral.ts",
+    "../lib/analytics.ts",
+  ]) {
+    assert.equal(existsSync(new URL(relative, root)), false, `retired engagement module remains: ${relative}`);
+  }
 });
