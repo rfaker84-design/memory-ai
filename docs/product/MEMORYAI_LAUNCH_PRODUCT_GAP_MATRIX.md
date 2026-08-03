@@ -5,7 +5,7 @@
 | ID | 冻结规则 | 当前证据 | 差异状态 | 后续动作 |
 |---|---|---|---|---|
 | P-01 | 18+、生日可改、无家人协作 | 服务端 adult eligibility/profile consent 已存在 | AUDIT_REQUIRED | 核验生日修改与现行成年判断 |
-| P-02 | 最多 3 TA、统一授权、无生死询问 | Commerce 合同已有 3 TA 约束 | AUDIT_REQUIRED | 核验创建界面与授权文案 |
+| P-02 | 最多 3 TA、统一授权、无生死询问 | Commerce 合同已有 3 TA 约束；公开创建页已移除声音文件采集与克隆暗示 | CODE_CANDIDATE | 继续核验创建界面、授权文案和真实 UI |
 | P-03 | 首 TA 一次免费首影像 | Commerce `first_preview` 账本已有 | CODE_CANDIDATE | 对照首次影像入口和失败释放 |
 | P-04 | 固定 8 秒克制模板、不可保存 | 视频产品回归与模板已有 | CODE_CANDIDATE | 保留真实 Provider/人工审核为外部门 |
 | P-05 | 轻量动画、reduced-motion、无重型 3D | quiet companion 与 motion fallback 已有；旧 3D 世界已退休 | CODE_CANDIDATE | 真实 Android/设备验收 |
