@@ -221,6 +221,20 @@
   background: rgba(255, 243, 232, 0.045);
 }
 
+.safetyActions {
+  margin-top: 0.78rem !important;
+  border-inline-start: 2px solid rgba(230, 184, 123, 0.72);
+  padding-inline-start: 0.72rem;
+  color: rgba(245, 221, 193, 0.9);
+  font-size: 0.82rem;
+  line-height: 1.65;
+}
+
+.safetyActions .sourceLink {
+  margin-inline: 0.28rem;
+  font-size: inherit;
+}
+
 .messageIdentity {
   display: flex;
   align-items: center;

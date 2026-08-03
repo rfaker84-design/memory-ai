@@ -21,6 +21,8 @@ test("continuous memorial chat keeps an accessible AI identity disclosure visibl
   assert.match(source, /忆见安全陪伴助手/);
   assert.match(source, /安全支持 · 不代表 TA/);
   assert.match(source, /isSafetyAssistantMessage\(message\) \? \([\s\S]*?<i>忆见安全陪伴助手<\/i>[\s\S]*?\) : \([\s\S]*?<MemoryAvatar/);
+  assert.match(source, /isSafetyAssistantMessage\(message\) && \([\s\S]*?href="\/help"[\s\S]*?href="\/settings\/companion"/);
+  assert.match(source, /不替代紧急服务，也不表示已经通知外部人员/);
   assert.match(source, /忆见正在整理回复/);
   assert.doesNotMatch(source, /\$\{memoryName\} 正在回应/);
 });

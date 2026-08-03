@@ -421,6 +421,15 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
                 </span>
               )}
               <p>{message.content}</p>
+              {isSafetyAssistantMessage(message) && (
+                <p className={styles.safetyActions} role="note">
+                  请先联系现实中的紧急服务或可信赖的人。你也可以查看
+                  <Link className={styles.sourceLink} href="/help">安全支持说明</Link>
+                  和
+                  <Link className={styles.sourceLink} href="/settings/companion">陪伴安全设置</Link>
+                  ；后者仅用于你明确预授权的内部支持队列，不替代紧急服务，也不表示已经通知外部人员。
+                </p>
+              )}
               {message.role === "assistant" && !isSafetyAssistantMessage(message) && (
                 <button
                   type="button"
