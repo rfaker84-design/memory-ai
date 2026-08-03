@@ -262,6 +262,41 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
     (error: unknown) => error instanceof FirstPresenceVideoOwnerApiError
       && error.code === "TWO_CHAT_ROUNDS_REQUIRED",
   );
+  const legacyConversation = (await verify.query<{ id: string }>(
+    `INSERT INTO public.conversations (user_id, memory_id, title, is_default)
+     VALUES ($1, $2, 'Legacy non-default conversation', FALSE) RETURNING id`,
+    [ownerId, memory],
+  )).rows[0].id;
+  for (const round of [1, 2]) {
+    const userMessage = (await verify.query<{ id: string }>(
+      `INSERT INTO public.messages (conversation_id, user_id, memory_id, role, content)
+       VALUES ($1, $2, $3, 'user', $4) RETURNING id`,
+      [legacyConversation, ownerId, memory, `Legacy user message ${round}`],
+    )).rows[0].id;
+    const assistantMessage = (await verify.query<{ id: string }>(
+      `INSERT INTO public.messages (conversation_id, user_id, memory_id, role, content)
+       VALUES ($1, $2, $3, 'assistant', $4) RETURNING id`,
+      [legacyConversation, ownerId, memory, `Legacy assistant message ${round}`],
+    )).rows[0].id;
+    await verify.query(
+      `INSERT INTO public.memory_chat_turns (
+         user_id, memory_id, conversation_id, idempotency_key, request_hash, status,
+         user_message_id, assistant_message_id
+       ) VALUES ($1, $2, $3, $4, $5, 'completed', $6, $7)`,
+      [ownerId, memory, legacyConversation, `video:gate:legacy-round-${round}:0001`, sha(`legacy round ${round}`), userMessage, assistantMessage],
+    );
+  }
+  await assert.rejects(
+    ownerApi.create({
+      externalUserId: owner,
+      memoryId: memory!,
+      idempotencyKey: "video:gate:legacy-rounds-ignored:0001",
+      intent: "additional_generation",
+    }),
+    (error: unknown) => error instanceof FirstPresenceVideoOwnerApiError
+      && error.code === "TWO_CHAT_ROUNDS_REQUIRED",
+    "completed turns from a non-default conversation cannot unlock another video",
+  );
   const ownerPreview = await ownerApi.create({
     externalUserId: owner,
     memoryId: memory!,
@@ -607,6 +642,37 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
   assert.equal((await new FirstPresenceVideoPostgresRepository().findById(queuedForWorker.id))?.status, "manual_review_required", "a restarted worker resumes poll/download/quality without another submit");
   assert.equal(submits, workerBaseline + 1);
   await assert.rejects(createService().submit({ ...input, externalUserId: other, memoryId: otherMemory!, idempotencyKey: "video:gate:cross-user:0001" }));
+  const defaultConversation = (await verify.query<{ id: string }>(
+    `INSERT INTO public.conversations (user_id, memory_id, title, is_default)
+     VALUES ($1, $2, 'Default formal conversation', TRUE) RETURNING id`,
+    [ownerId, memory],
+  )).rows[0].id;
+  for (const round of [1, 2]) {
+    const userMessage = (await verify.query<{ id: string }>(
+      `INSERT INTO public.messages (conversation_id, user_id, memory_id, role, content)
+       VALUES ($1, $2, $3, 'user', $4) RETURNING id`,
+      [defaultConversation, ownerId, memory, `Formal user message ${round}`],
+    )).rows[0].id;
+    const assistantMessage = (await verify.query<{ id: string }>(
+      `INSERT INTO public.messages (conversation_id, user_id, memory_id, role, content)
+       VALUES ($1, $2, $3, 'assistant', $4) RETURNING id`,
+      [defaultConversation, ownerId, memory, `Formal assistant message ${round}`],
+    )).rows[0].id;
+    await verify.query(
+      `INSERT INTO public.memory_chat_turns (
+         user_id, memory_id, conversation_id, idempotency_key, request_hash, status,
+         user_message_id, assistant_message_id
+       ) VALUES ($1, $2, $3, $4, $5, 'completed', $6, $7)`,
+      [ownerId, memory, defaultConversation, `video:gate:formal-round-${round}:0001`, sha(`formal round ${round}`), userMessage, assistantMessage],
+    );
+  }
+  const additionalAfterFormalRounds = await ownerApi.create({
+    externalUserId: owner,
+    memoryId: memory!,
+    idempotencyKey: "video:gate:formal-rounds-accepted:0001",
+    intent: "additional_generation",
+  });
+  assert.equal(additionalAfterFormalRounds.status, "queued", "two completed default-session rounds unlock the additional video request");
   await connections.close(verify);
   await closePostgresPool();
   const auditUrl = new URL(adminUrl);

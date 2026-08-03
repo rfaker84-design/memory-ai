@@ -13,6 +13,7 @@ const entryCopy = balanceState + view;
 test("two completed active-session rounds are the only first-presence entry gate", () => {
   assert.match(scene, /completedRounds >= 2 && activeSessionId/);
   assert.match(scene, /<CommerceVideoCreditsEntry memoryId=\{memoryId\} \/>/);
+  assert.match(view, /文字之外，还可以留下一段新的影像。/);
   assert.doesNotMatch(scene, /MemoryExperienceOffer|\/api\/payments\//);
 });
 

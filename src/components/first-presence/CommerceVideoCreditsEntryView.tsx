@@ -69,6 +69,9 @@ export function CommerceVideoCreditsEntryView({
         {presentation.title}
       </h2>
       {presentation.description && <p className={styles.description}>{presentation.description}</p>}
+      {balanceState.kind !== "loading" && (
+        <p className={styles.description}>文字之外，还可以留下一段新的影像。</p>
+      )}
 
       {balanceState.kind !== "loading" && balanceState.kind !== "unavailable" && occasionOffers
         .filter((offer) => !offer.claimed || balanceState.balance.occasionAvailable > 0)

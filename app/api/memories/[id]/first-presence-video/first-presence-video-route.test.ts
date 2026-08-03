@@ -316,7 +316,7 @@ test("formal owner route preserves session-only identity and persistent worker b
   assert.doesNotMatch(handlerSource, /compatibilityUserId|userId" in body|provider\.submit|ViduFirstPresenceProvider/);
   assert.match(ownerApiSource, /video_generation_jobs/);
   assert.match(ownerApiSource, /commerce_generation_reservations/);
-  assert.match(ownerApiSource, /memory_chat_turns[\s\S]*status = 'completed'/);
+  assert.match(ownerApiSource, /memory_chat_turns turn[\s\S]*JOIN public\.conversations conversation[\s\S]*conversation\.is_default/);
   assert.match(ownerApiSource, /media_assets[\s\S]*qualityPreflight/);
   assert.match(ownerApiSource, /OwnerVideoInputStagingPort/);
   assert.match(ownerApiSource, /await inputStaging\.stage/);

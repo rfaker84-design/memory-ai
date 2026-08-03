@@ -47,6 +47,11 @@ acceptance:
     requirement: "Free base chat, cost-derived abuse limit, one warning, crisis always free"
     evidence: [configuration_review, load_test, staging]
     status: PARTIAL
+  - id: A-ADDITIONAL-VIDEO-ENTRY
+    requirement: "Additional video entry appears only after two completed valid user/TA rounds in the canonical formal conversation; first greeting, blank, failed, duplicate, and legacy non-default turns do not unlock it"
+    evidence: [unit_test, route_test, postgres_gate, ui_preview, staging]
+    status: IMPLEMENTED_NOT_REAL_E2E
+    candidate_evidence: "src/components/memory/conversationExperience.test.ts; src/components/first-presence/CommerceVideoCreditsEntry.test.ts; app/api/memories/[id]/first-presence-video/first-presence-video-route.test.ts; features/video/first-presence-video-postgres.integration.test.ts"
   - id: A-COMMERCE
     requirement: "49/99/199 permanent account credit lots using existing reservation/commit/release ledger"
     evidence: [postgres_gate, route_test, payment_provider, staging]

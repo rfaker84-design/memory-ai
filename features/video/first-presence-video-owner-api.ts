@@ -260,8 +260,15 @@ async function assertTwoCompletedChatRounds(
 ): Promise<void> {
   const result = await client.query<{ count: string }>(
     `SELECT COUNT(*)::text AS count
-     FROM public.memory_chat_turns
-     WHERE user_id = $1 AND memory_id = $2 AND status = 'completed'`,
+     FROM public.memory_chat_turns turn
+     JOIN public.conversations conversation
+       ON conversation.id = turn.conversation_id
+     WHERE turn.user_id = $1
+       AND turn.memory_id = $2
+       AND turn.status = 'completed'
+       AND conversation.user_id = turn.user_id
+       AND conversation.memory_id = turn.memory_id
+       AND conversation.is_default`,
     [userId, memoryId],
   );
   if (Number(result.rows[0]?.count ?? 0) < 2) {
