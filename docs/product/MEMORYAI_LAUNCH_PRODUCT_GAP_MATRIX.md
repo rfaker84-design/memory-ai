@@ -16,7 +16,7 @@
 | P-10 | 两轮有效对话后后续影像入口 | Web 仅在当前默认正式会话的两轮完整持久化 user/TA 对话后，于输入区后的自然停顿显示入口；客户端排除首句、空白、失败和重复，服务端再次只计默认会话完成轮次，旧非默认会话不能绕过；入口使用冻结文案且没有提示词或动作选择 | IMPLEMENTED_NOT_REAL_E2E | 已通过定向单测、路由边界与隔离 PG14.23；仍需真实 UI/Staging 验收 |
 | P-11 | 49/99/199 永久额度、同账本 | `sprint21-commerce-contract.md` 一致 | IMPLEMENTED_NOT_REAL_E2E | 不新增账本 |
 | P-12 | 合规退款说明 | Refund Center/合同存在 | PARTIAL | 对外文案与平台/法律复核 |
-| P-13 | 注销显示权益并不阻断 | 删除候选与财务归档已有 | PARTIAL | 连接权益视图并保持外部删除门 |
+| P-13 | 注销显示权益并不阻断 | 账户注销页在二次认证与明确确认后显示在线内容、Provider/COS、备份和财务最小化归档的独立时限；请求回执、任务进度、legal hold 范围提示、监护确认、Session 失效与幂等恢复均已接通。退款或法定保全不会把内容重新用于产品；外部 Provider 删除只有收到可审计结果才会完成 | IMPLEMENTED_NOT_REAL_E2E | 已通过删除 UI/API、监护确认、时限上限、worker 合同及隐私/帮助回归；仍需隔离 Staging 执行、Provider 回执和生产法务/会计复核 |
 | P-14 | 3 人邀请、反作弊、独立来源 | Commerce referral 已有 | PARTIAL | 保留真实设备证明外部门 |
 | P-15 | 生日/节日奖励独立记账 | Candidate 020 extends the existing Commerce ledger; China-time 30-day/no-cross-year windows, owner-scoped offers/claim, durable claim/video idempotency, explicit `occasion_reward` selection, saveable artifact contract, failed-generation release, and isolated PG14.23 first/replay/rollback/concurrency/postflight PASS | IMPLEMENTED_NOT_REAL_E2E | Keep 020 outside the automatic runner; Staging migration, real Provider/manual review and production evidence remain separate gates |
 | P-16 | 克制问候和通用通知 | 每日问候已有 | PARTIAL | 核验通知授权时机与文案 |
