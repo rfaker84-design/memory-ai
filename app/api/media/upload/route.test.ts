@@ -15,6 +15,13 @@ function request(): NextRequest {
   return new NextRequest("https://memoryai.test/api/media/upload", { method: "POST", body: form });
 }
 
+function audioRequest(): NextRequest {
+  const form = new FormData();
+  form.set("memoryId", memoryId);
+  form.set("file", new File([Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x41, 0x56, 0x45])], "voice.wav", { type: "audio/wav" }));
+  return new NextRequest("https://memoryai.test/api/media/upload", { method: "POST", body: form });
+}
+
 test("a direct media upload cannot bypass its TA-bound media consent", async () => {
   let uploadCalls = 0;
   const handler = createUploadMediaHandler(
@@ -32,5 +39,22 @@ test("a direct media upload cannot bypass its TA-bound media consent", async () 
   const response = await handler(request());
   assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), { error: "MEDIA_CONSENT_REQUIRED" });
+  assert.equal(uploadCalls, 0);
+});
+
+test("the public media route rejects audio before consent, storage, or database work", async () => {
+  let consentCalls = 0;
+  let uploadCalls = 0;
+  const handler = createUploadMediaHandler(
+    async () => "phone:media-consent-owner",
+    () => null,
+    () => ({ async upload() { uploadCalls += 1; throw new Error("must not upload"); } }),
+    async () => { consentCalls += 1; return true; },
+  );
+
+  const response = await handler(audioRequest());
+  assert.equal(response.status, 415);
+  assert.deepEqual(await response.json(), { error: "AUDIO_UPLOAD_NOT_AVAILABLE" });
+  assert.equal(consentCalls, 0);
   assert.equal(uploadCalls, 0);
 });

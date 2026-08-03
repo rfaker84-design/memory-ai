@@ -164,10 +164,8 @@ test(
       assert.equal(duplicateBody.asset.id, imageBody.asset.id);
 
       const audio = await uploadMedia(request(memoryId, session, "voice.wav", "audio/wav", wav));
-      assert.equal(audio.status, 201);
-      const audioBody = await audio.json() as { asset: { id: string; mediaType: string; status: string } };
-      assert.equal(audioBody.asset.mediaType, "audio");
-      assert.equal(audioBody.asset.status, "uploaded");
+      assert.equal(audio.status, 415);
+      assert.deepEqual(await audio.json(), { error: "AUDIO_UPLOAD_NOT_AVAILABLE" });
 
       const restored = await getMedia(
         new NextRequest(`http://localhost/api/media/${imageBody.asset.id}`, {

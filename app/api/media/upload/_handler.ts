@@ -30,7 +30,7 @@ export function createUploadMediaHandler(
     if (originError) return originError;
     try {
       const contentLength = Number(req.headers.get("content-length") ?? "0");
-      const requestLimit = (Number(process.env.MEDIA_MAX_AUDIO_BYTES) || 100 * 1024 * 1024) + 1024 * 1024;
+      const requestLimit = (Number(process.env.MEDIA_MAX_IMAGE_BYTES) || 20 * 1024 * 1024) + 1024 * 1024;
       if (contentLength > requestLimit) {
         return NextResponse.json({ error: "FILE_TOO_LARGE" }, { status: 413 });
       }
@@ -39,6 +39,12 @@ export function createUploadMediaHandler(
       const memoryId = form.get("memoryId");
       if (!(file instanceof File) || typeof memoryId !== "string" || !/^[0-9a-f-]{36}$/i.test(memoryId)) {
         return NextResponse.json({ error: "INVALID_UPLOAD_REQUEST" }, { status: 400 });
+      }
+      // First release accepts only a portrait image. Keep the broader media
+      // model for controlled historical deletion/retention handling, but do
+      // not let a public endpoint re-enable voice collection or cloning.
+      if (!file.type.toLowerCase().startsWith("image/")) {
+        return NextResponse.json({ error: "AUDIO_UPLOAD_NOT_AVAILABLE" }, { status: 415 });
       }
       if (!(await consentVerifier({ externalUserId: userId, consentType: "media_asset", memoryId }))) {
         return NextResponse.json({ error: "MEDIA_CONSENT_REQUIRED" }, { status: 403 });
