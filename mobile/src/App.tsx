@@ -79,6 +79,8 @@ function Offline({ retry }: { retry: () => void }) {
 }
 
 function BottomNav({ active, onChange, hasMemory }: { active: Screen; onChange: (screen: Screen) => void; hasMemory: boolean }) {
+  if (active === "chat" || active === "memory") return null;
+  const launchLabels: Partial<Record<Screen, string>> = { home: "相伴", memory: "拾忆", profile: "我的" };
   const items: Array<[Screen, string, string]> = [
     ["home", "⌂", "首页"],
     ["chat", "·", "聊天"],
@@ -86,8 +88,8 @@ function BottomNav({ active, onChange, hasMemory }: { active: Screen; onChange: 
     ["profile", "○", "我的"],
   ];
   return <nav className="bottomNav" aria-label="主导航">
-    {items.map(([screen, icon, label]) => <button key={screen} className={active === screen ? "active" : ""} onClick={() => press(() => onChange(screen))}>
-      <span>{icon}</span><small>{label}</small>{screen !== "profile" && screen !== "home" && !hasMemory ? <i /> : null}
+    {items.filter(([screen]) => screen in launchLabels).map(([screen, icon]) => <button key={screen} className={active === screen ? "active" : ""} onClick={() => press(() => onChange(screen))}>
+      <span>{icon}</span><small>{launchLabels[screen]!}</small>{screen !== "profile" && screen !== "home" && !hasMemory ? <i /> : null}
     </button>)}
   </nav>;
 }
