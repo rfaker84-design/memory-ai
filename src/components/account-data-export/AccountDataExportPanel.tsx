@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 
 const ACCOUNT_EXPORT_TIMEOUT_MS = 12_000;
 
 export function AccountDataExportPanel() {
   const [downloading, setDownloading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [unauthenticated, setUnauthenticated] = useState(false);
   const activeRequest = useRef<AbortController | null>(null);
 
   useEffect(() => () => activeRequest.current?.abort(), []);
@@ -19,6 +21,7 @@ export function AccountDataExportPanel() {
     activeRequest.current = controller;
     setDownloading(true);
     setMessage(null);
+    setUnauthenticated(false);
     try {
       const response = await fetch("/api/account/export", {
         method: "POST",
@@ -29,6 +32,11 @@ export function AccountDataExportPanel() {
       if (activeRequest.current !== controller) return;
       if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { error?: string };
+        if (response.status === 401 && body.error === "UNAUTHENTICATED") {
+          setMessage("请先登录，再下载你的资料副本。未登录时不会生成或泄露任何资料。");
+          setUnauthenticated(true);
+          return;
+        }
         if (response.status === 403 && body.error === "REAUTH_REQUIRED") {
           setMessage("为保护你的资料，请重新完成登录，并在 5 分钟内返回此页下载副本。");
         } else {
@@ -66,8 +74,8 @@ export function AccountDataExportPanel() {
     <p>副本包含你拥有的 TA、对话、媒体元数据、同意记录以及最小订单和退款摘要。它不包含登录凭据、Provider 请求、对象存储路径、签名链接或内部审计资料。</p>
     <p>为避免他人拿到已登录设备后导出敏感内容，请在重新登录后的 5 分钟内下载。</p>
     {message ? <p role="status">{message}</p> : null}
-    <button type="button" disabled={downloading} onClick={() => void download()}>
+    {unauthenticated ? <Link href="/login">前往登录</Link> : <button type="button" disabled={downloading} onClick={() => void download()}>
       {downloading ? "正在生成资料副本…" : "下载 JSON 资料副本"}
-    </button>
+    </button>}
   </main>;
 }

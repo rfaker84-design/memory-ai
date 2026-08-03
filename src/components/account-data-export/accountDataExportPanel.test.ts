@@ -7,6 +7,9 @@ const source = readFileSync(new URL("./AccountDataExportPanel.tsx", import.meta.
 test("account-data export uses a bounded, user-controlled download and never claims uncertain delivery failed", () => {
   assert.match(source, /ACCOUNT_EXPORT_TIMEOUT_MS = 12_000/);
   assert.match(source, /signal: controller\.signal/);
+  assert.match(source, /response\.status === 401 && body\.error === "UNAUTHENTICATED"/);
+  assert.match(source, /setUnauthenticated\(true\)/);
+  assert.match(source, /<Link href="\/login">/);
   assert.match(source, /activeRequest\.current !== controller/);
   assert.match(source, /不会自动重试/);
   assert.match(source, /无法确认资料副本是否已经开始下载/);
