@@ -21,4 +21,6 @@ test("companion scene uses an independent quiet state and never loops a first-me
   assert.match(css, /data-presence="static"/);
   assert.match(css, /data-presence="static"\] \.portraitFrame/);
   assert.match(css, /replyGlow/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(css, /\.conversation[\s\S]*?animation: none !important/);
 });

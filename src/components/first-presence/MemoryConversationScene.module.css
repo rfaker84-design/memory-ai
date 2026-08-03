@@ -130,6 +130,17 @@
   animation: conversationArrive 680ms 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* Honor the OS preference before React has hydrated the presence hook. */
+@media (prefers-reduced-motion: reduce) {
+  .presence .orbit,
+  .presence .replyGlow,
+  .presence .portraitFrame,
+  .conversation {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
 .eyebrow {
   margin: 0 0 0.72rem;
   color: #d7b184;
