@@ -7,12 +7,13 @@ const reportId = "550e8400-e29b-41d4-a716-446655440000";
 const token = "report-review-test-token-0123456789abcdefghijklmnopqrstuvwxyz";
 const reviewer = "report-reviewer@yijian.test";
 
-test("report-review payload validation permits only the minimal supported disposition", () => {
-  assert.deepEqual(validateReportReview({ reportId, status: "triaged", disposition: "Rights review required." }), {
-    input: { reportId, status: "triaged", disposition: "Rights review required." },
+test("report-review payload validation requires an explicit content action", () => {
+  assert.deepEqual(validateReportReview({ reportId, status: "triaged", disposition: "Rights review required.", contentAction: "none" }), {
+    input: { reportId, status: "triaged", disposition: "Rights review required.", contentAction: "none" },
   });
-  assert.deepEqual(validateReportReview({ reportId, status: "triaged", disposition: "ok", reviewer: "forged" }), { error: "keys" });
-  assert.deepEqual(validateReportReview({ reportId: "not-a-uuid", status: "triaged", disposition: "ok" }), { error: "id" });
+  assert.deepEqual(validateReportReview({ reportId, status: "triaged", disposition: "ok", reviewer: "forged", contentAction: "none" }), { error: "keys" });
+  assert.deepEqual(validateReportReview({ reportId: "not-a-uuid", status: "triaged", disposition: "ok", contentAction: "none" }), { error: "id" });
+  assert.deepEqual(validateReportReview({ reportId, status: "triaged", disposition: "ok", contentAction: "hide" }), { error: "content_action" });
 });
 
 test("report-review disposition requires explicit internal authorization", async () => {
@@ -31,16 +32,16 @@ test("report-review disposition requires explicit internal authorization", async
       return { id: input.reportId, status: input.status } as never;
     } });
     const unauthorized = await handler(new NextRequest("https://memoryai.test/api/internal/report-reviews", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reportId, status: "triaged", disposition: "ok" }),
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reportId, status: "triaged", disposition: "ok", contentAction: "none" }),
     }));
     assert.equal(unauthorized.status, 401);
     const approved = await handler(new NextRequest("https://memoryai.test/api/internal/report-reviews", {
       method: "POST",
       headers: { "content-type": "application/json", "x-report-review-access-token": token, "x-report-reviewer-account": reviewer },
-      body: JSON.stringify({ reportId, status: "triaged", disposition: "Rights review required." }),
+      body: JSON.stringify({ reportId, status: "triaged", disposition: "Rights review required.", contentAction: "none" }),
     }));
     assert.equal(approved.status, 200);
-    assert.deepEqual(received, { reportId, status: "triaged", disposition: "Rights review required.", reviewer });
+    assert.deepEqual(received, { reportId, status: "triaged", disposition: "Rights review required.", contentAction: "none", reviewer });
   } finally {
     if (previous.enabled === undefined) delete process.env.YIJIAN_REPORT_REVIEW_INTERNAL_ENABLED; else process.env.YIJIAN_REPORT_REVIEW_INTERNAL_ENABLED = previous.enabled;
     if (previous.token === undefined) delete process.env.REPORT_REVIEW_ACCESS_TOKEN; else process.env.REPORT_REVIEW_ACCESS_TOKEN = previous.token;

@@ -46,6 +46,7 @@ export class VideoShareLinksPostgres {
       `SELECT s.public_id, s.title, s.video_job_id, s.memory_id, s.revoked_at
        FROM public.video_share_links s JOIN public.users u ON u.id = s.user_id
        WHERE u.external_id = $1 AND s.memory_id = $2::uuid AND s.revoked_at IS NULL
+         AND NOT EXISTS (SELECT 1 FROM public.content_visibility_holds h WHERE h.status='hidden' AND (h.memory_id=s.memory_id OR h.video_job_id=s.video_job_id OR h.share_link_id=s.id))
        ORDER BY s.created_at DESC`,
       [input.externalUserId, input.memoryId],
     );
@@ -77,6 +78,7 @@ export class VideoShareLinksPostgres {
            AND j.status = 'succeeded' AND j.quality_status = 'approved'
            AND j.entitlement_settlement = 'committed' AND j.artifact_key IS NOT NULL
            AND r.purpose <> 'first_preview' AND l.save_allowed = TRUE
+           AND NOT EXISTS (SELECT 1 FROM public.content_visibility_holds h WHERE h.status='hidden' AND (h.memory_id=j.memory_id OR h.video_job_id=j.id))
            AND EXISTS (SELECT 1 FROM public.video_generation_quality_reviews q
              WHERE q.job_id = j.id AND q.reviewer_kind = 'manual' AND q.decision = 'approved')
        )
@@ -126,6 +128,7 @@ export class VideoShareLinksPostgres {
          AND j.status = 'succeeded' AND j.quality_status = 'approved'
          AND j.entitlement_settlement = 'committed' AND j.artifact_key IS NOT NULL
          AND r.purpose <> 'first_preview' AND l.save_allowed = TRUE
+         AND NOT EXISTS (SELECT 1 FROM public.content_visibility_holds h WHERE h.status='hidden' AND (h.memory_id=s.memory_id OR h.video_job_id=j.id OR h.share_link_id=s.id))
          AND EXISTS (SELECT 1 FROM public.video_generation_quality_reviews q
            WHERE q.job_id = j.id AND q.reviewer_kind = 'manual' AND q.decision = 'approved')`,
       [publicId],

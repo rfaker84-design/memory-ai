@@ -25,6 +25,7 @@ export default function ShareVideoClient({ publicId }: { publicId: string }) {
     <h1>{state.title}</h1>
     <video src={`/api/video-shares/${encodeURIComponent(publicId)}/playback`} controls playsInline controlsList="nodownload noremoteplayback" disablePictureInPicture aria-label="AI 生成纪念影像，只可在线播放" />
     <p>这是 AI 生成的纪念影像，仅供在线播放；请尊重其中所涉及的个人隐私。</p>
+    <a href={`/report?publicShare=${encodeURIComponent(publicId)}`}>投诉或举报此分享</a>
     <a href="/">了解忆见</a>
   </main>;
 }

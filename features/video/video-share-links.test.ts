@@ -21,6 +21,13 @@ test("initial previews and any non-saveable credit lot cannot become public shar
   assert.equal(restrictions.length, 2, "creation and every public read must enforce the saveability boundary");
 });
 
+test("a credible impersonation hold removes the share from owner, creation, and public-read paths", () => {
+  const holds = source.match(/public\.content_visibility_holds/g) ?? [];
+  assert.equal(holds.length, 3, "all share entry points must check an active content hold");
+  assert.match(source, /h\.status='hidden'/);
+  assert.match(source, /h\.share_link_id=s\.id/);
+});
+
 test("an owner may reissue only after revocation while active duplicate creation stays idempotent", () => {
   assert.match(source, /ON CONFLICT \(video_job_id\) WHERE revoked_at IS NULL/);
   assert.match(source, /DO UPDATE SET title = EXCLUDED\.title/);

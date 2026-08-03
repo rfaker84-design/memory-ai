@@ -11,6 +11,7 @@ test("public video share page is noindex, view-only and does not use legacy shar
   assert.match(client, /AI 生成纪念影像/);
   assert.match(client, /\/api\/video-shares\//);
   assert.match(client, /12_000/);
+  assert.match(client, /publicShare=/);
   assert.match(client, /aria-live="polite"/);
   assert.match(client, /role="alert"/);
   assert.doesNotMatch(client, /\/share\//);

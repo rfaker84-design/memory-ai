@@ -7,11 +7,11 @@ import { fetchReportJson, prepareReportSubmission, type PendingReportSubmission 
 
 type Report = { id: string; category: string; requestedAction: string; status: string; createdAt: string; resolvedAt: string | null };
 
-export function ReportIntake() {
+export function ReportIntake({ publicShareId }: { publicShareId?: string }) {
   const [reports, setReports] = useState<Report[]>([]);
   const [details, setDetails] = useState("");
   const [category, setCategory] = useState("rights");
-  const [requestedAction, setRequestedAction] = useState("review");
+  const [requestedAction, setRequestedAction] = useState(publicShareId ? "remove_content" : "review");
   const [message, setMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "unauthenticated" | "unavailable">("loading");
@@ -53,7 +53,7 @@ export function ReportIntake() {
     const submission = prepareReportSubmission(pendingSubmission.current, { category, requestedAction, details });
     pendingSubmission.current = submission;
     try {
-      const { response, body } = await fetchReportJson("/api/reports", { method: "POST", credentials: "include", headers: { "content-type": "application/json", "idempotency-key": submission.idempotencyKey }, body: JSON.stringify({ category, subjectType: "other", subjectId: null, requestedAction, details }) });
+      const { response, body } = await fetchReportJson("/api/reports", { method: "POST", credentials: "include", headers: { "content-type": "application/json", "idempotency-key": submission.idempotencyKey }, body: JSON.stringify({ category, subjectType: publicShareId ? "public_share" : "other", subjectId: publicShareId ?? null, requestedAction, details }) });
       const reportBody = body as { report?: Report; error?: string };
       if (!response.ok) {
         if (reportBody.error === "UNAUTHENTICATED") {
@@ -80,6 +80,7 @@ export function ReportIntake() {
   return <section className="mt-8 rounded-xl border border-[#d5b172]/25 p-5" aria-labelledby="report-intake-title">
     <h2 id="report-intake-title" className="text-xl font-semibold">应用内投诉与举报</h2>
     <p className="mt-2 text-sm text-[#d8bfaa]">请勿在描述中提交身份证号、银行卡号、密码或短信验证码。证据材料仅通过受控渠道另行提供。</p>
+    {publicShareId && <p className="mt-2 text-sm text-[#d8bfaa]">你正在投诉一个公开分享。提交后会进入受控人工核验；只有被明确判为可信的冒用投诉才会先行隐藏对应公开内容。</p>}
     <form className="mt-4 space-y-3" onSubmit={submit}>
       <label className="block">类型<select className="ml-2 rounded bg-[#0b0a08] p-2" value={category} onChange={(event) => setCategory(event.target.value)}><option value="rights">权利与内容</option><option value="privacy">隐私</option><option value="safety">安全</option><option value="payment">支付与退款</option><option value="account">账户</option><option value="other">其他</option></select></label>
       <label className="block">请求<select className="ml-2 rounded bg-[#0b0a08] p-2" value={requestedAction} onChange={(event) => setRequestedAction(event.target.value)}><option value="review">请求审核</option><option value="remove_content">请求下架或删除</option><option value="refund">退款协助</option><option value="account_help">账户协助</option><option value="other">其他</option></select></label>

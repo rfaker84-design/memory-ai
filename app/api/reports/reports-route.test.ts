@@ -17,6 +17,23 @@ test("creates a session-bound report without accepting client identity", async (
   assert.equal((await response.json() as { report: { status: string } }).report.status, "received");
 });
 
+test("permits a session-bound complaint about an opaque public-share identifier without exposing its owner", async () => {
+  let received: unknown;
+  const handler = createReportsHandler({ create: async (input) => { received = input; return { id: "r-share", category: "rights", subjectType: "public_share", subjectId: input.subjectId, requestedAction: "remove_content", status: "received", createdAt: "2026-08-04T00:00:00.000Z", resolvedAt: null }; }, list: async () => [] }, session);
+  const response = await handler.POST(request({}, { category: "rights", subjectType: "public_share", subjectId: "550e8400-e29b-41d4-a716-446655440000", requestedAction: "remove_content", details: "I believe this public memorial share impersonates someone." }));
+  assert.equal(response.status, 201);
+  assert.deepEqual(received, {
+    userId: "00000000-0000-4000-8000-000000000001",
+    externalUserId: "phone:13800138000",
+    requestKey: "report-1234567890abcdef",
+    category: "rights",
+    subjectType: "public_share",
+    subjectId: "550e8400-e29b-41d4-a716-446655440000",
+    requestedAction: "remove_content",
+    details: "I believe this public memorial share impersonates someone.",
+  });
+});
+
 test("rejects forged identity, invalid subject combinations, and malformed idempotency", async () => {
   const handler = createReportsHandler({ create: async () => { throw new Error("must not write"); }, list: async () => [] }, session);
   assert.equal((await handler.POST(request({}, { ...body, userId: "forged" }))).status, 400);
