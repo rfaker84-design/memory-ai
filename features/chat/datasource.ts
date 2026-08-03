@@ -24,6 +24,7 @@ export interface ChatDataSource {
   ): Promise<Conversation>;
   createMessage(input: CreateMessageInput): Promise<Message>;
   listMessages(conversationId: string): Promise<Message[]>;
+  clearMessagesForMemory(userId: string, memoryId: string): Promise<number>;
   claimFirstGreeting?(input: ClaimFirstGreetingInput): Promise<FirstGreetingClaim>;
   completeFirstGreeting?(input: CompleteFirstGreetingInput): Promise<Message>;
   failFirstGreeting?(input: ClaimFirstGreetingInput): Promise<void>;

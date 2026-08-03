@@ -37,6 +37,8 @@ function MemoryWorldContent() {
   const [dailyGreetingVisible, setDailyGreetingVisible] = useState(false);
   const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [clearConfirmationId, setClearConfirmationId] = useState<string | null>(null);
+  const [clearingId, setClearingId] = useState<string | null>(null);
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
   const restoredPosition = useRef(false);
 
@@ -119,6 +121,28 @@ function MemoryWorldContent() {
       globalThis.clearTimeout(timer);
       setDeletingId(null);
     }
+  };
+
+  const clearChatHistory = async (memory: MemoryWorldItem) => {
+    if (clearingId || clearConfirmationId !== memory.id) return;
+    setClearingId(memory.id); setDeleteMessage(null);
+    const controller = new AbortController();
+    const timer = globalThis.setTimeout(() => controller.abort(), 20_000);
+    try {
+      const response = await fetch(`/api/memories/${encodeURIComponent(memory.id)}/chat-session`, {
+        method: "POST", credentials: "include", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "clear_chat_history", confirmation: "CLEAR_CHAT_HISTORY" }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        setDeleteMessage("暂时无法确认聊天记录是否已清除。请不要重复点击；进入相伴后再核对。");
+        return;
+      }
+      setClearConfirmationId(null);
+      setDeleteMessage(`${memory.name} 的聊天记录已清除；不会再用于后续相伴。`);
+    } catch {
+      setDeleteMessage("清除结果尚未确认。请不要重复点击；进入相伴后再核对。");
+    } finally { globalThis.clearTimeout(timer); setClearingId(null); }
   };
 
   useEffect(() => {
@@ -227,6 +251,10 @@ function MemoryWorldContent() {
                     <MemoryButton variant="secondary" onClick={() => setDeleteConfirmationId(null)} disabled={deletingId === memory.id}>取消</MemoryButton>
                   </div>
                 </section> : <button type="button" onClick={(event) => { event.stopPropagation(); setDeleteConfirmationId(memory.id); setDeleteMessage(null); }} style={{ minHeight: 44, marginTop: MemorySpacing.md, border: `1px solid ${SurfaceToken.border.subtle}`, borderRadius: MemoryRadius.full, background: "transparent", color: SurfaceToken.content.muted, cursor: "pointer", padding: "0 14px" }}>删除 TA</button>}
+                {clearConfirmationId === memory.id ? <section aria-label={`清除 ${memory.name} 聊天记录确认`} style={{ display: "grid", gap: MemorySpacing.sm, marginTop: MemorySpacing.md }} onClick={(event) => event.stopPropagation()}>
+                  <p style={{ margin: 0, color: SurfaceToken.content.secondary }}>确认清除与 {memory.name} 的聊天记录？此操作不可恢复，已清除内容不会再显示或用于后续相伴。</p>
+                  <div style={{ display: "flex", gap: MemorySpacing.sm }}><MemoryButton variant="primary" disabled={clearingId === memory.id} onClick={() => void clearChatHistory(memory)}>{clearingId === memory.id ? "正在确认…" : "确认清除记录"}</MemoryButton><MemoryButton variant="secondary" disabled={clearingId === memory.id} onClick={() => setClearConfirmationId(null)}>取消</MemoryButton></div>
+                </section> : <button type="button" onClick={(event) => { event.stopPropagation(); setClearConfirmationId(memory.id); setDeleteMessage(null); }} style={{ minHeight: 44, marginTop: MemorySpacing.sm, border: "none", background: "transparent", color: SurfaceToken.content.muted, cursor: "pointer", padding: "0 14px" }}>清除聊天记录</button>}
               </MemoryCard>
             ))}
             {deleteMessage ? <p role="status" aria-live="polite" style={{ margin: 0, color: SurfaceToken.content.secondary }}>{deleteMessage}</p> : null}

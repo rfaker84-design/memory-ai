@@ -49,6 +49,10 @@ export class ChatRepository {
     return this.dataSource.listMessages(conversationId);
   }
 
+  clearMessagesForMemory(userId: string, memoryId: string): Promise<number> {
+    return this.dataSource.clearMessagesForMemory(userId, memoryId);
+  }
+
   claimFirstGreeting(input: ClaimFirstGreetingInput): Promise<FirstGreetingClaim> {
     if (!this.dataSource.claimFirstGreeting) {
       throw new ChatValidationError(

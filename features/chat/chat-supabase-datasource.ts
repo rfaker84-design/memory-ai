@@ -1,5 +1,6 @@
 ﻿import { supabase } from "../../src/lib/supabase";
 import type { ChatDataSource } from "./datasource";
+import { ChatValidationError } from "./errors";
 import type {
   Conversation,
   CreateConversationInput,
@@ -199,5 +200,9 @@ export class ChatSupabaseDataSource implements ChatDataSource {
     }
 
     return (data as MessageRow[]).map(toMessage);
+  }
+
+  async clearMessagesForMemory(): Promise<number> {
+    throw new ChatValidationError("Formal chat content clearing requires PostgreSQL");
   }
 }

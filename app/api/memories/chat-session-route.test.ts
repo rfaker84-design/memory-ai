@@ -75,6 +75,7 @@ test("chat session returns PostgreSQL conversation messages after owned Memory v
         assert.equal(conversationId, session.id);
         return messages;
       },
+      async clearMessagesForMemory() { throw new Error("clear not expected"); },
     }),
     sessionResolver()
   );
@@ -97,6 +98,7 @@ test("chat session hides ownership mismatch and does not open a conversation", a
         return session;
       },
       async listMessages() { return messages; },
+      async clearMessagesForMemory() { throw new Error("clear not expected"); },
     }),
     sessionResolver("another-user")
   );
@@ -106,12 +108,38 @@ test("chat session hides ownership mismatch and does not open a conversation", a
   assert.equal(chatCalled, false);
 });
 
+test("chat history clearing requires an exact confirmation and remains owner-scoped", async () => {
+  let clearCalls = 0;
+  const handler = createChatSessionHandler(
+    () => ({ async getMemoryForUser() { return memory; } }),
+    () => ({
+      async getOrCreateConversationByMemory() { throw new Error("must not open a conversation while clearing"); },
+      async listMessages() { return messages; },
+      async clearMessagesForMemory(owner, id) {
+        assert.equal(owner, userId);
+        assert.equal(id, memoryId);
+        clearCalls += 1;
+        return 2;
+      },
+    }),
+    sessionResolver(),
+  );
+  const rejected = await handler(request({ action: "clear_chat_history", confirmation: "wrong" }), context);
+  assert.equal(rejected.status, 400);
+  assert.equal(clearCalls, 0);
+  const cleared = await handler(request({ action: "clear_chat_history", confirmation: "CLEAR_CHAT_HISTORY" }), context);
+  assert.equal(cleared.status, 200);
+  assert.deepEqual(await cleared.json(), { cleared: true, clearedCount: 2 });
+  assert.equal(clearCalls, 1);
+});
+
 test("chat session requires a session and rejects a forged userId", async () => {
   const handler = createChatSessionHandler(
     () => ({ async getMemoryForUser() { return memory; } }),
     () => ({
       async getOrCreateConversationByMemory() { return session; },
       async listMessages() { return messages; },
+      async clearMessagesForMemory() { throw new Error("clear not expected"); },
     }),
     async () => null
   );
@@ -124,6 +152,7 @@ test("chat session requires a session and rejects a forged userId", async () => 
     () => ({
       async getOrCreateConversationByMemory() { return session; },
       async listMessages() { return messages; },
+      async clearMessagesForMemory() { throw new Error("clear not expected"); },
     }),
     sessionResolver()
   );

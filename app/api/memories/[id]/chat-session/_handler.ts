@@ -26,8 +26,9 @@ type Context = { params: Promise<{ id: string }> };
 type MemoryOwnershipService = Pick<MemoryService, "getMemoryForUser">;
 type ChatSessionService = Pick<
   ChatService,
-  "getOrCreateConversationByMemory" | "listMessages"
+  "getOrCreateConversationByMemory" | "listMessages" | "clearMessagesForMemory"
 >;
+const CLEAR_CHAT_HISTORY_CONFIRMATION = "CLEAR_CHAT_HISTORY";
 
 const createChatService = (): ChatSessionService =>
   new ChatService(new ChatRepository(new ChatPostgresDataSource()));
@@ -37,6 +38,14 @@ const createMemoryService = (): MemoryOwnershipService =>
 
 const json = (body: unknown, init?: ResponseInit) =>
   applyAuthNoStore(NextResponse.json(body, init));
+
+function isClearChatHistoryRequest(body: unknown): boolean {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return false;
+  const value = body as Record<string, unknown>;
+  return Object.keys(value).length === 2
+    && value.action === "clear_chat_history"
+    && value.confirmation === CLEAR_CHAT_HISTORY_CONFIRMATION;
+}
 
 export function createChatSessionHandler(
   memoryServiceFactory: () => MemoryOwnershipService = createMemoryService,
@@ -68,6 +77,14 @@ export function createChatSessionHandler(
       }
 
       const chatService = chatServiceFactory();
+      if (isClearChatHistoryRequest(body)) {
+        const clearedCount = await chatService.clearMessagesForMemory(userId, memoryId);
+        return json({ cleared: true, clearedCount });
+      }
+      if (body && typeof body === "object" && !Array.isArray(body)
+        && ("action" in body || "confirmation" in body)) {
+        return json({ error: "INVALID_REQUEST" }, { status: 400 });
+      }
       const session = await chatService.getOrCreateConversationByMemory(
         userId,
         memoryId

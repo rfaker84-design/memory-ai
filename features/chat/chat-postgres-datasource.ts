@@ -240,10 +240,35 @@ export class ChatPostgresDataSource implements ChatDataSource {
   async listMessages(conversationId: string): Promise<Message[]> {
     const result = await queryPostgres<MessageRow>(
       `SELECT ${messageColumns} FROM messages m JOIN users u ON u.id = m.user_id
-       WHERE m.conversation_id = $1 ORDER BY m.created_at ASC`,
+       WHERE m.conversation_id = $1
+         AND COALESCE((m.metadata ->> 'content_cleared')::boolean, FALSE) IS FALSE
+       ORDER BY m.created_at ASC`,
       [uuid(conversationId, "conversationId")]
     );
     return result.rows.map(toMessage);
+  }
+
+  async clearMessagesForMemory(externalUserId: string, inputMemoryId: string): Promise<number> {
+    const memoryId = uuid(inputMemoryId, "memoryId");
+    return withPostgresTransaction(async (client) => {
+      const internalUserId = await lockOwnedMemory(client, externalUserId, memoryId);
+      if (!internalUserId) throw new ChatNotFoundError("Owned memory was not found");
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`memoryai:chat-clear:${externalUserId}:${memoryId}`]);
+      const cleared = await client.query(
+        `UPDATE messages
+         SET content='[content cleared by owner]', tokens=NULL,
+             metadata=jsonb_set(metadata, '{content_cleared}', 'true'::jsonb, TRUE),
+             updated_at=NOW()
+         WHERE user_id=$1 AND memory_id=$2
+           AND COALESCE((metadata ->> 'content_cleared')::boolean, FALSE) IS FALSE`,
+        [internalUserId, memoryId],
+      );
+      await client.query(
+        "UPDATE conversations SET last_message_at=NULL, updated_at=NOW() WHERE user_id=$1 AND memory_id=$2",
+        [internalUserId, memoryId],
+      );
+      return cleared.rowCount ?? 0;
+    });
   }
 
   async claimFirstGreeting(input: ClaimFirstGreetingInput): Promise<FirstGreetingClaim> {

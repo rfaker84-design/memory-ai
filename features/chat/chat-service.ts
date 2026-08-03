@@ -38,6 +38,10 @@ export class ChatService {
     return this.chatRepository.listMessages(conversationId);
   }
 
+  clearMessagesForMemory(userId: string, memoryId: string): Promise<number> {
+    return this.chatRepository.clearMessagesForMemory(userId, memoryId);
+  }
+
   claimFirstGreeting(input: ClaimFirstGreetingInput): Promise<FirstGreetingClaim> {
     return this.chatRepository.claimFirstGreeting(input);
   }
