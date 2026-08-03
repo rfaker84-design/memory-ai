@@ -10,6 +10,10 @@ export type TrustConsentType =
   | "commercial_use"
   | "crisis_support_escalation";
 
+export function hasAdultBirthDate(value: unknown): boolean {
+  return typeof value === "string" && isAtLeast18(value);
+}
+
 /**
  * Account-level consent required before a Memory/TA can be created.  This is
  * deliberately verified on the server: a browser acknowledgement alone is
@@ -23,7 +27,7 @@ export async function hasApprovedMemoryConsent(
   }
 ): Promise<boolean> {
   const result = await queryPostgres(
-    `SELECT 1
+    `SELECT account.profile ->> 'birth_date' AS birth_date
        FROM consent_records consent
        INNER JOIN users account ON account.id = consent.user_id
        INNER JOIN memories memory
@@ -42,7 +46,7 @@ export async function hasApprovedMemoryConsent(
     ]
   );
 
-  return Boolean(result.rows[0]);
+  return hasAdultBirthDate((result.rows[0] as { birth_date?: unknown } | undefined)?.birth_date);
 }
 
 export async function hasApprovedMemoryProfileConsent(
