@@ -62,6 +62,12 @@ export type ProductAccountDeletionProgress = {
   completedAt: string | null;
 };
 
+export type ProductCrisisContact = {
+  id: string;
+  role: "owner" | "contact";
+  status: "pending" | "accepted" | "revoked";
+};
+
 export type FirstGreeting = {
   session: { id: string; memoryId: string; userId: string };
   greeting: {
@@ -434,6 +440,48 @@ export const productApi = {
       throw new ProductApiError(502, "服务端未确认生日保存");
     }
     return { birthDate: result.birthDate, adultEligible: result.adultEligible } satisfies ProductAccountProfile;
+  },
+  async getCrisisSupport() {
+    const [consents, contacts] = await Promise.all([
+      request<{ crisisSupportEnabled?: unknown }>("/api/consents", { cache: "no-store" }),
+      request<{ contacts?: unknown }>("/api/account/crisis-contacts", { cache: "no-store" }),
+    ]);
+    if (typeof consents.crisisSupportEnabled !== "boolean" || !Array.isArray(contacts.contacts)) {
+      throw new ProductApiError(502, "服务端未确认危机支持设置");
+    }
+    const normalized = contacts.contacts.flatMap((value): ProductCrisisContact[] => {
+      if (typeof value !== "object" || value === null) return [];
+      const contact = value as Record<string, unknown>;
+      return typeof contact.id === "string" && (contact.role === "owner" || contact.role === "contact") && (contact.status === "pending" || contact.status === "accepted" || contact.status === "revoked")
+        ? [{ id: contact.id, role: contact.role, status: contact.status }]
+        : [];
+    });
+    if (normalized.length !== contacts.contacts.length) throw new ProductApiError(502, "服务端危机联系人格式不完整");
+    return { enabled: consents.crisisSupportEnabled, contacts: normalized };
+  },
+  async setCrisisSupport(enabled: boolean) {
+    if (enabled) {
+      await request<{ recorded?: unknown }>("/api/consents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": `mobile-consent-${crypto.randomUUID()}` },
+        body: JSON.stringify({ consentType: "crisis_support_escalation" }),
+      });
+    } else {
+      await request<{ revoked?: unknown }>("/api/consents", {
+        method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ consentType: "crisis_support_escalation" }),
+      });
+    }
+  },
+  async requestCrisisContact(contactExternalId: string) {
+    await request<{ requested?: unknown }>("/api/account/crisis-contacts", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contactExternalId }),
+    });
+  },
+  async updateCrisisContact(consentId: string, action: "accept" | "revoke") {
+    const result = await request<{ updated?: unknown }>("/api/account/crisis-contacts", {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ consentId, action }),
+    });
+    if (result.updated !== true) throw new ProductApiError(409, "服务端未确认联系人状态变更");
   },
   async getAccountDeletion() {
     const result = await request<{ deletion?: unknown }>("/api/account/deletion", { cache: "no-store" });
