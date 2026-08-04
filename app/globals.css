@@ -88,6 +88,9 @@ body {
 .safe-right  { padding-right:env(safe-area-inset-right,0px); }
 
 button, a[role="button"], .clickable { min-height:44px; min-width:44px; }
+/* The understanding-assistance path is a high-risk recovery action, so its plain
+   text link must meet the same touch-target contract as buttons. */
+a[href="/settings/companion"], a[href="/settings/understanding-assistance"] { display:inline-flex; align-items:center; min-height:44px; padding-inline:8px; }
 
 /* 鈹€鈹€ Animations 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 @keyframes spin-ring { to { transform: rotate(360deg); } }

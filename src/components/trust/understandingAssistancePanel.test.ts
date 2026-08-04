@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 
+test("understanding assistance recovery links meet the global touch-target contract", () => {
+  const styles = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
+  assert.match(styles, /a\[href="\/settings\/companion"\], a\[href="\/settings\/understanding-assistance"\]/);
+  assert.match(styles, /min-height:44px/);
+});
+
 test("understanding assistance UI uses the protected minimal-state route and never claims automatic outreach", () => {
   const panel = readFileSync(new URL("./UnderstandingAssistancePanel.tsx", import.meta.url), "utf8");
   const chat = readFileSync(new URL("../first-presence/MemoryConversationScene.tsx", import.meta.url), "utf8");
