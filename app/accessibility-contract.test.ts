@@ -37,7 +37,7 @@ test("first encounter respects the shared static fallback before it can autoplay
   const encounter = readFileSync("app/memory/[id]/encounter/page.tsx", "utf8");
   assert.match(encounter, /useQuietCompanionPresence\(\{ reducedMotion, replying: false \}\)/);
   assert.match(encounter, /const useStaticEncounter = presence === "static"/);
-  assert.match(encounter, /state\.playbackUrl && !useStaticEncounter \? <div/);
+  assert.match(encounter, /state\.playbackUrl && !useStaticEncounter && !encounterViewed \? <div/);
   assert.match(encounter, /<video src=\{state\.playbackUrl\} autoPlay playsInline/);
   assert.match(encounter, /首次相遇影像不会自动播放/);
 });

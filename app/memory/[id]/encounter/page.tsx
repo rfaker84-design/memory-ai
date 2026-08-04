@@ -25,6 +25,10 @@ type EncounterState =
   | { status: "timeout" }
   | { status: "error" };
 
+function encounterViewedKey(memoryId: string): string {
+  return `memoryai.initial-encounter-viewed:${memoryId}`;
+}
+
 /**
  * This page is presentation-only: it never creates a generation or submits a
  * provider request. It can play only an already approved owner artifact.
@@ -34,6 +38,7 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
   const router = useRouter();
   const [state, setState] = useState<EncounterState>({ status: "loading" });
   const [playbackComplete, setPlaybackComplete] = useState(false);
+  const [encounterViewed, setEncounterViewed] = useState(false);
   const leaveTimer = useRef<number | null>(null);
   const reducedMotion = useReducedMotion();
   const presence = useQuietCompanionPresence({ reducedMotion, replying: false });
@@ -42,6 +47,8 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
   const load = useCallback(async (signal?: AbortSignal) => {
     setState({ status: "loading" });
     setPlaybackComplete(false);
+    const viewed = typeof window !== "undefined" && window.localStorage.getItem(encounterViewedKey(memoryId)) === "viewed";
+    setEncounterViewed(viewed);
     try {
         const [memory, jobsResult] = await Promise.all([
           loadOwnedMemory(memoryId, signal),
@@ -56,7 +63,7 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
         let portraitUrl = memory.photoUrl ?? null;
         if (memory.photoAssetId) portraitUrl = await loadOwnedMediaUrl(memory.photoAssetId, signal).catch(() => portraitUrl);
         let playbackUrl: string | null = null;
-        if (preview) {
+        if (preview && !viewed) {
           const { response: playbackResponse, body: playbackBody } = await fetchPickupRequestJson(`/api/memories/${encodeURIComponent(memoryId)}/first-presence-video/${encodeURIComponent(preview.id)}/playback`, {}, signal);
           if (playbackResponse.ok) {
             const playback = playbackBody as { playback?: { url?: unknown; saveAllowed?: unknown } };
@@ -82,6 +89,10 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
   }, [load]);
 
   const continueToChat = () => router.replace(`/memory-chat/${encodeURIComponent(memoryId)}`);
+  const markEncounterViewed = () => {
+    window.localStorage.setItem(encounterViewedKey(memoryId), "viewed");
+    setEncounterViewed(true);
+  };
   const afterPlayback = () => {
     // Keep the last frame briefly visible, then enter the disclosed chat.
     setPlaybackComplete(true);
@@ -99,12 +110,12 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
       <AiGeneratedLabel confirmedSources />
       <h1 style={{ margin: 0 }}>与 {state.name} 的第一次遇见</h1>
       {playbackComplete && <p role="status" aria-live="polite">影像播放结束，正在进入相伴。</p>}
-      {state.playbackUrl && !useStaticEncounter ? <div style={{ position: "relative" }}>
-        <video src={state.playbackUrl} autoPlay playsInline controls={false} controlsList="nodownload noremoteplayback" disablePictureInPicture onEnded={afterPlayback} style={{ width: "100%", borderRadius: 20, background: "#15120e" }} aria-label={`${state.name} 的首次相遇影像`} />
+      {state.playbackUrl && !useStaticEncounter && !encounterViewed ? <div style={{ position: "relative" }}>
+        <video src={state.playbackUrl} autoPlay playsInline controls={false} controlsList="nodownload noremoteplayback" disablePictureInPicture onPlay={markEncounterViewed} onEnded={afterPlayback} style={{ width: "100%", borderRadius: 20, background: "#15120e" }} aria-label={`${state.name} 的首次相遇影像`} />
         <span data-ai-generated-overlay="true" aria-hidden="true" style={{ position: "absolute", top: 12, right: 12, pointerEvents: "none", borderRadius: 999, padding: "4px 8px", background: "rgba(9,8,7,0.78)", color: "#fff", fontSize: 12 }}>AI 生成纪念影像</span>
       </div> : <>
         {state.portraitUrl ? <img src={state.portraitUrl} alt={`${state.name} 的照片`} style={{ width: "100%", aspectRatio: "9 / 16", objectFit: "cover", borderRadius: 20 }} /> : <div role="img" aria-label={`${state.name} 的静态形象`} style={{ minHeight: 360, display: "grid", placeItems: "center", borderRadius: 20, background: "#15120e" }}>{state.name}</div>}
-        <p>{useStaticEncounter ? "当前设备已减少动态效果；首次相遇影像不会自动播放。你可以先进入相伴。" : "遇见影像暂时还不能播放。不会在这里创建生成任务；你可以先进入相伴。"}</p>
+        <p>{encounterViewed ? "这段首次相遇影像已经播放过一次。现在可以回到相伴继续聊天。" : useStaticEncounter ? "当前设备已减少动态效果；首次相遇影像不会自动播放。你可以先进入相伴。" : "遇见影像暂时还不能播放。不会在这里创建生成任务；你可以先进入相伴。"}</p>
         <button type="button" style={{ minHeight: 44 }} onClick={continueToChat}>进入相伴</button>
       </>}
       {state.playbackUrl && <button type="button" style={{ minHeight: 44 }} onClick={continueToChat}>稍后再看，进入相伴</button>}

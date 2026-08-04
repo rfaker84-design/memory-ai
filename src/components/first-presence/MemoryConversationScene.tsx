@@ -175,6 +175,13 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   useEffect(() => {
     if (!activeSessionId || completedConversationRounds(messages, activeSessionId) < 1 || typeof window === "undefined") return;
     const viewKey = pickupHintViewKey(activeSessionId);
+    if (completedConversationRounds(messages, activeSessionId) > 1) {
+      // Continuing the conversation without choosing the suggestion is an
+      // explicit product-level ignore for this session, not a repeated prompt.
+      window.sessionStorage.setItem(viewKey, "dismissed");
+      setPickupSuggestionVisible(false);
+      return;
+    }
     setPickupSuggestionVisible(window.sessionStorage.getItem(viewKey) !== "dismissed");
   }, [activeSessionId, messages]);
 
