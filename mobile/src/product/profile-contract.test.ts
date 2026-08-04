@@ -14,6 +14,13 @@ test("mobile profile reads and persists birth date through the session-bound acc
   assert.doesNotMatch(app, /localStorage\.setItem\([^\n]*birthDate/);
 });
 
+test("unavailable profile state has an explicit read-only recovery action", () => {
+  assert.match(app, /profileReadAttempt, setProfileReadAttempt/);
+  assert.match(app, /\[mode, profileReadAttempt, screen\]/);
+  assert.match(app, /profileState === "unavailable"[\s\S]*?setProfileReadAttempt\(\(current\) => current \+ 1\)\}>重新读取个人资料/);
+  assert.match(app, /let live = true;[\s\S]*?if \(!live\) return;[\s\S]*?return \(\) => \{ live = false; \};/);
+});
+
 test("mobile edits the current TA only through the existing Owner-bound memory PATCH contract", () => {
   assert.match(api, /async updateMemoryProfile\(memoryId: string, input: ProductMemoryProfileInput\)[\s\S]*?method: "PATCH"/);
   assert.match(api, /\/api\/memories\/\$\{encodeURIComponent\(memoryId\)\}/);

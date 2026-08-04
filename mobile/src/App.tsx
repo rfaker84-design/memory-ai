@@ -196,8 +196,10 @@ export function App() {
   const [crisisContactExternalId, setCrisisContactExternalId] = useState("");
   const [crisisState, setCrisisState] = useState<"idle" | "loading" | "ready" | "unavailable">("idle");
   const [profileState, setProfileState] = useState<"idle" | "loading" | "ready" | "unavailable">("loading");
+  const [profileReadAttempt, setProfileReadAttempt] = useState(0);
   const [deletionProgress, setDeletionProgress] = useState<ProductAccountDeletionProgress | null>(null);
   const [deletionState, setDeletionState] = useState<"idle" | "loading" | "ready" | "unavailable">("idle");
+  const [deletionReadAttempt, setDeletionReadAttempt] = useState(0);
   const [deletionConfirming, setDeletionConfirming] = useState(false);
   const [resumeDeletionAfterLogin, setResumeDeletionAfterLogin] = useState(false);
   const [resumeExportAfterLogin, setResumeExportAfterLogin] = useState(false);
@@ -293,7 +295,7 @@ export function App() {
       if (live) setProfileState("unavailable");
     });
     return () => { live = false; };
-  }, [mode, screen]);
+  }, [mode, profileReadAttempt, screen]);
 
   const refreshCrisisSupport = useCallback(async () => {
     if (mode === "preview") return;
@@ -320,7 +322,7 @@ export function App() {
       if (live) setDeletionState("unavailable");
     });
     return () => { live = false; };
-  }, [mode, screen]);
+  }, [deletionReadAttempt, mode, screen]);
 
   const openMemory = useCallback(async (id: string, destination: "home" | "memory" | "video" = "memory", rememberPrimary = false) => {
     if (__MOBILE_DEBUG_BUILD__ && id === "preview-memory") {
@@ -793,12 +795,12 @@ export function App() {
       <section>
         <h2>生日</h2>
         <p>用于年龄保护和你明确选择的纪念日规则；可以随时修改。</p>
-        {mode === "preview" ? <p>预览模式不会保存个人资料。</p> : profileState === "loading" ? <p role="status">正在读取个人资料…</p> : profileState === "unavailable" ? <p role="alert">个人资料暂时无法读取，未显示或修改任何旧值。</p> : <><label>生日<input className="field" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} inputMode="numeric" placeholder="YYYY-MM-DD" /></label><button className="primaryButton" disabled={busy || !birthDate} onClick={() => void saveBirthDate()}>{busy ? "正在保存" : "保存生日"}</button></>}
+        {mode === "preview" ? <p>预览模式不会保存个人资料。</p> : profileState === "loading" ? <p role="status">正在读取个人资料…</p> : profileState === "unavailable" ? <><p role="alert">个人资料暂时无法读取，未显示或修改任何旧值。</p><button className="quietLink" disabled={busy} onClick={() => setProfileReadAttempt((current) => current + 1)}>重新读取个人资料</button></> : <><label>生日<input className="field" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} inputMode="numeric" placeholder="YYYY-MM-DD" /></label><button className="primaryButton" disabled={busy || !birthDate} onClick={() => void saveBirthDate()}>{busy ? "正在保存" : "保存生日"}</button></>}
       </section>
       <section>
         <h2>账户注销</h2>
         <p>注销完成后，剩余付费、邀请和节日影像额度及奖励机会会清零且无法恢复。订单、退款、发票和法定记录会与内容资料隔离。</p>
-        {mode === "preview" ? <p>预览模式不能发起或显示注销。</p> : deletionState === "loading" ? <p role="status">正在读取注销进度…</p> : deletionState === "unavailable" ? <p role="alert">注销服务暂时不可用，未提交任何注销申请。</p> : deletionProgress ? <><p role="status">当前状态：{deletionProgress.status}{deletionProgress.legalHold ? "；部分资料受法定保全范围限制，不会用于产品功能。" : ""}</p><p>在线内容不晚于 {new Date(deletionProgress.contentDeleteAfter).toLocaleDateString("zh-CN")} 删除；外部对象不晚于 {new Date(deletionProgress.providerDeleteAfter).toLocaleDateString("zh-CN")} 删除；备份最长保留至 {new Date(deletionProgress.backupExpireAfter).toLocaleDateString("zh-CN")}。</p><button className="quietLink" disabled={busy} onClick={() => { setDeletionState("loading"); void productApi.getAccountDeletion().then((progress) => { setDeletionProgress(progress); setDeletionState("ready"); }).catch(() => setDeletionState("unavailable")); }}>刷新注销进度</button></> : deletionConfirming ? <><p role="alert">确认后将立即撤销所有登录 Session 和设备访问。系统不会自动重试提交。</p><button className="primaryButton" disabled={busy} onClick={() => void submitAccountDeletion()}>{busy ? "正在提交" : "确认注销账户"}</button><button className="quietLink" disabled={busy} onClick={() => setDeletionConfirming(false)}>取消</button></> : <button className="quietLink" disabled={busy} onClick={() => setDeletionConfirming(true)}>申请注销账户</button>}
+        {mode === "preview" ? <p>预览模式不能发起或显示注销。</p> : deletionState === "loading" ? <p role="status">正在读取注销进度…</p> : deletionState === "unavailable" ? <><p role="alert">注销服务暂时不可用，未提交任何注销申请。</p><button className="quietLink" disabled={busy} onClick={() => setDeletionReadAttempt((current) => current + 1)}>重新读取注销进度</button></> : deletionProgress ? <><p role="status">当前状态：{deletionProgress.status}{deletionProgress.legalHold ? "；部分资料受法定保全范围限制，不会用于产品功能。" : ""}</p><p>在线内容不晚于 {new Date(deletionProgress.contentDeleteAfter).toLocaleDateString("zh-CN")} 删除；外部对象不晚于 {new Date(deletionProgress.providerDeleteAfter).toLocaleDateString("zh-CN")} 删除；备份最长保留至 {new Date(deletionProgress.backupExpireAfter).toLocaleDateString("zh-CN")}。</p><button className="quietLink" disabled={busy} onClick={() => setDeletionReadAttempt((current) => current + 1)}>刷新注销进度</button></> : deletionConfirming ? <><p role="alert">确认后将立即撤销所有登录 Session 和设备访问。系统不会自动重试提交。</p><button className="primaryButton" disabled={busy} onClick={() => void submitAccountDeletion()}>{busy ? "正在提交" : "确认注销账户"}</button><button className="quietLink" disabled={busy} onClick={() => setDeletionConfirming(false)}>取消</button></> : <button className="quietLink" disabled={busy} onClick={() => setDeletionConfirming(true)}>申请注销账户</button>}
       </section>
       <section><h2>危机支持设置</h2><p>忆见安全陪伴助手不会替代紧急服务，也不会替你联系任何人。你可预授权仅含最小信息的内部支持队列；外部联络不会自动发生。</p>{mode === "preview" ? <p>预览模式不会保存危机支持设置。</p> : crisisState === "loading" ? <p role="status">正在读取危机支持设置…</p> : crisisState === "unavailable" ? <><p role="alert">危机支持设置暂时无法读取；未创建或变更任何授权。</p><button className="quietLink" onClick={() => void refreshCrisisSupport()}>重新读取</button></> : <><button className="quietLink" disabled={busy} onClick={() => void (async () => { setBusy(true); try { await productApi.setCrisisSupport(!crisisSupportEnabled); await refreshCrisisSupport(); setNotice(crisisSupportEnabled ? "已撤销危机支持预授权。" : "已预授权最小化内部危机支持队列；这不代表已通知任何人。"); } catch (error) { setNotice(friendlyError(error)); } finally { setBusy(false); } })()}>{crisisSupportEnabled ? "撤销危机支持预授权" : "预授权内部危机支持"}</button><label>可信联系人的忆见账户标识<input className="field" value={crisisContactExternalId} onChange={(event) => setCrisisContactExternalId(event.target.value)} /></label><button className="quietLink" disabled={busy || !crisisContactExternalId.trim()} onClick={() => void (async () => { setBusy(true); try { await productApi.requestCrisisContact(crisisContactExternalId.trim()); setCrisisContactExternalId(""); await refreshCrisisSupport(); setNotice("联系人申请已记录；对方需自行登录并明确接受，系统不会自动通知。" ); } catch (error) { setNotice(friendlyError(error)); } finally { setBusy(false); } })()}>发起联系人申请</button><ul>{crisisContacts.map((contact) => <li key={contact.id}>{contact.status === "accepted" ? "已接受" : contact.status === "pending" ? "等待对方接受" : "已撤销"}{contact.status === "pending" && contact.role === "contact" && <button className="quietLink" disabled={busy} onClick={() => void productApi.updateCrisisContact(contact.id, "accept").then(refreshCrisisSupport).catch((error) => setNotice(friendlyError(error)))}>接受</button>}{contact.status !== "revoked" && <button className="quietLink" disabled={busy} onClick={() => void productApi.updateCrisisContact(contact.id, "revoke").then(refreshCrisisSupport).catch((error) => setNotice(friendlyError(error)))}>撤销</button>}</li>)}</ul></>}</section>
       <section><h2>隐私与安全</h2><p>数据导出和分享设置仍通过同一受保护账户合同完成；移动端不会伪造已提交、已删除或已通知。</p><a className="quietLink" href="/privacy">查看隐私与删除说明</a><a className="quietLink" href="/help">查看帮助与安全说明</a></section>

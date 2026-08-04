@@ -20,3 +20,10 @@ test("fresh reauthentication returns to a manual deletion confirmation without a
   assert.match(app, /if \(resumeDeletionAfterLogin\)[\s\S]*?setScreen\("profile"\)/);
   assert.match(app, /系统不会自动提交/);
 });
+
+test("unavailable deletion progress can only be explicitly reread, never auto-submitted", () => {
+  assert.match(app, /deletionReadAttempt, setDeletionReadAttempt/);
+  assert.match(app, /\[deletionReadAttempt, mode, screen\]/);
+  assert.match(app, /deletionState === "unavailable"[\s\S]*?setDeletionReadAttempt\(\(current\) => current \+ 1\)\}>重新读取注销进度/);
+  assert.doesNotMatch(app, /deletionState === "unavailable"[\s\S]{0,500}requestAccountDeletion\(/);
+});
