@@ -21,3 +21,11 @@ test("mobile reconnect retries the session-bound restore flow instead of only na
   assert.match(source, /setReconnectAttempt\(\(current\) => current \+ 1\)/);
   assert.doesNotMatch(source, /<Offline retry=\{\(\) => setScreen\(navigator\.onLine \? "welcome" : "offline"\)\}/);
 });
+
+test("a failed authenticated cold start remains explicitly unavailable instead of looking logged out", () => {
+  assert.match(source, /type Screen = [\s\S]*?"unavailable"/);
+  assert.match(source, /if \(active\) setScreen\("unavailable"\);/);
+  assert.match(source, /暂时无法读取服务状态/);
+  assert.match(source, /不会切换为预览，也不会自动发送、创建或修改任何内容/);
+  assert.match(source, /if \(screen === "unavailable"\) return <ServiceUnavailable/);
+});

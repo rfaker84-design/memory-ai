@@ -27,7 +27,7 @@ const DebugLab = __MOBILE_DEBUG_BUILD__
   ? lazy(() => import("./debug/NativeCapabilityLab").then((module) => ({ default: module.NativeCapabilityLab })))
   : null;
 
-type Screen = "splash" | "welcome" | "login" | "code" | "home" | "create" | "complete" | "presence" | "chat" | "memory" | "video" | "profile" | "offline" | "debug";
+type Screen = "splash" | "welcome" | "login" | "code" | "home" | "create" | "complete" | "presence" | "chat" | "memory" | "video" | "profile" | "offline" | "unavailable" | "debug";
 type SessionMode = "remote" | "preview";
 
 const previewMemory = (name: string, relationship: string, lifeStory: string): ProductMemory => ({
@@ -82,6 +82,16 @@ function Offline({ retry }: { retry: () => void }) {
     <h1>此刻没有网络。</h1>
     <p>恢复连接后，你可以重新读取服务端已保存的资料。未送出的内容不会自动发送。</p>
     <button className="textButton" onClick={retry}>重新连接</button>
+  </main>;
+}
+
+function ServiceUnavailable({ retry }: { retry: () => void }) {
+  return <main className="offlineScene">
+    <div className="quietDot" aria-hidden="true" />
+    <p className="eyebrow">忆见</p>
+    <h1>暂时无法读取服务状态。</h1>
+    <p>登录状态和已保存资料尚未确认。不会切换为预览，也不会自动发送、创建或修改任何内容。</p>
+    <button className="textButton" onClick={retry}>重新读取</button>
   </main>;
 }
 
@@ -184,7 +194,7 @@ export function App() {
         if (!active) return;
         applyOwnedMemories(restored);
       } catch {
-        if (active) setScreen("welcome");
+        if (active) setScreen("unavailable");
       }
     };
     const finish = window.setTimeout(() => { void restoreSession(); }, 1000);
@@ -487,6 +497,10 @@ export function App() {
     if (screen === "offline") return <Offline retry={() => {
       if (!navigator.onLine) return;
       setOnline(true);
+      setReconnectAttempt((current) => current + 1);
+    }} />;
+    if (screen === "unavailable") return <ServiceUnavailable retry={() => {
+      if (!navigator.onLine) { setScreen("offline"); return; }
       setReconnectAttempt((current) => current + 1);
     }} />;
     if (screen === "debug" && DebugLab) return <Suspense fallback={<BrandSplash />}><DebugLab /></Suspense>;
