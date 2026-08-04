@@ -11,6 +11,7 @@ import {
   COMPANION_POSITION_KEY,
   COMPANION_PRIMARY_KEY,
   companionDay,
+  dailyCompanionGreeting,
   dailyGreetingMarker,
   isDailyCompanionGreetingDue,
   restoreCompanionPosition,
@@ -225,7 +226,7 @@ function MemoryWorldContent() {
                     <MemoryAvatar image={primary.photoUrl} initials={primary.name} presence="quiet" size={96} />
                     <div><div style={{ color: SurfaceToken.content.primary, fontSize: MemoryTypography.size.title }}>{primary.name}</div><div style={{ color: SurfaceToken.content.muted, marginTop: 4 }}>{primary.relationship || "关系待补充"}</div></div>
                   </button>
-                  {dailyGreetingVisible && <p role="status" style={{ margin: 0, color: SurfaceToken.content.secondary, lineHeight: MemoryTypography.lineHeight.normal }}>忆见提示：今天也可以慢慢说一件你想起的小事。</p>}
+                  {dailyGreetingVisible && <p role="status" style={{ margin: 0, color: SurfaceToken.content.secondary, lineHeight: MemoryTypography.lineHeight.normal }}>{dailyCompanionGreeting(primary.name)}</p>}
                   <div style={{ display: "flex", flexWrap: "wrap", gap: MemorySpacing.sm }}>
                     <MemoryButton variant="primary" onClick={() => router.push(`/memory/${primary.id}/encounter`)}>遇见</MemoryButton>
                     <MemoryButton variant="secondary" onClick={() => router.push(`/memory-chat/${primary.id}`)}>稍后再看</MemoryButton>

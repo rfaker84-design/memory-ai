@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   companionDay,
+  dailyCompanionGreeting,
   dailyGreetingMarker,
   isDailyCompanionGreetingDue,
   restoreCompanionPosition,
@@ -24,6 +25,13 @@ test("daily companion greeting is shown once per day and selected TA", () => {
   assert.equal(isDailyCompanionGreetingDue(marker, day, "first"), false);
   assert.equal(isDailyCompanionGreetingDue(marker, day, "second"), true);
   assert.equal(isDailyCompanionGreetingDue(marker, "2026-08-03", "first"), true);
+});
+
+test("daily companion greeting is transparent and never claims a real TA initiated it", () => {
+  const greeting = dailyCompanionGreeting("小林");
+  assert.match(greeting, /^今日 AI 纪念问候 · 基于已确认资料：/);
+  assert.match(greeting, /小林/);
+  assert.doesNotMatch(greeting, /我在等你|一直在这里|很快见面|来陪我/);
 });
 
 test("companion home restores only a bounded same-day local reading position", () => {

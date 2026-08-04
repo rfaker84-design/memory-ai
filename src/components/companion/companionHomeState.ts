@@ -36,6 +36,16 @@ export function isDailyCompanionGreetingDue(
 }
 
 /**
+ * The home greeting is intentionally a transparent product cue, not a claim
+ * that the deceased person initiated contact or is presently aware. It uses
+ * only the owner-confirmed TA display name and never invents a memory.
+ */
+export function dailyCompanionGreeting(name: string): string {
+  const displayName = name.trim() || "这位 TA";
+  return `今日 AI 纪念问候 · 基于已确认资料：想和 ${displayName} 的纪念资料慢慢说一件事吗？`;
+}
+
+/**
  * A same-day scroll position is a local presentation preference only. It is
  * deliberately bounded and expires on the next calendar day, so it cannot
  * become a stale cross-session navigation state or an access signal.
