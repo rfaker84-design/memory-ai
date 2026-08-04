@@ -23,6 +23,11 @@ test("encounter only reads an approved owner preview and never submits a generat
   assert.match(source, /state\.status === "unauthenticated"[\s\S]*?<Link href="\/login">/);
   assert.match(source, /state\.status === "timeout"[\s\S]*?重新读取/);
   assert.match(source, /<button type="button" style=\{\{ minHeight: 44 \}\} onClick=\{continueToChat\}>/);
-  assert.doesNotMatch(source, /method:\s*"POST"/);
+  // The page may POST only to the dedicated encounter-claim endpoint. That
+  // claim consumes an already-approved, owner-scoped playback capability; it
+  // never submits a provider generation.
+  assert.match(source, /encounter-playback/);
+  assert.match(source, /encounter-playback`, \{ method: "POST" \}/);
+  assert.doesNotMatch(source, /first-presence-video`, \{ method: "POST" \}/);
   assert.doesNotMatch(source, /loop=/);
 });

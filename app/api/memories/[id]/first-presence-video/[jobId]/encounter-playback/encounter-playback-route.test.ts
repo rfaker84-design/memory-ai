@@ -5,6 +5,8 @@ import { NextRequest } from "next/server";
 
 import { createInitialEncounterPlaybackHandler } from "./_handler";
 
+process.env.AUTH_ALLOWED_ORIGIN = "https://memoryai.test";
+
 const memoryId = "00000000-0000-4000-8000-000000000001";
 const jobId = "00000000-0000-4000-8000-000000000002";
 const context = { params: Promise.resolve({ id: memoryId, jobId }) };
