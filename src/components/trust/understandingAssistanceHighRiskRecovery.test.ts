@@ -8,6 +8,7 @@ test("export and account deletion offer a non-diagnostic assistance exit after a
     "src/components/account-deletion/AccountDeletionPanel.tsx",
     "app/settings/video-shares/page.tsx",
     "src/components/payment/RefundCenter.tsx",
+    "src/components/first-presence/CommerceVideoCreditsEntry.tsx",
   ]) {
     const source = readFileSync(path, "utf8");
     assert.match(source, /UNDERSTANDING_ASSISTANCE_REQUIRED/);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 
 import {
   clearCommerceVideoOrderRecovery,
@@ -47,6 +48,9 @@ type Props = {
 };
 
 function unavailableCopy(error: unknown) {
+  if (error instanceof CommerceVideoEntryError && error.code === "UNDERSTANDING_ASSISTANCE_REQUIRED") {
+    return "\u8fd9\u9879\u64cd\u4f5c\u5df2\u6682\u65f6\u505c\u6b62\u3002\u4f60\u53ef\u4ee5\u5148\u518d\u770b\u4e00\u6b21\u8bf4\u660e\uff0c\u6682\u65f6\u4e0d\u8d2d\u4e70\uff0c\u6216\u8bf7\u53ef\u4fe1\u4efb\u7684\u4eba\u534f\u52a9\uff1b\u5fc6\u89c1\u4e0d\u4f1a\u66ff\u4f60\u5224\u65ad\uff0c\u4e5f\u4e0d\u4f1a\u81ea\u52a8\u8054\u7cfb\u4efb\u4f55\u4eba\u3002";
+  }
   if (error instanceof CommerceVideoEntryError && error.code === "COMMERCE_TEST_PAYMENT_DISABLED") {
     return "当前环境尚未配置支付，订单不会被提交。";
   }
@@ -63,6 +67,7 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
   const [products, setProducts] = useState<CommerceVideoProduct[]>([]);
   const [referral, setReferral] = useState<CommerceReferralStatus | null>(null);
   const [notice, setNotice] = useState("");
+  const [assistanceBlocked, setAssistanceBlocked] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogUnavailable, setCatalogUnavailable] = useState(false);
   const [balanceState, setBalanceState] = useState<CommerceVideoCreditsBalanceState>({
@@ -150,6 +155,7 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
     }
     setSubmitting(product.id);
     setNotice("");
+    setAssistanceBlocked(false);
     try {
       await recordTrustConsent("commercial_use", memoryId);
       const recovery = orderRecovery
@@ -178,9 +184,14 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
         setNotice("当前支付通道不可用，订单不会获得额度。");
       }
     } catch (error) {
+      if ((error instanceof TrustConsentRequestError || error instanceof CommerceVideoEntryError) && error.code === "UNDERSTANDING_ASSISTANCE_REQUIRED") {
+        setNotice("\u8fd9\u9879\u64cd\u4f5c\u5df2\u6682\u65f6\u505c\u6b62\u3002\u4f60\u53ef\u4ee5\u5148\u518d\u770b\u4e00\u6b21\u8bf4\u660e\uff0c\u6682\u65f6\u4e0d\u8d2d\u4e70\uff0c\u6216\u8bf7\u53ef\u4fe1\u4efb\u7684\u4eba\u534f\u52a9\uff1b\u5fc6\u89c1\u4e0d\u4f1a\u66ff\u4f60\u5224\u65ad\uff0c\u4e5f\u4e0d\u4f1a\u81ea\u52a8\u8054\u7cfb\u4efb\u4f55\u4eba\u3002");
+        setAssistanceBlocked(true);
+      } else {
       setNotice(error instanceof TrustConsentRequestError
         ? "购买确认尚未安全记录，订单未创建。恢复连接后请重新确认。"
         : unavailableCopy(error));
+      }
     } finally {
       setSubmitting(null);
     }
@@ -249,6 +260,7 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
         onUseOccasionReward={(offer) => void useOccasionReward(offer)}
         onRetryBalance={() => void refreshBalance()}
       />
+      {assistanceBlocked ? <p className={styles.notice}><Link href="/settings/understanding-assistance">{"\u8bf7\u53ef\u4fe1\u4efb\u7684\u4eba\u534f\u52a9"}</Link></p> : null}
     </aside>
   );
 }
