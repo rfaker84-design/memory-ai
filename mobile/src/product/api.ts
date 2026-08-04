@@ -423,10 +423,11 @@ export const productApi = {
       messages,
     } satisfies ProductConversation;
   },
-  async askMemory(memoryId: string, question: string) {
+  async askMemory(memoryId: string, question: string, idempotencyKey: string) {
+    if (!/^mobile-chat-[a-z0-9-]{16,160}$/i.test(idempotencyKey)) throw new ProductApiError(400, "CHAT_IDEMPOTENCY_KEY_INVALID");
     return request<{ answer?: string; reply?: string; text?: string }>("/api/memory-chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Idempotency-Key": `mobile-chat-${crypto.randomUUID()}` },
+      headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
       body: JSON.stringify({ memoryId, question }),
     });
   },

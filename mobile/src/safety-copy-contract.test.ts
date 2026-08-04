@@ -45,6 +45,10 @@ test("a failed ordinary chat request retains the draft and never represents it a
   const start = source.indexOf("const sendQuestion = async () => {");
   const end = source.indexOf("const resetPickupDraft", start);
   const sendQuestion = source.slice(start, end);
-  assert.ok(sendQuestion.indexOf("await productApi.askMemory(memory.id, value);") < sendQuestion.indexOf("setQuestion(\"\");"));
+  assert.match(sendQuestion, /const idempotencyKey = questionIdempotencyKey \?\? `mobile-chat-\$\{crypto\.randomUUID\(\)\}`/);
+  assert.ok(sendQuestion.indexOf("await productApi.askMemory(memory.id, value, idempotencyKey);") < sendQuestion.indexOf("setQuestion(\"\");"));
+  assert.match(sendQuestion, /setQuestionIdempotencyKey\(idempotencyKey\)/);
+  assert.match(sendQuestion, /setQuestionIdempotencyKey\(null\)/);
+  assert.match(source, /onChange=\{\(event\) => \{ setQuestion\(event\.target\.value\); setQuestionIdempotencyKey\(null\); \}\}/);
   assert.match(sendQuestion, /catch \(error\) \{ setQuestion\(value\); setNotice\(`\$\{friendlyError\(error\)\} Your message was not confirmed as sent\.`\); \}/);
 });

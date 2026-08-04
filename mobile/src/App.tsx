@@ -173,6 +173,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [conversation, setConversation] = useState<ProductConversation>({ sessionId: null, messages: [] });
   const [question, setQuestion] = useState("");
+  const [questionIdempotencyKey, setQuestionIdempotencyKey] = useState<string | null>(null);
   const [replyCorrectionContent, setReplyCorrectionContent] = useState<string | null>(null);
   const [replyCorrectionReason, setReplyCorrectionReason] = useState<ReplyCorrectionReason>("称呼不对");
   const [replyCorrectionDetail, setReplyCorrectionDetail] = useState("");
@@ -507,6 +508,8 @@ export function App() {
   const sendQuestion = async () => {
     const value = question.trim();
     if (!value || !memory) return;
+    const idempotencyKey = questionIdempotencyKey ?? `mobile-chat-${crypto.randomUUID()}`;
+    setQuestionIdempotencyKey(idempotencyKey);
     setBusy(true);
     try {
       if (mode === "preview") {
@@ -516,10 +519,11 @@ export function App() {
           messages: [...current.messages, { role: "assistant", content: "AI生成 · 基于当前对话：你可以慢慢说；如有需要，也可以联系身边可信任的人。" }],
         }));
       } else {
-        await productApi.askMemory(memory.id, value);
+        await productApi.askMemory(memory.id, value, idempotencyKey);
         setConversation(await productApi.getConversation(memory.id));
       }
       setQuestion("");
+      setQuestionIdempotencyKey(null);
     } catch (error) { setQuestion(value); setNotice(`${friendlyError(error)} Your message was not confirmed as sent.`); }
     finally { setBusy(false); }
   };
@@ -771,7 +775,7 @@ export function App() {
         return <article key={`${message.id ?? message.role}-${index}`} className={`bubble ${message.role}`}><p>{message.content}</p>{message.role === "assistant" && <><small>AI生成 · 基于已确认资料</small>{sourceIds.length > 0 && <button className="quietLink" type="button" disabled={busy} onClick={() => { setHighlightedPickupIds(sourceIds); setScreen("memory"); }}>查看记忆来源{sourceIds.length > 1 ? `（${sourceIds.length}）` : ""}</button>}<button className="quietLink" type="button" disabled={busy} onClick={() => openReplyCorrection(message.content)}>这句话不太像 {memory.name}</button></>}</article>;
       }) : <p className="emptyCopy">先创建一位你想念的人。</p>}</div>
       {replyCorrectionContent && <section className="memoryHero" aria-label="校正 TA 回复"><p className="eyebrow">校正 TA</p><h2>这句话哪里不太像 {memory.name}？</h2><p>“{replyCorrectionContent}”</p>{!replyCorrectionSuggestion ? <><fieldset disabled={busy}><legend>原因</legend>{REPLY_CORRECTION_REASONS.map((reason) => <label key={reason}><input type="radio" name="reply-correction-reason" checked={replyCorrectionReason === reason} onChange={() => setReplyCorrectionReason(reason)} /> {reason}</label>)}</fieldset><label>你确认的正确说法或资料<textarea className="field" value={replyCorrectionDetail} onChange={(event) => setReplyCorrectionDetail(event.target.value)} maxLength={800} /></label>{replyCorrectionError ? <p role="alert">{replyCorrectionError}</p> : null}<button className="primaryButton" disabled={busy} onClick={prepareReplyCorrection}>生成校正建议</button><button className="quietLink" disabled={busy} onClick={() => setReplyCorrectionContent(null)}>取消</button></> : <><p>建议写入（请先核对）：{replyCorrectionSuggestion.text}</p><p>只有确认后才会写入 TA 的正式资料；这不会改写已经发生的对话。</p>{replyCorrectionError ? <p role="alert">{replyCorrectionError}</p> : null}<button className="primaryButton" disabled={busy} onClick={() => void confirmReplyCorrection()}>{busy ? "正在确认保存" : "确认写入 TA 资料"}</button><button className="quietLink" disabled={busy} onClick={() => setReplyCorrectionSuggestion(null)}>返回修改</button></>}</section>}
-      <form className="chatComposer" onSubmit={(event) => { event.preventDefault(); void sendQuestion(); }}><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="想说些什么" disabled={busy} /><button disabled={!question.trim() || busy}>发送</button></form>
+      <form className="chatComposer" onSubmit={(event) => { event.preventDefault(); void sendQuestion(); }}><input value={question} onChange={(event) => { setQuestion(event.target.value); setQuestionIdempotencyKey(null); }} placeholder="想说些什么" disabled={busy} /><button disabled={!question.trim() || busy}>发送</button></form>
       {notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="chat" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
     if (screen === "profile" && profileState !== "idle") return <main className="profileScene">
@@ -845,7 +849,7 @@ export function App() {
     if (screen === "chat") return <main className="chatScene">
       <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><div><strong>{title}</strong><small>AI纪念陪伴</small></div><button className="headerAction" onClick={() => setScreen("video")}>影像</button></header>
       <div className="chatBody">{memory ? <div className="chatPortrait">{initials(memory.name)}</div> : null}{messages.length ? messages.map((message, index) => <p key={`${message.role}-${index}`} className={`bubble ${message.role}`}>{message.content}</p>) : <p className="emptyCopy">先创建一位你想念的人。</p>}</div>
-      <form className="chatComposer" onSubmit={(event) => { event.preventDefault(); void sendQuestion(); }}><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="想说些什么" disabled={!memory || busy} /><button disabled={!question.trim() || busy}>发送</button></form>
+      <form className="chatComposer" onSubmit={(event) => { event.preventDefault(); void sendQuestion(); }}><input value={question} onChange={(event) => { setQuestion(event.target.value); setQuestionIdempotencyKey(null); }} placeholder="想说些什么" disabled={!memory || busy} /><button disabled={!question.trim() || busy}>发送</button></form>
       {notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="chat" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
     if (screen === "video" && memory) {
