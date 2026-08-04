@@ -44,11 +44,13 @@ type CommerceSnapshot = {
 
 type Props = {
   memory: ProductMemory;
+  ownedMemories: ProductMemory[];
   conversation: ProductConversation;
   isFirstMemory: boolean;
   online: boolean;
   onBack: () => void;
   onOpenChat: () => void;
+  onSelectMemory: (memoryId: string) => void;
 };
 
 function jobCopy(job: FirstPresenceVideoSafeDto | null, saveAllowed: boolean) {
@@ -66,17 +68,20 @@ function isMissingReferralCode(error: unknown) {
 
 export function VideoOpportunityScreen({
   memory,
+  ownedMemories,
   conversation,
   isFirstMemory,
   online,
   onBack,
   onOpenChat,
+  onSelectMemory,
 }: Props) {
   const opportunities = useMemo(
     () => resolveMobileVideoOpportunities(memory, conversation, isFirstMemory),
     [conversation, isFirstMemory, memory],
   );
   const remoteReadable = online && productApi.enabled() && memory.id !== "preview-memory";
+  const hasConfirmedPhoto = Boolean(memory.photoAssetId?.trim());
   const [jobs, setJobs] = useState<FirstPresenceVideoSafeDto[]>([]);
   const [commerce, setCommerce] = useState<CommerceSnapshot>({ balance: null, referral: null, products: [] });
   const [loading, setLoading] = useState(false);
@@ -91,7 +96,7 @@ export function VideoOpportunityScreen({
   useEffect(() => {
     let active = true;
     const load = async () => {
-      if (!remoteReadable || (!opportunities.initialPreview && !opportunities.additionalGeneration)) {
+      if (!remoteReadable || !hasConfirmedPhoto) {
         if (active) {
           setJobs([]);
           setCommerce({ balance: null, referral: null, products: [] });
@@ -104,12 +109,12 @@ export function VideoOpportunityScreen({
 
       setLoading(true);
       setUnavailable(false);
-      const jobsResult = await productApi.listFirstPresenceVideos(memory.id).then(
-        (value) => ({ ok: true as const, value }),
-        () => ({ ok: false as const }),
-      );
-      const commerceResult = opportunities.additionalGeneration
-        ? await Promise.all([
+      const [jobsResult, commerceResult] = await Promise.all([
+        productApi.listFirstPresenceVideos(memory.id).then(
+          (value) => ({ ok: true as const, value }),
+          () => ({ ok: false as const }),
+        ),
+        Promise.all([
           productApi.loadCommerceCreditBalance(),
           productApi.loadCommerceVideoProducts(),
           productApi.loadCommerceReferralStatus().catch((error) => {
@@ -120,8 +125,8 @@ export function VideoOpportunityScreen({
         ]).then(
           ([balance, products, referral, offers]) => ({ ok: true as const, balance, products, referral, offers }),
           () => ({ ok: false as const }),
-        )
-        : { ok: true as const, balance: null, products: [], referral: null, offers: [] };
+        ),
+      ]);
 
       if (!active) return;
       if (jobsResult.ok) setJobs(jobsResult.value);
@@ -138,7 +143,7 @@ export function VideoOpportunityScreen({
     };
     void load();
     return () => { active = false; };
-  }, [memory.id, opportunities.additionalGeneration, opportunities.initialPreview, refreshKey, remoteReadable]);
+  }, [hasConfirmedPhoto, memory.id, refreshKey, remoteReadable]);
 
   const initialJob = latestVideoJob(jobs, "initial_preview");
   const additionalJob = latestVideoJob(jobs, "additional_generation");
@@ -236,6 +241,8 @@ export function VideoOpportunityScreen({
       <p>只有服务端确认照片已绑定到首个 TA 后，免费预览机会才会出现。</p>
     </article>}
 
+    {occasionOffers.filter((offer) => !offer.claimed || (commerce.balance?.occasionAvailable ?? 0) > 0).map((offer) => <section key={`${offer.occasion}-${offer.calendarYear}`} className="videoOpportunityCard"><p className="eyebrow">纪念日机会</p><p>为 {memory.name} 制作一段 8 秒竖版、静音的纪念影像；领取期至 {offer.claimDeadline}。</p>{ownedMemories.filter((candidate) => candidate.photoAssetId?.trim()).length > 1 ? <><p>请选择要制作的 TA：</p><div>{ownedMemories.filter((candidate) => candidate.photoAssetId?.trim()).map((candidate) => <button key={candidate.id} className="quietLink" disabled={candidate.id === memory.id || occasionSubmitting} onClick={() => onSelectMemory(candidate.id)}>{candidate.id === memory.id ? `${candidate.name}（当前）` : candidate.name}</button>)}</div></> : null}<p>生成成功并审核通过后可保存。领取机会与后续影像资格独立，不要求先完成两轮对话。</p><button className="secondaryButton" disabled={loading || occasionSubmitting} onClick={() => void useOccasionReward(offer)}>{occasionSubmitting ? "正在确认" : offer.claimed ? "使用已领取机会" : "领取并制作纪念影像"}</button></section>)}
+
     {opportunities.additionalGeneration ? <article className="videoOpportunityCard additionalOpportunityCard">
       <p className="eyebrow">后续影像</p>
       <h2>{commercePresentation.title}</h2>
@@ -249,7 +256,6 @@ export function VideoOpportunityScreen({
         {referralNotice ? <p className="notice" role="status">{referralNotice}</p> : null}
       </section>
       {commerce.products.length ? <p className="videoCatalog">可用套餐仍由现有 Commerce 目录提供：{commerce.products.map((product) => `${product.generationCredits} 次`).join(" · ")}</p> : null}
-      {occasionOffers.filter((offer) => !offer.claimed || (commerce.balance?.occasionAvailable ?? 0) > 0).map((offer) => <section key={`${offer.occasion}-${offer.calendarYear}`} className="videoOpportunityCard"><p>今天有一份纪念影像机会，领取期至 {offer.claimDeadline}。</p><p>8 秒竖版、静音；生成成功并审核通过后可保存。</p><button className="secondaryButton" disabled={loading || occasionSubmitting} onClick={() => void useOccasionReward(offer)}>{occasionSubmitting ? "正在确认" : offer.claimed ? "使用已领取机会" : "领取并制作纪念影像"}</button></section>)}
       <p className="videoStatus">{jobCopy(additionalJob, additionalSaveAllowed)}</p>
       <button className="secondaryButton" disabled={loading} onClick={() => setRefreshKey((value) => value + 1)}>{loading ? "正在确认" : "刷新账户状态"}</button>
       <button className="quietLink" onClick={() => void explainIapBoundary()}>原生购买即将开放</button>

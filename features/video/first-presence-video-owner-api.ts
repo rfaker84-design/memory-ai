@@ -501,7 +501,7 @@ export class FirstPresenceVideoOwnerPostgresPort
       if (!portrait) {
         throw new FirstPresenceVideoOwnerApiError("PHOTO_PRECONDITION_REQUIRED");
       }
-      if (input.intent === "additional_generation") {
+      if (input.intent === "additional_generation" && input.creditSource !== "occasion_reward") {
         await assertTwoCompletedChatRounds(client, userId, memoryId);
       }
 

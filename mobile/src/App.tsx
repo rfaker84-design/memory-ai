@@ -829,11 +829,13 @@ export function App() {
     if (screen === "video" && memory) {
       return <VideoOpportunityScreen
         memory={memory}
+        ownedMemories={ownedMemories}
         conversation={conversation}
         isFirstMemory={isFirstMemory}
         online={online && productApi.enabled()}
         onBack={() => setScreen("memory")}
         onOpenChat={() => setScreen("chat")}
+        onSelectMemory={(memoryId) => { if (memoryId !== memory.id) void openMemory(memoryId, "video"); }}
       />;
     }
     if (screen === "video") return <main className="memoryScene"><section className="emptyMemory"><h1>还没有一段记忆。</h1><p>从你最想念的人开始。</p><button className="primaryButton" onClick={beginCreateMemory}>创建 TA</button></section></main>;
