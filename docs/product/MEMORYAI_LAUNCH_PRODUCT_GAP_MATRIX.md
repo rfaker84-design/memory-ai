@@ -6,6 +6,10 @@
 
 P-17 仍为 `PARTIAL`，但候选代码现已明确：仅人工审核通过、已结算、非 `first_preview` 且 `save_allowed=true` 的影像可创建或继续提供公开链接。每次公共元数据和播放读取都会重复该条件；首个 `saveAllowed=false` 影像不能分享。公开路由保持 noindex、无缓存、仅在线播放且不暴露 Provider 或对象存储键。Owner 可显式开启带 `AI Generated | MemoryAI` 标识的下载；每次开启、读取和最终审计均重新检查 Owner、审核、结算、可保存性和可见性 hold。派生文件只存在于私有临时目录并在 `finally` 删除，不创建对象键；审计失败绝不返回文件。Migration 021 仍未获 Staging 批准或执行。
 
+## 2026-08-04 免费聊天端侧边界复审
+
+P-09 仍为 `PARTIAL`，但候选 `37bcc82` 已将既有持久化日准入的两个可见结果接到移动端：最后一条成功普通回复中的 `freeChatWarning` 显示一次中性次日提示；稳定 `FREE_CHAT_DAILY_LIMIT_REACHED` 429 显示当天普通对话暂停且安全陪伴可用。端侧不写入、猜测或绕过额度，也不显示购买、充值、订阅等转化文案。危机路径继续由服务端在普通准入和 Provider 调用之前短路。相关移动合同、TypeScript 和生产构建已通过；成本/负载校准、真实设备与 Staging 运行时证据仍未取得。
+
 | ID | 冻结规则 | 当前证据 | 差异状态 | 后续动作 |
 |---|---|---|---|---|
 | P-01 | 18+、生日可改、无家人协作 | Owner-only profile API 与设置/创建页生日入口已接通；服务端按日历生日判断且聊天/创建要求当前合格生日与 consent | IMPLEMENTED_NOT_REAL_E2E | 仍需真实 UI/设备与 Staging 验收 |
