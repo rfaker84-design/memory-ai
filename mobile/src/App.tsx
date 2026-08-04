@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { App as NativeApp } from "@capacitor/app";
 import { Haptics, ImpactStyle } from "@capacitor/haptics";
+import { Preferences } from "@capacitor/preferences";
 import { runtimeConfig } from "./config/environment";
 import { MemoryMedia, type PickedMedia } from "./native/memory-media";
 import {
@@ -20,6 +21,7 @@ import {
 import { classifyOwnedMemories, findIncompleteMemory, isIncompleteMemory, resumePendingCreation } from "./product/incomplete-memory";
 import { VideoOpportunityScreen } from "./product/VideoOpportunityScreen";
 import { mayConfirmPickup, pickupDraft } from "./product/pickup";
+import { MOBILE_PRIMARY_COMPANION_KEY, selectPrimaryCompanion } from "./product/primary-companion";
 
 const DebugLab = __MOBILE_DEBUG_BUILD__
   ? lazy(() => import("./debug/NativeCapabilityLab").then((module) => ({ default: module.NativeCapabilityLab })))
@@ -107,6 +109,8 @@ export function App() {
   const [code, setCode] = useState("");
   const [challengeId, setChallengeId] = useState("");
   const [memory, setMemory] = useState<ProductMemory | null>(null);
+  const [ownedMemories, setOwnedMemories] = useState<ProductMemory[]>([]);
+  const [primarySelectorOpen, setPrimarySelectorOpen] = useState(false);
   const [incompleteMemory, setIncompleteMemory] = useState<ProductMemory | null>(null);
   const [resumingMemory, setResumingMemory] = useState<ProductMemory | null>(null);
   const [firstOwnedMemoryId, setFirstOwnedMemoryId] = useState<string | null>(null);
@@ -138,7 +142,9 @@ export function App() {
 
   const loadOwnedMemories = useCallback(async () => {
     const memories = await productApi.listMemories();
-    const { active: restoredMemory, incomplete } = classifyOwnedMemories(memories);
+    const preference = await Preferences.get({ key: MOBILE_PRIMARY_COMPANION_KEY }).catch(() => ({ value: null }));
+    const { incomplete } = classifyOwnedMemories(memories);
+    const restoredMemory = selectPrimaryCompanion(memories, preference.value);
     const restoredConversation = restoredMemory && !isIncompleteMemory(restoredMemory)
       ? await productApi.getConversation(restoredMemory.id)
       : { sessionId: null, messages: [] };
@@ -148,6 +154,7 @@ export function App() {
   const applyOwnedMemories = useCallback((restored: Awaited<ReturnType<typeof loadOwnedMemories>>) => {
     setMode("remote");
     setMemory(restored.restoredMemory);
+    setOwnedMemories(restored.memories);
     setIncompleteMemory(restored.incomplete);
     setResumingMemory(null);
     setFirstOwnedMemoryId(firstMemoryId(restored.memories));
@@ -215,7 +222,7 @@ export function App() {
     return () => { live = false; };
   }, [mode, screen]);
 
-  const openMemory = useCallback(async (id: string, destination: "memory" | "video" = "memory") => {
+  const openMemory = useCallback(async (id: string, destination: "home" | "memory" | "video" = "memory", rememberPrimary = false) => {
     if (__MOBILE_DEBUG_BUILD__ && id === "preview-memory") {
       setMode("preview");
       setConversation({ sessionId: null, messages: [] });
@@ -235,12 +242,19 @@ export function App() {
       const restoredConversation = isIncompleteMemory(ownedMemory)
         ? { sessionId: null, messages: [] }
         : await productApi.getConversation(id);
+      if (rememberPrimary) {
+        await Preferences.set({ key: MOBILE_PRIMARY_COMPANION_KEY, value: ownedMemory.id }).catch(() => {
+          throw new ProductApiError(503, "无法保存主 TA 选择，请稍后再试");
+        });
+      }
       setMemory(ownedMemory);
+      setOwnedMemories(memories);
       setIncompleteMemory(incomplete);
       setResumingMemory(null);
       setConversation(restoredConversation);
       setFirstOwnedMemoryId(firstMemoryId(memories));
       setMode("remote");
+      setPrimarySelectorOpen(false);
       setScreen(destination);
     }
     catch (error) { setNotice(friendlyError(error)); setScreen("home"); }
@@ -372,6 +386,7 @@ export function App() {
         productApi.listMemories(),
       ]);
       setMemory(confirmedMemory);
+      setOwnedMemories(memories);
       setConversation(restoredConversation);
       setFirstOwnedMemoryId(firstMemoryId(memories));
       setIncompleteMemory(findIncompleteMemory(memories));
@@ -534,10 +549,11 @@ export function App() {
       {notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="memory" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
     if (screen === "profile") return <main className="profileScene"><p className="eyebrow">我的</p><h1>资料与偏好</h1><p>每一段已确认资料都只在你的授权范围内使用。</p><section><h2>生日</h2><p>用于年龄保护和你明确选择的纪念日规则；可以随时修改。</p>{mode === "preview" ? <p>预览模式不会保存个人资料。</p> : profileState === "loading" ? <p role="status">正在读取个人资料…</p> : profileState === "unavailable" ? <p role="alert">个人资料暂时无法读取，未显示或修改任何旧值。</p> : <><label>生日<input className="field" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} inputMode="numeric" placeholder="YYYY-MM-DD" /></label><button className="primaryButton" disabled={busy || !birthDate} onClick={() => void saveBirthDate()}>{busy ? "正在保存" : "保存生日"}</button></>}</section><section><h2>隐私与安全</h2><p>注销、导出、危机支持授权和分享设置需要通过受保护的网页账户设置完成；移动端不会伪造已提交或已删除。</p></section>{notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="profile" onChange={setScreen} hasMemory={hasMemory} /></main>;
-    return <main className="homeScene"><p className="eyebrow">忆见</p><div className="homeSpace"><div className="homeGlow" aria-hidden="true" />{memory ? <><div className="personFrame"><span>{initials(memory.name)}</span></div><p>AI纪念资料：{memory.name}</p></> : <><div className="emptyPortrait" /><h1>为谁，留一盏灯？</h1><p>从一个名字、一句你确认的资料开始记录。</p></>}</div>
+    return <main className="homeScene"><p className="eyebrow">忆见</p><div className="homeSpace"><div className="homeGlow" aria-hidden="true" />{memory ? <><button className="personFrame" type="button" aria-haspopup="dialog" aria-expanded={primarySelectorOpen} onClick={() => setPrimarySelectorOpen(true)}><span>{initials(memory.name)}</span></button><p>AI纪念资料：{memory.name}</p><button className="quietLink" type="button" onClick={() => setPrimarySelectorOpen(true)}>切换或设为主 TA</button></> : <><div className="emptyPortrait" /><h1>为谁，留一盏灯？</h1><p>从一个名字、一句你确认的资料开始记录。</p></>}</div>
+      {primarySelectorOpen && <section role="dialog" aria-modal="true" aria-label="选择主 TA" className="memoryHero"><h2>选择主 TA</h2><p>只显示本次登录后服务端确认属于你的 TA；此选择只保存为本设备展示偏好。</p>{ownedMemories.map((candidate) => <button key={candidate.id} className="quietLink" type="button" disabled={busy || candidate.id === memory?.id} onClick={() => void openMemory(candidate.id, "home", true)}>{candidate.name}{candidate.id === memory?.id ? "（当前主 TA）" : ""}</button>)}<button className="quietLink" type="button" onClick={() => setPrimarySelectorOpen(false)}>取消</button></section>}
       <button className="primaryButton" onClick={() => press(() => incompleteMemory ? continueIncompleteMemory() : memory ? setScreen("chat") : beginCreateMemory())}>{hasIncompleteMemory ? "继续补充照片" : memory ? "继续查看" : "创建 TA"}</button>{notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="home" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
-  }, [busy, challengeId, code, conversation, hasMemory, incompleteMemory, isFirstMemory, media.length, memory, messages, mode, name, notice, online, pendingCreation, phone, question, relationship, resumingMemory, screen, story, title]);
+  }, [busy, challengeId, code, conversation, hasMemory, incompleteMemory, isFirstMemory, media.length, memory, messages, mode, name, notice, online, ownedMemories, pendingCreation, phone, primarySelectorOpen, question, relationship, resumingMemory, screen, story, title]);
 
   return <div className={`appRoot ${productOnline ? "isOnline" : ""}`}>{content}</div>;
 }

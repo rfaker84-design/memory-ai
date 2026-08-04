@@ -74,7 +74,8 @@ test("a refreshed DTO with a confirmed photo no longer exposes an incomplete TA"
 
 test("App wiring selects incomplete Memories and short-circuits creation during resume", () => {
   const app = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
-  assert.match(app, /const \{ active: restoredMemory, incomplete \} = classifyOwnedMemories\(memories\)/);
+  assert.match(app, /const \{ incomplete \} = classifyOwnedMemories\(memories\)/);
+  assert.match(app, /const restoredMemory = selectPrimaryCompanion\(memories, preference\.value\)/);
   assert.match(app, /const created = resumingMemory\s*\?\? await productApi\.createMemory/);
   assert.match(app, /pending = resumingMemory\s*\? resumePendingCreation\(created, media\)/);
   assert.match(app, /if \(mode !== "preview" && incompleteMemory\) \{\s*continueIncompleteMemory\(\);/);
