@@ -55,6 +55,7 @@ function friendlyError(error: unknown): string {
     if (error.status === 401) return "登录状态已过期，请重新登录。";
     if (error.status === 403) return "当前服务暂时无法完成这一步。";
     if (error.status === 429 && error.message === "FREE_CHAT_DAILY_LIMIT_REACHED") return "今天的免费对话已用完；你可以明天再来。安全陪伴始终可用。";
+    if (error.status === 408) return "请求等待过久，结果尚未确认。请先刷新确认状态，再由你决定是否手动重试。";
     if (error.status === 503) return "服务正在休息，请稍后再试。";
     return error.message.includes("网络") ? error.message : "暂时无法完成这一步，请稍后再试。";
   }

@@ -53,6 +53,12 @@ test("a failed ordinary chat request retains the draft and never represents it a
   assert.match(sendQuestion, /catch \(error\) \{ setQuestion\(value\); setNotice\(`\$\{friendlyError\(error\)\} Your message was not confirmed as sent\.`\); \}/);
 });
 
+test("a mobile request timeout is explicit about uncertainty and leaves retry to the user", () => {
+  assert.match(source, /error\.status === 408/);
+  assert.match(source, /结果尚未确认/);
+  assert.match(source, /由你决定是否手动重试/);
+});
+
 test("mobile surfaces the durable free-chat boundary without turning it into a purchase prompt", () => {
   const start = source.indexOf("const sendQuestion = async () => {");
   const end = source.indexOf("const resetPickupDraft", start);
