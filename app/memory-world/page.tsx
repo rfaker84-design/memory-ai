@@ -229,6 +229,7 @@ function MemoryWorldContent() {
                   <div style={{ display: "flex", flexWrap: "wrap", gap: MemorySpacing.sm }}>
                     <MemoryButton variant="primary" onClick={() => router.push(`/memory/${primary.id}/encounter`)}>遇见</MemoryButton>
                     <MemoryButton variant="secondary" onClick={() => router.push(`/memory-chat/${primary.id}`)}>稍后再看</MemoryButton>
+                    <MemoryButton variant="secondary" onClick={() => router.push(`/memory/${primary.id}/profile`)}>编辑 TA 资料</MemoryButton>
                   </div>
                 </div>
               </MemoryCard>

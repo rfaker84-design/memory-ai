@@ -10,6 +10,8 @@ test("public video share page is noindex, view-only and does not use legacy shar
   assert.match(client, /controlsList="nodownload noremoteplayback"/);
   assert.match(client, /AI 生成纪念影像/);
   assert.match(client, /data-ai-generated-overlay="true"/);
+  assert.match(client, /data-memoryai-logo="true"/);
+  assert.match(client, /aria-label="忆见 Logo"/);
   assert.match(client, /pointerEvents: "none"/);
   assert.match(client, /\/api\/video-shares\//);
   assert.match(client, /12_000/);

@@ -14,5 +14,16 @@ test("free chat daily admission requires an explicit bounded runtime limit", () 
     (error: unknown) => error instanceof FreeChatAdmissionConfigurationError
       && error.code === "FREE_CHAT_DAILY_LIMIT_INVALID",
   );
+  assert.throws(
+    () => configuredDailyLimit({ MEMORYAI_FREE_CHAT_DAILY_LIMIT: "201" }),
+    (error: unknown) => error instanceof FreeChatAdmissionConfigurationError
+      && error.code === "FREE_CHAT_DAILY_LIMIT_INVALID",
+  );
+  assert.throws(
+    () => configuredDailyLimit({ MEMORYAI_FREE_CHAT_DAILY_LIMIT: "999999" }),
+    (error: unknown) => error instanceof FreeChatAdmissionConfigurationError
+      && error.code === "FREE_CHAT_DAILY_LIMIT_INVALID",
+  );
   assert.equal(configuredDailyLimit({ MEMORYAI_FREE_CHAT_DAILY_LIMIT: "80" }), 80);
+  assert.equal(configuredDailyLimit({ MEMORYAI_FREE_CHAT_DAILY_LIMIT: "200" }), 200);
 });

@@ -25,6 +25,7 @@ export default function ShareVideoClient({ publicId }: { publicId: string }) {
   if (state === "loading") return <main aria-busy="true" aria-live="polite"><p>正在打开分享内容…</p></main>;
   if (state === "unavailable") return <main><h1>此分享内容已不可查看</h1><p role="alert">它可能已被所有者撤销或删除。</p></main>;
   return <main>
+    <p data-memoryai-logo="true" aria-label="忆见 Logo">忆见 <span aria-hidden="true">MemoryAI</span></p>
     <p>AI 生成纪念影像</p>
     <h1>{state.title}</h1>
     <div style={{ position: "relative" }}>

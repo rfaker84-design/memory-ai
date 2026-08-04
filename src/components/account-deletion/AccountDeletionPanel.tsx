@@ -132,6 +132,7 @@ export function AccountDeletionPanel() {
     <ul>
       <li>TA、聊天、照片、声音和视频会停止使用，并在 7 天内从在线系统删除。</li>
       <li>COS、缩略图、生成视频与 Provider 副本会在 30 天内删除并记录回执。</li>
+      <li>账号注销完成后，剩余付费、邀请和节日影像额度及奖励机会会全部清零，且无法恢复。</li>
       <li>支付、退款、发票、投诉和法定审计记录不会与内容资料混存。</li>
     </ul>
     {message ? <p role="status">{message}</p> : null}

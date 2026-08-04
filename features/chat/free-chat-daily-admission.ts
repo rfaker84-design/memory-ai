@@ -14,6 +14,9 @@ type DailyLimitEnvironment = {
   MEMORYAI_FREE_CHAT_DAILY_LIMIT?: string;
 };
 
+/** A launch guardrail for free chat, independent of paid entitlements. */
+export const MAX_FREE_CHAT_DAILY_LIMIT = 200;
+
 export class FreeChatAdmissionConfigurationError extends Error {
   constructor(public readonly code: "FREE_CHAT_DAILY_LIMIT_NOT_CONFIGURED" | "FREE_CHAT_DAILY_LIMIT_INVALID") {
     super(code);
@@ -23,10 +26,14 @@ export class FreeChatAdmissionConfigurationError extends Error {
 export function configuredDailyLimit(environment?: DailyLimitEnvironment): number {
   const raw = environment?.MEMORYAI_FREE_CHAT_DAILY_LIMIT ?? process.env.MEMORYAI_FREE_CHAT_DAILY_LIMIT;
   if (!raw) throw new FreeChatAdmissionConfigurationError("FREE_CHAT_DAILY_LIMIT_NOT_CONFIGURED");
-  if (!/^[1-9][0-9]{0,5}$/.test(raw)) {
+  if (!/^[1-9][0-9]{0,2}$/.test(raw)) {
     throw new FreeChatAdmissionConfigurationError("FREE_CHAT_DAILY_LIMIT_INVALID");
   }
-  return Number(raw);
+  const limit = Number(raw);
+  if (limit > MAX_FREE_CHAT_DAILY_LIMIT) {
+    throw new FreeChatAdmissionConfigurationError("FREE_CHAT_DAILY_LIMIT_INVALID");
+  }
+  return limit;
 }
 
 /**

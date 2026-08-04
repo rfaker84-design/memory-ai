@@ -19,4 +19,5 @@ test("account deletion never renders a new request form before its status read i
   assert.match(source, /ACCOUNT_DELETION_RECEIPT_REQUIRED/);
   assert.match(source, /安全回执已准备好/);
   assert.match(source, /new AbortController\(\)/);
+  assert.match(source, /剩余付费、邀请和节日影像额度及奖励机会会全部清零，且无法恢复/);
 });
