@@ -68,6 +68,8 @@ export type ProductCrisisContact = {
   status: "pending" | "accepted" | "revoked";
 };
 
+const pendingCrisisContactUpdates = new Set<string>();
+
 export type FirstGreeting = {
   session: { id: string; memoryId: string; userId: string };
   greeting: {
@@ -478,10 +480,19 @@ export const productApi = {
     });
   },
   async updateCrisisContact(consentId: string, action: "accept" | "revoke") {
-    const result = await request<{ updated?: unknown }>("/api/account/crisis-contacts", {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ consentId, action }),
-    });
-    if (result.updated !== true) throw new ProductApiError(409, "服务端未确认联系人状态变更");
+    const operationKey = `${consentId}:${action}`;
+    if (pendingCrisisContactUpdates.has(operationKey)) {
+      throw new ProductApiError(409, "联系人状态正在更新，请勿重复提交");
+    }
+    pendingCrisisContactUpdates.add(operationKey);
+    try {
+      const result = await request<{ updated?: unknown }>("/api/account/crisis-contacts", {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ consentId, action }),
+      });
+      if (result.updated !== true) throw new ProductApiError(409, "服务端未确认联系人状态变更");
+    } finally {
+      pendingCrisisContactUpdates.delete(operationKey);
+    }
   },
   async getAccountDeletion() {
     const result = await request<{ deletion?: unknown }>("/api/account/deletion", { cache: "no-store" });

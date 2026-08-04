@@ -286,18 +286,18 @@ export function App() {
     return () => { live = false; };
   }, [mode, screen]);
 
-  const refreshCrisisSupport = async () => {
+  const refreshCrisisSupport = useCallback(async () => {
     if (mode === "preview") return;
     setCrisisState("loading");
     try {
       const value = await productApi.getCrisisSupport();
       setCrisisSupportEnabled(value.enabled); setCrisisContacts(value.contacts); setCrisisState("ready");
     } catch { setCrisisState("unavailable"); }
-  };
+  }, [mode]);
 
   useEffect(() => {
     if (screen === "profile" && mode !== "preview") void refreshCrisisSupport();
-  }, [mode, screen]);
+  }, [mode, refreshCrisisSupport, screen]);
 
   useEffect(() => {
     if (screen !== "profile" || mode === "preview") return;
@@ -772,7 +772,7 @@ export function App() {
       {primarySelectorOpen && <section role="dialog" aria-modal="true" aria-label="选择主 TA" className="memoryHero"><h2>选择主 TA</h2><p>只显示本次登录后服务端确认属于你的 TA；此选择只保存为本设备展示偏好。</p>{ownedMemories.map((candidate) => <button key={candidate.id} className="quietLink" type="button" disabled={busy || candidate.id === memory?.id} onClick={() => void openMemory(candidate.id, "home", true)}>{candidate.name}{candidate.id === memory?.id ? "（当前主 TA）" : ""}</button>)}<button className="quietLink" type="button" onClick={() => setPrimarySelectorOpen(false)}>取消</button></section>}
       <button className="primaryButton" onClick={() => press(() => incompleteMemory ? continueIncompleteMemory() : memory ? setScreen("chat") : beginCreateMemory())}>{hasIncompleteMemory ? "继续补充照片" : memory ? "继续查看" : "创建 TA"}</button>{notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="home" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
-  }, [beginTaProfileEdit, birthDate, busy, challengeId, code, conversation, deletionConfirming, deletionProgress, deletionState, hasMemory, incompleteMemory, isFirstMemory, media.length, memory, messages, mode, name, notice, online, ownedMemories, pendingCreation, phone, primarySelectorOpen, profileState, question, relationship, resumingMemory, saveTaProfile, screen, story, submitAccountDeletion, taProfileDraft, taProfileEditing, title, updateTaProfileDraft]);
+  }, [beginTaProfileEdit, birthDate, busy, challengeId, code, conversation, crisisContactExternalId, crisisContacts, crisisState, crisisSupportEnabled, deletionConfirming, deletionProgress, deletionState, hasMemory, incompleteMemory, isFirstMemory, media.length, memory, messages, mode, name, notice, online, ownedMemories, pendingCreation, phone, primarySelectorOpen, profileState, question, refreshCrisisSupport, relationship, resumingMemory, saveTaProfile, screen, story, submitAccountDeletion, taProfileDraft, taProfileEditing, title, updateTaProfileDraft]);
 
   return <div className={`appRoot ${productOnline ? "isOnline" : ""}`}>{content}</div>;
 }
