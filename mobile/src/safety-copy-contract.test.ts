@@ -14,3 +14,10 @@ test("mobile offline state does not claim an unsent draft was durably saved", ()
   assert.match(source, /未送出的内容不会自动发送/);
   assert.doesNotMatch(source, /你已写下的内容会留在这里/);
 });
+
+test("mobile reconnect retries the session-bound restore flow instead of only navigating to welcome", () => {
+  assert.match(source, /const \[reconnectAttempt, setReconnectAttempt\] = useState\(0\)/);
+  assert.match(source, /\[applyOwnedMemories, loadOwnedMemories, reconnectAttempt\]/);
+  assert.match(source, /setReconnectAttempt\(\(current\) => current \+ 1\)/);
+  assert.doesNotMatch(source, /<Offline retry=\{\(\) => setScreen\(navigator\.onLine \? "welcome" : "offline"\)\}/);
+});

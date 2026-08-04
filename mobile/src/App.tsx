@@ -104,6 +104,7 @@ function BottomNav({ active, onChange, hasMemory }: { active: Screen; onChange: 
 export function App() {
   const [screen, setScreen] = useState<Screen>("splash");
   const [online, setOnline] = useState(() => navigator.onLine);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [mode, setMode] = useState<SessionMode>("remote");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
@@ -192,7 +193,7 @@ export function App() {
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
     return () => { active = false; window.clearTimeout(finish); window.removeEventListener("online", onOnline); window.removeEventListener("offline", onOffline); };
-  }, [applyOwnedMemories, loadOwnedMemories]);
+  }, [applyOwnedMemories, loadOwnedMemories, reconnectAttempt]);
 
   useEffect(() => {
     if (screen !== "memory" || !memory || mode === "preview") {
@@ -483,7 +484,11 @@ export function App() {
 
   const content = useMemo(() => {
     if (screen === "splash") return <BrandSplash />;
-    if (screen === "offline") return <Offline retry={() => setScreen(navigator.onLine ? "welcome" : "offline")} />;
+    if (screen === "offline") return <Offline retry={() => {
+      if (!navigator.onLine) return;
+      setOnline(true);
+      setReconnectAttempt((current) => current + 1);
+    }} />;
     if (screen === "debug" && DebugLab) return <Suspense fallback={<BrandSplash />}><DebugLab /></Suspense>;
     if (screen === "welcome") return <main className="welcomeScene">
       <div className="nightWindow" aria-hidden="true" /><p className="eyebrow">忆见</p><h1>把想起的人，<br />好好记在这里。</h1>
