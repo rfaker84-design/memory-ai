@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 
 import { MemoryButton } from "../memory-ui";
 import styles from "./RefundCenter.module.css";
@@ -65,6 +66,7 @@ export function RefundCenter() {
   const [refunds, setRefunds] = useState<Refund[]>([]);
   const [reason, setReason] = useState<RefundReason>("duplicate_charge");
   const [notice, setNotice] = useState("");
+  const [assistanceBlocked, setAssistanceBlocked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const retryKey = useRef<string | null>(null);
@@ -97,7 +99,7 @@ export function RefundCenter() {
   const paidOrder = orders.find((order) => order.status === "paid");
   const submit = async () => {
     if (!paidOrder || submitting) return;
-    setSubmitting(true); setNotice("");
+    setSubmitting(true); setNotice(""); setAssistanceBlocked(false);
     const idempotencyKey = retryKey.current ?? refundKey();
     retryKey.current = idempotencyKey;
     try {
@@ -108,6 +110,11 @@ export function RefundCenter() {
       });
       const body = await response.json().catch(() => ({})) as Record<string, unknown>;
       if (!response.ok) {
+        if (response.status === 409 && body.error === "UNDERSTANDING_ASSISTANCE_REQUIRED") {
+          setNotice("\u8fd9\u9879\u64cd\u4f5c\u5df2\u6682\u65f6\u505c\u6b62\u3002\u4f60\u53ef\u4ee5\u5148\u518d\u770b\u4e00\u6b21\u8bf4\u660e\uff0c\u6682\u65f6\u4e0d\u7533\u8bf7\u9000\u6b3e\uff0c\u6216\u8bf7\u53ef\u4fe1\u4efb\u7684\u4eba\u534f\u52a9\uff1b\u5fc6\u89c1\u4e0d\u4f1a\u66ff\u4f60\u5224\u65ad\uff0c\u4e5f\u4e0d\u4f1a\u81ea\u52a8\u8054\u7cfb\u4efb\u4f55\u4eba\u3002");
+          setAssistanceBlocked(true);
+          return;
+        }
         setNotice(response.status === 409 ? "该订单当前不符合退款申请条件。" : "无法确认退款申请是否已提交；不会自动重试。请在确认后明确重试。");
         return;
       }
@@ -133,5 +140,6 @@ export function RefundCenter() {
     {!loading && !refunds.length && !paidOrder && <p className={styles.muted}>尚未找到已付款订单，因此暂时没有可申请退款的订单。</p>}
     <button className={styles.refresh} type="button" disabled={loading || submitting} onClick={() => void load()}>{loading ? "正在刷新" : "刷新退款状态"}</button>
     {notice && <p className={styles.notice} role="alert">{notice}</p>}
+    {assistanceBlocked && <p className={styles.notice}><Link href="/settings/understanding-assistance">{"\u8bf7\u53ef\u4fe1\u4efb\u7684\u4eba\u534f\u52a9"}</Link></p>}
   </section>;
 }

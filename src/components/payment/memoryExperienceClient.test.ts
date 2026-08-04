@@ -141,9 +141,9 @@ test("frozen refund rules have one shared source for purchase and refund surface
   assert.match(refundSurface, /filter\(\(\[value\]\) => value !== "unused_purchase"\)/);
   assert.doesNotMatch(refundSurface, /\/api\/payments\//);
   assert.match(refundSurface, /不会自动重试/);
-  const commerceRefundRoute = readFileSync(new URL("../../../app/api/commerce/refunds/route.ts", import.meta.url), "utf8");
-  assert.match(commerceRefundRoute, /"duplicate_charge",\s*"entitlement_missing",\s*"service_failure"/);
-  assert.doesNotMatch(commerceRefundRoute, /REASONS[\s\S]*?"unused_purchase"/);
+  const commerceRefundHandler = readFileSync(new URL("../../../app/api/commerce/refunds/_handler.ts", import.meta.url), "utf8");
+  assert.match(commerceRefundHandler, /"duplicate_charge",\s*"entitlement_missing",\s*"service_failure"/);
+  assert.doesNotMatch(commerceRefundHandler, /REASONS[\s\S]*?"unused_purchase"/);
   assert.match(reportSurface, /<RefundCenter \/>/);
 });
 
