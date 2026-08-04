@@ -22,6 +22,7 @@ const session = {
   externalUserId: `phone:${"a".repeat(64)}`,
   expiresAt: "2026-07-28T00:00:00.000Z",
 };
+const allowingAssistanceGuard = { assertHighRiskAllowed: async () => undefined };
 
 const order: CommerceOrder = {
   id: "00000000-0000-4000-8000-000000000002",
@@ -69,6 +70,7 @@ test("orders API accepts only product and platform and delegates iOS to StoreKit
     },
     () => undefined,
     async () => true,
+    allowingAssistanceGuard,
   );
   const response = await handler.POST(
     new NextRequest("https://memoryai.test/api/commerce/orders", {
@@ -119,6 +121,7 @@ test("orders API never exposes a dynamic commerce state message", async () => {
     undefined,
     undefined,
     async () => true,
+    allowingAssistanceGuard,
   );
   const response = await handler.POST(
     new NextRequest("https://memoryai.test/api/commerce/orders", {
@@ -146,6 +149,7 @@ test("purchase kill switch blocks order creation after authentication and Origin
     () => { throw new Error("payment adapter must not be selected"); },
     () => { throw new ProductCapabilityUnavailableError("COMMERCE_PURCHASES_DISABLED"); },
     async () => true,
+    allowingAssistanceGuard,
   );
   const response = await handler.POST(new NextRequest("https://memoryai.test/api/commerce/orders", {
     method: "POST",
@@ -168,6 +172,7 @@ test("orders API rejects direct purchase without TA-bound commercial consent", a
     () => ({ rail: "test", prepareCheckout: async () => ({ kind: "test_callback_required", orderNo: order.orderNo, chargesMoney: false }) }),
     () => undefined,
     async () => false,
+    allowingAssistanceGuard,
   );
   const response = await handler.POST(new NextRequest("https://memoryai.test/api/commerce/orders", {
     method: "POST",

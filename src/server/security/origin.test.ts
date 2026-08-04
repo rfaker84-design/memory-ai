@@ -25,6 +25,7 @@ const mutationPaths = [
   "/api/consents",
   "/api/reports",
   "/api/account/export",
+  "/api/account/understanding-assistance",
   "/api/account/crisis-contacts",
   "/api/account/deletion",
   "/api/account/deletion/guardian-confirmation",

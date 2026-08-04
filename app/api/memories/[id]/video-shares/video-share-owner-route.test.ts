@@ -11,11 +11,12 @@ const memoryId = "00000000-0000-4000-8000-000000000001";
 const jobId = "00000000-0000-4000-8000-000000000002";
 const publicId = "00000000-0000-4000-8000-000000000003";
 const session = async () => ({ userId: "00000000-0000-4000-8000-000000000099", externalUserId: "owner", expiresAt: "2026-08-05T00:00:00.000Z" });
+const allowingAssistanceGuard = { assertHighRiskAllowed: async () => undefined };
 const createRequest = (body: unknown, origin = "https://memoryai.test") => new NextRequest(`https://memoryai.test/api/memories/${memoryId}/video-shares`, { method: "POST", headers: { "content-type": "application/json", origin }, body: JSON.stringify(body) });
 
 test("owner creates a share only through the exact Session and Origin-bound request", async () => {
   const calls: unknown[] = [];
-  const handler = createOwnerVideoShareHandler({ async listForOwner() { return []; }, async createForOwner(input) { calls.push(input); return { publicId, title: "想念", jobId, memoryId, revokedAt: null, watermarkDownloadEnabled: false as const }; } }, session);
+  const handler = createOwnerVideoShareHandler({ async listForOwner() { return []; }, async createForOwner(input) { calls.push(input); return { publicId, title: "想念", jobId, memoryId, revokedAt: null, watermarkDownloadEnabled: false as const }; } }, session, allowingAssistanceGuard);
   const response = await handler.POST(createRequest({ jobId, title: " 想念 " }), { params: Promise.resolve({ id: memoryId }) });
   assert.equal(response.status, 201);
   assert.deepEqual(calls, [{ externalUserId: "owner", memoryId, jobId, title: " 想念 " }]);
@@ -47,7 +48,7 @@ test("revocation is owner-scoped, origin-bound and idempotent at the data bounda
 
 test("Owner alone can explicitly enable the temporary watermarked-download capability", async () => {
   const calls: unknown[] = [];
-  const handler = createOwnerVideoShareWatermarkHandler({ async setWatermarkDownloadForOwner(input) { calls.push(input); return { publicId, title: "想念", jobId, memoryId, revokedAt: null, watermarkDownloadEnabled: true }; } }, session);
+  const handler = createOwnerVideoShareWatermarkHandler({ async setWatermarkDownloadForOwner(input) { calls.push(input); return { publicId, title: "想念", jobId, memoryId, revokedAt: null, watermarkDownloadEnabled: true }; } }, session, allowingAssistanceGuard);
   const response = await handler.PATCH(new NextRequest(`https://memoryai.test/api/memories/${memoryId}/video-shares/${publicId}`, { method: "PATCH", headers: { "content-type": "application/json", origin: "https://memoryai.test" }, body: JSON.stringify({ watermarkDownloadEnabled: true }) }), { params: Promise.resolve({ id: memoryId, publicId }) });
   assert.equal(response.status, 200);
   assert.deepEqual(calls, [{ externalUserId: "owner", memoryId, publicId, enabled: true }]);

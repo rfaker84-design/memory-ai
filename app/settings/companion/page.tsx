@@ -134,6 +134,7 @@ export default function CompanionSettingsPage() {
   };
   return <main style={{ padding: 24, maxWidth: 680 }}>
     <h1>陪伴安全设置</h1>
+    <p><Link href="/settings/understanding-assistance">需要更多解释或他人协助</Link></p>
     <p>忆见始终不会代替紧急服务。此选项需由你明确开启；开启后，检测到即时风险时只创建不含聊天原文的内部支持队列，不代表已经联系任何外部人员。</p>
     {loadState === "loading" && <p role="status" aria-live="polite">正在读取当前设置…</p>}
     {loadState === "unauthenticated" && <p role="alert">{message}<Link className="ml-2 underline" href="/login">前往登录</Link></p>}

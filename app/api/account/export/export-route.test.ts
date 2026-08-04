@@ -27,14 +27,15 @@ const freshSession = async () => ({
   authenticatedAt: new Date().toISOString(),
   expiresAt: "2026-08-02T01:00:00.000Z",
 });
+const allowingAssistanceGuard = { assertHighRiskAllowed: async () => undefined };
 
 const request = () => new NextRequest("https://memoryai.test/api/account/export", { method: "POST", headers: { origin: "https://memoryai.test" } });
 
 test("data export requires the currently authenticated Owner, same-origin request, and five-minute reauthentication", async () => {
-  const handler = createAccountDataExportHandler({ create: async () => exportBody }, async () => null);
+  const handler = createAccountDataExportHandler({ create: async () => exportBody }, async () => null, allowingAssistanceGuard);
   assert.equal((await handler.POST(request())).status, 401);
 
-  const stale = createAccountDataExportHandler({ create: async () => exportBody }, async () => ({ ...(await freshSession()), authenticatedAt: new Date(Date.now() - 5 * 60 * 1000 - 1).toISOString() }));
+  const stale = createAccountDataExportHandler({ create: async () => exportBody }, async () => ({ ...(await freshSession()), authenticatedAt: new Date(Date.now() - 5 * 60 * 1000 - 1).toISOString() }), allowingAssistanceGuard);
   assert.equal((await stale.POST(request())).status, 403);
 });
 
@@ -42,7 +43,7 @@ test("data export is a private attachment and only invokes the server-bound Owne
   let received: unknown;
   const handler = createAccountDataExportHandler({
     create: async (input) => { received = input; return exportBody; },
-  }, freshSession);
+  }, freshSession, allowingAssistanceGuard);
   const response = await handler.POST(request());
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-disposition") ?? "", /attachment; filename=memoryai-account-data-export\.json/);

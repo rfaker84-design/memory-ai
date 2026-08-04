@@ -28,6 +28,7 @@ const freshSession = async () => ({
   authenticatedAt: new Date().toISOString(),
   expiresAt: "2026-08-01T01:00:00.000Z",
 });
+const allowingAssistanceGuard = { assertHighRiskAllowed: async () => undefined };
 
 function request(method: "GET" | "POST", body?: unknown) {
   return new NextRequest("https://memoryai.test/api/account/deletion", {
@@ -40,9 +41,9 @@ function request(method: "GET" | "POST", body?: unknown) {
 test("requires a five-minute reauthentication and an explicit deletion confirmation", async () => {
   const handler = createAccountDeletionHandler({ request: async () => progress, getProgress: async () => progress, getProgressByReceipt: async () => progress }, async () => ({
     ...(await freshSession()), authenticatedAt: new Date(Date.now() - 5 * 60 * 1000 - 1).toISOString(),
-  }));
+  }), allowingAssistanceGuard);
   assert.equal((await handler.POST(request("POST", { confirmation: ACCOUNT_DELETION_CONFIRMATION }))).status, 403);
-  const malformed = createAccountDeletionHandler({ request: async () => progress, getProgress: async () => progress, getProgressByReceipt: async () => progress }, freshSession);
+  const malformed = createAccountDeletionHandler({ request: async () => progress, getProgress: async () => progress, getProgressByReceipt: async () => progress }, freshSession, allowingAssistanceGuard);
   assert.equal((await malformed.POST(request("POST", { confirmation: "DELETE" }))).status, 400);
 });
 
@@ -52,7 +53,7 @@ test("commits the server-bound account request and clears the current session co
     request: async (input) => { received = input; return progress; },
     getProgress: async () => progress,
     getProgressByReceipt: async () => progress,
-  }, freshSession);
+  }, freshSession, allowingAssistanceGuard);
   const response = await handler.POST(new NextRequest("https://memoryai.test/api/account/deletion", {
     method: "POST",
     headers: { origin: "https://memoryai.test", "content-type": "application/json", cookie: "memoryai_deletion_receipt=" + "b".repeat(43) },
@@ -71,7 +72,7 @@ test("pre-issues a progress receipt before it can revoke sessions or create a de
     request: async () => { requested = true; return progress; },
     getProgress: async () => null,
     getProgressByReceipt: async () => null,
-  }, freshSession);
+  }, freshSession, allowingAssistanceGuard);
   const response = await handler.POST(request("POST", { confirmation: ACCOUNT_DELETION_CONFIRMATION }));
   assert.equal(response.status, 409);
   assert.deepEqual(await response.json(), { error: "ACCOUNT_DELETION_RECEIPT_REQUIRED" });
@@ -82,12 +83,12 @@ test("pre-issues a progress receipt before it can revoke sessions or create a de
 
 test("returns deletion progress to either the account or its opaque receipt cookie", async () => {
   let receiptCalls = 0;
-  const handler = createAccountDeletionHandler({ request: async () => progress, getProgress: async () => progress, getProgressByReceipt: async () => { receiptCalls += 1; return progress; } }, freshSession);
+  const handler = createAccountDeletionHandler({ request: async () => progress, getProgress: async () => progress, getProgressByReceipt: async () => { receiptCalls += 1; return progress; } }, freshSession, allowingAssistanceGuard);
   const response = await handler.GET(request("GET"));
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { deletion: progress });
   const receiptRequest = new NextRequest("https://memoryai.test/api/account/deletion", { headers: { cookie: "memoryai_deletion_receipt=" + "a".repeat(43) } });
-  const receiptResponse = await createAccountDeletionHandler({ request: async () => progress, getProgress: async () => progress, getProgressByReceipt: async () => { receiptCalls += 1; return progress; } }, async () => null).GET(receiptRequest);
+  const receiptResponse = await createAccountDeletionHandler({ request: async () => progress, getProgress: async () => progress, getProgressByReceipt: async () => { receiptCalls += 1; return progress; } }, async () => null, allowingAssistanceGuard).GET(receiptRequest);
   assert.equal(receiptResponse.status, 200);
   assert.equal(receiptCalls, 1);
 });
@@ -98,7 +99,7 @@ test("pre-issues a receipt cookie and binds the deletion request to it", async (
     request: async (input) => { receivedReceipt = input.receiptToken; return progress; },
     getProgress: async () => null,
     getProgressByReceipt: async () => progress,
-  }, freshSession);
+  }, freshSession, allowingAssistanceGuard);
   const status = await handler.GET(request("GET"));
   const cookie = status.headers.get("set-cookie") ?? "";
   const receipt = /memoryai_deletion_receipt=([A-Za-z0-9_-]{43})/.exec(cookie)?.[1];
@@ -110,7 +111,7 @@ test("pre-issues a receipt cookie and binds the deletion request to it", async (
   }));
   assert.equal(response.status, 202);
   assert.equal(receivedReceipt, receipt);
-  const recovered = await createAccountDeletionHandler({ request: async () => progress, getProgress: async () => null, getProgressByReceipt: async (token) => token === receipt ? progress : null }, async () => null).GET(
+  const recovered = await createAccountDeletionHandler({ request: async () => progress, getProgress: async () => null, getProgressByReceipt: async (token) => token === receipt ? progress : null }, async () => null, allowingAssistanceGuard).GET(
     new NextRequest("https://memoryai.test/api/account/deletion", { headers: { cookie: `memoryai_deletion_receipt=${receipt}` } }),
   );
   assert.deepEqual(await recovered.json(), { deletion: progress });

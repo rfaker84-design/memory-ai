@@ -38,6 +38,7 @@ const FORMAL_API_PATHS = new Set([
   "/api/account/notification-preferences",
   "/api/account/export",
   "/api/account/profile",
+  "/api/account/understanding-assistance",
   "/api/account/deletion",
   "/api/account/deletion/guardian-confirmation",
   "/api/business-events",

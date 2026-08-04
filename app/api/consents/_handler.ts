@@ -8,6 +8,8 @@ import {
   type TrustConsentType,
 } from "@/features/consent/trust-consent-postgres";
 import { MEMORY_CREATION_AUTHORIZATION_ACKNOWLEDGEMENT } from "@/features/consent/memory-creation-authorization";
+import { blockedHighRiskResponse } from "@/features/understanding-assistance/understanding-assistance";
+import { defaultUnderstandingAssistanceGuard, UnderstandingAssistanceError, type UnderstandingAssistanceGuard } from "@/features/understanding-assistance/understanding-assistance-postgres";
 
 const CONSENT_TYPES = new Set(["adult_eligibility", "memory_profile", "media_asset", "commercial_use", "crisis_support_escalation"]);
 const REQUEST_KEY = /^[A-Za-z0-9._:-]{16,128}$/;
@@ -95,6 +97,11 @@ const readCrisisSupportConsent: ReadCrisisSupportConsent = async ({ externalUser
 });
 
 function failure(error: unknown) {
+  if (error instanceof UnderstandingAssistanceError) {
+    return error.code === "UNDERSTANDING_ASSISTANCE_REQUIRED"
+      ? json(blockedHighRiskResponse("authorization_change"), { status: 409 })
+      : json({ error: error.code }, { status: error.code === "ACCOUNT_NOT_FOUND" ? 404 : 409 });
+  }
   if (error instanceof DatabaseDependencyError) {
     console.error("[api:consents] database request failed", safeDatabaseErrorLog(error));
     return json({ error: "DATABASE_UNAVAILABLE" }, { status: 503 });
@@ -105,7 +112,11 @@ function failure(error: unknown) {
   return json({ error: "CONSENT_RECORD_FAILED" }, { status: 500 });
 }
 
-export function createConsentsHandler(writeConsent: RecordConsent = recordConsent, sessionResolver: SessionResolver = verifyRequestSession) {
+export function createConsentsHandler(
+  writeConsent: RecordConsent = recordConsent,
+  sessionResolver: SessionResolver = verifyRequestSession,
+  assistanceGuard: UnderstandingAssistanceGuard = defaultUnderstandingAssistanceGuard(),
+) {
   return async function POST(request: NextRequest) {
     try {
       const session = await sessionResolver(request);
@@ -115,6 +126,11 @@ export function createConsentsHandler(writeConsent: RecordConsent = recordConsen
       if (!requestKey || !REQUEST_KEY.test(requestKey)) return json({ error: "INVALID_IDEMPOTENCY_KEY" }, { status: 400 });
       const parsed = parseBody(await request.json().catch(() => null));
       if (!parsed) return json({ error: "INVALID_CONSENT_REQUEST" }, { status: 400 });
+      // Crisis escalation is a safety contact authorization and must remain
+      // available; commercial-use consent changes purchase authorization.
+      if (parsed.consentType === "commercial_use") {
+        await assistanceGuard.assertHighRiskAllowed({ userId: session.userId, externalUserId: session.externalUserId, operation: "authorization_change" });
+      }
       await writeConsent({ externalUserId: session.externalUserId, requestKey, ...parsed });
       return json({ recorded: true });
     } catch (error) { return failure(error); }

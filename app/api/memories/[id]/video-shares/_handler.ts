@@ -4,6 +4,8 @@ import { VideoShareLinkError, VideoShareLinksPostgres, type OwnerVideoShareLink 
 import { AuthConfigurationError, requireAllowedOrigin, type AuthSession, verifyRequestSession } from "@/src/server/auth";
 import { DatabaseDependencyError } from "@/src/server/database";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
+import { blockedHighRiskResponse } from "@/features/understanding-assistance/understanding-assistance";
+import { defaultUnderstandingAssistanceGuard, UnderstandingAssistanceError, type UnderstandingAssistanceGuard } from "@/features/understanding-assistance/understanding-assistance-postgres";
 
 type Context = { params: Promise<{ id: string }> };
 type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
@@ -18,6 +20,11 @@ function parse(body: unknown): { jobId: string; title: string } | null {
 }
 
 function failure(error: unknown): NextResponse {
+  if (error instanceof UnderstandingAssistanceError) {
+    return error.code === "UNDERSTANDING_ASSISTANCE_REQUIRED"
+      ? json(blockedHighRiskResponse("public_share"), { status: 409 })
+      : json({ error: error.code }, { status: error.code === "ACCOUNT_NOT_FOUND" ? 404 : 409 });
+  }
   if (error instanceof VideoShareLinkError) return json({ error: error.code }, { status: error.code === "SHARE_NOT_AVAILABLE" ? 404 : 400 });
   if (error instanceof DatabaseDependencyError) return json({ error: "DATABASE_UNAVAILABLE" }, { status: 503 });
   if (error instanceof AuthConfigurationError) return json({ error: error.code === "ORIGIN_NOT_ALLOWED" ? error.code : "AUTH_UNAVAILABLE" }, { status: error.code === "ORIGIN_NOT_ALLOWED" ? 403 : 503 });
@@ -28,6 +35,7 @@ function failure(error: unknown): NextResponse {
 export function createOwnerVideoShareHandler(
   shares: Shares = new VideoShareLinksPostgres(),
   sessionResolver: SessionResolver = verifyRequestSession,
+  assistanceGuard: UnderstandingAssistanceGuard = defaultUnderstandingAssistanceGuard(),
 ) {
   return {
   GET: async (request: NextRequest, { params }: Context) => {
@@ -46,6 +54,7 @@ export function createOwnerVideoShareHandler(
       requireAllowedOrigin(request);
       const body = parse(await request.json().catch(() => null));
       if (!body) return json({ error: "INVALID_SHARE_REQUEST" }, { status: 400 });
+      await assistanceGuard.assertHighRiskAllowed({ userId: session.userId, externalUserId: session.externalUserId, operation: "public_share" });
       const { id: memoryId } = await params;
       const share: OwnerVideoShareLink = await shares.createForOwner({ externalUserId: session.externalUserId, memoryId, ...body });
       return json({ share }, { status: 201 });

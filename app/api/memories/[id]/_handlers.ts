@@ -20,6 +20,8 @@ import {
   type SessionResolver,
 } from "../_session-user-boundary";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
+import { blockedHighRiskResponse } from "@/features/understanding-assistance/understanding-assistance";
+import { defaultUnderstandingAssistanceGuard, UnderstandingAssistanceError, type UnderstandingAssistanceGuard } from "@/features/understanding-assistance/understanding-assistance-postgres";
 
 type Context = { params: Promise<{ id: string }> };
 type MemoryItemService = Pick<
@@ -61,6 +63,11 @@ function hasDeletionConfirmation(value: unknown): boolean {
 }
 
 function errorResponse(error: unknown) {
+  if (error instanceof UnderstandingAssistanceError) {
+    return error.code === "UNDERSTANDING_ASSISTANCE_REQUIRED"
+      ? json(blockedHighRiskResponse("memory_deletion"), { status: 409 })
+      : json({ error: error.code }, { status: error.code === "ACCOUNT_NOT_FOUND" ? 404 : 409 });
+  }
   if (error instanceof MemoryValidationError) {
     return json(
       { error: "INVALID_REQUEST", message: error.message },
@@ -187,7 +194,8 @@ function validateUpdateBody(value: unknown): UpdateOwnedMemoryInput {
 
 export function createMemoryItemHandlers(
   serviceFactory: ServiceFactory = createMemoryService,
-  sessionResolver?: SessionResolver
+  sessionResolver?: SessionResolver,
+  assistanceGuard: UnderstandingAssistanceGuard = defaultUnderstandingAssistanceGuard(),
 ) {
   return {
     async GET(req: NextRequest, context: Context) {
@@ -254,6 +262,7 @@ export function createMemoryItemHandlers(
         if (!hasDeletionConfirmation(rawBody)) {
           return json({ error: "MEMORY_DELETION_CONFIRMATION_REQUIRED" }, { status: 400 });
         }
+        await assistanceGuard.assertHighRiskAllowed({ userId: owner.session.userId, externalUserId: owner.externalUserId, operation: "memory_deletion" });
         const { id } = await context.params;
         await serviceFactory().deleteMemoryForUser(id, owner.externalUserId);
         return noContent({ status: 204 });

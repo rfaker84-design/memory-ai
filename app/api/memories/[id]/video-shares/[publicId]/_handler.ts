@@ -4,11 +4,22 @@ import { VideoShareLinkError, VideoShareLinksPostgres, type OwnerVideoShareLink 
 import { AuthConfigurationError, requireAllowedOrigin, type AuthSession, verifyRequestSession } from "@/src/server/auth";
 import { DatabaseDependencyError } from "@/src/server/database";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
+import { blockedHighRiskResponse } from "@/features/understanding-assistance/understanding-assistance";
+import { defaultUnderstandingAssistanceGuard, UnderstandingAssistanceError, type UnderstandingAssistanceGuard } from "@/features/understanding-assistance/understanding-assistance-postgres";
 
 type Context = { params: Promise<{ id: string; publicId: string }> };
 type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
 type Shares = Pick<VideoShareLinksPostgres, "revokeForOwner">;
 const json = (body: Record<string, unknown>, init?: ResponseInit) => applyAuthNoStore(NextResponse.json(body, init));
+
+function assistanceFailure(error: unknown) {
+  if (error instanceof UnderstandingAssistanceError) {
+    return error.code === "UNDERSTANDING_ASSISTANCE_REQUIRED"
+      ? json(blockedHighRiskResponse("public_share"), { status: 409 })
+      : json({ error: error.code }, { status: error.code === "ACCOUNT_NOT_FOUND" ? 404 : 409 });
+  }
+  return null;
+}
 
 export function createOwnerVideoShareRevokeHandler(shares: Shares = new VideoShareLinksPostgres(), sessionResolver: SessionResolver = verifyRequestSession) {
   return { DELETE: async (request: NextRequest, { params }: Context) => {
@@ -21,6 +32,7 @@ export function createOwnerVideoShareRevokeHandler(shares: Shares = new VideoSha
       const revoked = await shares.revokeForOwner({ externalUserId: session.externalUserId, memoryId, publicId });
       return revoked ? json({ revoked: true }) : json({ error: "SHARE_NOT_AVAILABLE" }, { status: 404 });
     } catch (error) {
+      const assistance = assistanceFailure(error); if (assistance) return assistance;
       if (error instanceof VideoShareLinkError) return json({ error: error.code }, { status: error.code === "SHARE_NOT_AVAILABLE" ? 404 : 400 });
       if (error instanceof DatabaseDependencyError) return json({ error: "DATABASE_UNAVAILABLE" }, { status: 503 });
       if (error instanceof AuthConfigurationError) return json({ error: error.code === "ORIGIN_NOT_ALLOWED" ? error.code : "AUTH_UNAVAILABLE" }, { status: error.code === "ORIGIN_NOT_ALLOWED" ? 403 : 503 });
@@ -39,7 +51,7 @@ function parseWatermark(body: unknown): boolean | null {
     : null;
 }
 
-export function createOwnerVideoShareWatermarkHandler(shares: WatermarkShares = new VideoShareLinksPostgres(), sessionResolver: SessionResolver = verifyRequestSession) {
+export function createOwnerVideoShareWatermarkHandler(shares: WatermarkShares = new VideoShareLinksPostgres(), sessionResolver: SessionResolver = verifyRequestSession, assistanceGuard: UnderstandingAssistanceGuard = defaultUnderstandingAssistanceGuard()) {
   return { PATCH: async (request: NextRequest, { params }: Context) => {
     try {
       const session = await sessionResolver(request);
@@ -48,10 +60,12 @@ export function createOwnerVideoShareWatermarkHandler(shares: WatermarkShares = 
       if ([...request.nextUrl.searchParams.keys()].length) return json({ error: "INVALID_SHARE_REQUEST" }, { status: 400 });
       const enabled = parseWatermark(await request.json().catch(() => null));
       if (enabled === null) return json({ error: "INVALID_SHARE_REQUEST" }, { status: 400 });
+      if (enabled) await assistanceGuard.assertHighRiskAllowed({ userId: session.userId, externalUserId: session.externalUserId, operation: "public_share" });
       const { id: memoryId, publicId } = await params;
       const share: OwnerVideoShareLink | null = await shares.setWatermarkDownloadForOwner({ externalUserId: session.externalUserId, memoryId, publicId, enabled });
       return share ? json({ share }) : json({ error: "SHARE_NOT_AVAILABLE" }, { status: 404 });
     } catch (error) {
+      const assistance = assistanceFailure(error); if (assistance) return assistance;
       if (error instanceof VideoShareLinkError) return json({ error: error.code }, { status: error.code === "SHARE_NOT_AVAILABLE" ? 404 : 400 });
       if (error instanceof DatabaseDependencyError) return json({ error: "DATABASE_UNAVAILABLE" }, { status: 503 });
       if (error instanceof AuthConfigurationError) return json({ error: error.code === "ORIGIN_NOT_ALLOWED" ? error.code : "AUTH_UNAVAILABLE" }, { status: error.code === "ORIGIN_NOT_ALLOWED" ? 403 : 503 });

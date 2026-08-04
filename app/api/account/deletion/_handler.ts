@@ -5,6 +5,8 @@ import { AccountDeletionError, ACCOUNT_DELETION_CONFIRMATION, PostgresAccountDel
 import { AuthConfigurationError, clearSessionCookie, requireAllowedOrigin, type AuthSession, verifyRequestSession } from "@/src/server/auth";
 import { DatabaseDependencyError, safeDatabaseErrorLog } from "@/src/server/database";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
+import { blockedHighRiskResponse } from "@/features/understanding-assistance/understanding-assistance";
+import { defaultUnderstandingAssistanceGuard, UnderstandingAssistanceError, type UnderstandingAssistanceGuard } from "@/features/understanding-assistance/understanding-assistance-postgres";
 
 const FRESH_REAUTH_MS = 5 * 60 * 1000;
 type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
@@ -45,6 +47,11 @@ function setReceiptCookie(response: NextResponse, token: string): void {
 }
 
 function failure(error: unknown) {
+  if (error instanceof UnderstandingAssistanceError) {
+    return error.code === "UNDERSTANDING_ASSISTANCE_REQUIRED"
+      ? json(blockedHighRiskResponse("account_deletion"), { status: 409 })
+      : json({ error: error.code }, { status: error.code === "ACCOUNT_NOT_FOUND" ? 404 : 409 });
+  }
   if (error instanceof AccountDeletionError) return json({ error: error.code }, { status: error.code === "ACCOUNT_NOT_FOUND" ? 404 : 409 });
   if (error instanceof DatabaseDependencyError) {
     console.error("[api:account-deletion] database request failed", safeDatabaseErrorLog(error));
@@ -58,6 +65,7 @@ function failure(error: unknown) {
 export function createAccountDeletionHandler(
   service: Pick<PostgresAccountDeletionService, "request" | "getProgress" | "getProgressByReceipt"> = new PostgresAccountDeletionService(),
   sessionResolver: SessionResolver = verifyRequestSession,
+  assistanceGuard: UnderstandingAssistanceGuard = defaultUnderstandingAssistanceGuard(),
 ) {
   const requestDeletion: RequestDeletion = (input) => service.request(input);
   const getProgress: GetProgress = (input) => service.getProgress(input);
@@ -71,6 +79,7 @@ export function createAccountDeletionHandler(
         if (!deletionRuntimeEnabled()) return json({ error: "ACCOUNT_DELETION_UNAVAILABLE" }, { status: 503 });
         if (!accountDeletionSessionIsFresh(session)) return json({ error: "REAUTH_REQUIRED" }, { status: 403 });
         if (!parseConfirmation(await request.json().catch(() => null))) return json({ error: "INVALID_DELETION_CONFIRMATION" }, { status: 400 });
+        await assistanceGuard.assertHighRiskAllowed({ userId: session.userId, externalUserId: session.externalUserId, operation: "account_deletion" });
         // A receipt must exist before the irreversible transaction. If a
         // first 202 response is lost after all sessions are revoked, a token
         // generated only in that response would strand the user without a

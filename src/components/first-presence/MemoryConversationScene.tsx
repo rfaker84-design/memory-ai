@@ -15,6 +15,7 @@ import {
 } from "../memory/conversationExperience";
 import { useReducedMotion } from "../../motion";
 import { useQuietCompanionPresence } from "./quietCompanionPresence";
+import { assistanceExplanation, hasExplicitAssistanceRequest } from "@/features/understanding-assistance/understanding-assistance";
 import {
   hasPersistedPendingConversationMessage,
   type PendingConversationMessage,
@@ -97,6 +98,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   const [pendingMessage, setPendingMessage] = useState<PendingMessage | null>(null);
   const [notice, setNotice] = useState("");
   const [failureRequestId, setFailureRequestId] = useState<string | null>(null);
+  const [assistanceOfferVisible, setAssistanceOfferVisible] = useState(false);
   const [networkOffline, setNetworkOffline] = useState(false);
   const [pickupSuggestionVisible, setPickupSuggestionVisible] = useState(false);
   const [correctionMessage, setCorrectionMessage] = useState<ConversationMessage | null>(null);
@@ -263,6 +265,12 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     event.preventDefault();
     const message = draft.trim();
     if (!message || inFlightRef.current || phase !== "ready") return;
+    if (hasExplicitAssistanceRequest(message)) {
+      setDraft("");
+      setAssistanceOfferVisible(true);
+      setNotice("");
+      return;
+    }
     if (networkOffline || (typeof navigator !== "undefined" && !navigator.onLine)) {
       setNetworkOffline(true);
       setNotice("当前离线，内容仍留在输入框；恢复连接后请由你决定是否发送。");
@@ -427,7 +435,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   };
 
   const isBusy = phase === "loading" || phase === "greeting" || phase === "sending" || phase === "replying" || phase === "recovering";
-  const quietPresence = useQuietCompanionPresence({ reducedMotion, replying: replyPulse });
+  const quietPresence = useQuietCompanionPresence({ reducedMotion: reducedMotion || assistanceOfferVisible, replying: replyPulse });
   const completedRounds = completedConversationRounds(messages, activeSessionId);
   const status = phase === "sending" ? "正在送出这句话…" : phase === "replying" ? "忆见正在整理回复…" : phase === "greeting" ? "忆见正在生成第一句回复…" : phase === "recovering" ? "正在找回刚才的对话…" : "";
 
@@ -467,6 +475,12 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
 
         {status && <p className={styles.status} role="status" aria-live="polite">{status}</p>}
         {notice && <p className={styles.alert} role="alert">{notice}</p>}
+        {assistanceOfferVisible && <aside className={styles.safetyActions} aria-label="忆见理解与协助">
+          <p><strong>忆见理解与协助</strong>：{assistanceExplanation}</p>
+          <button type="button" onClick={() => setNotice(assistanceExplanation)}>再给我解释一次</button>
+          <button type="button" onClick={() => setAssistanceOfferVisible(false)}>暂时不操作</button>
+          <Link className={styles.sourceLink} href="/settings/understanding-assistance">请可信任的人协助</Link>
+        </aside>}
         {failureRequestId && <p className={styles.alert} role="status">请求编号：{failureRequestId}</p>}
 
         <div className={styles.messages} aria-live="polite" aria-relevant="additions text">

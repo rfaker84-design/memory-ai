@@ -21,6 +21,8 @@ import {
 import { hasApprovedMemoryConsent } from "@/features/consent/trust-consent-postgres";
 import { DatabaseDependencyError } from "@/src/server/database";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
+import { blockedHighRiskResponse } from "@/features/understanding-assistance/understanding-assistance";
+import { defaultUnderstandingAssistanceGuard, UnderstandingAssistanceError, type UnderstandingAssistanceGuard } from "@/features/understanding-assistance/understanding-assistance-postgres";
 import {
   assertProductCapabilityEnabled,
   ProductCapabilityUnavailableError,
@@ -50,6 +52,11 @@ const service = (): OrderService =>
   );
 
 function failure(error: unknown) {
+  if (error instanceof UnderstandingAssistanceError) {
+    return error.code === "UNDERSTANDING_ASSISTANCE_REQUIRED"
+      ? json(blockedHighRiskResponse("purchase"), { status: 409 })
+      : json({ error: error.code }, { status: error.code === "ACCOUNT_NOT_FOUND" ? 404 : 409 });
+  }
   if (error instanceof ProductCapabilityUnavailableError) {
     return json({ error: error.code }, { status: 503 });
   }
@@ -84,6 +91,7 @@ export function createCommerceOrdersHandler(
   adapterFactory: AdapterFactory = createCommercePaymentAdapter,
   assertCapability: CapabilityAssertion = assertProductCapabilityEnabled,
   commercialConsentVerifier: CommercialConsentVerifier = hasApprovedMemoryConsent,
+  assistanceGuard: UnderstandingAssistanceGuard = defaultUnderstandingAssistanceGuard(),
 ) {
   return {
     GET: async (request: NextRequest) => {
@@ -129,6 +137,7 @@ export function createCommerceOrdersHandler(
           return json({ error: "INVALID_COMMERCE_REQUEST" }, { status: 400 });
         }
         const platform = input.platform as CommercePlatform;
+        await assistanceGuard.assertHighRiskAllowed({ userId: session.userId, externalUserId: session.externalUserId, operation: "purchase" });
         if (!(await commercialConsentVerifier({
           externalUserId: session.externalUserId,
           consentType: "commercial_use",

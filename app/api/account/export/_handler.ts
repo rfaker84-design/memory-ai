@@ -5,6 +5,8 @@ import { AuthConfigurationError, requireAllowedOrigin, type AuthSession, verifyR
 import { DatabaseDependencyError, safeDatabaseErrorLog } from "@/src/server/database";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 import { accountDeletionSessionIsFresh } from "../deletion/_handler";
+import { blockedHighRiskResponse } from "@/features/understanding-assistance/understanding-assistance";
+import { defaultUnderstandingAssistanceGuard, UnderstandingAssistanceError, type UnderstandingAssistanceGuard } from "@/features/understanding-assistance/understanding-assistance-postgres";
 
 type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
 type CreateExport = (input: { userId: string; externalUserId: string }) => Promise<AccountDataExport>;
@@ -16,6 +18,11 @@ export function accountDataExportRuntimeEnabled(): boolean {
 }
 
 function failure(error: unknown): NextResponse {
+  if (error instanceof UnderstandingAssistanceError) {
+    return error.code === "UNDERSTANDING_ASSISTANCE_REQUIRED"
+      ? json(blockedHighRiskResponse("account_export"), { status: 409 })
+      : json({ error: error.code }, { status: error.code === "ACCOUNT_NOT_FOUND" ? 404 : 409 });
+  }
   if (error instanceof AccountDataExportError) return json({ error: error.code }, { status: error.code === "ACCOUNT_NOT_FOUND" ? 404 : 409 });
   if (error instanceof DatabaseDependencyError) {
     console.error("[api:account-export] database request failed", safeDatabaseErrorLog(error));
@@ -29,6 +36,7 @@ function failure(error: unknown): NextResponse {
 export function createAccountDataExportHandler(
   service: Pick<PostgresAccountDataExportService, "create"> = new PostgresAccountDataExportService(),
   sessionResolver: SessionResolver = verifyRequestSession,
+  assistanceGuard: UnderstandingAssistanceGuard = defaultUnderstandingAssistanceGuard(),
 ) {
   const create: CreateExport = (input) => service.create(input);
   return {
@@ -39,6 +47,7 @@ export function createAccountDataExportHandler(
         requireAllowedOrigin(request);
         if (!accountDataExportRuntimeEnabled()) return json({ error: "ACCOUNT_DATA_EXPORT_UNAVAILABLE" }, { status: 503 });
         if (!accountDeletionSessionIsFresh(session)) return json({ error: "REAUTH_REQUIRED" }, { status: 403 });
+        await assistanceGuard.assertHighRiskAllowed({ userId: session.userId, externalUserId: session.externalUserId, operation: "account_export" });
         const body = await create({ userId: session.userId, externalUserId: session.externalUserId });
         return applyAuthNoStore(new NextResponse(JSON.stringify(body), {
           status: 200,
