@@ -80,7 +80,7 @@ function Offline({ retry }: { retry: () => void }) {
     <div className="quietDot" aria-hidden="true" />
     <p className="eyebrow">忆见</p>
     <h1>此刻没有网络。</h1>
-    <p>你已写下的内容会留在这里。等连接恢复后，再继续查看纪念资料或 AI 对话。</p>
+    <p>恢复连接后，你可以重新读取服务端已保存的资料。未送出的内容不会自动发送。</p>
     <button className="textButton" onClick={retry}>重新连接</button>
   </main>;
 }

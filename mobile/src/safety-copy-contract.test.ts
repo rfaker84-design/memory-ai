@@ -9,3 +9,8 @@ test("mobile shell labels AI memorial conversation and never makes a living-pres
   assert.match(source, /AI生成 · 基于已确认资料/);
   assert.doesNotMatch(source, /我在。关于|我一直在听|TA 在这里|让 TA 出现|继续相见/);
 });
+
+test("mobile offline state does not claim an unsent draft was durably saved", () => {
+  assert.match(source, /未送出的内容不会自动发送/);
+  assert.doesNotMatch(source, /你已写下的内容会留在这里/);
+});
