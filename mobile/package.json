@@ -19,7 +19,7 @@
     "test:secure-session-contract": "tsx --test scripts/session-origin.test.ts",
     "test:android-release-signing-contract": "tsx --test scripts/android-release-signing-contract.test.ts",
     "test:incomplete-ta-resume": "tsx --test src/product/incomplete-memory.test.ts",
-    "test:video-opportunity": "tsx --test src/product/video-opportunity.test.ts",
+    "test:video-opportunity": "tsx --test src/product/video-opportunity.test.ts src/product/occasion-reward-contract.test.ts",
     "test:navigation-contract": "tsx --test src/navigation-contract.test.ts",
     "test:primary-companion": "tsx --test src/product/primary-companion.test.ts",
     "test:pickup": "tsx --test src/product/pickup.test.ts",

@@ -9,10 +9,21 @@ import type {
   CommerceCreditBalance,
   CommerceReferralStatus,
   CommerceVideoProduct,
+  OccasionRewardOffer,
+} from "../../../src/components/first-presence/commerceVideoCreditsClient";
+import {
+  claimOccasionReward,
+  clearOccasionVideoRecovery,
+  createOccasionVideo,
+  createOccasionVideoRecovery,
+  loadOpenOccasionRewardOffers,
+  readOccasionVideoRecovery,
+  writeOccasionVideoRecovery,
 } from "../../../src/components/first-presence/commerceVideoCreditsClient";
 import { disabledIap } from "../contracts/iap";
 import {
   productApi,
+  mobileApiFetch,
   type FirstPresenceVideoSafeDto,
   type ProductConversation,
   type ProductMemory,
@@ -65,6 +76,8 @@ export function VideoOpportunityScreen({
   const [loading, setLoading] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
   const [iapNotice, setIapNotice] = useState("");
+  const [occasionOffers, setOccasionOffers] = useState<OccasionRewardOffer[]>([]);
+  const [occasionSubmitting, setOccasionSubmitting] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
@@ -74,6 +87,7 @@ export function VideoOpportunityScreen({
         if (active) {
           setJobs([]);
           setCommerce({ balance: null, referral: null, products: [] });
+          setOccasionOffers([]);
           setUnavailable(false);
           setLoading(false);
         }
@@ -91,11 +105,12 @@ export function VideoOpportunityScreen({
           productApi.loadCommerceCreditBalance(),
           productApi.loadCommerceVideoProducts(),
           productApi.loadCommerceReferralStatus(),
+          loadOpenOccasionRewardOffers(mobileApiFetch),
         ]).then(
-          ([balance, products, referral]) => ({ ok: true as const, balance, products, referral }),
+          ([balance, products, referral, offers]) => ({ ok: true as const, balance, products, referral, offers }),
           () => ({ ok: false as const }),
         )
-        : { ok: true as const, balance: null, products: [], referral: null };
+        : { ok: true as const, balance: null, products: [], referral: null, offers: [] };
 
       if (!active) return;
       if (jobsResult.ok) setJobs(jobsResult.value);
@@ -105,6 +120,7 @@ export function VideoOpportunityScreen({
           products: commerceResult.products,
           referral: commerceResult.referral,
         });
+        setOccasionOffers(commerceResult.offers);
       }
       setUnavailable(!jobsResult.ok || !commerceResult.ok);
       setLoading(false);
@@ -129,6 +145,25 @@ export function VideoOpportunityScreen({
       setIapNotice("原生内购尚未接入；不会创建订单、扣款或写入任何本地额度。");
     }
   }, []);
+
+  const useOccasionReward = useCallback(async (offer: OccasionRewardOffer) => {
+    if (occasionSubmitting) return;
+    const existing = readOccasionVideoRecovery();
+    const recovery = existing && existing.memoryId === memory.id && existing.occasion === offer.occasion
+      ? existing : createOccasionVideoRecovery(memory.id, offer.occasion);
+    if (!writeOccasionVideoRecovery(recovery)) {
+      setIapNotice("无法安全保留本次领取标识；尚未提交，请恢复后再试。"); return;
+    }
+    setOccasionSubmitting(true); setIapNotice("");
+    try {
+      if (!offer.claimed) await claimOccasionReward(offer.occasion, recovery.claimIdempotencyKey, mobileApiFetch);
+      await createOccasionVideo(memory.id, recovery.videoIdempotencyKey, mobileApiFetch);
+      clearOccasionVideoRecovery(); setRefreshKey((value) => value + 1);
+      setIapNotice("纪念影像机会已由服务端登记；请在这里刷新查看审核进度。");
+    } catch {
+      setIapNotice("领取或影像结果尚未确认。系统不会创建新的请求；请恢复后用同一机会手动重试。");
+    } finally { setOccasionSubmitting(false); }
+  }, [memory.id, occasionSubmitting]);
 
   return <main className="videoOpportunityScene">
     <header className="pageHeader">
@@ -162,6 +197,7 @@ export function VideoOpportunityScreen({
       {commerceState.kind === "available" ? <span className="videoPolicy">账户可用机会 {commerceState.balance.totalAvailable} 次</span> : null}
       {commerceState.kind === "empty" && commerce.referral ? <p className="videoStatus">邀请权益仍按账户规则计算；距离下一次奖励还差 {commerce.referral.inviteesUntilNextReward} 位。</p> : null}
       {commerce.products.length ? <p className="videoCatalog">可用套餐仍由现有 Commerce 目录提供：{commerce.products.map((product) => `${product.generationCredits} 次`).join(" · ")}</p> : null}
+      {occasionOffers.filter((offer) => !offer.claimed || (commerce.balance?.occasionAvailable ?? 0) > 0).map((offer) => <section key={`${offer.occasion}-${offer.calendarYear}`} className="videoOpportunityCard"><p>今天有一份纪念影像机会，领取期至 {offer.claimDeadline}。</p><p>8 秒竖版、静音；生成成功并审核通过后可保存。</p><button className="secondaryButton" disabled={loading || occasionSubmitting} onClick={() => void useOccasionReward(offer)}>{occasionSubmitting ? "正在确认" : offer.claimed ? "使用已领取机会" : "领取并制作纪念影像"}</button></section>)}
       <p className="videoStatus">{jobCopy(additionalJob, additionalSaveAllowed)}</p>
       <button className="secondaryButton" disabled={loading} onClick={() => setRefreshKey((value) => value + 1)}>{loading ? "正在确认" : "刷新账户状态"}</button>
       <button className="quietLink" onClick={() => void explainIapBoundary()}>原生购买即将开放</button>
