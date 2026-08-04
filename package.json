@@ -41,6 +41,7 @@
     "test:commerce-refund-entitlement-postgres": "tsx --test features/commerce/commerce-refund-entitlement-postgres14.integration.test.ts",
     "test:emergency-contact-postgres": "tsx --test features/safety/emergency-contact-consent-postgres14.integration.test.ts",
     "test:content-hold-postgres": "tsx --test features/reports/content-hold-postgres14.integration.test.ts",
+    "test:video-share-postgres": "tsx --test features/video/video-share-links-postgres14.integration.test.ts",
     "test:commerce-occasion-postgres": "tsx --test features/commerce/occasion-rewards-postgres14.integration.test.ts && node --test database/tests/020-commerce-occasion-rewards.test.cjs",
     "test:business-metrics": "tsx --test app/api/business-events/business-events-route.test.ts app/api/business-metrics/funnel/funnel-route.test.ts src/components/business-metrics/businessMetricsClient.test.ts && node --test database/tests/011-business-funnel-events.test.cjs",
     "test:operations": "tsx --test features/operations/operations-alert-evaluator.test.ts app/api/internal/operations/summary/summary-route.test.ts app/api/internal/operations/alerts/alerts-route.test.ts scripts/ops/collect-operations-alerts.test.ts",
