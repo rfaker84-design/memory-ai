@@ -24,6 +24,7 @@ export type ConfirmedPickup = {
   requestKey: string;
   originalText: string;
   organizedText: string;
+  photoAssetId?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -75,6 +76,7 @@ function record(row: Row): ConfirmedPickup {
     requestKey: key,
     originalText,
     organizedText,
+    photoAssetId: typeof row.metadata.photoAssetId === "string" ? row.metadata.photoAssetId : null,
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
   };
@@ -98,6 +100,7 @@ export class ConfirmedPickupPostgresService {
     requestKey: string;
     originalText: string;
     organizedText: string;
+    photoAssetId?: string | null;
   }): Promise<ConfirmedPickup> {
     const owner = text(input.externalUserId, "externalUserId");
     const targetMemoryId = memoryId(input.memoryId);
@@ -105,16 +108,27 @@ export class ConfirmedPickupPostgresService {
     const originalText = text(input.originalText, "originalText");
     const organizedText = text(input.organizedText, "organizedText");
     const targetSourceType = sourceType(targetRequestKey);
+    const photoAssetId = input.photoAssetId == null ? null : pickupId(input.photoAssetId);
     const metadata = {
       schema: "pickup-v1",
       sourceKind: "user_confirmed_pickup",
       originalText,
       organizedText,
       confirmedAt: new Date().toISOString(),
+      ...(photoAssetId ? { photoAssetId } : {}),
     };
 
     return withPostgresTransaction(async (client) => {
       await requireOwnedMemory(client, targetMemoryId, owner);
+      if (photoAssetId) {
+        const media = await client.query(
+          `SELECT 1 FROM public.media_assets asset JOIN public.users user_account ON user_account.id=asset.user_id
+            WHERE asset.id=$1::uuid AND asset.memory_id=$2::uuid AND user_account.external_id=$3
+              AND asset.media_type='image' AND asset.status='uploaded' AND asset.deleted_at IS NULL`,
+          [photoAssetId, targetMemoryId, owner],
+        );
+        if (media.rowCount !== 1) throw new ConfirmedPickupError("MEMORY_NOT_FOUND");
+      }
       const existing = await client.query<Row>(
         `SELECT id, memory_id, content, source_id, metadata, created_at, updated_at
            FROM public.long_term_memories

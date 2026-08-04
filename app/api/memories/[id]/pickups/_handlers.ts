@@ -22,13 +22,14 @@ function text(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function parseConfirmation(value: unknown): { originalText: string; organizedText: string } | null {
+function parseConfirmation(value: unknown): { originalText: string; organizedText: string; photoAssetId?: string | null } | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const body = value as Record<string, unknown>;
-  if (Object.keys(body).length !== 3 || body.confirmed !== true) return null;
+  if (![3, 4].includes(Object.keys(body).length) || body.confirmed !== true) return null;
   const originalText = text(body.originalText);
   const organizedText = text(body.organizedText);
-  return originalText && organizedText ? { originalText, organizedText } : null;
+  if (body.photoAssetId !== undefined && body.photoAssetId !== null && typeof body.photoAssetId !== "string") return null;
+  return originalText && organizedText ? { originalText, organizedText, ...(typeof body.photoAssetId === "string" ? { photoAssetId: body.photoAssetId } : {}) } : null;
 }
 
 function parseUpdate(value: unknown): { originalText: string; organizedText: string } | null {
