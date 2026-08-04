@@ -119,7 +119,7 @@ export type ProductVideoShare = {
   jobId: string;
   memoryId: string;
   revokedAt: string | null;
-  watermarkDownloadEnabled: false;
+  watermarkDownloadEnabled: boolean;
 };
 
 export class ProductApiError extends Error {
@@ -575,19 +575,30 @@ export const productApi = {
     if (!Array.isArray(result.shares)) throw new ProductApiError(502, "VIDEO_SHARE_RESPONSE_INCOMPLETE");
     return result.shares.map((value) => {
       const share = asRecord(value);
-      if (typeof share.publicId !== "string" || typeof share.title !== "string" || typeof share.jobId !== "string" || share.memoryId !== memoryId || share.revokedAt !== null || share.watermarkDownloadEnabled !== false) throw new ProductApiError(502, "VIDEO_SHARE_RESPONSE_INCOMPLETE");
-      return { publicId: share.publicId, title: share.title, jobId: share.jobId, memoryId, revokedAt: null, watermarkDownloadEnabled: false };
+      if (typeof share.publicId !== "string" || typeof share.title !== "string" || typeof share.jobId !== "string" || share.memoryId !== memoryId || share.revokedAt !== null || typeof share.watermarkDownloadEnabled !== "boolean") throw new ProductApiError(502, "VIDEO_SHARE_RESPONSE_INCOMPLETE");
+      return { publicId: share.publicId, title: share.title, jobId: share.jobId, memoryId, revokedAt: null, watermarkDownloadEnabled: share.watermarkDownloadEnabled };
     });
   },
   async createVideoShare(memoryId: string, jobId: string, title: string): Promise<ProductVideoShare> {
     const result = await request<{ share?: unknown }>(`/api/memories/${encodeURIComponent(memoryId)}/video-shares`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jobId, title }) });
     const share = asRecord(result.share);
-    if (typeof share.publicId !== "string" || typeof share.title !== "string" || typeof share.jobId !== "string" || share.memoryId !== memoryId || share.revokedAt !== null || share.watermarkDownloadEnabled !== false) throw new ProductApiError(502, "VIDEO_SHARE_RESPONSE_INCOMPLETE");
-    return { publicId: share.publicId, title: share.title, jobId: share.jobId, memoryId, revokedAt: null, watermarkDownloadEnabled: false };
+    if (typeof share.publicId !== "string" || typeof share.title !== "string" || typeof share.jobId !== "string" || share.memoryId !== memoryId || share.revokedAt !== null || typeof share.watermarkDownloadEnabled !== "boolean") throw new ProductApiError(502, "VIDEO_SHARE_RESPONSE_INCOMPLETE");
+    return { publicId: share.publicId, title: share.title, jobId: share.jobId, memoryId, revokedAt: null, watermarkDownloadEnabled: share.watermarkDownloadEnabled };
   },
   async revokeVideoShare(memoryId: string, publicId: string): Promise<void> {
     const result = await request<{ revoked?: unknown }>(`/api/memories/${encodeURIComponent(memoryId)}/video-shares/${encodeURIComponent(publicId)}`, { method: "DELETE" });
     if (result.revoked !== true) throw new ProductApiError(409, "VIDEO_SHARE_REVOKE_UNCONFIRMED");
+  },
+  async setVideoShareWatermarkDownload(memoryId: string, publicId: string, enabled: boolean): Promise<ProductVideoShare> {
+    const result = await request<{ share?: unknown }>(`/api/memories/${encodeURIComponent(memoryId)}/video-shares/${encodeURIComponent(publicId)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ watermarkDownloadEnabled: enabled }) });
+    const share = asRecord(result.share);
+    if (typeof share.publicId !== "string" || typeof share.title !== "string" || typeof share.jobId !== "string" || share.memoryId !== memoryId || share.revokedAt !== null || typeof share.watermarkDownloadEnabled !== "boolean") throw new ProductApiError(502, "VIDEO_SHARE_RESPONSE_INCOMPLETE");
+    return { publicId: share.publicId, title: share.title, jobId: share.jobId, memoryId, revokedAt: null, watermarkDownloadEnabled: share.watermarkDownloadEnabled };
+  },
+  async downloadWatermarkedVideoShare(memoryId: string, publicId: string): Promise<Blob> {
+    const response = await mobileApiFetch(`/api/memories/${encodeURIComponent(memoryId)}/video-shares/${encodeURIComponent(publicId)}/download`, { cache: "no-store" });
+    if (!response.ok || response.headers.get("content-type") !== "video/mp4") throw new ProductApiError(response.status || 502, "VIDEO_SHARE_DOWNLOAD_UNAVAILABLE");
+    return response.blob();
   },
   async loadCommerceCreditBalance(): Promise<CommerceCreditBalance> {
     return loadCommerceCreditBalance(mobileApiFetch);

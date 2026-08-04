@@ -13,7 +13,7 @@ export type PublicVideoShareLink = {
 
 export type OwnerVideoShareLink = Omit<PublicVideoShareLink, "artifactKey"> & {
   revokedAt: string | null;
-  watermarkDownloadEnabled: false;
+  watermarkDownloadEnabled: boolean;
 };
 
 export class VideoShareLinkError extends Error {
@@ -41,9 +41,9 @@ export class VideoShareLinksPostgres {
   async listForOwner(input: { externalUserId: string; memoryId: string }): Promise<OwnerVideoShareLink[]> {
     assertUuid(input.memoryId);
     const result = await queryPostgres<{
-      public_id: string; title: string; video_job_id: string; memory_id: string; revoked_at: Date | null;
+      public_id: string; title: string; video_job_id: string; memory_id: string; revoked_at: Date | null; watermark_download_enabled: boolean;
     }>(
-      `SELECT s.public_id, s.title, s.video_job_id, s.memory_id, s.revoked_at
+      `SELECT s.public_id, s.title, s.video_job_id, s.memory_id, s.revoked_at, s.watermark_download_enabled
        FROM public.video_share_links s JOIN public.users u ON u.id = s.user_id
        WHERE u.external_id = $1 AND s.memory_id = $2::uuid AND s.revoked_at IS NULL
          AND NOT EXISTS (SELECT 1 FROM public.content_visibility_holds h WHERE h.status='hidden' AND (h.memory_id=s.memory_id OR h.video_job_id=s.video_job_id OR h.share_link_id=s.id))
@@ -52,7 +52,7 @@ export class VideoShareLinksPostgres {
     );
     return result.rows.map((row) => ({
       publicId: row.public_id, title: row.title, jobId: row.video_job_id, memoryId: row.memory_id,
-      revokedAt: row.revoked_at?.toISOString() ?? null, watermarkDownloadEnabled: false,
+      revokedAt: row.revoked_at?.toISOString() ?? null, watermarkDownloadEnabled: row.watermark_download_enabled,
     }));
   }
 
@@ -66,7 +66,7 @@ export class VideoShareLinksPostgres {
     assertUuid(input.jobId);
     const title = normalizeTitle(input.title);
     const result = await queryPostgres<{
-      public_id: string; title: string; video_job_id: string; memory_id: string; revoked_at: Date | null;
+      public_id: string; title: string; video_job_id: string; memory_id: string; revoked_at: Date | null; watermark_download_enabled: boolean;
     }>(
       `WITH approved AS (
          SELECT j.id, j.memory_id, j.user_id
@@ -86,7 +86,7 @@ export class VideoShareLinksPostgres {
        SELECT user_id, memory_id, id, $4 FROM approved
        ON CONFLICT (video_job_id) WHERE revoked_at IS NULL
        DO UPDATE SET title = EXCLUDED.title, updated_at = NOW()
-       RETURNING public_id, title, video_job_id, memory_id, revoked_at`,
+       RETURNING public_id, title, video_job_id, memory_id, revoked_at, watermark_download_enabled`,
       [input.externalUserId, input.memoryId, input.jobId, title],
     );
     const row = result.rows[0];
@@ -97,7 +97,7 @@ export class VideoShareLinksPostgres {
       jobId: row.video_job_id,
       memoryId: row.memory_id,
       revokedAt: row.revoked_at?.toISOString() ?? null,
-      watermarkDownloadEnabled: false,
+      watermarkDownloadEnabled: row.watermark_download_enabled,
     };
   }
 
@@ -110,6 +110,92 @@ export class VideoShareLinksPostgres {
        WHERE s.user_id = u.id AND u.external_id = $1 AND s.memory_id = $2::uuid AND s.public_id = $3::uuid
        RETURNING s.public_id`,
       [input.externalUserId, input.memoryId, input.publicId],
+    );
+    return result.rowCount === 1;
+  }
+
+  async setWatermarkDownloadForOwner(input: { externalUserId: string; memoryId: string; publicId: string; enabled: boolean }): Promise<OwnerVideoShareLink | null> {
+    assertUuid(input.memoryId);
+    assertUuid(input.publicId);
+    const result = await queryPostgres<{
+      public_id: string; title: string; video_job_id: string; memory_id: string; revoked_at: Date | null; watermark_download_enabled: boolean;
+    }>(
+      `UPDATE public.video_share_links s
+       SET watermark_download_enabled = $4::boolean, updated_at = NOW()
+       FROM public.users u
+       WHERE s.user_id = u.id AND u.external_id = $1 AND s.memory_id = $2::uuid AND s.public_id = $3::uuid
+         AND s.revoked_at IS NULL
+         AND ($4::boolean = FALSE OR EXISTS (
+           SELECT 1
+           FROM public.video_generation_jobs j
+           JOIN public.commerce_generation_reservations r ON r.id = j.reservation_id AND r.user_id = j.user_id
+           JOIN public.commerce_credit_lots l ON l.id = r.credit_lot_id AND l.user_id = j.user_id
+           WHERE j.id = s.video_job_id AND j.user_id = s.user_id AND j.memory_id = s.memory_id
+             AND j.status = 'succeeded' AND j.quality_status = 'approved'
+             AND j.entitlement_settlement = 'committed' AND j.artifact_key IS NOT NULL
+             AND r.purpose <> 'first_preview' AND l.save_allowed = TRUE
+             AND NOT EXISTS (SELECT 1 FROM public.content_visibility_holds h WHERE h.status='hidden' AND (h.memory_id=s.memory_id OR h.video_job_id=j.id OR h.share_link_id=s.id))
+             AND EXISTS (SELECT 1 FROM public.video_generation_quality_reviews q WHERE q.job_id = j.id AND q.reviewer_kind = 'manual' AND q.decision = 'approved')
+         ))
+       RETURNING s.public_id, s.title, s.video_job_id, s.memory_id, s.revoked_at, s.watermark_download_enabled`,
+      [input.externalUserId, input.memoryId, input.publicId, input.enabled],
+    );
+    const row = result.rows[0];
+    return row ? {
+      publicId: row.public_id, title: row.title, jobId: row.video_job_id, memoryId: row.memory_id,
+      revokedAt: row.revoked_at?.toISOString() ?? null, watermarkDownloadEnabled: row.watermark_download_enabled,
+    } : null;
+  }
+
+  async findWatermarkedDownloadForOwner(input: { externalUserId: string; memoryId: string; publicId: string }): Promise<PublicVideoShareLink | null> {
+    assertUuid(input.memoryId);
+    assertUuid(input.publicId);
+    const result = await queryPostgres<{
+      public_id: string; title: string; id: string; memory_id: string; artifact_key: string;
+    }>(
+      `SELECT s.public_id, s.title, j.id, j.memory_id, j.artifact_key
+       FROM public.video_share_links s
+       JOIN public.users u ON u.id = s.user_id
+       JOIN public.video_generation_jobs j ON j.id = s.video_job_id AND j.user_id = s.user_id AND j.memory_id = s.memory_id
+       JOIN public.commerce_generation_reservations r ON r.id = j.reservation_id AND r.user_id = j.user_id
+       JOIN public.commerce_credit_lots l ON l.id = r.credit_lot_id AND l.user_id = j.user_id
+       WHERE u.external_id = $1 AND s.memory_id = $2::uuid AND s.public_id = $3::uuid
+         AND s.revoked_at IS NULL AND s.watermark_download_enabled = TRUE
+         AND j.status = 'succeeded' AND j.quality_status = 'approved'
+         AND j.entitlement_settlement = 'committed' AND j.artifact_key IS NOT NULL
+         AND r.purpose <> 'first_preview' AND l.save_allowed = TRUE
+         AND NOT EXISTS (SELECT 1 FROM public.content_visibility_holds h WHERE h.status='hidden' AND (h.memory_id=s.memory_id OR h.video_job_id=j.id OR h.share_link_id=s.id))
+         AND EXISTS (SELECT 1 FROM public.video_generation_quality_reviews q WHERE q.job_id = j.id AND q.reviewer_kind = 'manual' AND q.decision = 'approved')`,
+      [input.externalUserId, input.memoryId, input.publicId],
+    );
+    const row = result.rows[0];
+    return row ? { publicId: row.public_id, title: row.title, jobId: row.id, memoryId: row.memory_id, artifactKey: row.artifact_key } : null;
+  }
+
+  async recordWatermarkedDownload(input: { externalUserId: string; memoryId: string; publicId: string; sha256: string; byteLength: number }): Promise<boolean> {
+    assertUuid(input.memoryId);
+    assertUuid(input.publicId);
+    if (!/^[a-f0-9]{64}$/i.test(input.sha256) || !Number.isSafeInteger(input.byteLength) || input.byteLength < 1) {
+      throw new VideoShareLinkError("INVALID_SHARE_REQUEST");
+    }
+    const result = await queryPostgres<{ id: string }>(
+      `INSERT INTO public.audit_logs (user_id, memory_id, action, level, message, metadata)
+       SELECT s.user_id, s.memory_id, 'video_share.watermarked_download', 'info', 'Owner downloaded an ephemeral watermarked video',
+              jsonb_build_object('publicShareId', s.public_id, 'videoJobId', s.video_job_id, 'sha256', $4, 'byteLength', $5, 'derivative', 'ephemeral')
+       FROM public.video_share_links s
+       JOIN public.users u ON u.id = s.user_id
+       JOIN public.video_generation_jobs j ON j.id = s.video_job_id AND j.user_id = s.user_id AND j.memory_id = s.memory_id
+       JOIN public.commerce_generation_reservations r ON r.id = j.reservation_id AND r.user_id = j.user_id
+       JOIN public.commerce_credit_lots l ON l.id = r.credit_lot_id AND l.user_id = j.user_id
+       WHERE u.external_id = $1 AND s.memory_id = $2::uuid AND s.public_id = $3::uuid
+         AND s.revoked_at IS NULL AND s.watermark_download_enabled = TRUE
+         AND j.status = 'succeeded' AND j.quality_status = 'approved'
+         AND j.entitlement_settlement = 'committed' AND j.artifact_key IS NOT NULL
+         AND r.purpose <> 'first_preview' AND l.save_allowed = TRUE
+         AND NOT EXISTS (SELECT 1 FROM public.content_visibility_holds h WHERE h.status='hidden' AND (h.memory_id=s.memory_id OR h.video_job_id=j.id OR h.share_link_id=s.id))
+         AND EXISTS (SELECT 1 FROM public.video_generation_quality_reviews q WHERE q.job_id = j.id AND q.reviewer_kind = 'manual' AND q.decision = 'approved')
+       RETURNING id`,
+      [input.externalUserId, input.memoryId, input.publicId, input.sha256, input.byteLength],
     );
     return result.rowCount === 1;
   }

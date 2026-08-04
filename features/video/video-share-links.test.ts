@@ -13,17 +13,22 @@ test("public share data access is revocation-aware and never projects a storage 
   assert.match(source, /reviewer_kind = 'manual' AND q\.decision = 'approved'/);
   assert.match(source, /artifactKey: row\.artifact_key/);
   assert.match(source, /Server-only\. It must never be returned by a public route/);
-  assert.match(source, /watermarkDownloadEnabled: false/);
+  assert.match(source, /watermarkDownloadEnabled: row\.watermark_download_enabled/);
+  assert.match(source, /setWatermarkDownloadForOwner/);
+  assert.match(source, /findWatermarkedDownloadForOwner/);
+  assert.match(source, /recordWatermarkedDownload/);
+  assert.match(source, /watermark_download_enabled = TRUE/);
+  assert.doesNotMatch(source, /jsonb_build_object\([^\n]*artifactKey/);
 });
 
 test("initial previews and any non-saveable credit lot cannot become public shares", () => {
   const restrictions = source.match(/r\.purpose <> 'first_preview' AND l\.save_allowed = TRUE/g) ?? [];
-  assert.equal(restrictions.length, 2, "creation and every public read must enforce the saveability boundary");
+  assert.equal(restrictions.length, 5, "creation, public playback, Owner enablement, and Owner download/audit checks must enforce the saveability boundary");
 });
 
 test("a credible impersonation hold removes the share from owner, creation, and public-read paths", () => {
   const holds = source.match(/public\.content_visibility_holds/g) ?? [];
-  assert.equal(holds.length, 3, "all share entry points must check an active content hold");
+  assert.equal(holds.length, 6, "all public, Owner enablement, and Owner download/audit entry points must check an active content hold");
   assert.match(source, /h\.status='hidden'/);
   assert.match(source, /h\.share_link_id=s\.id/);
 });

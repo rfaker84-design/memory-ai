@@ -723,13 +723,35 @@ export function App() {
     finally { setBusy(false); }
   };
 
+  const setVideoShareWatermarkDownload = async (publicId: string, enabled: boolean) => {
+    if (!memory || busy) return;
+    setBusy(true); setNotice("");
+    try { await productApi.setVideoShareWatermarkDownload(memory.id, publicId, enabled); await loadVideoShares(); }
+    catch (error) { setNotice(friendlyError(error)); }
+    finally { setBusy(false); }
+  };
+
+  const downloadWatermarkedVideoShare = async (publicId: string) => {
+    if (!memory || busy) return;
+    setBusy(true); setNotice("");
+    try {
+      const blob = await productApi.downloadWatermarkedVideoShare(memory.id, publicId);
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl; link.download = "memoryai-watermarked-video.mp4"; link.click();
+      URL.revokeObjectURL(objectUrl);
+      setNotice("已向设备交付带 AI 生成与忆见标识的影像副本；设备保存状态由系统确认。");
+    } catch (error) { setNotice(friendlyError(error)); }
+    finally { setBusy(false); }
+  };
+
   const content = useMemo(() => {
     if (screen === "videoShares") {
       const approved = shareJobs.filter((job) => job.status === "succeeded" && job.saveAllowed && job.artifactAvailable && !job.manualReviewRequired);
       return <main className="profileScene">
         <header className="pageHeader"><button className="backButton" onClick={() => setScreen("profile")}>‹</button><span>影像分享</span></header>
         <h1>影像分享</h1><p>仅已人工审核通过、可保存的 AI 纪念影像可创建公开只读链接。首次不可保存影像不能分享；公开页面持续显示 AI 标识与忆见 Logo。</p>
-        {shareState === "loading" ? <p role="status">正在读取影像分享…</p> : shareState === "unavailable" ? <><p role="alert">暂时无法读取影像分享；未创建或撤销任何链接。</p><button className="quietLink" onClick={() => void loadVideoShares()}>重新读取</button></> : <><label>分享标题<input className="field" value={shareTitle} maxLength={80} onChange={(event) => setShareTitle(event.target.value)} /></label>{approved.length ? approved.map((job) => <button key={job.id} className="primaryButton" disabled={busy || !shareTitle.trim()} onClick={() => void createVideoShare(job.id)}>{busy ? "正在确认" : "为已审核影像创建链接"}</button>) : <p>当前 TA 没有可分享的已审核影像。</p>}<section><h2>当前链接</h2>{videoShares.length ? videoShares.map((share) => <article key={share.publicId}><strong>{share.title}</strong><p>公开只读，不提供下载。</p><button className="quietLink" disabled={busy} onClick={() => void navigator.clipboard.writeText(`${runtimeConfig.appOrigin}/video-share/${share.publicId}`).then(() => setNotice("链接已复制；请在分享前核对标题和对象。"), () => setNotice("未能复制链接；未修改分享状态。"))}>复制链接</button><button className="quietLink" disabled={busy} onClick={() => void revokeVideoShare(share.publicId)}>撤销链接</button></article>) : <p>尚无活跃分享链接。</p>}</section></>}
+        {shareState === "loading" ? <p role="status">正在读取影像分享…</p> : shareState === "unavailable" ? <><p role="alert">暂时无法读取影像分享；未创建或撤销任何链接。</p><button className="quietLink" onClick={() => void loadVideoShares()}>重新读取</button></> : <><label>分享标题<input className="field" value={shareTitle} maxLength={80} onChange={(event) => setShareTitle(event.target.value)} /></label>{approved.length ? approved.map((job) => <button key={job.id} className="primaryButton" disabled={busy || !shareTitle.trim()} onClick={() => void createVideoShare(job.id)}>{busy ? "正在确认" : "为已审核影像创建链接"}</button>) : <p>当前 TA 没有可分享的已审核影像。</p>}<section><h2>当前链接</h2>{videoShares.length ? videoShares.map((share) => <article key={share.publicId}><strong>{share.title}</strong><p>公开链接只读、不可下载。仅 Owner 可选择生成带「AI Generated | MemoryAI」标识的临时副本；不会保存新的派生文件。</p><button className="quietLink" disabled={busy} onClick={() => void setVideoShareWatermarkDownload(share.publicId, !share.watermarkDownloadEnabled)}>{share.watermarkDownloadEnabled ? "关闭 Owner 水印下载" : "启用 Owner 水印下载"}</button>{share.watermarkDownloadEnabled ? <button className="quietLink" disabled={busy} onClick={() => void downloadWatermarkedVideoShare(share.publicId)}>下载 Owner 水印副本</button> : null}<button className="quietLink" disabled={busy} onClick={() => void navigator.clipboard.writeText(`${runtimeConfig.appOrigin}/video-share/${share.publicId}`).then(() => setNotice("链接已复制；请在分享前核对标题和对象。"), () => setNotice("未能复制链接；未修改分享状态。"))}>复制链接</button><button className="quietLink" disabled={busy} onClick={() => void revokeVideoShare(share.publicId)}>撤销链接</button></article>) : <p>尚无活跃分享链接。</p>}</section></>}
         {notice ? <p className="floatingNotice" role="status">{notice}</p> : null}
       </main>;
     }
@@ -857,7 +879,7 @@ export function App() {
       {primarySelectorOpen && <section role="dialog" aria-modal="true" aria-label="选择主 TA" className="memoryHero"><h2>选择主 TA</h2><p>只显示本次登录后服务端确认属于你的 TA；此选择只保存为本设备展示偏好。</p>{ownedMemories.map((candidate) => <button key={candidate.id} className="quietLink" type="button" disabled={busy || candidate.id === memory?.id} onClick={() => void openMemory(candidate.id, "home", true)}>{candidate.name}{candidate.id === memory?.id ? "（当前主 TA）" : ""}</button>)}<button className="quietLink" type="button" onClick={() => setPrimarySelectorOpen(false)}>取消</button></section>}
       <button className="primaryButton" onClick={() => press(() => incompleteMemory ? continueIncompleteMemory() : memory ? setScreen("chat") : beginCreateMemory())}>{hasIncompleteMemory ? "继续补充照片" : memory ? "继续查看" : "创建 TA"}</button>{notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="home" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
-  }, [beginTaProfileEdit, birthDate, busy, challengeId, code, conversation, createVideoShare, crisisContactExternalId, crisisContacts, crisisState, crisisSupportEnabled, deletionConfirming, deletionProgress, deletionState, downloadAccountDataExport, hasMemory, incompleteMemory, isFirstMemory, loadVideoShares, media.length, memory, messages, mode, name, notice, online, ownedMemories, pendingCreation, phone, primarySelectorOpen, profileState, question, refreshCrisisSupport, relationship, resumingMemory, revokeVideoShare, saveTaProfile, screen, shareJobs, shareState, shareTitle, story, submitAccountDeletion, taProfileDraft, taProfileEditing, title, updateTaProfileDraft, videoShares]);
+  }, [beginTaProfileEdit, birthDate, busy, challengeId, code, conversation, createVideoShare, crisisContactExternalId, crisisContacts, crisisState, crisisSupportEnabled, deletionConfirming, deletionProgress, deletionState, downloadAccountDataExport, downloadWatermarkedVideoShare, hasMemory, incompleteMemory, isFirstMemory, loadVideoShares, media.length, memory, messages, mode, name, notice, online, ownedMemories, pendingCreation, phone, primarySelectorOpen, profileState, question, refreshCrisisSupport, relationship, resumingMemory, revokeVideoShare, saveTaProfile, screen, setVideoShareWatermarkDownload, shareJobs, shareState, shareTitle, story, submitAccountDeletion, taProfileDraft, taProfileEditing, title, updateTaProfileDraft, videoShares]);
 
   return <div className={`appRoot ${productOnline ? "isOnline" : ""}`}>{content}</div>;
 }

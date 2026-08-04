@@ -4,7 +4,7 @@ import test from "node:test";
 import { NextRequest } from "next/server";
 
 import { createOwnerVideoShareHandler } from "./_handler";
-import { createOwnerVideoShareRevokeHandler } from "./[publicId]/_handler";
+import { createOwnerVideoShareRevokeHandler, createOwnerVideoShareWatermarkHandler } from "./[publicId]/_handler";
 
 process.env.AUTH_ALLOWED_ORIGIN = "https://memoryai.test";
 const memoryId = "00000000-0000-4000-8000-000000000001";
@@ -43,6 +43,27 @@ test("revocation is owner-scoped, origin-bound and idempotent at the data bounda
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { revoked: true });
   assert.deepEqual(calls, [{ externalUserId: "owner", memoryId, publicId }]);
+});
+
+test("Owner alone can explicitly enable the temporary watermarked-download capability", async () => {
+  const calls: unknown[] = [];
+  const handler = createOwnerVideoShareWatermarkHandler({ async setWatermarkDownloadForOwner(input) { calls.push(input); return { publicId, title: "想念", jobId, memoryId, revokedAt: null, watermarkDownloadEnabled: true }; } }, session);
+  const response = await handler.PATCH(new NextRequest(`https://memoryai.test/api/memories/${memoryId}/video-shares/${publicId}`, { method: "PATCH", headers: { "content-type": "application/json", origin: "https://memoryai.test" }, body: JSON.stringify({ watermarkDownloadEnabled: true }) }), { params: Promise.resolve({ id: memoryId, publicId }) });
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{ externalUserId: "owner", memoryId, publicId, enabled: true }]);
+  assert.equal((await response.json()).share.watermarkDownloadEnabled, true);
+});
+
+test("watermark setting rejects absent Session, forged origin, and extra fields without mutation", async () => {
+  let writes = 0;
+  const shares = { async setWatermarkDownloadForOwner() { writes += 1; return null; } };
+  const noSession = createOwnerVideoShareWatermarkHandler(shares, async () => null);
+  const request = (body: unknown, origin = "https://memoryai.test") => new NextRequest(`https://memoryai.test/api/memories/${memoryId}/video-shares/${publicId}`, { method: "PATCH", headers: { "content-type": "application/json", origin }, body: JSON.stringify(body) });
+  assert.equal((await noSession.PATCH(request({ watermarkDownloadEnabled: true }), { params: Promise.resolve({ id: memoryId, publicId }) })).status, 401);
+  const handler = createOwnerVideoShareWatermarkHandler(shares, session);
+  assert.equal((await handler.PATCH(request({ watermarkDownloadEnabled: true }, "https://attacker.test"), { params: Promise.resolve({ id: memoryId, publicId }) })).status, 403);
+  assert.equal((await handler.PATCH(request({ watermarkDownloadEnabled: true, extra: true }), { params: Promise.resolve({ id: memoryId, publicId }) })).status, 400);
+  assert.equal(writes, 0);
 });
 
 test("owner can list only active links for the selected owned TA", async () => {

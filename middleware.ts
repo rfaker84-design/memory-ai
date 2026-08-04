@@ -73,6 +73,7 @@ const FORMAL_DYNAMIC_API_PATHS = [
   /^\/api\/memories\/[^/]+\/first-presence-video\/[^/]+\/playback$/,
   /^\/api\/memories\/[^/]+\/video-shares$/,
   /^\/api\/memories\/[^/]+\/video-shares\/[^/]+$/,
+  /^\/api\/memories\/[^/]+\/video-shares\/[^/]+\/download$/,
   /^\/api\/memories\/[^/]+\/long-term-memories$/,
   /^\/api\/memories\/[^/]+\/long-term-memories\/[^/]+$/,
   /^\/api\/memories\/[^/]+\/pickups$/,
