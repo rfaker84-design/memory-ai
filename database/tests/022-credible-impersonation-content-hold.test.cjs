@@ -5,6 +5,7 @@ const test = require("node:test");
 
 const root = path.join(__dirname, "..");
 const migration = fs.readFileSync(path.join(root, "migrations", "022_credible_impersonation_content_hold.sql"), "utf8");
+const postflight = fs.readFileSync(path.join(root, "verification", "022-credible-impersonation-content-hold-postflight.sql"), "utf8");
 const runner = fs.readFileSync(path.join(root, "..", "scripts", "postgresql", "apply-migrations.sh"), "utf8");
 
 test("022 is a transactional candidate that holds only a reported public share and remains outside the automatic runner", () => {
@@ -16,4 +17,6 @@ test("022 is a transactional candidate that holds only a reported public share a
   assert.match(migration, /status IN \('hidden','restored'\)/);
   assert.match(migration, /COMMIT;\s*$/);
   assert.doesNotMatch(runner, /022_credible_impersonation_content_hold/);
+  assert.match(postflight, /BEGIN TRANSACTION READ ONLY/);
+  assert.match(postflight, /ix_content_visibility_holds_active_share/);
 });
