@@ -31,7 +31,7 @@ P-09 仍为 `PARTIAL`，但候选 `e23f7d0` 已将既有持久化日准入的两
 | P-17 | noindex/revocable/view-only 分享 | 候选 Migration 021 及 Owner/公共路由提供 noindex、无缓存、撤销后立即失效和仅在线播放；创建与每次公共读取均要求人工审核通过、已结算、非 `first_preview` 且 `save_allowed=true`，不暴露 Provider/对象键。Owner-only PATCH/GET 下载路径在移动端和受保护 Web 设置页均已接通；水印副本仅临时生成、最终审计成功后才返回，且无持久对象键。 | PARTIAL | 021 仍需独立 Staging 批准；真实设备、公开链接和 Provider/生产运行时证据仍缺。 |
 | P-18 | 多 TA 底部选择器 | 当前头像/姓名可打开共享底部选择器，Owner 已读取的 TA 列表内可手动设为主 TA；选择仅保存界面偏好，服务端仍重新校验 Owner 数据。 | IMPLEMENTED_NOT_REAL_E2E | 仍需真实 UI/设备与 Staging 验收。 |
 | P-19 | 删除消息、fresh export、TA 删除确认 | fresh reauthentication export 与账户注销已存在；主 TA 列表提供显式 TA 删除确认，正式 DELETE 路由要求精确 `DELETE_MEMORY` 确认、Owner Session 和 Origin。聊天记录提供独立的显式清除确认：服务端在 Owner 范围内清除全部正文、排除 UI 与模型上下文，同时保留不含原文的外键账本引用；素材未清理、会话失效或网络不确定均不会显示删除成功 | IMPLEMENTED_NOT_REAL_E2E | 已通过聊天/TA 删除边界、TypeScript、production build 与安全回归；仍需真实 UI/Staging 验收 |
-| P-20 | 危机、预授权升级、未成年人隔离 | 危机退出人格与授权队列已有 | IMPLEMENTED_NOT_REAL_E2E | 外部资源/值班/法律复核 |
+| P-20 | 危机、预授权升级、未成年人隔离 | 危机退出人格与授权队列已有；候选 Migration 024 的隔离 PostgreSQL 14.23 门已完成 001—024 首次执行、024 重放、注入回滚、联系人状态生命周期、官方 postflight、零 invalid index / unvalidated constraint 及两库连接归零。它只证明联系人为已存在账户之间的明确同意，不发送外部消息。 | IMPLEMENTED_NOT_REAL_E2E | 024 保持手动候选；外部资源/值班/通知通道/容量保护/法律复核仍为独立门。 |
 
 ## 外部或生产门
 
