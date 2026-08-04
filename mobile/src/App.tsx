@@ -53,6 +53,7 @@ function friendlyError(error: unknown): string {
   if (error instanceof ProductApiError) {
     if (error.status === 401) return "登录状态已过期，请重新登录。";
     if (error.status === 403) return "当前服务暂时无法完成这一步。";
+    if (error.status === 429 && error.message === "FREE_CHAT_DAILY_LIMIT_REACHED") return "今天的免费对话已用完；你可以明天再来。安全陪伴始终可用。";
     if (error.status === 503) return "服务正在休息，请稍后再试。";
     return error.message.includes("网络") ? error.message : "暂时无法完成这一步，请稍后再试。";
   }
@@ -519,8 +520,9 @@ export function App() {
           messages: [...current.messages, { role: "assistant", content: "AI生成 · 基于当前对话：你可以慢慢说；如有需要，也可以联系身边可信任的人。" }],
         }));
       } else {
-        await productApi.askMemory(memory.id, value, idempotencyKey);
+        const result = await productApi.askMemory(memory.id, value, idempotencyKey);
         setConversation(await productApi.getConversation(memory.id));
+        if (result.freeChatWarning === true) setNotice("今天的免费对话即将用完；如需继续，明天可以再来。安全陪伴始终可用。");
       }
       setQuestion("");
       setQuestionIdempotencyKey(null);

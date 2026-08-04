@@ -52,3 +52,15 @@ test("a failed ordinary chat request retains the draft and never represents it a
   assert.match(source, /onChange=\{\(event\) => \{ setQuestion\(event\.target\.value\); setQuestionIdempotencyKey\(null\); \}\}/);
   assert.match(sendQuestion, /catch \(error\) \{ setQuestion\(value\); setNotice\(`\$\{friendlyError\(error\)\} Your message was not confirmed as sent\.`\); \}/);
 });
+
+test("mobile surfaces the durable free-chat boundary without turning it into a purchase prompt", () => {
+  const start = source.indexOf("const sendQuestion = async () => {");
+  const end = source.indexOf("const resetPickupDraft", start);
+  const sendQuestion = source.slice(start, end);
+  assert.match(apiSource, /freeChatWarning\?: boolean/);
+  assert.match(sendQuestion, /const result = await productApi\.askMemory\(memory\.id, value, idempotencyKey\);/);
+  assert.match(sendQuestion, /if \(result\.freeChatWarning === true\) setNotice\(/);
+  assert.match(source, /error\.status === 429 && error\.message === "FREE_CHAT_DAILY_LIMIT_REACHED"/);
+  assert.match(source, /安全陪伴始终可用/);
+  assert.doesNotMatch(sendQuestion, /购买|付费|充值|订阅/);
+});
