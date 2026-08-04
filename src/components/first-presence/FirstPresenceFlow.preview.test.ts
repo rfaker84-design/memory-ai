@@ -193,6 +193,7 @@ test("greeting notification permission is optional and requires both a completed
   assert.match(conversation, /hasCompletedInitialPreview\(memoryId\)/);
   assert.match(conversation, /Notification\.permission !== "default"/);
   assert.match(conversation, /Notification\.requestPermission\(\)/);
+  assert.match(conversation, /updateNotificationPreferences\(true\)/);
   assert.match(conversation, /忆见里有一份新的问候。/);
   assert.match(conversation, /不会显示 TA 姓名或内容/);
   assert.match(conversation, /memoryai\.greeting-notification-dismissed/);

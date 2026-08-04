@@ -7,6 +7,7 @@ import { MemoryAvatar, MemoryButton } from "../memory-ui";
 import { recordBusinessView } from "../business-metrics/businessMetricsClient";
 import { CommerceVideoCreditsEntry } from "./CommerceVideoCreditsEntry";
 import { AiGeneratedLabel } from "../safety/AiGeneratedLabel";
+import { updateNotificationPreferences } from "../trust/notificationPreferencesClient";
 import { CRISIS_RESPONSE } from "@/features/memory-engine/crisis-response";
 import {
   completedConversationRounds,
@@ -229,7 +230,12 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     setNotificationPrompt("requesting");
     try {
       const permission = await Notification.requestPermission();
-      setNotificationPrompt(permission === "granted" ? "granted" : "denied");
+      if (permission !== "granted") {
+        setNotificationPrompt("denied");
+        return;
+      }
+      const saved = await updateNotificationPreferences(true);
+      setNotificationPrompt(saved.greetingNotificationsEnabled ? "granted" : "denied");
     } catch {
       setNotificationPrompt("denied");
     }
@@ -456,7 +462,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
             }}>现在不用</button>
           </aside>
         )}
-        {notificationPrompt === "granted" && <p className={styles.status} role="status">已允许问候提醒。你可以随时在设备设置中更改。</p>}
+        {notificationPrompt === "granted" && <p className={styles.status} role="status">已允许此设备的问候提醒并保存账号偏好。提醒只会显示“忆见里有一份新的问候。”，不会显示 TA 姓名或内容；你可以随时在陪伴安全设置中关闭。</p>}
         {notificationPrompt === "denied" && <p className={styles.status} role="status">提醒未开启；这不会影响你在忆见中的阅读和对话。</p>}
 
         {status && <p className={styles.status} role="status" aria-live="polite">{status}</p>}

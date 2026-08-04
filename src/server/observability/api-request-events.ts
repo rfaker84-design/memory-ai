@@ -44,6 +44,7 @@ const STATIC_ROUTES = new Set([
   "/api/reports",
   "/api/account/export",
   "/api/account/profile",
+  "/api/account/notification-preferences",
   "/api/account/deletion",
   "/api/account/deletion/guardian-confirmation",
   "/api/business-events",
