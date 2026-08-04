@@ -1,5 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
-
 import { NextRequest, NextResponse } from "next/server";
 
 import {
@@ -11,18 +9,19 @@ import {
 } from "@/features/operations";
 import { DatabaseDependencyError } from "@/src/server/database";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
+import { hasValidInternalAccessToken } from "@/src/server/security/internal-access-token";
 
 const TOKEN_HEADER = "x-operations-metrics-token";
 const json = (body: Record<string, unknown>, init?: ResponseInit) => applyAuthNoStore(NextResponse.json(body, init));
 type SummaryReader = Pick<OperationsPostgresDataSource, "summary">;
 
 function authorized(request: NextRequest): boolean {
-  const expected = process.env.OPERATIONS_METRICS_ACCESS_TOKEN;
   const supplied = request.headers.get(TOKEN_HEADER);
-  if (!expected || expected !== expected.trim() || Buffer.byteLength(expected, "utf8") < 32 || !supplied) return false;
-  const left = Buffer.from(expected);
-  const right = Buffer.from(supplied);
-  return left.length === right.length && timingSafeEqual(left, right);
+  return hasValidInternalAccessToken({
+    candidate: supplied,
+    currentName: "OPERATIONS_METRICS_ACCESS_TOKEN",
+    minimumBytes: 32,
+  });
 }
 
 /** A pull endpoint for a deployment-owned collector; it never dispatches a webhook. */

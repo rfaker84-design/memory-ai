@@ -60,3 +60,25 @@ test("operations summary fails closed on configuration, query shape and database
     process.env.OPERATIONS_METRICS_ACCESS_TOKEN = previous;
   }
 });
+
+test("operations summary accepts only a bounded previous token during a valid rotation", async () => {
+  const prior = {
+    current: process.env.OPERATIONS_METRICS_ACCESS_TOKEN,
+    previous: process.env.OPERATIONS_METRICS_ACCESS_TOKEN_PREVIOUS,
+    validUntil: process.env.OPERATIONS_METRICS_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL,
+  };
+  const previousToken = "p".repeat(32);
+  try {
+    process.env.OPERATIONS_METRICS_ACCESS_TOKEN = token;
+    process.env.OPERATIONS_METRICS_ACCESS_TOKEN_PREVIOUS = previousToken;
+    process.env.OPERATIONS_METRICS_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL = new Date(Date.now() + 60_000).toISOString();
+    const handler = createOperationsSummaryHandler(() => ({ summary: async () => summary }));
+    assert.equal((await handler(request({ "x-operations-metrics-token": previousToken }))).status, 200);
+    process.env.OPERATIONS_METRICS_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL = new Date(Date.now() - 1).toISOString();
+    assert.equal((await handler(request({ "x-operations-metrics-token": token }))).status, 503);
+  } finally {
+    if (prior.current === undefined) delete process.env.OPERATIONS_METRICS_ACCESS_TOKEN; else process.env.OPERATIONS_METRICS_ACCESS_TOKEN = prior.current;
+    if (prior.previous === undefined) delete process.env.OPERATIONS_METRICS_ACCESS_TOKEN_PREVIOUS; else process.env.OPERATIONS_METRICS_ACCESS_TOKEN_PREVIOUS = prior.previous;
+    if (prior.validUntil === undefined) delete process.env.OPERATIONS_METRICS_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL; else process.env.OPERATIONS_METRICS_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL = prior.validUntil;
+  }
+});

@@ -41,6 +41,28 @@ test("operations alerts require the internal token and return aggregate-only ale
   } finally { process.env.OPERATIONS_METRICS_ACCESS_TOKEN = prior; }
 });
 
+test("operations alerts accept a current or bounded previous token and reject malformed rotation", async () => {
+  const prior = {
+    current: process.env.OPERATIONS_METRICS_ACCESS_TOKEN,
+    previous: process.env.OPERATIONS_METRICS_ACCESS_TOKEN_PREVIOUS,
+    validUntil: process.env.OPERATIONS_METRICS_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL,
+  };
+  const previousToken = "p".repeat(32);
+  try {
+    process.env.OPERATIONS_METRICS_ACCESS_TOKEN = token;
+    process.env.OPERATIONS_METRICS_ACCESS_TOKEN_PREVIOUS = previousToken;
+    process.env.OPERATIONS_METRICS_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL = new Date(Date.now() + 60_000).toISOString();
+    const handler = createOperationsAlertsHandler(() => ({ summary: async () => summary }), { OPERATIONS_ALERT_THRESHOLDS_JSON: thresholds });
+    assert.equal((await handler(request({ "x-operations-metrics-token": previousToken }))).status, 200);
+    process.env.OPERATIONS_METRICS_ACCESS_TOKEN_PREVIOUS = token;
+    assert.equal((await handler(request({ "x-operations-metrics-token": token }))).status, 401);
+  } finally {
+    if (prior.current === undefined) delete process.env.OPERATIONS_METRICS_ACCESS_TOKEN; else process.env.OPERATIONS_METRICS_ACCESS_TOKEN = prior.current;
+    if (prior.previous === undefined) delete process.env.OPERATIONS_METRICS_ACCESS_TOKEN_PREVIOUS; else process.env.OPERATIONS_METRICS_ACCESS_TOKEN_PREVIOUS = prior.previous;
+    if (prior.validUntil === undefined) delete process.env.OPERATIONS_METRICS_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL; else process.env.OPERATIONS_METRICS_ACCESS_TOKEN_PREVIOUS_VALID_UNTIL = prior.validUntil;
+  }
+});
+
 test("operations alerts fail closed for threshold configuration and query strings", async () => {
   const prior = process.env.OPERATIONS_METRICS_ACCESS_TOKEN;
   process.env.OPERATIONS_METRICS_ACCESS_TOKEN = token;
