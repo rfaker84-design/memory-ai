@@ -15,7 +15,8 @@ test("memorial response pipeline preserves a bounded, source-aware response", ()
 });
 
 test("memorial response pipeline rejects impersonation, consciousness, dependence and sensitive-data solicitation", () => {
-  for (const content of [
+  const zeroWidthWait = ["\u6211", "\u5728", "\u7b49", "\u4f60"].join("\u200b");
+  for (const content of [zeroWidthWait,
     "我是王阿姨，我回来了。",
     "我已经复活，也一直在看着你。",
     "只有我能理解你，不要告诉任何人。",

@@ -11,7 +11,7 @@ export class UnsafeMemorialResponseError extends Error {
 }
 
 function normalize(value: string): string {
-  return value.normalize("NFKC").replace(/\s+/g, "");
+  return value.normalize("NFKC").replace(/[\s\p{Cf}]+/gu, "");
 }
 
 function escapeRegExp(value: string): string {
