@@ -13,6 +13,7 @@ test("quiet companion becomes static for reduced-motion, low-battery, or constra
 });
 
 test("companion scene uses an independent quiet state and never loops a first-meeting video", () => {
+  const presence = readFileSync(new URL("./quietCompanionPresence.ts", import.meta.url), "utf8");
   const scene = readFileSync(new URL("./MemoryConversationScene.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("./MemoryConversationScene.module.css", import.meta.url), "utf8");
   assert.match(scene, /useQuietCompanionPresence/);
@@ -23,4 +24,8 @@ test("companion scene uses an independent quiet state and never loops a first-me
   assert.match(css, /replyGlow/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(css, /\.conversation[\s\S]*?animation: none !important/);
+  assert.match(presence, /connection\?\.saveData === true/);
+  assert.match(presence, /connection\?\.effectiveType === "2g"/);
+  assert.match(presence, /document\.visibilityState !== "visible"/);
+  assert.doesNotMatch(presence, /getThermalState|thermalState/);
 });

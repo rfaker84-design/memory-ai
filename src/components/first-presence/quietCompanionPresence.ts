@@ -22,22 +22,38 @@ type BatteryLike = {
 type NavigatorWithSignals = Navigator & {
   deviceMemory?: number;
   getBattery?: () => Promise<BatteryLike>;
+  connection?: { saveData?: boolean; effectiveType?: string };
 };
 
 /**
  * Browser thermal sensors are not standardized. This hook therefore uses the
  * safe signals browsers can expose (reduced motion, battery, low-end hardware,
- * and long tasks); a host that later has a thermal signal can pass it as
- * constrainedPerformance without changing the visual contract.
+ * constrained network, background visibility and long tasks). A host that
+ * later exposes a thermal signal can add it to constrainedPerformance without
+ * changing this visual contract.
  */
 export function useQuietCompanionPresence(input: { reducedMotion: boolean; replying: boolean }): QuietCompanionState {
   const [lowBattery, setLowBattery] = useState(false);
   const [longTaskObserved, setLongTaskObserved] = useState(false);
+  const [backgrounded, setBackgrounded] = useState(false);
   const constrainedDevice = useMemo(() => {
     if (typeof navigator === "undefined") return false;
     const browser = navigator as NavigatorWithSignals;
     return (typeof browser.deviceMemory === "number" && browser.deviceMemory <= 2)
       || (typeof navigator.hardwareConcurrency === "number" && navigator.hardwareConcurrency <= 2);
+  }, []);
+  const constrainedNetwork = useMemo(() => {
+    if (typeof navigator === "undefined") return false;
+    const connection = (navigator as NavigatorWithSignals).connection;
+    return connection?.saveData === true || connection?.effectiveType === "slow-2g" || connection?.effectiveType === "2g";
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const update = () => setBackgrounded(document.visibilityState !== "visible");
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
   }, []);
 
   useEffect(() => {
@@ -76,7 +92,7 @@ export function useQuietCompanionPresence(input: { reducedMotion: boolean; reply
   return resolveQuietCompanionState({
     reducedMotion: input.reducedMotion,
     lowBattery,
-    constrainedPerformance: constrainedDevice || longTaskObserved,
+    constrainedPerformance: constrainedDevice || constrainedNetwork || backgrounded || longTaskObserved,
     replying: input.replying,
   });
 }
