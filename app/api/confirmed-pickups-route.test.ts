@@ -64,6 +64,21 @@ test("pickup confirmation is Owner-bound, explicit, origin-guarded and idempoten
     originalText: pickup.originalText,
     organizedText: pickup.organizedText,
   });
+
+  const photoAssetId = "00000000-0000-4000-8000-000000000004";
+  const photoAccepted = await handlers.POST(request("POST", { originalText: pickup.originalText, organizedText: pickup.organizedText, confirmed: true, photoAssetId }, "pickup-confirm-0002"), collection);
+  assert.equal(photoAccepted.status, 201);
+  assert.deepEqual(received, {
+    externalUserId: "phone:13800138000",
+    memoryId,
+    requestKey: "pickup-confirm-0002",
+    originalText: pickup.originalText,
+    organizedText: pickup.organizedText,
+    photoAssetId,
+  });
+
+  const unexpectedField = await handlers.POST(request("POST", { originalText: pickup.originalText, organizedText: pickup.organizedText, confirmed: true, photoAssetId, owner: "forged" }, "pickup-confirm-0003"), collection);
+  assert.equal(unexpectedField.status, 400);
 });
 
 test("pickup list, edit and delete never accept a caller-supplied Owner", async () => {
