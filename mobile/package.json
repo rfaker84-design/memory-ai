@@ -15,7 +15,7 @@
     "ios:sync": "npm run sync && cap sync ios",
     "ios:open": "cap open ios",
     "verify:config": "tsx scripts/verify-mobile-config.ts",
-    "test": "npm run typecheck && npm run test:secure-session-contract && npm run test:android-release-signing-contract && npm run test:incomplete-ta-resume && npm run test:video-opportunity && npm run test:navigation-contract && npm run test:primary-companion && npm run test:pickup && npm run test:pickup-idempotency && npm run test:profile && npm run test:account-deletion && npm run test:safety-copy && npm run test:ios-media-contract",
+    "test": "npm run typecheck && npm run test:secure-session-contract && npm run test:android-release-signing-contract && npm run test:incomplete-ta-resume && npm run test:video-opportunity && npm run test:navigation-contract && npm run test:primary-companion && npm run test:pickup && npm run test:pickup-idempotency && npm run test:profile && npm run test:account-deletion && npm run test:reply-correction && npm run test:safety-copy && npm run test:ios-media-contract",
     "test:secure-session-contract": "tsx --test scripts/session-origin.test.ts",
     "test:android-release-signing-contract": "tsx --test scripts/android-release-signing-contract.test.ts",
     "test:incomplete-ta-resume": "tsx --test src/product/incomplete-memory.test.ts",
@@ -26,6 +26,7 @@
     "test:pickup-idempotency": "tsx --test src/product/pickup-idempotency-contract.test.ts",
     "test:profile": "tsx --test src/product/profile-contract.test.ts",
     "test:account-deletion": "tsx --test src/product/account-deletion-contract.test.ts",
+    "test:reply-correction": "tsx --test src/product/reply-correction-contract.test.ts",
     "test:safety-copy": "tsx --test src/safety-copy-contract.test.ts",
     "test:ios-media-contract": "tsx --test scripts/ios-media-contract.test.ts"
   },

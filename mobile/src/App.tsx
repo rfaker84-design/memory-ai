@@ -13,6 +13,12 @@ import {
   type ProductPickup,
 } from "./product/api";
 import {
+  REPLY_CORRECTION_REASONS,
+  createReplyCorrectionSuggestion,
+  type ReplyCorrectionReason,
+  type ReplyCorrectionSuggestion,
+} from "../../src/components/first-presence/memoryReplyCorrection";
+import {
   CreationFlowError,
   type PendingCreation,
   requestServerGreeting,
@@ -135,6 +141,11 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [conversation, setConversation] = useState<ProductConversation>({ sessionId: null, messages: [] });
   const [question, setQuestion] = useState("");
+  const [replyCorrectionContent, setReplyCorrectionContent] = useState<string | null>(null);
+  const [replyCorrectionReason, setReplyCorrectionReason] = useState<ReplyCorrectionReason>("称呼不对");
+  const [replyCorrectionDetail, setReplyCorrectionDetail] = useState("");
+  const [replyCorrectionSuggestion, setReplyCorrectionSuggestion] = useState<ReplyCorrectionSuggestion | null>(null);
+  const [replyCorrectionError, setReplyCorrectionError] = useState("");
   const [pickups, setPickups] = useState<ProductPickup[]>([]);
   const [pickupOriginalText, setPickupOriginalText] = useState("");
   const [pickupOrganizedText, setPickupOrganizedText] = useState("");
@@ -516,6 +527,39 @@ export function App() {
     finally { setBusy(false); }
   };
 
+  const openReplyCorrection = (content: string) => {
+    setReplyCorrectionContent(content);
+    setReplyCorrectionReason("称呼不对");
+    setReplyCorrectionDetail("");
+    setReplyCorrectionSuggestion(null);
+    setReplyCorrectionError("");
+  };
+
+  const prepareReplyCorrection = () => {
+    if (!replyCorrectionContent) return;
+    const suggestion = createReplyCorrectionSuggestion(replyCorrectionReason, replyCorrectionDetail, replyCorrectionContent);
+    if (!suggestion) {
+      setReplyCorrectionError("请先写下你确认的正确说法或资料；忆见不会替你猜测。");
+      return;
+    }
+    setReplyCorrectionError("");
+    setReplyCorrectionSuggestion(suggestion);
+  };
+
+  const confirmReplyCorrection = async () => {
+    if (busy || !memory || !replyCorrectionSuggestion) return;
+    setBusy(true); setReplyCorrectionError("");
+    try {
+      const updated = await productApi.appendConfirmedReplyCorrection(memory.id, replyCorrectionSuggestion);
+      setMemory(updated);
+      setReplyCorrectionContent(null);
+      setReplyCorrectionSuggestion(null);
+      setNotice("你的校正已写入 TA 的已确认资料；历史对话没有被改写。");
+    } catch {
+      setReplyCorrectionError("校正尚未写入。请稍后重试；在确认保存前，TA 的资料不会改变。");
+    } finally { setBusy(false); }
+  };
+
   const submitAccountDeletion = async () => {
     if (busy || mode === "preview" || !deletionConfirming) return;
     setBusy(true); setNotice("");
@@ -538,6 +582,13 @@ export function App() {
   };
 
   const content = useMemo(() => {
+    if (screen === "chat" && memory) return <main className="chatScene">
+      <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><div><strong>{title}</strong><small>AI纪念陪伴</small></div><button className="headerAction" onClick={() => setScreen("video")}>影像</button></header>
+      <div className="chatBody">{messages.length ? messages.map((message, index) => <article key={`${message.id ?? message.role}-${index}`} className={`bubble ${message.role}`}><p>{message.content}</p>{message.role === "assistant" && <button className="quietLink" type="button" disabled={busy} onClick={() => openReplyCorrection(message.content)}>这句话不太像 {memory.name}</button>}</article>) : <p className="emptyCopy">先创建一位你想念的人。</p>}</div>
+      {replyCorrectionContent && <section className="memoryHero" aria-label="校正 TA 回复"><p className="eyebrow">校正 TA</p><h2>这句话哪里不太像 {memory.name}？</h2><p>“{replyCorrectionContent}”</p>{!replyCorrectionSuggestion ? <><fieldset disabled={busy}><legend>原因</legend>{REPLY_CORRECTION_REASONS.map((reason) => <label key={reason}><input type="radio" name="reply-correction-reason" checked={replyCorrectionReason === reason} onChange={() => setReplyCorrectionReason(reason)} /> {reason}</label>)}</fieldset><label>你确认的正确说法或资料<textarea className="field" value={replyCorrectionDetail} onChange={(event) => setReplyCorrectionDetail(event.target.value)} maxLength={800} /></label>{replyCorrectionError ? <p role="alert">{replyCorrectionError}</p> : null}<button className="primaryButton" disabled={busy} onClick={prepareReplyCorrection}>生成校正建议</button><button className="quietLink" disabled={busy} onClick={() => setReplyCorrectionContent(null)}>取消</button></> : <><p>建议写入（请先核对）：{replyCorrectionSuggestion.text}</p><p>只有确认后才会写入 TA 的正式资料；这不会改写已经发生的对话。</p>{replyCorrectionError ? <p role="alert">{replyCorrectionError}</p> : null}<button className="primaryButton" disabled={busy} onClick={() => void confirmReplyCorrection()}>{busy ? "正在确认保存" : "确认写入 TA 资料"}</button><button className="quietLink" disabled={busy} onClick={() => setReplyCorrectionSuggestion(null)}>返回修改</button></>}</section>}
+      <form className="chatComposer" onSubmit={(event) => { event.preventDefault(); void sendQuestion(); }}><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="想说些什么" disabled={busy} /><button disabled={!question.trim() || busy}>发送</button></form>
+      {notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="chat" onChange={setScreen} hasMemory={hasMemory} />
+    </main>;
     if (screen === "profile" && profileState !== "idle") return <main className="profileScene">
       <p className="eyebrow">我的</p>
       <h1>资料与偏好</h1>

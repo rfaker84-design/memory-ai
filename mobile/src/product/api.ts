@@ -9,6 +9,7 @@ import {
   type CommerceVideoProduct,
 } from "../../../src/components/first-presence/commerceVideoCreditsClient";
 import type { PersistedConversationMessage } from "../../../src/components/memory/conversationExperience";
+import { appendConfirmedCorrection, type ReplyCorrectionSuggestion } from "../../../src/components/first-presence/memoryReplyCorrection";
 
 export type ProductMemory = {
   id: string;
@@ -18,6 +19,8 @@ export type ProductMemory = {
   photoUrl?: string | null;
   /** Server-confirmed portrait asset; a local blob is never enough to unlock video. */
   photoAssetId?: string | null;
+  personalityProfile?: string | null;
+  speechStyle?: string | null;
   createdAt?: string;
 };
 
@@ -360,6 +363,20 @@ export const productApi = {
   },
   async getMemory(id: string) {
     return request<ProductMemory>(`/api/memories/${encodeURIComponent(id)}`, { cache: "no-store" });
+  },
+  async appendConfirmedReplyCorrection(memoryId: string, suggestion: ReplyCorrectionSuggestion) {
+    const current = await this.getMemory(memoryId);
+    const currentValue = current[suggestion.field];
+    if (currentValue?.includes(suggestion.text)) return current;
+    const updated = await request<ProductMemory>(`/api/memories/${encodeURIComponent(memoryId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [suggestion.field]: appendConfirmedCorrection(currentValue, suggestion.text) }),
+    });
+    if (typeof updated.id !== "string" || updated.id !== memoryId) {
+      throw new ProductApiError(502, "服务端未确认 TA 资料校正");
+    }
+    return updated;
   },
   async getConversation(memoryId: string) {
     const result = await request<{ session?: unknown; messages?: unknown }>(`/api/memories/${encodeURIComponent(memoryId)}/chat-session`, {
