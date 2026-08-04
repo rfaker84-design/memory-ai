@@ -375,10 +375,10 @@ export const productApi = {
     if (pickups.some((pickup) => pickup === null)) throw new ProductApiError(502, "服务端确认资料格式不完整");
     return pickups as ProductPickup[];
   },
-  async confirmPickup(memoryId: string, input: { originalText: string; organizedText: string }) {
+  async confirmPickup(memoryId: string, input: { originalText: string; organizedText: string }, idempotencyKey: string) {
     const result = await request<{ pickup?: unknown }>(`/api/memories/${encodeURIComponent(memoryId)}/pickups`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Idempotency-Key": `mobile-pickup-${crypto.randomUUID()}` },
+      headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
       body: JSON.stringify({ ...input, confirmed: true }),
     });
     const pickup = normalizePickup(result.pickup);

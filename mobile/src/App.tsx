@@ -56,6 +56,10 @@ function firstMemoryId(memories: ProductMemory[]): string | null {
   return [...memories].sort((left, right) => left.createdAt!.localeCompare(right.createdAt!))[0]?.id ?? null;
 }
 
+function pickupRequestKey(): string {
+  return `mobile-pickup-${crypto.randomUUID()}`;
+}
+
 function press(action: () => void) {
   void Haptics.impact({ style: ImpactStyle.Light }).catch(() => undefined);
   action();
@@ -121,6 +125,7 @@ export function App() {
   const [pickupConfirmed, setPickupConfirmed] = useState(false);
   const [pickupFollowUpAsked, setPickupFollowUpAsked] = useState(false);
   const [editingPickupId, setEditingPickupId] = useState<string | null>(null);
+  const [pickupRequestIdempotencyKey, setPickupRequestIdempotencyKey] = useState<string | null>(null);
   const [birthDate, setBirthDate] = useState("");
   const [profileState, setProfileState] = useState<"idle" | "loading" | "ready" | "unavailable">("idle");
 
@@ -403,6 +408,7 @@ export function App() {
     setPickupConfirmed(false);
     setPickupFollowUpAsked(false);
     setEditingPickupId(null);
+    setPickupRequestIdempotencyKey(null);
   };
 
   const savePickup = async () => {
@@ -410,9 +416,11 @@ export function App() {
     setBusy(true); setNotice("");
     try {
       const input = { originalText: pickupOriginalText.trim(), organizedText: pickupOrganizedText.trim() };
+      const idempotencyKey = pickupRequestIdempotencyKey ?? pickupRequestKey();
+      setPickupRequestIdempotencyKey(idempotencyKey);
       const pickup = editingPickupId
         ? await productApi.updatePickup(memory.id, editingPickupId, input)
-        : await productApi.confirmPickup(memory.id, input);
+        : await productApi.confirmPickup(memory.id, input, idempotencyKey);
       setPickups((current) => editingPickupId
         ? current.map((entry) => entry.id === pickup.id ? pickup : entry)
         : [pickup, ...current.filter((entry) => entry.id !== pickup.id)]);
@@ -428,6 +436,7 @@ export function App() {
     setPickupOrganizedText(pickup.organizedText);
     setPickupConfirmed(true);
     setPickupFollowUpAsked(false);
+    setPickupRequestIdempotencyKey(null);
   };
 
   const removePickup = async (pickup: ProductPickup) => {
@@ -514,11 +523,11 @@ export function App() {
     if (screen === "memory") return <main className="memoryScene">
       <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><span>拾忆</span><button className="headerAction" onClick={() => setScreen("video")}>影像</button></header>
       {memory ? <section className="memoryHero"><div className="personFrame small"><span>{initials(memory.name)}</span></div><p className="eyebrow">忆见整理助手 · 为 {memory.name} 整理资料</p><h1>把想起的事留在这里。</h1><p>你说，忆见帮你整理。只有经过你确认，才会成为 TA 可以引用的资料；忆见不会从普通聊天自动收集，也不会猜测空缺。</p>
-        <label>你的原话<textarea className="field" value={pickupOriginalText} onChange={(event) => setPickupOriginalText(event.target.value)} placeholder="写下你愿意确认的一件小事" rows={4} maxLength={8000} /></label>
+        <label>你的原话<textarea className="field" value={pickupOriginalText} onChange={(event) => { setPickupOriginalText(event.target.value); setPickupRequestIdempotencyKey(null); }} placeholder="写下你愿意确认的一件小事" rows={4} maxLength={8000} /></label>
         {!pickupFollowUpAsked && pickupOriginalText.trim() && <button className="quietLink" type="button" onClick={() => setPickupFollowUpAsked(true)}>忆见可以追问一件事</button>}
         {pickupFollowUpAsked && <p>忆见想确认一件事：这件事大约发生在什么时候？你可以直接补充在原话里；每次整理最多提出这一项追问。</p>}
-        <button className="quietLink" type="button" disabled={!pickupOriginalText.trim()} onClick={() => setPickupOrganizedText(pickupDraft(pickupOriginalText))}>按原话分段整理草稿</button>
-        <label>整理稿（请核对后编辑）<textarea className="field" value={pickupOrganizedText} onChange={(event) => setPickupOrganizedText(event.target.value)} placeholder="整理稿不会自动成为可引用资料" rows={5} maxLength={8000} /></label>
+        <button className="quietLink" type="button" disabled={!pickupOriginalText.trim()} onClick={() => { setPickupOrganizedText(pickupDraft(pickupOriginalText)); setPickupRequestIdempotencyKey(null); }}>按原话分段整理草稿</button>
+        <label>整理稿（请核对后编辑）<textarea className="field" value={pickupOrganizedText} onChange={(event) => { setPickupOrganizedText(event.target.value); setPickupRequestIdempotencyKey(null); }} placeholder="整理稿不会自动成为可引用资料" rows={5} maxLength={8000} /></label>
         <label><input type="checkbox" checked={pickupConfirmed} onChange={(event) => setPickupConfirmed(event.target.checked)} /> 我确认原话与整理稿准确，允许忆见将此资料作为可追溯回复来源。</label>
         <button className="primaryButton" disabled={busy || !mayConfirmPickup(pickupOriginalText, pickupOrganizedText, pickupConfirmed)} onClick={() => void savePickup()}>{busy ? "正在保存" : editingPickupId ? "保存编辑" : "确认并保存"}</button>{editingPickupId && <button className="quietLink" type="button" onClick={resetPickupDraft}>取消编辑</button>}
         <h2>已确认资料</h2>{pickups.length === 0 ? <p>还没有已确认资料。</p> : pickups.map((pickup) => <article key={pickup.id}><h3>原话</h3><p>{pickup.originalText}</p><h3>整理稿</h3><p>{pickup.organizedText}</p><small>来源：你的主动讲述 · 叙述者：你 · 记录于 {new Date(pickup.createdAt).toLocaleString("zh-CN")}</small><div><button className="quietLink" type="button" onClick={() => editPickup(pickup)}>编辑</button><button className="quietLink" type="button" disabled={busy} onClick={() => void removePickup(pickup)}>删除</button></div></article>)}</section> : <section className="emptyMemory"><h1>还没有一段记忆。</h1><p>从你最想念的人开始。</p><button className="primaryButton" onClick={beginCreateMemory}>创建 TA</button></section>}
