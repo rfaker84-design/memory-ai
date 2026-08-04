@@ -25,6 +25,7 @@ p { color: rgba(237, 225, 212, .7); font-size: 15px; line-height: 1.75; }
 .secondaryButton { min-height: 48px; border-radius: 999px; color: #eadbc7; background: rgba(243, 226, 206, .07); }
 .textButton, .quietLink, .backButton, .headerAction { min-width: 44px; min-height: 44px; }
 .textButton, .quietLink { padding: 10px 0; color: rgba(228, 209, 186, .68); background: transparent; font-size: 14px; }
+.quietLink[href] { display: inline-flex; align-items: center; text-decoration: none; }
 .notice, .floatingNotice { margin: 0; color: #e8c896; font-size: 13px; line-height: 1.55; }
 .floatingNotice { text-align: center; }
 

@@ -64,3 +64,8 @@ test("mobile surfaces the durable free-chat boundary without turning it into a p
   assert.match(source, /安全陪伴始终可用/);
   assert.doesNotMatch(sendQuestion, /购买|付费|充值|订阅/);
 });
+
+test("mobile profile reaches the actual privacy and safety disclosures instead of only restating them", () => {
+  assert.match(source, /href="\/privacy">查看隐私与删除说明<\/a>/);
+  assert.match(source, /href="\/help">查看帮助与安全说明<\/a>/);
+});
