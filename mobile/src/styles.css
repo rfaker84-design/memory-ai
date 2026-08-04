@@ -3,6 +3,8 @@
   background: #120f0d;
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
   font-synthesis: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 * { box-sizing: border-box; }
@@ -10,6 +12,7 @@ body { margin: 0; min-width: 320px; background: #120f0d; }
 button, input, textarea { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
 button:active { transform: scale(.97); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid #f1c98d; outline-offset: 3px; }
 
 .appRoot { min-height: 100dvh; background: radial-gradient(110% 52% at 78% 0%, rgba(126, 85, 43, .18), transparent 59%), #120f0d; }
 .appRoot > main { min-height: 100dvh; }
@@ -20,6 +23,7 @@ p { color: rgba(237, 225, 212, .7); font-size: 15px; line-height: 1.75; }
 .primaryButton { min-height: 54px; width: 100%; border-radius: 999px; padding: 0 22px; color: #21180f; background: #e8c48e; font-weight: 680; box-shadow: 0 12px 32px rgba(232, 196, 142, .11); transition: transform .24s cubic-bezier(.16, 1, .3, 1), background .24s ease; }
 .primaryButton:disabled { cursor: wait; opacity: .55; }
 .secondaryButton { min-height: 48px; border-radius: 999px; color: #eadbc7; background: rgba(243, 226, 206, .07); }
+.textButton, .quietLink, .backButton, .headerAction { min-width: 44px; min-height: 44px; }
 .textButton, .quietLink { padding: 10px 0; color: rgba(228, 209, 186, .68); background: transparent; font-size: 14px; }
 .notice, .floatingNotice { margin: 0; color: #e8c896; font-size: 13px; line-height: 1.55; }
 .floatingNotice { text-align: center; }
@@ -45,7 +49,7 @@ p { color: rgba(237, 225, 212, .7); font-size: 15px; line-height: 1.75; }
 .authScene { display: flex; min-height: 100dvh; flex-direction: column; justify-content: center; gap: 16px; }
 .authScene h1 { font-size: clamp(34px, 9vw, 44px); }
 .authScene > p:not(.eyebrow):not(.notice) { max-width: 310px; margin: 0 0 22px; }
-.backButton { width: 38px; height: 38px; padding: 0; color: #e8d6bf; background: transparent; font-size: 34px; line-height: 1; text-align: left; }
+.backButton { width: 44px; height: 44px; padding: 0; color: #e8d6bf; background: transparent; font-size: 34px; line-height: 1; text-align: left; }
 .field { width: 100%; border: 1px solid rgba(231, 207, 177, .16); border-radius: 15px; padding: 15px 16px; color: #f7eee5; outline: none; background: rgba(255, 247, 238, .06); }
 .field:focus { border-color: rgba(228, 186, 132, .63); }
 .codeField { font-size: 23px; letter-spacing: .34em; text-align: center; }
@@ -92,7 +96,7 @@ blockquote { max-width: 300px; margin: 12px auto 38px; color: rgba(245, 231, 214
 .chatBody { display: flex; flex: 1; flex-direction: column; gap: 12px; overflow: auto; padding: 20px 0; }
 .chatPortrait { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid rgba(232, 200, 159, .28); border-radius: 50%; color: #eac79c; font-size: 12px; }
 .bubble { max-width: 78%; margin: 0; border-radius: 18px; padding: 11px 14px; font-size: 14px; line-height: 1.65; }.bubble.assistant { align-self: flex-start; border-top-left-radius: 4px; color: rgba(246, 232, 215, .88); background: rgba(245, 229, 210, .08); }.bubble.user { align-self: flex-end; border-top-right-radius: 4px; color: #2c2117; background: #e6bf84; }
-.chatComposer { position: fixed; right: 24px; bottom: max(80px, calc(env(safe-area-inset-bottom) + 69px)); left: 24px; z-index: 3; display: flex; gap: 8px; border: 1px solid rgba(255, 245, 232, .1); border-radius: 20px; padding: 7px; background: #211a15; }.chatComposer input { min-width: 0; flex: 1; border: 0; padding: 8px; color: #eee2d5; outline: 0; background: transparent; }.chatComposer button { border: 0; border-radius: 14px; padding: 0 14px; color: #291d12; background: #e8c48e; font-size: 13px; }.chatComposer button:disabled { opacity: .5; }
+.chatComposer { position: fixed; right: 24px; bottom: max(80px, calc(env(safe-area-inset-bottom) + 69px)); left: 24px; z-index: 3; display: flex; gap: 8px; border: 1px solid rgba(255, 245, 232, .1); border-radius: 20px; padding: 7px; background: #211a15; }.chatComposer input { min-width: 0; flex: 1; border: 0; padding: 8px; color: #eee2d5; outline: 0; background: transparent; }.chatComposer button { min-height: 44px; border: 0; border-radius: 14px; padding: 0 14px; color: #291d12; background: #e8c48e; font-size: 13px; }.chatComposer button:disabled { opacity: .5; }
 
 .memoryScene { padding-bottom: max(108px, calc(env(safe-area-inset-bottom) + 88px)); }.memoryHero, .galleryScene, .emptyMemory { display: flex; min-height: calc(100dvh - 165px); flex-direction: column; align-items: center; justify-content: center; text-align: center; }.memoryHero h1, .galleryScene h1, .emptyMemory h1 { margin: 12px 0; }.memoryHero > p:not(.eyebrow), .galleryScene > p:not(.eyebrow), .emptyMemory p { max-width: 295px; margin: 0 0 28px; }.memoryHero .primaryButton { max-width: 320px; }
 .videoCard { display: grid; width: 100%; gap: 10px; border-radius: 23px; padding: 24px; color: #f6e8d8; background: radial-gradient(circle at 74% 14%, rgba(219, 164, 94, .27), transparent 37%), rgba(245, 229, 211, .06); text-align: left; }.videoCard div { display: grid; min-height: 156px; align-content: end; gap: 6px; }.videoCard span { font-size: 22px; }.videoCard small { color: rgba(243, 224, 204, .62); }.videoCard button { min-height: 47px; border: 0; border-radius: 999px; color: #261a10; background: #e9c68f; }.videoCard .secondaryButton { color: #eadaca; background: rgba(245, 230, 212, .1); }

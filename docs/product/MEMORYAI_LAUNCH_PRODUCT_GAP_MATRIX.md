@@ -12,7 +12,7 @@ P-17 仍为 `PARTIAL`，但候选代码现已明确：仅人工审核通过、�
 | P-02 | 最多 3 TA、统一授权、无生死询问 | 服务端对第四个 TA 返回 409 且原 idempotency key 可安全重放；公开创建/补传页只显示照片并明示不录音或上传声音，原生选择器、移动上传适配器和创建/恢复合同均仅接受图片，先记录版本化统一授权确认。正式创建路径不含在世/离世询问或声音采集/克隆入口。 | IMPLEMENTED_NOT_REAL_E2E | 创建流程混入音频和旧任务恢复会在任何上传前拒绝；仍需真实 UI/设备与 Staging 验收。 |
 | P-03 | 首 TA 一次免费首影像 | Commerce `first_preview` 账本已有 | IMPLEMENTED_NOT_REAL_E2E | 对照首次影像入口和失败释放 |
 | P-04 | 固定 8 秒克制模板、不可保存 | 视频产品回归与模板已有 | IMPLEMENTED_NOT_REAL_E2E | 保留真实 Provider/人工审核为外部门 |
-| P-05 | 轻量动画、reduced-motion、无重型 3D | quiet companion 与 motion fallback 已有；旧 3D 世界已退休 | IMPLEMENTED_NOT_REAL_E2E | 真实 Android/设备验收 |
+| P-05 | 轻量动画、reduced-motion、无重型 3D | quiet companion 与 motion fallback 已有；旧 3D 世界已退休。移动壳保留系统字号、可见键盘焦点、44px 返回/文本/头部/聊天发送触控目标；全局 reduced-motion 仍为静态安全网。 | IMPLEMENTED_NOT_REAL_E2E | 仍需真实 Android/设备、读屏和多字号验收。 |
 | P-06 | 持续 AI 标识、来源可查看、无捏造 | 聊天安全管线与来源页已有 | IMPLEMENTED_NOT_REAL_E2E | 人工安全评估为外部门 |
 | **P-07** | **“这句话不太像 TA”纠正入口和确认链** | 每条非安全 TA 回复均有入口；五类原因、用户补充、建议预览、确认后 Owner PATCH 已接通；历史消息没有写接口 | **IMPLEMENTED_NOT_REAL_E2E** | 已通过建议单测、Owner 范围 Memory PATCH 测试；仍需 UI/真实环境验收 |
 | P-08 | 仅确认后拾忆、半屏编辑、自然归类 | 可达拾忆页以“忆见整理助手”明确标识：用户主动输入原话，最多自选一次自然追问，生成可编辑整理稿；确认前不写入，确认后以 `user_confirmed_pickup` 可追溯来源保存。聊天只读取该确认来源，编辑/删除 Owner 限定且删除后不再召回；页面展示原话、整理稿、叙述者和时间，并明确不读取相册、麦克风或录音 | IMPLEMENTED_NOT_REAL_E2E | 已有隔离 PG14.23 confirmation/replay/edit/delete 与产品回归；仍需真实 UI/Staging 验收 |
