@@ -14,5 +14,9 @@ test("video share management lives under My and only exposes approved videos wit
   assert.match(page, /12_000/);
   assert.match(page, /20_000/);
   assert.match(page, /minHeight: 44/);
-  assert.doesNotMatch(page, /download|attachment/i);
+  assert.match(page, /setWatermarkDownload/);
+  assert.match(page, /\/download/);
+  assert.match(page, /URL\.createObjectURL/);
+  assert.match(page, /AI Generated \| MemoryAI/);
+  assert.match(page, /method: "PATCH"/);
 });
