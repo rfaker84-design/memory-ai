@@ -12,7 +12,7 @@ body { margin: 0; min-width: 320px; background: #120f0d; }
 button, input, textarea { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
 button:active { transform: scale(.97); }
-button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid #f1c98d; outline-offset: 3px; }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid #f1c98d; outline-offset: 3px; }
 
 .appRoot { min-height: 100dvh; background: radial-gradient(110% 52% at 78% 0%, rgba(126, 85, 43, .18), transparent 59%), #120f0d; }
 .appRoot > main { min-height: 100dvh; }

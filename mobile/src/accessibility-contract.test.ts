@@ -7,7 +7,7 @@ const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 test("mobile shell preserves system text sizing and a visible keyboard focus indicator", () => {
   assert.match(styles, /-webkit-text-size-adjust:\s*100%/);
   assert.match(styles, /text-size-adjust:\s*100%/);
-  assert.match(styles, /button:focus-visible, input:focus-visible, textarea:focus-visible\s*\{\s*outline:\s*3px/);
+  assert.match(styles, /button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible\s*\{\s*outline:\s*3px/);
 });
 
 test("mobile interactive controls keep the 44px touch boundary", () => {
