@@ -183,6 +183,7 @@ export function App() {
   const [replyCorrectionError, setReplyCorrectionError] = useState("");
   const [pickups, setPickups] = useState<ProductPickup[]>([]);
   const [pickupPhotoSources, setPickupPhotoSources] = useState<ProductPickupPhotoSource[]>([]);
+  const [pickupPhotoPreviewUrls, setPickupPhotoPreviewUrls] = useState<Record<string, string>>({});
   const [selectedPickupPhotoAssetId, setSelectedPickupPhotoAssetId] = useState<string | null>(null);
   const [highlightedPickupIds, setHighlightedPickupIds] = useState<string[]>([]);
   const [pickupOriginalText, setPickupOriginalText] = useState("");
@@ -276,6 +277,7 @@ export function App() {
     if (screen !== "memory" || !memory || mode === "preview") {
       setPickups([]);
       setPickupPhotoSources([]);
+      setPickupPhotoPreviewUrls({});
       setSelectedPickupPhotoAssetId(null);
       return;
     }
@@ -284,6 +286,9 @@ export function App() {
       if (!live) return;
       setPickups(nextPickups);
       setPickupPhotoSources(nextPhotoSources);
+      void Promise.all(nextPhotoSources.map(async (photo) => [photo.id, await productApi.getMediaPreviewUrl(photo.id).catch(() => null)] as const)).then((entries) => {
+        if (live) setPickupPhotoPreviewUrls(Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => Boolean(entry[1]))));
+      });
     }).catch((error) => {
       if (live) setNotice(friendlyError(error));
     });
@@ -881,7 +886,7 @@ export function App() {
     if (screen === "memory") return <main className="memoryScene">
       <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><span>拾忆</span><button className="headerAction" onClick={() => setScreen("video")}>影像</button></header>
       {memory ? <section className="memoryHero"><div className="personFrame small"><span>{initials(memory.name)}</span></div><p className="eyebrow">忆见整理助手 · 为 {memory.name} 整理资料</p><h1>把想起的事留在这里。</h1><p>你说，忆见帮你整理。只有经过你确认，才会成为 TA 可以引用的资料；忆见不会从普通聊天自动收集，也不会猜测空缺。</p>
-        {!editingPickupId && <section aria-label="从一张照片说起"><h2>从一张照片说起</h2><p>只显示当前 TA 已上传且服务端确认的照片。选择后，只有在你确认保存时才会关联为来源；不会读取相册、麦克风或录音。</p>{pickupPhotoSources.length === 0 ? <p role="status">还没有可选择的已上传照片。你仍可从一件小事开始讲述。</p> : <div>{pickupPhotoSources.map((photo, index) => <button key={photo.id} className="quietLink" type="button" aria-pressed={selectedPickupPhotoAssetId === photo.id} disabled={busy} onClick={() => { setSelectedPickupPhotoAssetId(photo.id); setPickupRequestIdempotencyKey(null); }}> {selectedPickupPhotoAssetId === photo.id ? "已选择" : "选择"}照片 {index + 1} · {new Date(photo.createdAt).toLocaleDateString("zh-CN")}</button>)}</div>}</section>}
+        {!editingPickupId && <section aria-label="从一张照片说起"><h2>从一张照片说起</h2><p>只显示当前 TA 已上传且服务端确认的照片。选择后，只有在你确认保存时才会关联为来源；不会读取相册、麦克风或录音。</p>{pickupPhotoSources.length === 0 ? <p role="status">还没有可选择的已上传照片。你仍可从一件小事开始讲述。</p> : <div>{pickupPhotoSources.map((photo, index) => <button key={photo.id} className="quietLink" type="button" aria-pressed={selectedPickupPhotoAssetId === photo.id} disabled={busy} onClick={() => { setSelectedPickupPhotoAssetId(photo.id); setPickupRequestIdempotencyKey(null); }}>{pickupPhotoPreviewUrls[photo.id] ? <img src={pickupPhotoPreviewUrls[photo.id]} alt={`可作为拾忆来源的照片 ${index + 1}`} referrerPolicy="no-referrer" style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 8, verticalAlign: "middle", marginRight: 8 }} /> : null} {selectedPickupPhotoAssetId === photo.id ? "已选择" : "选择"}照片 {index + 1} · {new Date(photo.createdAt).toLocaleDateString("zh-CN")}</button>)}</div>}</section>}
         <label>你的原话<textarea className="field" value={pickupOriginalText} onChange={(event) => { setPickupOriginalText(event.target.value); setPickupRequestIdempotencyKey(null); }} placeholder="写下你愿意确认的一件小事" rows={4} maxLength={8000} /></label>
         {!pickupFollowUpAsked && pickupOriginalText.trim() && <button className="quietLink" type="button" onClick={() => setPickupFollowUpAsked(true)}>忆见可以追问一件事</button>}
         {pickupFollowUpAsked && <p>忆见想确认一件事：这件事大约发生在什么时候？你可以直接补充在原话里；每次整理最多提出这一项追问。</p>}

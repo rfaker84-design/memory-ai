@@ -556,6 +556,11 @@ export const productApi = {
     if (photos.some((photo) => photo === null)) throw new ProductApiError(502, "服务端照片来源格式不完整");
     return photos as ProductPickupPhotoSource[];
   },
+  async getMediaPreviewUrl(assetId: string) {
+    const result = await request<{ url?: unknown }>(`/api/media/${encodeURIComponent(assetId)}`, { cache: "no-store" });
+    if (typeof result.url !== "string" || !/^https?:\/\//i.test(result.url)) throw new ProductApiError(502, "服务端未确认照片预览地址");
+    return result.url;
+  },
   async confirmPickup(memoryId: string, input: { originalText: string; organizedText: string; photoAssetId?: string | null }, idempotencyKey: string) {
     const result = await request<{ pickup?: unknown }>(`/api/memories/${encodeURIComponent(memoryId)}/pickups`, {
       method: "POST",
