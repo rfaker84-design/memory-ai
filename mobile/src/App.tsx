@@ -63,7 +63,7 @@ function BrandSplash() {
   return <main className="brandSplash" aria-label="忆见">
     <div className="brandHalo" aria-hidden="true" />
     <div className="brandMark"><span>忆见</span><small>MEMORYAI</small></div>
-    <p>让想念的人，继续陪伴。</p>
+    <p>让已确认的纪念资料，留在日常里。</p>
   </main>;
 }
 
@@ -72,7 +72,7 @@ function Offline({ retry }: { retry: () => void }) {
     <div className="quietDot" aria-hidden="true" />
     <p className="eyebrow">忆见</p>
     <h1>此刻没有网络。</h1>
-    <p>你已写下的内容会留在这里。等连接恢复后，再继续和 TA 相见。</p>
+    <p>你已写下的内容会留在这里。等连接恢复后，再继续查看纪念资料或 AI 对话。</p>
     <button className="textButton" onClick={retry}>重新连接</button>
   </main>;
 }
@@ -304,7 +304,7 @@ export function App() {
         const created = previewMemory(name, relationship, story);
         setMemory(created);
         setFirstOwnedMemoryId(null);
-        setConversation({ sessionId: null, messages: [{ role: "assistant", content: `我在。关于${created.name}，你想先从哪一段记忆开始？` }] });
+        setConversation({ sessionId: null, messages: [{ role: "assistant", content: `AI生成 · 基于已确认资料：关于 ${created.name}，你想先从哪一段记忆开始？` }] });
         setScreen("presence");
         return;
       }
@@ -349,7 +349,7 @@ export function App() {
         setConversation((current) => ({
           ...current,
           sessionId: null,
-          messages: [...current.messages, { role: "assistant", content: "我记得你说过的这些。慢慢说，我一直在听。" }],
+          messages: [...current.messages, { role: "assistant", content: "AI生成 · 基于当前对话：你可以慢慢说；如有需要，也可以联系身边可信任的人。" }],
         }));
       } else {
         await productApi.askMemory(memory.id, value);
@@ -364,8 +364,8 @@ export function App() {
     if (screen === "offline") return <Offline retry={() => setScreen(navigator.onLine ? "welcome" : "offline")} />;
     if (screen === "debug" && DebugLab) return <Suspense fallback={<BrandSplash />}><DebugLab /></Suspense>;
     if (screen === "welcome") return <main className="welcomeScene">
-      <div className="nightWindow" aria-hidden="true" /><p className="eyebrow">忆见</p><h1>让想念的人，<br />继续陪伴。</h1>
-      <p>从一段真实的记忆开始，把 TA 留在你的日常里。</p><button className="primaryButton" onClick={() => press(() => setScreen("login"))}>开始相见</button>
+      <div className="nightWindow" aria-hidden="true" /><p className="eyebrow">忆见</p><h1>把想起的人，<br />好好记在这里。</h1>
+      <p>从一段你愿意确认的真实资料开始，创建清楚标注的 AI 纪念陪伴。</p><button className="primaryButton" onClick={() => press(() => setScreen("login"))}>开始记录</button>
     </main>;
     if (screen === "login" || screen === "code") return <main className="authScene">
       <button className="backButton" onClick={() => setScreen("welcome")}>‹</button><p className="eyebrow">忆见</p>
@@ -389,17 +389,17 @@ export function App() {
       <label>你们的关系<input className="field" value={relationship} onChange={(event) => setRelationship(event.target.value)} placeholder="例如：母亲、朋友" /></label>
       <label>一段想说的话<textarea className="field" value={story} onChange={(event) => setStory(event.target.value)} placeholder="写下一件你们共同经历过的事" rows={3} /></label>
       <button className="mediaChoice" disabled={busy || Boolean(pendingCreation?.uploadedMediaUris.length)} onClick={() => void chooseMedia()}><span>照片与声音</span><small>{media.length ? `已选 ${media.length} 项素材` : "从系统相册选择"}</small></button>
-      {notice ? <p className="notice">{notice}</p> : null}<button className="primaryButton" disabled={busy} onClick={() => void createMemory()}>{busy ? "正在靠近" : pendingCreation ? "继续保存素材" : "让 TA 出现"}</button>
+      {notice ? <p className="notice">{notice}</p> : null}<button className="primaryButton" disabled={busy} onClick={() => void createMemory()}>{busy ? "正在保存" : pendingCreation ? "继续保存素材" : "保存 TA 资料"}</button>
     </main>;
     if (screen === "presence" && memory) return <main className="presenceScene">
-      <div className="presenceLight" aria-hidden="true" /><p className="eyebrow">一段新的陪伴正在开始</p><div className="personFrame"><span>{initials(memory.name)}</span></div><h1>{memory.name}</h1><p>{memory.relationship} · 已被好好记下</p>
-      <blockquote>“{memory.lifeStory || "你愿意留下的每一段记忆，都会慢慢成为相见的地方。"}”</blockquote>
-      <button className="primaryButton" onClick={() => press(() => setScreen("chat"))}>和 TA 说句话</button><button className="quietLink" onClick={() => setScreen("video")}>查看影像机会</button><button className="quietLink" onClick={() => setScreen("memory")}>进入记忆</button>
+      <div className="presenceLight" aria-hidden="true" /><p className="eyebrow">AI 纪念资料已准备好</p><div className="personFrame"><span>{initials(memory.name)}</span></div><h1>{memory.name}</h1><p>{memory.relationship} · 已被好好记下</p>
+      <blockquote>“{memory.lifeStory || "你愿意留下的每一段已确认资料，都可以慢慢整理。"}”</blockquote>
+      <button className="primaryButton" onClick={() => press(() => setScreen("chat"))}>开始 AI 纪念对话</button><button className="quietLink" onClick={() => setScreen("video")}>查看影像机会</button><button className="quietLink" onClick={() => setScreen("memory")}>进入拾忆</button>
     </main>;
     if (screen === "chat") return <main className="chatScene">
-      <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><div><strong>{title}</strong><small>正在陪伴</small></div><button className="headerAction" onClick={() => setScreen("video")}>影像</button></header>
+      <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><div><strong>{title}</strong><small>AI纪念陪伴</small></div><button className="headerAction" onClick={() => setScreen("video")}>影像</button></header>
       <div className="chatBody">{memory ? <div className="chatPortrait">{initials(memory.name)}</div> : null}{messages.length ? messages.map((message, index) => <p key={`${message.role}-${index}`} className={`bubble ${message.role}`}>{message.content}</p>) : <p className="emptyCopy">先创建一位你想念的人。</p>}</div>
-      <form className="chatComposer" onSubmit={(event) => { event.preventDefault(); void sendQuestion(); }}><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="想和 TA 说些什么" disabled={!memory || busy} /><button disabled={!question.trim() || busy}>发送</button></form>
+      <form className="chatComposer" onSubmit={(event) => { event.preventDefault(); void sendQuestion(); }}><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="想说些什么" disabled={!memory || busy} /><button disabled={!question.trim() || busy}>发送</button></form>
       {notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="chat" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
     if (screen === "video" && memory) {
@@ -415,12 +415,12 @@ export function App() {
     if (screen === "video") return <main className="memoryScene"><section className="emptyMemory"><h1>还没有一段记忆。</h1><p>从你最想念的人开始。</p><button className="primaryButton" onClick={beginCreateMemory}>创建 TA</button></section></main>;
     if (screen === "memory") return <main className="memoryScene">
       <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><span>记忆</span><button className="headerAction" onClick={() => setScreen("video")}>影像</button></header>
-      {memory ? <section className="memoryHero"><div className="personFrame small"><span>{initials(memory.name)}</span></div><p className="eyebrow">{memory.relationship}</p><h1>{memory.name}</h1><p>{memory.lifeStory || "这段记忆正在慢慢长出新的形状。"}</p>{incompleteMemory?.id === memory.id ? <button className="primaryButton" onClick={continueIncompleteMemory}>继续补充照片</button> : <button className="primaryButton" onClick={() => setScreen("chat")}>继续对话</button>}</section> : <section className="emptyMemory"><h1>还没有一段记忆。</h1><p>从你最想念的人开始。</p><button className="primaryButton" onClick={beginCreateMemory}>创建 TA</button></section>}
+      {memory ? <section className="memoryHero"><div className="personFrame small"><span>{initials(memory.name)}</span></div><p className="eyebrow">{memory.relationship}</p><h1>{memory.name}</h1><p>{memory.lifeStory || "尚未补充更多已确认资料。"}</p>{incompleteMemory?.id === memory.id ? <button className="primaryButton" onClick={continueIncompleteMemory}>继续补充照片</button> : <button className="primaryButton" onClick={() => setScreen("chat")}>开始 AI 对话</button>}</section> : <section className="emptyMemory"><h1>还没有一段记忆。</h1><p>从你最想念的人开始。</p><button className="primaryButton" onClick={beginCreateMemory}>创建 TA</button></section>}
       {notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="memory" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
-    if (screen === "profile") return <main className="profileScene"><p className="eyebrow">我的</p><h1>把陪伴，慢慢留住。</h1><section><span>资料与偏好</span><span>隐私与授权</span><span>关于忆见</span></section><p>每一段记忆都只为你和 TA 而存在。</p><BottomNav active="profile" onChange={setScreen} hasMemory={hasMemory} /></main>;
-    return <main className="homeScene"><p className="eyebrow">忆见</p><div className="homeSpace"><div className="homeGlow" aria-hidden="true" />{memory ? <><div className="personFrame"><span>{initials(memory.name)}</span></div><p>{memory.name} 在这里</p></> : <><div className="emptyPortrait" /><h1>为谁，留一盏灯？</h1><p>从一个名字、一句常说的话，开始重新靠近。</p></>}</div>
-      <button className="primaryButton" onClick={() => press(() => incompleteMemory ? continueIncompleteMemory() : memory ? setScreen("chat") : beginCreateMemory())}>{hasIncompleteMemory ? "继续补充照片" : memory ? "继续相见" : "创建 TA"}</button>{notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="home" onChange={setScreen} hasMemory={hasMemory} />
+    if (screen === "profile") return <main className="profileScene"><p className="eyebrow">我的</p><h1>把纪念资料，慢慢留住。</h1><section><span>资料与偏好</span><span>隐私与授权</span><span>关于忆见</span></section><p>每一段已确认资料都只在你的授权范围内使用。</p><BottomNav active="profile" onChange={setScreen} hasMemory={hasMemory} /></main>;
+    return <main className="homeScene"><p className="eyebrow">忆见</p><div className="homeSpace"><div className="homeGlow" aria-hidden="true" />{memory ? <><div className="personFrame"><span>{initials(memory.name)}</span></div><p>AI纪念资料：{memory.name}</p></> : <><div className="emptyPortrait" /><h1>为谁，留一盏灯？</h1><p>从一个名字、一句你确认的资料开始记录。</p></>}</div>
+      <button className="primaryButton" onClick={() => press(() => incompleteMemory ? continueIncompleteMemory() : memory ? setScreen("chat") : beginCreateMemory())}>{hasIncompleteMemory ? "继续补充照片" : memory ? "继续查看" : "创建 TA"}</button>{notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="home" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
   }, [busy, challengeId, code, conversation, hasMemory, incompleteMemory, isFirstMemory, media.length, memory, messages, mode, name, notice, online, pendingCreation, phone, question, relationship, resumingMemory, screen, story, title]);
 
