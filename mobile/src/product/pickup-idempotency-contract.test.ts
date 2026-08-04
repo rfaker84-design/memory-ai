@@ -9,6 +9,7 @@ test("native pickup keeps one idempotency key for an unchanged uncertain submiss
   assert.match(app, /pickupRequestIdempotencyKey \?\? pickupRequestKey\(\)/);
   assert.match(app, /setPickupRequestIdempotencyKey\(idempotencyKey\)/);
   assert.match(app, /confirmPickup\(memory\.id, input, idempotencyKey\)/);
-  assert.match(api, /confirmPickup\(memoryId: string, input: \{ originalText: string; organizedText: string \}, idempotencyKey: string\)/);
+  assert.match(api, /confirmPickup\(memoryId: string, input: \{ originalText: string; organizedText: string; photoAssetId\?: string \| null \}, idempotencyKey: string\)/);
   assert.match(api, /"Idempotency-Key": idempotencyKey/);
+  assert.match(app, /!editingPickupId && selectedPickupPhotoAssetId \? \{ photoAssetId: selectedPickupPhotoAssetId \} : \{\}/);
 });
