@@ -10,6 +10,9 @@ export default function CompanionSettingsPage() {
   const [loadState, setLoadState] = useState<"loading" | "ready" | "unauthenticated" | "unavailable">("loading");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [contacts, setContacts] = useState<Array<{ id: string; ownerUserId: string; contactUserId: string; status: string }>>([]);
+  const [contactState, setContactState] = useState<"loading" | "ready" | "unavailable">("loading");
+  const [contactExternalId, setContactExternalId] = useState("");
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoadState("loading");
     setMessage("");
@@ -38,6 +41,17 @@ export default function CompanionSettingsPage() {
     void load(controller.signal);
     return () => controller.abort();
   }, [load]);
+  const loadContacts = useCallback(async () => {
+    setContactState("loading");
+    try {
+      const response = await fetch("/api/account/crisis-contacts", { credentials: "same-origin", cache: "no-store" });
+      const body = await response.json().catch(() => ({})) as { contacts?: unknown };
+      if (!response.ok || !Array.isArray(body.contacts)) { setContactState("unavailable"); return; }
+      setContacts(body.contacts.filter((value): value is { id: string; ownerUserId: string; contactUserId: string; status: string } => typeof value === "object" && value !== null && typeof (value as { id?: unknown }).id === "string"));
+      setContactState("ready");
+    } catch { setContactState("unavailable"); }
+  }, []);
+  useEffect(() => { if (loadState === "ready") void loadContacts(); }, [loadContacts, loadState]);
   const change = async () => {
     if (loadState !== "ready" || busy) return;
     setBusy(true); setMessage("");
@@ -54,6 +68,15 @@ export default function CompanionSettingsPage() {
     }
     finally { setBusy(false); }
   };
+  const requestContact = async () => {
+    if (!contactExternalId.trim() || busy) return;
+    setBusy(true); setMessage("");
+    try {
+      const response = await fetch("/api/account/crisis-contacts", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ contactExternalId: contactExternalId.trim() }) });
+      if (!response.ok) { setMessage("无法确认联系人申请；不会假称对方已收到通知。"); return; }
+      setContactExternalId(""); setMessage("联系人申请已记录。对方需要自行登录忆见并明确接受；系统不会自动通知或发送消息。"); await loadContacts();
+    } catch { setMessage("无法确认联系人申请；不会假称对方已收到通知。"); } finally { setBusy(false); }
+  };
   return <main style={{ padding: 24, maxWidth: 680 }}>
     <h1>陪伴安全设置</h1>
     <p>忆见始终不会代替紧急服务。此选项需由你明确开启；开启后，检测到即时风险时只创建不含聊天原文的内部支持队列，不代表已经联系任何外部人员。</p>
@@ -61,6 +84,7 @@ export default function CompanionSettingsPage() {
     {loadState === "unauthenticated" && <p role="alert">{message}<Link className="ml-2 underline" href="/login">前往登录</Link></p>}
     {loadState === "unavailable" && <><p role="alert">{message}</p><button type="button" onClick={() => void load()}>重新读取</button></>}
     {loadState === "ready" && <button type="button" onClick={() => void change()} disabled={busy}>{busy ? "正在更新…" : enabled ? "撤销危机支持预授权" : "预授权内部危机支持"}</button>}
+    {loadState === "ready" && <section><h2>危机联系人（候选功能）</h2><p>仅可邀请已验证忆见账户；对方必须自行接受。这里不会发送短信、消息或代表你联系任何人。</p><label>对方忆见账户标识<input value={contactExternalId} onChange={(event) => setContactExternalId(event.currentTarget.value)} /></label><button type="button" disabled={busy || !contactExternalId.trim()} onClick={() => void requestContact()}>发起联系人申请</button>{contactState === "loading" && <p role="status">正在读取联系人状态…</p>}{contactState === "unavailable" && <p role="alert">联系人候选功能暂不可用；未创建或通知任何联系人。</p>}{contactState === "ready" && <ul>{contacts.map((contact) => <li key={contact.id}>{contact.status === "accepted" ? "已接受的危机联系人" : contact.status === "pending" ? "等待对方接受的联系人申请" : "已撤销的联系人授权"}</li>)}</ul>}</section>}
     {message && loadState === "ready" && <p role="status">{message}</p>}
   </main>;
 }
