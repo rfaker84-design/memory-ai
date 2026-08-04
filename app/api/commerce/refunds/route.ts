@@ -20,8 +20,8 @@ import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 
 const KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
 const REASONS = new Set<CommerceRefundRequest["reason"]>([
-  "unused_purchase",
   "duplicate_charge",
+  "entitlement_missing",
   "service_failure",
 ]);
 type RefundService = Pick<CommerceService, "requestRefund" | "listRefunds">;

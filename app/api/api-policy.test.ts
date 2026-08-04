@@ -26,6 +26,7 @@ const EXACT_FORMAL_PATHS = new Set([
   "/api/memory-chat",
   "/api/consents",
   "/api/reports",
+  "/api/account/crisis-contacts",
   "/api/account/export",
   "/api/account/profile",
   "/api/account/deletion",
@@ -159,7 +160,7 @@ test("video reconciliation is an explicitly audited formal internal route", () =
 
 test("every tracked non-formal Route Handler is a route-level 410", async () => {
   const routes = trackedRoutes();
-  assert.equal(routes.length, 132, "the audit must enumerate the complete tracked API surface");
+  assert.equal(routes.length, 133, "the audit must enumerate the complete tracked API surface");
 
   for (const { file, pathname } of routes) {
     const formal = isFormalApiPath(pathname);
@@ -219,6 +220,7 @@ test("formal Session ownership and public health contracts remain explicit", asy
     memoryChat: readFileSync("app/api/memory-chat/route.ts", "utf8"),
     consents: readFileSync("app/api/consents/route.ts", "utf8"),
     reports: readFileSync("app/api/reports/_handler.ts", "utf8"),
+    crisisContacts: readFileSync("app/api/account/crisis-contacts/_handler.ts", "utf8"),
     accountExport: readFileSync("app/api/account/export/route.ts", "utf8"),
     accountProfile: readFileSync("app/api/account/profile/route.ts", "utf8"),
     accountDeletion: readFileSync("app/api/account/deletion/route.ts", "utf8"),
@@ -270,6 +272,9 @@ test("formal Session ownership and public health contracts remain explicit", asy
   assert.match(sources.consents, /createConsentsHandler/);
   assert.match(sources.reports, /verifyRequestSession/);
   assert.match(sources.reports, /requireAllowedOrigin/);
+  assert.match(sources.crisisContacts, /verifyRequestSession/);
+  assert.match(sources.crisisContacts, /requireAllowedOrigin/);
+  assert.match(sources.crisisContacts, /applyAuthNoStore/);
   assert.match(sources.accountExport, /createAccountDataExportHandler/);
   assert.match(sources.accountProfile, /createAccountProfileHandlers/);
   assert.match(sources.accountDeletion, /createAccountDeletionHandler/);

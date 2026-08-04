@@ -106,8 +106,8 @@ test("refund UI preserves every supported state, eligibility, and safe decision 
     DUPLICATE_CHARGE_DETECTED: "系统检测到可能重复扣款，已进入人工审核。",
     ENTITLEMENT_MISSING_DETECTED: "系统检测到权益未到账，已进入人工审核。",
     PAYMENT_NOT_SUCCEEDED: "订单未完成付款，不符合退款申请条件。",
-    PAID_REPLY_ALREADY_USED: "已使用 AI 回复，不支持无理由退款。",
-    UNUSED_PURCHASE_WINDOW_EXPIRED: "已超过无理由退款的受理时限。",
+    PAID_REPLY_ALREADY_USED: "正常发放且无质量或系统问题的数字权益不支持无理由退款。",
+    UNUSED_PURCHASE_WINDOW_EXPIRED: "正常发放且无质量或系统问题的数字权益不支持无理由退款。",
     REVIEW_REJECTED: "人工审核后未通过本次退款申请。",
     WECHAT_REFUND_CALL_FAILED: "退款通道暂时无法确认，已进入人工审核。",
     WECHAT_REFUND_CALLBACK_FAILED: "退款通道未确认结果，已进入人工审核。",
@@ -120,9 +120,9 @@ test("refund UI preserves every supported state, eligibility, and safe decision 
 });
 
 test("frozen refund rules have one shared source for purchase and refund surfaces", () => {
-  assert.equal(refundPolicy.noReason, "付款成功当日计为第1日。无理由退款仅适用于付款成功后 7 天内、AI 回复零消耗（7天+零消耗）的订单。");
-  assert.equal(refundPolicy.afterUse, "使用 AI 回复后，不支持无理由退款。");
-  assert.equal(refundPolicy.manualReview, "重复扣款、权益未到账、因忆见平台故障无法正常使用三类异常将进入人工审核。");
+  assert.equal(refundPolicy.noReason, "正常发放且无质量或系统问题的数字权益不支持无理由退款。");
+  assert.equal(refundPolicy.afterUse, "是否已经使用，不影响重复扣款、权益未到账、系统或 Provider 失败、影像质量判废及平台或法律要求的处理。");
+  assert.equal(refundPolicy.manualReview, "上述异常会进入人工核验，并按核验结果退款或补发；不会使用“一经购买概不退款”。");
   assert.equal(refundPolicy.entitlementEnd, "退款成功后，体验权益立即终止。");
   const purchaseSurface = readFileSync(new URL("./MemoryExperienceOffer.tsx", import.meta.url), "utf8");
   const refundSurface = readFileSync(new URL("./RefundCenter.tsx", import.meta.url), "utf8");
@@ -137,8 +137,13 @@ test("frozen refund rules have one shared source for purchase and refund surface
   for (const surface of [purchaseSurface, refundSurface, termsSurface, reportSurface]) assert.doesNotMatch(surface, /退款结果异常/);
   assert.match(refundSurface, /"\/api\/commerce\/orders"/);
   assert.match(refundSurface, /"\/api\/commerce\/refunds"/);
+  assert.match(refundSurface, /type RefundReason = Exclude<Refund\["reason"\], "unused_purchase">/);
+  assert.match(refundSurface, /filter\(\(\[value\]\) => value !== "unused_purchase"\)/);
   assert.doesNotMatch(refundSurface, /\/api\/payments\//);
   assert.match(refundSurface, /不会自动重试/);
+  const commerceRefundRoute = readFileSync(new URL("../../../app/api/commerce/refunds/route.ts", import.meta.url), "utf8");
+  assert.match(commerceRefundRoute, /"duplicate_charge",\s*"entitlement_missing",\s*"service_failure"/);
+  assert.doesNotMatch(commerceRefundRoute, /REASONS[\s\S]*?"unused_purchase"/);
   assert.match(reportSurface, /<RefundCenter \/>/);
 });
 

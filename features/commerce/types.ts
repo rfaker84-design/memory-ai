@@ -87,7 +87,7 @@ export type CommerceRefundRequest = {
   id: string;
   orderNo: string;
   requestNo: string;
-  reason: "unused_purchase" | "duplicate_charge" | "service_failure";
+  reason: "unused_purchase" | "duplicate_charge" | "entitlement_missing" | "service_failure";
   status: "manual_review" | "requested" | "succeeded" | "rejected";
   createdAt: string;
   resolvedAt: string | null;

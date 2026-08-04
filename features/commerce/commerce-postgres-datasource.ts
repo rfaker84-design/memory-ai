@@ -570,7 +570,7 @@ export class CommercePostgresDataSource implements CommerceDataSource {
     const orderNo = required(input.orderNo, "orderNo", ORDER_PATTERN);
     const requestKey = required(input.requestKey, "requestKey", KEY_PATTERN);
     if (
-      !["unused_purchase", "duplicate_charge", "service_failure"].includes(
+      !["unused_purchase", "duplicate_charge", "entitlement_missing", "service_failure"].includes(
         input.reason,
       )
     ) {

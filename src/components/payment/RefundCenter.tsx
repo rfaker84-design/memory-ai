@@ -11,17 +11,18 @@ type Refund = {
   id: string;
   orderNo: string;
   requestNo: string;
-  reason: "unused_purchase" | "duplicate_charge" | "service_failure";
+  reason: "unused_purchase" | "duplicate_charge" | "entitlement_missing" | "service_failure";
   status: "manual_review" | "requested" | "succeeded" | "rejected";
   createdAt: string;
   resolvedAt: string | null;
 };
-type RefundReason = Refund["reason"];
+type RefundReason = Exclude<Refund["reason"], "unused_purchase">;
 
-const reasonCopy: Record<RefundReason, string> = {
-  unused_purchase: "未使用购买",
+const reasonCopy: Record<Refund["reason"], string> = {
+  unused_purchase: "历史未使用购买申请",
   duplicate_charge: "疑似重复扣款",
-  service_failure: "平台故障无法使用",
+  entitlement_missing: "权益未到账",
+  service_failure: "服务或影像质量问题",
 };
 
 function asRecords(value: unknown): Record<string, unknown>[] {
@@ -39,7 +40,7 @@ function parseOrders(value: unknown): Order[] {
 function parseRefunds(value: unknown): Refund[] {
   return asRecords(value).flatMap((row) =>
     typeof row.id === "string" && typeof row.orderNo === "string" && typeof row.requestNo === "string"
-      && (row.reason === "unused_purchase" || row.reason === "duplicate_charge" || row.reason === "service_failure")
+      && (row.reason === "unused_purchase" || row.reason === "duplicate_charge" || row.reason === "entitlement_missing" || row.reason === "service_failure")
       && (row.status === "manual_review" || row.status === "requested" || row.status === "succeeded" || row.status === "rejected")
       && typeof row.createdAt === "string"
       ? [{ id: row.id, orderNo: row.orderNo, requestNo: row.requestNo, reason: row.reason, status: row.status, createdAt: row.createdAt, resolvedAt: typeof row.resolvedAt === "string" ? row.resolvedAt : null }]
@@ -62,7 +63,7 @@ function refundKey() {
 export function RefundCenter() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [refunds, setRefunds] = useState<Refund[]>([]);
-  const [reason, setReason] = useState<RefundReason>("unused_purchase");
+  const [reason, setReason] = useState<RefundReason>("duplicate_charge");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -128,7 +129,7 @@ export function RefundCenter() {
     <p className={styles.intro}>{refundPolicy.noReason} {refundPolicy.afterUse} {refundPolicy.manualReview} {refundPolicy.entitlementEnd} 状态和最终结果仅向当前登录账户显示。</p>
     {loading && <p className={styles.muted} role="status">正在核验订单与退款状态…</p>}
     {!loading && refunds.map((refund) => <div className={styles.status} key={refund.id} aria-live="polite"><strong>{refund.status === "succeeded" ? "退款已完成" : refund.status === "rejected" ? "退款申请未通过" : "退款申请处理中"}</strong><span>订单 {refund.orderNo} · {reasonCopy[refund.reason]}</span><p>{description(refund)}</p></div>)}
-    {!loading && !refunds.length && paidOrder && <div className={styles.form}><p className={styles.order}>可申请订单：{paidOrder.productId} · ¥{(paidOrder.amountFen / 100).toFixed(2)}</p><label>申请原因<select value={reason} onChange={(event) => setReason(event.target.value as RefundReason)}>{Object.entries(reasonCopy).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><MemoryButton variant="secondary" loading={submitting} onClick={() => void submit()}>{submitting ? "正在提交申请" : "提交退款申请"}</MemoryButton></div>}
+    {!loading && !refunds.length && paidOrder && <div className={styles.form}><p className={styles.order}>可申请订单：{paidOrder.productId} · ¥{(paidOrder.amountFen / 100).toFixed(2)}</p><label>申请原因<select value={reason} onChange={(event) => setReason(event.target.value as RefundReason)}>{Object.entries(reasonCopy).filter(([value]) => value !== "unused_purchase").map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><MemoryButton variant="secondary" loading={submitting} onClick={() => void submit()}>{submitting ? "正在提交申请" : "提交退款申请"}</MemoryButton></div>}
     {!loading && !refunds.length && !paidOrder && <p className={styles.muted}>尚未找到已付款订单，因此暂时没有可申请退款的订单。</p>}
     <button className={styles.refresh} type="button" disabled={loading || submitting} onClick={() => void load()}>{loading ? "正在刷新" : "刷新退款状态"}</button>
     {notice && <p className={styles.notice} role="alert">{notice}</p>}
