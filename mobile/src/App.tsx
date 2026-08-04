@@ -8,6 +8,7 @@ import {
   ProductApiError,
   type ProductConversation,
   type ProductMemory,
+  type ProductPickup,
 } from "./product/api";
 import {
   CreationFlowError,
@@ -18,6 +19,7 @@ import {
 } from "./product/creation-flow";
 import { classifyOwnedMemories, findIncompleteMemory, isIncompleteMemory, resumePendingCreation } from "./product/incomplete-memory";
 import { VideoOpportunityScreen } from "./product/VideoOpportunityScreen";
+import { mayConfirmPickup, pickupDraft } from "./product/pickup";
 
 const DebugLab = __MOBILE_DEBUG_BUILD__
   ? lazy(() => import("./debug/NativeCapabilityLab").then((module) => ({ default: module.NativeCapabilityLab })))
@@ -113,6 +115,12 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [conversation, setConversation] = useState<ProductConversation>({ sessionId: null, messages: [] });
   const [question, setQuestion] = useState("");
+  const [pickups, setPickups] = useState<ProductPickup[]>([]);
+  const [pickupOriginalText, setPickupOriginalText] = useState("");
+  const [pickupOrganizedText, setPickupOrganizedText] = useState("");
+  const [pickupConfirmed, setPickupConfirmed] = useState(false);
+  const [pickupFollowUpAsked, setPickupFollowUpAsked] = useState(false);
+  const [editingPickupId, setEditingPickupId] = useState<string | null>(null);
 
   const hasMemory = Boolean(memory);
   const hasIncompleteMemory = Boolean(incompleteMemory);
@@ -171,6 +179,20 @@ export function App() {
     window.addEventListener("offline", onOffline);
     return () => { active = false; window.clearTimeout(finish); window.removeEventListener("online", onOnline); window.removeEventListener("offline", onOffline); };
   }, [applyOwnedMemories, loadOwnedMemories]);
+
+  useEffect(() => {
+    if (screen !== "memory" || !memory || mode === "preview") {
+      setPickups([]);
+      return;
+    }
+    let live = true;
+    void productApi.listPickups(memory.id).then((next) => {
+      if (live) setPickups(next);
+    }).catch((error) => {
+      if (live) setNotice(friendlyError(error));
+    });
+    return () => { live = false; };
+  }, [memory, mode, screen]);
 
   const openMemory = useCallback(async (id: string, destination: "memory" | "video" = "memory") => {
     if (__MOBILE_DEBUG_BUILD__ && id === "preview-memory") {
@@ -359,6 +381,51 @@ export function App() {
     finally { setBusy(false); }
   };
 
+  const resetPickupDraft = () => {
+    setPickupOriginalText("");
+    setPickupOrganizedText("");
+    setPickupConfirmed(false);
+    setPickupFollowUpAsked(false);
+    setEditingPickupId(null);
+  };
+
+  const savePickup = async () => {
+    if (!memory || !mayConfirmPickup(pickupOriginalText, pickupOrganizedText, pickupConfirmed) || busy) return;
+    setBusy(true); setNotice("");
+    try {
+      const input = { originalText: pickupOriginalText.trim(), organizedText: pickupOrganizedText.trim() };
+      const pickup = editingPickupId
+        ? await productApi.updatePickup(memory.id, editingPickupId, input)
+        : await productApi.confirmPickup(memory.id, input);
+      setPickups((current) => editingPickupId
+        ? current.map((entry) => entry.id === pickup.id ? pickup : entry)
+        : [pickup, ...current.filter((entry) => entry.id !== pickup.id)]);
+      resetPickupDraft();
+      setNotice(editingPickupId ? "已更新确认资料。" : "已经替你收好了。这条资料现在可作为可追溯来源使用。");
+    } catch (error) { setNotice(friendlyError(error)); }
+    finally { setBusy(false); }
+  };
+
+  const editPickup = (pickup: ProductPickup) => {
+    setEditingPickupId(pickup.id);
+    setPickupOriginalText(pickup.originalText);
+    setPickupOrganizedText(pickup.organizedText);
+    setPickupConfirmed(true);
+    setPickupFollowUpAsked(false);
+  };
+
+  const removePickup = async (pickup: ProductPickup) => {
+    if (!memory || busy || !window.confirm("删除后，这条资料将不再作为 TA 可引用来源。确定删除吗？")) return;
+    setBusy(true); setNotice("");
+    try {
+      await productApi.deletePickup(memory.id, pickup.id);
+      setPickups((current) => current.filter((entry) => entry.id !== pickup.id));
+      if (editingPickupId === pickup.id) resetPickupDraft();
+      setNotice("已删除，这条资料不会再被引用。");
+    } catch (error) { setNotice(friendlyError(error)); }
+    finally { setBusy(false); }
+  };
+
   const content = useMemo(() => {
     if (screen === "splash") return <BrandSplash />;
     if (screen === "offline") return <Offline retry={() => setScreen(navigator.onLine ? "welcome" : "offline")} />;
@@ -414,8 +481,16 @@ export function App() {
     }
     if (screen === "video") return <main className="memoryScene"><section className="emptyMemory"><h1>还没有一段记忆。</h1><p>从你最想念的人开始。</p><button className="primaryButton" onClick={beginCreateMemory}>创建 TA</button></section></main>;
     if (screen === "memory") return <main className="memoryScene">
-      <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><span>记忆</span><button className="headerAction" onClick={() => setScreen("video")}>影像</button></header>
-      {memory ? <section className="memoryHero"><div className="personFrame small"><span>{initials(memory.name)}</span></div><p className="eyebrow">{memory.relationship}</p><h1>{memory.name}</h1><p>{memory.lifeStory || "尚未补充更多已确认资料。"}</p>{incompleteMemory?.id === memory.id ? <button className="primaryButton" onClick={continueIncompleteMemory}>继续补充照片</button> : <button className="primaryButton" onClick={() => setScreen("chat")}>开始 AI 对话</button>}</section> : <section className="emptyMemory"><h1>还没有一段记忆。</h1><p>从你最想念的人开始。</p><button className="primaryButton" onClick={beginCreateMemory}>创建 TA</button></section>}
+      <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><span>拾忆</span><button className="headerAction" onClick={() => setScreen("video")}>影像</button></header>
+      {memory ? <section className="memoryHero"><div className="personFrame small"><span>{initials(memory.name)}</span></div><p className="eyebrow">忆见整理助手 · 为 {memory.name} 整理资料</p><h1>把想起的事留在这里。</h1><p>你说，忆见帮你整理。只有经过你确认，才会成为 TA 可以引用的资料；忆见不会从普通聊天自动收集，也不会猜测空缺。</p>
+        <label>你的原话<textarea className="field" value={pickupOriginalText} onChange={(event) => setPickupOriginalText(event.target.value)} placeholder="写下你愿意确认的一件小事" rows={4} maxLength={8000} /></label>
+        {!pickupFollowUpAsked && pickupOriginalText.trim() && <button className="quietLink" type="button" onClick={() => setPickupFollowUpAsked(true)}>忆见可以追问一件事</button>}
+        {pickupFollowUpAsked && <p>忆见想确认一件事：这件事大约发生在什么时候？你可以直接补充在原话里；每次整理最多提出这一项追问。</p>}
+        <button className="quietLink" type="button" disabled={!pickupOriginalText.trim()} onClick={() => setPickupOrganizedText(pickupDraft(pickupOriginalText))}>按原话分段整理草稿</button>
+        <label>整理稿（请核对后编辑）<textarea className="field" value={pickupOrganizedText} onChange={(event) => setPickupOrganizedText(event.target.value)} placeholder="整理稿不会自动成为可引用资料" rows={5} maxLength={8000} /></label>
+        <label><input type="checkbox" checked={pickupConfirmed} onChange={(event) => setPickupConfirmed(event.target.checked)} /> 我确认原话与整理稿准确，允许忆见将此资料作为可追溯回复来源。</label>
+        <button className="primaryButton" disabled={busy || !mayConfirmPickup(pickupOriginalText, pickupOrganizedText, pickupConfirmed)} onClick={() => void savePickup()}>{busy ? "正在保存" : editingPickupId ? "保存编辑" : "确认并保存"}</button>{editingPickupId && <button className="quietLink" type="button" onClick={resetPickupDraft}>取消编辑</button>}
+        <h2>已确认资料</h2>{pickups.length === 0 ? <p>还没有已确认资料。</p> : pickups.map((pickup) => <article key={pickup.id}><h3>原话</h3><p>{pickup.originalText}</p><h3>整理稿</h3><p>{pickup.organizedText}</p><small>来源：你的主动讲述 · 叙述者：你 · 记录于 {new Date(pickup.createdAt).toLocaleString("zh-CN")}</small><div><button className="quietLink" type="button" onClick={() => editPickup(pickup)}>编辑</button><button className="quietLink" type="button" disabled={busy} onClick={() => void removePickup(pickup)}>删除</button></div></article>)}</section> : <section className="emptyMemory"><h1>还没有一段记忆。</h1><p>从你最想念的人开始。</p><button className="primaryButton" onClick={beginCreateMemory}>创建 TA</button></section>}
       {notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="memory" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
     if (screen === "profile") return <main className="profileScene"><p className="eyebrow">我的</p><h1>把纪念资料，慢慢留住。</h1><section><span>资料与偏好</span><span>隐私与授权</span><span>关于忆见</span></section><p>每一段已确认资料都只在你的授权范围内使用。</p><BottomNav active="profile" onChange={setScreen} hasMemory={hasMemory} /></main>;

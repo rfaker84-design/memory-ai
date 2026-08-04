@@ -30,6 +30,14 @@ export type ProductMediaAsset = {
   createdAt: string;
 };
 
+export type ProductPickup = {
+  id: string;
+  originalText: string;
+  organizedText: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type FirstGreeting = {
   session: { id: string; memoryId: string; userId: string };
   greeting: {
@@ -228,6 +236,24 @@ function normalizeFirstPresenceVideo(value: unknown): FirstPresenceVideoSafeDto 
   };
 }
 
+function normalizePickup(value: unknown): ProductPickup | null {
+  const pickup = asRecord(value);
+  if (
+    typeof pickup.id !== "string"
+    || typeof pickup.originalText !== "string"
+    || typeof pickup.organizedText !== "string"
+    || typeof pickup.createdAt !== "string"
+    || typeof pickup.updatedAt !== "string"
+  ) return null;
+  return {
+    id: pickup.id,
+    originalText: pickup.originalText,
+    organizedText: pickup.organizedText,
+    createdAt: pickup.createdAt,
+    updatedAt: pickup.updatedAt,
+  };
+}
+
 export const productApi = {
   enabled: () => Boolean(runtimeConfig.apiBaseUrl),
   async session() {
@@ -318,6 +344,39 @@ export const productApi = {
       headers: { "Content-Type": "application/json", "Idempotency-Key": `mobile-chat-${crypto.randomUUID()}` },
       body: JSON.stringify({ memoryId, question }),
     });
+  },
+  async listPickups(memoryId: string) {
+    const result = await request<{ pickups?: unknown }>(`/api/memories/${encodeURIComponent(memoryId)}/pickups`, { cache: "no-store" });
+    if (!Array.isArray(result.pickups)) throw new ProductApiError(502, "服务端未返回确认资料列表");
+    const pickups = result.pickups.map(normalizePickup);
+    if (pickups.some((pickup) => pickup === null)) throw new ProductApiError(502, "服务端确认资料格式不完整");
+    return pickups as ProductPickup[];
+  },
+  async confirmPickup(memoryId: string, input: { originalText: string; organizedText: string }) {
+    const result = await request<{ pickup?: unknown }>(`/api/memories/${encodeURIComponent(memoryId)}/pickups`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": `mobile-pickup-${crypto.randomUUID()}` },
+      body: JSON.stringify({ ...input, confirmed: true }),
+    });
+    const pickup = normalizePickup(result.pickup);
+    if (!pickup) throw new ProductApiError(502, "服务端未确认资料保存");
+    return pickup;
+  },
+  async updatePickup(memoryId: string, pickupId: string, input: { originalText: string; organizedText: string }) {
+    const result = await request<{ pickup?: unknown }>(`/api/memories/${encodeURIComponent(memoryId)}/pickups/${encodeURIComponent(pickupId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    const pickup = normalizePickup(result.pickup);
+    if (!pickup) throw new ProductApiError(502, "服务端未确认资料更新");
+    return pickup;
+  },
+  async deletePickup(memoryId: string, pickupId: string) {
+    const response = await mobileApiFetch(`/api/memories/${encodeURIComponent(memoryId)}/pickups/${encodeURIComponent(pickupId)}`, { method: "DELETE" });
+    if (response.status === 204) return;
+    const body = await response.json().catch(() => ({})) as { error?: unknown };
+    throw new ProductApiError(response.status, typeof body.error === "string" ? body.error : "暂时无法删除确认资料");
   },
   async listFirstPresenceVideos(memoryId: string) {
     const result = await request<{ jobs?: unknown }>(`/api/memories/${encodeURIComponent(memoryId)}/first-presence-video`, {
