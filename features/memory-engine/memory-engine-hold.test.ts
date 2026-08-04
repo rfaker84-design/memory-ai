@@ -11,6 +11,8 @@ test("formal chat keeps automatic summaries and ordinary-chat long-term writes o
   assert.doesNotMatch(index, /summary-engine/);
   assert.doesNotMatch(service, /SummaryEngine|updateSummary/);
   assert.match(context, /ConfirmedPickupPostgresService/);
-  assert.match(context, /longTermMemories = pickups/);
+  assert.match(context, /const allowedPickups = pickups\.slice\(0, 20\)/);
+  assert.match(context, /longTermMemories = allowedPickups\.map\(\(pickup\) => pickup\.organizedText\)/);
+  assert.match(context, /confirmedPickupSources = allowedPickups\.map/);
   assert.match(context, /history: \[\]/);
 });
