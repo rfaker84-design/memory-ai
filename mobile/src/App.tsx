@@ -507,7 +507,6 @@ export function App() {
   const sendQuestion = async () => {
     const value = question.trim();
     if (!value || !memory) return;
-    setQuestion("");
     setBusy(true);
     try {
       if (mode === "preview") {
@@ -520,7 +519,8 @@ export function App() {
         await productApi.askMemory(memory.id, value);
         setConversation(await productApi.getConversation(memory.id));
       }
-    } catch (error) { setNotice(friendlyError(error)); }
+      setQuestion("");
+    } catch (error) { setQuestion(value); setNotice(`${friendlyError(error)} Your message was not confirmed as sent.`); }
     finally { setBusy(false); }
   };
 

@@ -40,3 +40,11 @@ test("a failed authenticated cold start remains explicitly unavailable instead o
   assert.match(source, /不会切换为预览，也不会自动发送、创建或修改任何内容/);
   assert.match(source, /if \(screen === "unavailable"\) return <ServiceUnavailable/);
 });
+
+test("a failed ordinary chat request retains the draft and never represents it as sent", () => {
+  const start = source.indexOf("const sendQuestion = async () => {");
+  const end = source.indexOf("const resetPickupDraft", start);
+  const sendQuestion = source.slice(start, end);
+  assert.ok(sendQuestion.indexOf("await productApi.askMemory(memory.id, value);") < sendQuestion.indexOf("setQuestion(\"\");"));
+  assert.match(sendQuestion, /catch \(error\) \{ setQuestion\(value\); setNotice\(`\$\{friendlyError\(error\)\} Your message was not confirmed as sent\.`\); \}/);
+});
