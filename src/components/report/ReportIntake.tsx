@@ -7,11 +7,11 @@ import { fetchReportJson, prepareReportSubmission, type PendingReportSubmission 
 
 type Report = { id: string; category: string; requestedAction: string; status: string; createdAt: string; resolvedAt: string | null };
 
-export function ReportIntake({ publicShareId }: { publicShareId?: string }) {
+export function ReportIntake({ publicShareId, notLikeTa = false }: { publicShareId?: string; notLikeTa?: boolean }) {
   const [reports, setReports] = useState<Report[]>([]);
   const [details, setDetails] = useState("");
   const [category, setCategory] = useState("rights");
-  const [requestedAction, setRequestedAction] = useState(publicShareId ? "remove_content" : "review");
+  const [requestedAction, setRequestedAction] = useState(publicShareId && !notLikeTa ? "remove_content" : "review");
   const [message, setMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "unauthenticated" | "unavailable">("loading");
@@ -81,10 +81,11 @@ export function ReportIntake({ publicShareId }: { publicShareId?: string }) {
     <h2 id="report-intake-title" className="text-xl font-semibold">应用内投诉与举报</h2>
     <p className="mt-2 text-sm text-[#d8bfaa]">请勿在描述中提交身份证号、银行卡号、密码或短信验证码。证据材料仅通过受控渠道另行提供。</p>
     {publicShareId && <p className="mt-2 text-sm text-[#d8bfaa]">你正在投诉一个公开分享。提交后会进入受控人工核验；只有被明确判为可信的冒用投诉才会先行隐藏对应公开内容。</p>}
+    {notLikeTa && <p className="mt-2 text-sm text-[#d8bfaa]">你选择了“这不像TA”。请说明不符合已确认资料的部分；这会创建一份人工审核工单，不会自动改写TA资料、下架内容或重新生成影像。</p>}
     <form className="mt-4 space-y-3" onSubmit={submit}>
       <label className="block">类型<select className="ml-2 rounded bg-[#0b0a08] p-2" value={category} onChange={(event) => setCategory(event.target.value)}><option value="rights">权利与内容</option><option value="privacy">隐私</option><option value="safety">安全</option><option value="payment">支付与退款</option><option value="account">账户</option><option value="other">其他</option></select></label>
       <label className="block">请求<select className="ml-2 rounded bg-[#0b0a08] p-2" value={requestedAction} onChange={(event) => setRequestedAction(event.target.value)}><option value="review">请求审核</option><option value="remove_content">请求下架或删除</option><option value="refund">退款协助</option><option value="account_help">账户协助</option><option value="other">其他</option></select></label>
-      <label className="block">说明<textarea className="mt-2 block w-full rounded bg-[#0b0a08] p-3" required maxLength={2000} value={details} onChange={(event) => setDetails(event.target.value)} /></label>
+      <label className="block">{notLikeTa ? "与已确认资料不符的说明" : "说明"}<textarea className="mt-2 block w-full rounded bg-[#0b0a08] p-3" required maxLength={2000} value={details} onChange={(event) => setDetails(event.target.value)} /></label>
       <button className="rounded bg-[#d5b172] px-4 py-2 text-[#1b120a]" type="submit" disabled={submitting}>{submitting ? "正在提交…" : "提交工单"}</button>
     </form>
     {message ? <p className="mt-3" role="status">{message}</p> : null}

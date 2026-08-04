@@ -33,6 +33,7 @@ export default function ShareVideoClient({ publicId }: { publicId: string }) {
       <span data-ai-generated-overlay="true" aria-hidden="true" style={{ position: "absolute", top: 12, right: 12, pointerEvents: "none", borderRadius: 999, padding: "4px 8px", background: "rgba(9,8,7,0.78)", color: "#fff", fontSize: 12 }}>AI 生成纪念影像</span>
     </div>
     <p>这是 AI 生成的纪念影像，仅供在线播放；请尊重其中所涉及的个人隐私。</p>
+    <a href={`/report?publicShare=${encodeURIComponent(publicId)}&reason=not_like_ta`}>这不像TA</a>
     <a href={`/report?publicShare=${encodeURIComponent(publicId)}`}>投诉或举报此分享</a>
     <a href="/">了解忆见</a>
   </main>;

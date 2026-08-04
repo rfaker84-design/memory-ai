@@ -21,3 +21,11 @@ test("public video share page is noindex, view-only and does not use legacy shar
   assert.match(client, /role="alert"/);
   assert.doesNotMatch(client, /\/share\//);
 });
+
+test("public video shares offer a not-like-TA review path without claiming automatic content mutation", () => {
+  const client = readFileSync("app/video-share/[publicId]/ShareVideoClient.tsx", "utf8");
+  assert.match(client, /reason=not_like_ta/);
+  assert.match(client, /这不像TA/);
+  assert.match(client, /投诉或举报此分享/);
+  assert.doesNotMatch(client, /自动.*下架|自动.*删除|自动.*重生成/);
+});

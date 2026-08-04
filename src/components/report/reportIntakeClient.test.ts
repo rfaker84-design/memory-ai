@@ -63,4 +63,8 @@ test("report UI gates submission on a confirmed session and serializes an in-fli
   assert.match(source, /const controller = new AbortController\(\)/);
   assert.match(source, /void load\(controller\.signal\)/);
   assert.match(source, /if \(signal\?\.aborted\) return/);
+  assert.match(source, /notLikeTa = false/);
+  assert.match(source, /publicShareId && !notLikeTa \? "remove_content" : "review"/);
+  assert.match(source, /这不像TA/);
+  assert.match(source, /不会自动改写TA资料、下架内容或重新生成影像/);
 });
