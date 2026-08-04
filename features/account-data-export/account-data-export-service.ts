@@ -50,7 +50,9 @@ function queuedJsonRows(client: PoolClient, userId: string): (query: string) => 
  * deliberately excludes authentication secrets, provider request/response
  * payloads, object locators, payment rail identifiers, and internal audit
  * metadata. Media remains downloadable through the already owner-bound media
- * endpoint while the authenticated session is valid.
+ * endpoint while the authenticated session is valid. A completed video is
+ * listed only when its existing product contract explicitly grants save rights;
+ * the export never upgrades a non-saveable first preview into a download.
  */
 export class PostgresAccountDataExportService {
   async create(input: { userId: string; externalUserId: string; now?: Date }): Promise<AccountDataExport> {
@@ -111,9 +113,13 @@ export class PostgresAccountDataExportService {
           'downloadEndpoint', '/api/media/' || a.id::text || '?expiresIn=300'
         ) AS value FROM public.media_assets a WHERE a.user_id=$1::uuid ORDER BY a.created_at, a.id`),
         exportRows(`SELECT jsonb_build_object(
-          'id', j.id, 'memoryId', j.memory_id, 'provider', j.provider, 'status', j.status,
-          'qualityStatus', j.quality_status, 'actualCredits', j.actual_credits, 'aiGenerated', true,
-          'createdAt', j.created_at, 'updatedAt', j.updated_at
+          'id', j.id, 'memoryId', j.memory_id, 'status', j.status,
+          'qualityStatus', j.quality_status, 'saveAllowed', j.save_allowed,
+          'artifactAvailable', (j.artifact_key IS NOT NULL AND j.status='succeeded'),
+          'downloadEndpoint', CASE WHEN j.save_allowed=true AND j.artifact_key IS NOT NULL AND j.status='succeeded'
+            THEN '/api/memories/' || j.memory_id::text || '/first-presence-video/' || j.id::text || '/playback'
+            ELSE NULL END,
+          'aiGenerated', true, 'createdAt', j.created_at, 'updatedAt', j.updated_at
         ) AS value FROM public.video_generation_jobs j WHERE j.user_id=$1::uuid ORDER BY j.created_at, j.id`),
         exportRows(`SELECT jsonb_build_object(
           'id', c.id, 'memoryId', c.memory_id, 'consentType', c.consent_type,
@@ -158,7 +164,7 @@ export class PostgresAccountDataExportService {
         notices: [
           "本副本中的 assistant 消息和视频任务均涉及 AI 生成内容，仅基于当时可用的资料生成，不代表真实人物或其真实表达。",
           "该副本不包含登录凭据、设备标识、验证码、Provider 请求或响应、对象存储定位符、签名 URL、支付渠道交易标识及内部审计元数据。",
-          "媒体条目给出受当前 Owner Session 保护的下载入口；已审批视频继续由现有播放授权边界控制。",
+          "原始媒体条目给出受当前 Owner Session 保护的下载入口；已审批且允许保存的影像也给出同一 Owner-only 授权入口。首次不可保存影像不会因为导出而获得下载权。",
           "法定财务、退款争议与会计归档与产品内容物理/逻辑隔离；本副本只包含面向用户的最小订单和退款摘要。",
         ],
       };

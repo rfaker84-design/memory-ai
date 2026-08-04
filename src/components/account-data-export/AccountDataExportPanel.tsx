@@ -71,7 +71,7 @@ export function AccountDataExportPanel() {
 
   return <main>
     <h1>下载我的资料副本</h1>
-    <p>副本包含你拥有的 TA、对话、媒体元数据、同意记录以及最小订单和退款摘要。它不包含登录凭据、Provider 请求、对象存储路径、签名链接或内部审计资料。</p>
+    <p>副本包含你拥有的 TA、对话、原始媒体的 Owner-only 下载入口、允许保存影像的授权入口、同意记录以及最小订单和退款摘要。首次不可保存影像不会因为导出而获得下载权。它不包含登录凭据、Provider 请求、对象存储路径、签名链接或内部审计资料。</p>
     <p>为避免他人拿到已登录设备后导出敏感内容，请在重新登录后的 5 分钟内下载。</p>
     {message ? <p role="status">{message}</p> : null}
     {unauthenticated ? <Link href="/login">前往登录</Link> : <button type="button" disabled={downloading} onClick={() => void download()}>
