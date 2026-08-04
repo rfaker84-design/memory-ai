@@ -78,12 +78,18 @@ export class MemoryContextBuilder {
     // Owner's explicit “拾忆” confirmation can enter this context, and its
     // source page remains available beside every generated reply.
     let longTermMemories: string[] = [];
+    let confirmedPickupSources: MemoryEngineContext["confirmedPickupSources"] = [];
     try {
       const pickups = await this.confirmedPickupService.list({
         externalUserId: input.userId,
         memoryId: input.memoryId,
       });
-      longTermMemories = pickups.slice(0, 20).map((pickup) => pickup.organizedText);
+      const allowedPickups = pickups.slice(0, 20);
+      longTermMemories = allowedPickups.map((pickup) => pickup.organizedText);
+      confirmedPickupSources = allowedPickups.map((pickup) => ({
+        id: pickup.id,
+        sourceKind: "user_confirmed_pickup",
+      }));
     } catch {
       // A missing optional pickup read may never widen the source set. The
       // base confirmed profile remains the only available context.
@@ -114,6 +120,7 @@ export class MemoryContextBuilder {
       aiCompanionMode,
       aiResponseStyle,
       longTermMemories,
+      confirmedPickupSources,
     };
   }
 }

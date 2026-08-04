@@ -19,3 +19,11 @@ test("mobile correction reads the formal owner-bound TA profile before an idempo
   assert.match(api, /appendConfirmedCorrection\(currentValue, suggestion\.text\)/);
   assert.match(app, /await productApi\.appendConfirmedReplyCorrection\(memory\.id, replyCorrectionSuggestion\)/);
 });
+
+test("mobile exposes a source link only for server-persisted confirmed pickup references", () => {
+  assert.match(app, /function confirmedPickupSourceIds\(metadata: Record<string, unknown> \| null \| undefined\)/);
+  assert.match(app, /source\.sourceKind !== "user_confirmed_pickup"/);
+  assert.match(app, /查看记忆来源/);
+  assert.match(app, /setHighlightedPickupIds\(sourceIds\); setScreen\("memory"\)/);
+  assert.match(app, /data-memory-source-highlighted/);
+});

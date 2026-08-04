@@ -12,6 +12,8 @@ export interface ClaimMemoryChatTurnInput {
 export interface CompleteMemoryChatTurnInput extends ClaimMemoryChatTurnInput {
   conversationId: string;
   answer: string;
+  /** Owner-safe metadata for the assistant message, persisted for replay. */
+  assistantMetadata?: Record<string, unknown>;
 }
 
 export interface MemoryChatTurnResult {

@@ -182,6 +182,33 @@ test("memory-chat provider failures leave no messages and the same key can retry
   assert.equal(completeCalls, 1);
 });
 
+test("memory-chat persists and replays only owner-bound confirmed pickup source IDs", async () => {
+  const source = { id: "55555555-5555-4555-8555-555555555555", sourceKind: "user_confirmed_pickup" as const };
+  let completed: Record<string, unknown> | null = null;
+  const handler = createMemoryChatHandler(
+    () => ({ async getMemoryForUser() { return memory; } }),
+    () => ({
+      async claim() { return { status: "claimed" as const, conversation }; },
+      async complete(input: Record<string, unknown>) {
+        completed = input;
+        return { ...result, assistantMessage: { ...assistantMessage, metadata: input.assistantMetadata as Record<string, unknown> } };
+      },
+      async fail() { throw new Error("fail should not run"); },
+    }),
+    () => ({ async generateReply() { return { content: assistantMessage.content, confirmedPickupSources: [source] }; } }),
+    sessionResolver,
+    async () => false,
+    allowAdmission,
+    undefined,
+    () => true,
+  );
+
+  const response = await handler(request({ memoryId, question: "Hello" }, "memory-chat-turn-source-0001"));
+  assert.equal(response.status, 200);
+  assert.deepEqual(completed?.assistantMetadata, { confirmedPickupSources: [source] });
+  assert.deepEqual((await response.json()).confirmedPickupSources, [source]);
+});
+
 test("memory-chat returns a non-cacheable rejection before any work when the Session is missing", async () => {
   let memoryReads = 0;
   const handler = createMemoryChatHandler(

@@ -69,6 +69,23 @@ function pickupRequestKey(): string {
   return `mobile-pickup-${crypto.randomUUID()}`;
 }
 
+function confirmedPickupSourceIds(metadata: Record<string, unknown> | null | undefined): string[] {
+  const rawSources = metadata?.confirmedPickupSources;
+  if (!Array.isArray(rawSources)) return [];
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of rawSources) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const source = raw as Record<string, unknown>;
+    if (typeof source.id !== "string" || source.sourceKind !== "user_confirmed_pickup") continue;
+    if (!seen.has(source.id)) {
+      seen.add(source.id);
+      ids.push(source.id);
+    }
+  }
+  return ids;
+}
+
 function press(action: () => void) {
   void Haptics.impact({ style: ImpactStyle.Light }).catch(() => undefined);
   action();
@@ -147,6 +164,7 @@ export function App() {
   const [replyCorrectionSuggestion, setReplyCorrectionSuggestion] = useState<ReplyCorrectionSuggestion | null>(null);
   const [replyCorrectionError, setReplyCorrectionError] = useState("");
   const [pickups, setPickups] = useState<ProductPickup[]>([]);
+  const [highlightedPickupIds, setHighlightedPickupIds] = useState<string[]>([]);
   const [pickupOriginalText, setPickupOriginalText] = useState("");
   const [pickupOrganizedText, setPickupOrganizedText] = useState("");
   const [pickupConfirmed, setPickupConfirmed] = useState(false);
@@ -584,7 +602,10 @@ export function App() {
   const content = useMemo(() => {
     if (screen === "chat" && memory) return <main className="chatScene">
       <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><div><strong>{title}</strong><small>AI纪念陪伴</small></div><button className="headerAction" onClick={() => setScreen("video")}>影像</button></header>
-      <div className="chatBody">{messages.length ? messages.map((message, index) => <article key={`${message.id ?? message.role}-${index}`} className={`bubble ${message.role}`}><p>{message.content}</p>{message.role === "assistant" && <><small>AI生成 · 基于已确认资料</small><button className="quietLink" type="button" disabled={busy} onClick={() => openReplyCorrection(message.content)}>这句话不太像 {memory.name}</button></>}</article>) : <p className="emptyCopy">先创建一位你想念的人。</p>}</div>
+      <div className="chatBody">{messages.length ? messages.map((message, index) => {
+        const sourceIds = confirmedPickupSourceIds(message.metadata);
+        return <article key={`${message.id ?? message.role}-${index}`} className={`bubble ${message.role}`}><p>{message.content}</p>{message.role === "assistant" && <><small>AI生成 · 基于已确认资料</small>{sourceIds.length > 0 && <button className="quietLink" type="button" disabled={busy} onClick={() => { setHighlightedPickupIds(sourceIds); setScreen("memory"); }}>查看记忆来源{sourceIds.length > 1 ? `（${sourceIds.length}）` : ""}</button>}<button className="quietLink" type="button" disabled={busy} onClick={() => openReplyCorrection(message.content)}>这句话不太像 {memory.name}</button></>}</article>;
+      }) : <p className="emptyCopy">先创建一位你想念的人。</p>}</div>
       {replyCorrectionContent && <section className="memoryHero" aria-label="校正 TA 回复"><p className="eyebrow">校正 TA</p><h2>这句话哪里不太像 {memory.name}？</h2><p>“{replyCorrectionContent}”</p>{!replyCorrectionSuggestion ? <><fieldset disabled={busy}><legend>原因</legend>{REPLY_CORRECTION_REASONS.map((reason) => <label key={reason}><input type="radio" name="reply-correction-reason" checked={replyCorrectionReason === reason} onChange={() => setReplyCorrectionReason(reason)} /> {reason}</label>)}</fieldset><label>你确认的正确说法或资料<textarea className="field" value={replyCorrectionDetail} onChange={(event) => setReplyCorrectionDetail(event.target.value)} maxLength={800} /></label>{replyCorrectionError ? <p role="alert">{replyCorrectionError}</p> : null}<button className="primaryButton" disabled={busy} onClick={prepareReplyCorrection}>生成校正建议</button><button className="quietLink" disabled={busy} onClick={() => setReplyCorrectionContent(null)}>取消</button></> : <><p>建议写入（请先核对）：{replyCorrectionSuggestion.text}</p><p>只有确认后才会写入 TA 的正式资料；这不会改写已经发生的对话。</p>{replyCorrectionError ? <p role="alert">{replyCorrectionError}</p> : null}<button className="primaryButton" disabled={busy} onClick={() => void confirmReplyCorrection()}>{busy ? "正在确认保存" : "确认写入 TA 资料"}</button><button className="quietLink" disabled={busy} onClick={() => setReplyCorrectionSuggestion(null)}>返回修改</button></>}</section>}
       <form className="chatComposer" onSubmit={(event) => { event.preventDefault(); void sendQuestion(); }}><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="想说些什么" disabled={busy} /><button disabled={!question.trim() || busy}>发送</button></form>
       {notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="chat" onChange={setScreen} hasMemory={hasMemory} />
@@ -677,7 +698,7 @@ export function App() {
         <label>整理稿（请核对后编辑）<textarea className="field" value={pickupOrganizedText} onChange={(event) => { setPickupOrganizedText(event.target.value); setPickupRequestIdempotencyKey(null); }} placeholder="整理稿不会自动成为可引用资料" rows={5} maxLength={8000} /></label>
         <label><input type="checkbox" checked={pickupConfirmed} onChange={(event) => setPickupConfirmed(event.target.checked)} /> 我确认原话与整理稿准确，允许忆见将此资料作为可追溯回复来源。</label>
         <button className="primaryButton" disabled={busy || !mayConfirmPickup(pickupOriginalText, pickupOrganizedText, pickupConfirmed)} onClick={() => void savePickup()}>{busy ? "正在保存" : editingPickupId ? "保存编辑" : "确认并保存"}</button>{editingPickupId && <button className="quietLink" type="button" onClick={resetPickupDraft}>取消编辑</button>}
-        <h2>已确认资料</h2>{pickups.length === 0 ? <p>还没有已确认资料。</p> : pickups.map((pickup) => <article key={pickup.id}><h3>原话</h3><p>{pickup.originalText}</p><h3>整理稿</h3><p>{pickup.organizedText}</p><small>来源：你的主动讲述 · 叙述者：你 · 记录于 {new Date(pickup.createdAt).toLocaleString("zh-CN")}</small><div><button className="quietLink" type="button" onClick={() => editPickup(pickup)}>编辑</button><button className="quietLink" type="button" disabled={busy} onClick={() => void removePickup(pickup)}>删除</button></div></article>)}</section> : <section className="emptyMemory"><h1>还没有一段记忆。</h1><p>从你最想念的人开始。</p><button className="primaryButton" onClick={beginCreateMemory}>创建 TA</button></section>}
+        <h2>已确认资料</h2>{highlightedPickupIds.length > 0 && <p role="status">以下是本条回复引用的、你已确认的资料；删除后将不再供 TA 引用。</p>}{highlightedPickupIds.length > 0 && pickups.length > 0 && !pickups.some((pickup) => highlightedPickupIds.includes(pickup.id)) && <p role="alert">这条已确认资料已被删除，不能再查看或被 TA 引用。</p>}{pickups.length === 0 ? <p>还没有已确认资料。</p> : pickups.map((pickup) => <article key={pickup.id} data-memory-source-highlighted={highlightedPickupIds.includes(pickup.id) || undefined}><h3>原话</h3><p>{pickup.originalText}</p><h3>整理稿</h3><p>{pickup.organizedText}</p><small>来源：你的主动讲述 · 叙述者：你 · 记录于 {new Date(pickup.createdAt).toLocaleString("zh-CN")}</small><div><button className="quietLink" type="button" onClick={() => editPickup(pickup)}>编辑</button><button className="quietLink" type="button" disabled={busy} onClick={() => void removePickup(pickup)}>删除</button></div></article>)}</section> : <section className="emptyMemory"><h1>还没有一段记忆。</h1><p>从你最想念的人开始。</p><button className="primaryButton" onClick={beginCreateMemory}>创建 TA</button></section>}
       {notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="memory" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
     if (screen === "profile") return <main className="profileScene"><p className="eyebrow">我的</p><h1>资料与偏好</h1><p>每一段已确认资料都只在你的授权范围内使用。</p><section><h2>生日</h2><p>用于年龄保护和你明确选择的纪念日规则；可以随时修改。</p>{mode === "preview" ? <p>预览模式不会保存个人资料。</p> : profileState === "loading" ? <p role="status">正在读取个人资料…</p> : profileState === "unavailable" ? <p role="alert">个人资料暂时无法读取，未显示或修改任何旧值。</p> : <><label>生日<input className="field" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} inputMode="numeric" placeholder="YYYY-MM-DD" /></label><button className="primaryButton" disabled={busy || !birthDate} onClick={() => void saveBirthDate()}>{busy ? "正在保存" : "保存生日"}</button></>}</section><section><h2>隐私与安全</h2><p>注销、导出、危机支持授权和分享设置需要通过受保护的网页账户设置完成；移动端不会伪造已提交或已删除。</p></section>{notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="profile" onChange={setScreen} hasMemory={hasMemory} /></main>;

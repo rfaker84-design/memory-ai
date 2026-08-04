@@ -43,8 +43,17 @@ export interface MemoryEngineContext {
   aiCompanionMode: string;
   aiResponseStyle: string;
   longTermMemories: string[];
+  /** Owner-confirmed “拾忆” records supplied to the model for this turn. */
+  confirmedPickupSources: ConfirmedMemorySource[];
+}
+
+export interface ConfirmedMemorySource {
+  id: string;
+  sourceKind: "user_confirmed_pickup";
 }
 
 export interface MemoryEngineResponse {
   content: string;
+  /** Source IDs explicitly selected from this turn's owner-bound allowlist. */
+  confirmedPickupSources?: ConfirmedMemorySource[];
 }

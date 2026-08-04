@@ -7,6 +7,7 @@ import { MemoryChatTurnService } from "../../../features/chat/memory-chat-turn-s
 import type { MemoryChatTurnResult } from "../../../features/chat/memory-chat-turn-types";
 import { FreeChatAdmissionConfigurationError, FreeChatDailyAdmissionService } from "../../../features/chat/free-chat-daily-admission";
 import { MemoryEngineService } from "../../../features/memory-engine/memory-engine-service";
+import type { ConfirmedMemorySource } from "../../../features/memory-engine/types";
 import { assertSafeMemorialResponse } from "../../../features/memory-engine/response-pipeline";
 import { crisisResponseFor } from "../../../features/memory-engine/crisis-response";
 import { queueCrisisSupportIfAuthorized } from "../../../features/safety/crisis-support-escalation";
@@ -107,13 +108,32 @@ function json(body: unknown, init?: ResponseInit) {
   return applyAuthNoStore(NextResponse.json(body, init));
 }
 
+function confirmedPickupSources(value: unknown): ConfirmedMemorySource[] {
+  if (!Array.isArray(value)) return [];
+  const sources: ConfirmedMemorySource[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "object" || item === null) continue;
+    const source = item as Record<string, unknown>;
+    if (typeof source.id !== "string" || source.sourceKind !== "user_confirmed_pickup") continue;
+    const key = source.id.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      sources.push({ id: source.id, sourceKind: "user_confirmed_pickup" });
+    }
+  }
+  return sources;
+}
+
 function response(result: MemoryChatTurnResult, freeChatWarning = false) {
   const answer = result.assistantMessage.content;
+  const sources = confirmedPickupSources(result.assistantMessage.metadata?.confirmedPickupSources);
   return json({
     answer,
     reply: answer,
     text: answer,
     sessionId: result.conversation.id,
+    ...(sources.length > 0 ? { confirmedPickupSources: sources } : {}),
     ...(freeChatWarning ? { freeChatWarning: true } : {}),
   });
 }
@@ -285,6 +305,7 @@ export function createMemoryChatHandler(
       }
 
       let answer: string;
+      let sources: ConfirmedMemorySource[] = [];
       try {
         if (crisisResponse) {
           answer = crisisResponse;
@@ -307,6 +328,7 @@ export function createMemoryChatHandler(
             memoryName: memory.name,
             relationship: memory.relationship,
           });
+          sources = confirmedPickupSources(engineResponse.confirmedPickupSources);
         }
         if (!answer) throw new Error("Provider returned no content");
       } catch {
@@ -324,6 +346,7 @@ export function createMemoryChatHandler(
         ...turnInput,
         conversationId: claim.conversation.id,
         answer,
+        ...(sources.length > 0 ? { assistantMetadata: { confirmedPickupSources: sources } } : {}),
       });
       if (dailyAdmissionReserved && dailyAdmissionService) {
         try {

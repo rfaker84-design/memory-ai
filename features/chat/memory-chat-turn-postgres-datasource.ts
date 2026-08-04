@@ -215,7 +215,8 @@ async function insertMessage(
   memoryId: string,
   role: "user" | "assistant",
   content: string,
-  idempotency: string
+  idempotency: string,
+  additionalMetadata: Record<string, unknown> = {}
 ): Promise<Message> {
   const result = await client.query<MessageRow>(
     `WITH written AS (
@@ -234,7 +235,7 @@ async function insertMessage(
       memoryId,
       role,
       content,
-      JSON.stringify({ kind: "memory_chat_turn", idempotencyKey: idempotency }),
+      JSON.stringify({ kind: "memory_chat_turn", idempotencyKey: idempotency, ...additionalMetadata }),
     ]
   );
   return toMessage(result.rows[0]);
@@ -343,7 +344,7 @@ export class MemoryChatTurnPostgresDataSource
         client, conversationId, internalUserId, memoryId, "user", question, key
       );
       const assistantMessage = await insertMessage(
-        client, conversationId, internalUserId, memoryId, "assistant", answer, key
+        client, conversationId, internalUserId, memoryId, "assistant", answer, key, input.assistantMetadata
       );
       await client.query(
         `UPDATE memory_chat_turns

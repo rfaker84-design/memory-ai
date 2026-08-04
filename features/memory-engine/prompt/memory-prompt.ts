@@ -50,7 +50,10 @@ export function buildMemoryPrompt(input: PromptPipelineInput): PromptLayer {
   if (input.longTermMemories.length > 0) {
     lines.push("");
     lines.push("用户在“拾忆”中明确确认的资料（每条均可追溯，不能补充或外推）：");
-    input.longTermMemories.forEach((memory) => lines.push("- " + memory));
+    input.longTermMemories.forEach((memory, index) => {
+      const source = input.confirmedPickupSources[index];
+      lines.push(`- [source:${source?.id ?? "unavailable"}] ${memory}`);
+    });
   }
 
   if (lines.length === 0) {
@@ -67,6 +70,7 @@ export function buildMemoryPrompt(input: PromptPipelineInput): PromptLayer {
     content:
       "关于TA的已确认资料（只能基于以下资料表达身份，不要编造）：\n"
       + lines.join("\n")
-      + "\n称呼、常用语、说话风格和共同回忆属于用户已确认的参考资料；在相关回复中可谨慎引用，但不得把它们外推为新事实，也不得以通用模板替代这些表达。",
+      + "\n称呼、常用语、说话风格和共同回忆属于用户已确认的参考资料；在相关回复中可谨慎引用，但不得把它们外推为新事实，也不得以通用模板替代这些表达。"
+      + "\n若且仅若本次回复实际引用了带 [source:...] 标记的“拾忆”资料，请在回复最后另起一行附上 [[MEMORYAI_SOURCES:source-id]]；可用逗号列出多个本次实际引用的 source-id。不得编造、猜测或输出未提供的 source-id；若没有引用拾忆资料，不得附加该标记。这个技术标记不会展示给用户。",
   };
 }

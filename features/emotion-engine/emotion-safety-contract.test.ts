@@ -32,6 +32,7 @@ test("emotion prompt preserves AI identity and blocks dependency or fabricated-m
     aiCompanionMode: "comfort",
     aiResponseStyle: "温和回应",
     longTermMemories: [],
+    confirmedPickupSources: [],
   });
   assert.match(prompt.content, /AI 纪念陪伴/);
   assert.match(prompt.content, /不得宣称真实意识/);

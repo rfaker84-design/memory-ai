@@ -25,6 +25,7 @@ test("memory prompt carries the confirmed address, phrases, speaking habit, and 
     aiCompanionMode: "guide",
     aiResponseStyle: "温和",
     longTermMemories: [],
+    confirmedPickupSources: [],
   });
 
   for (const value of ["用户确认称呼 TA 为：妈妈。", "别着急，慢慢来。", "说话轻柔，先安慰再给建议。", "一起在厨房做过生日面。"]) {
@@ -39,6 +40,7 @@ test("memory prompt accepts only the separately supplied confirmed pickup source
     memoryName: "妈妈", relationship: "母亲", fragments: [], timeline: [], history: [], recentMessages: [],
     emotion: "neutral", emotionIntensity: "low", suggestedTone: "温和", aiCompanionMode: "guide", aiResponseStyle: "温和",
     longTermMemories: ["雨天接送的已确认回忆。"],
+    confirmedPickupSources: [{ id: "11111111-1111-4111-8111-111111111111", sourceKind: "user_confirmed_pickup" }],
   });
   assert.match(prompt.content, /拾忆/);
   assert.match(prompt.content, /雨天接送的已确认回忆。/);
@@ -67,6 +69,7 @@ test("continuous chat keeps each TA's personality facts isolated", () => {
     aiCompanionMode: "guide",
     aiResponseStyle: "warm",
     longTermMemories: [],
+    confirmedPickupSources: [],
   }).content;
 
   const firstTaPrompt = promptFor("ta-first", "FIRST_TA");

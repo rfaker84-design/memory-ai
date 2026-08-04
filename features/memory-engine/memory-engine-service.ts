@@ -1,6 +1,7 @@
 ﻿import { MemoryContextBuilder } from "./context-builder";
 import { PromptBuilder } from "./prompt-builder";
 import { ResponsePipeline } from "./response-pipeline";
+import { extractConfirmedMemorySources } from "./confirmed-memory-sources";
 import type { MemoryEngineInput, MemoryEngineResponse } from "./types";
 import type { LLMProvider } from "../../services/llm/llm-provider";
 import { resolveFormalLLMProvider } from "../../services/llm/formal-llm-provider";
@@ -27,12 +28,14 @@ export class MemoryEngineService {
       messages: prompt.messages,
     });
 
+    const referenced = extractConfirmedMemorySources(result.content, context.confirmedPickupSources);
     return {
       content: this.responsePipeline.processResponse({
-        content: result.content,
+        content: referenced.content,
         memoryName: context.memoryName,
         relationship: context.relationship,
       }),
+      confirmedPickupSources: referenced.sources,
     };
   }
 }
