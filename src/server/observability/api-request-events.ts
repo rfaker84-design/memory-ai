@@ -8,6 +8,7 @@ type ApiRequestEvent = {
 };
 
 const DYNAMIC_ROUTES: Array<[RegExp, string]> = [
+  [/^\/api\/memories\/[^/]+\/video-shares\/[^/]+\/download$/, "/api/memories/:memoryId/video-shares/:publicId/download"],
   [/^\/api\/memories\/[^/]+\/video-shares\/[^/]+$/, "/api/memories/:memoryId/video-shares/:publicId"],
   [/^\/api\/memories\/[^/]+\/video-shares$/, "/api/memories/:memoryId/video-shares"],
   [/^\/api\/memories\/[^/]+\/chat-session$/, "/api/memories/:memoryId/chat-session"],
@@ -42,6 +43,7 @@ const STATIC_ROUTES = new Set([
   "/api/memory-chat",
   "/api/consents",
   "/api/reports",
+  "/api/account/crisis-contacts",
   "/api/account/export",
   "/api/account/profile",
   "/api/account/understanding-assistance",
