@@ -113,6 +113,15 @@ export type FirstPresenceVideoSafeDto = {
   updatedAt: string;
 };
 
+export type ProductVideoShare = {
+  publicId: string;
+  title: string;
+  jobId: string;
+  memoryId: string;
+  revokedAt: string | null;
+  watermarkDownloadEnabled: false;
+};
+
 export class ProductApiError extends Error {
   constructor(readonly status: number, message = "暂时无法连接忆见") {
     super(message);
@@ -564,6 +573,25 @@ export const productApi = {
     const jobs = result.jobs.map(normalizeFirstPresenceVideo);
     if (jobs.some((job) => job === null)) throw new ProductApiError(502, "The video opportunity response was incomplete.");
     return jobs as FirstPresenceVideoSafeDto[];
+  },
+  async listVideoShares(memoryId: string): Promise<ProductVideoShare[]> {
+    const result = await request<{ shares?: unknown }>(`/api/memories/${encodeURIComponent(memoryId)}/video-shares`, { cache: "no-store" });
+    if (!Array.isArray(result.shares)) throw new ProductApiError(502, "VIDEO_SHARE_RESPONSE_INCOMPLETE");
+    return result.shares.map((value) => {
+      const share = asRecord(value);
+      if (typeof share.publicId !== "string" || typeof share.title !== "string" || typeof share.jobId !== "string" || share.memoryId !== memoryId || share.revokedAt !== null || share.watermarkDownloadEnabled !== false) throw new ProductApiError(502, "VIDEO_SHARE_RESPONSE_INCOMPLETE");
+      return { publicId: share.publicId, title: share.title, jobId: share.jobId, memoryId, revokedAt: null, watermarkDownloadEnabled: false };
+    });
+  },
+  async createVideoShare(memoryId: string, jobId: string, title: string): Promise<ProductVideoShare> {
+    const result = await request<{ share?: unknown }>(`/api/memories/${encodeURIComponent(memoryId)}/video-shares`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jobId, title }) });
+    const share = asRecord(result.share);
+    if (typeof share.publicId !== "string" || typeof share.title !== "string" || typeof share.jobId !== "string" || share.memoryId !== memoryId || share.revokedAt !== null || share.watermarkDownloadEnabled !== false) throw new ProductApiError(502, "VIDEO_SHARE_RESPONSE_INCOMPLETE");
+    return { publicId: share.publicId, title: share.title, jobId: share.jobId, memoryId, revokedAt: null, watermarkDownloadEnabled: false };
+  },
+  async revokeVideoShare(memoryId: string, publicId: string): Promise<void> {
+    const result = await request<{ revoked?: unknown }>(`/api/memories/${encodeURIComponent(memoryId)}/video-shares/${encodeURIComponent(publicId)}`, { method: "DELETE" });
+    if (result.revoked !== true) throw new ProductApiError(409, "VIDEO_SHARE_REVOKE_UNCONFIRMED");
   },
   async loadCommerceCreditBalance(): Promise<CommerceCreditBalance> {
     return loadCommerceCreditBalance(mobileApiFetch);
