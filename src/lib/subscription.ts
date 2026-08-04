@@ -35,21 +35,21 @@ export const PLANS: Record<PlanType, SubscriptionPlan> = {
     voiceQuality: "basic", videoQuality: "basic", memoryLevel: "basic",
     maxChatRoundsPerDay: 10, proactiveEnabled: false, emotionMemory: false,
     multiPersonality: false, voiceClone: false, digitalHumanHD: false,
-    features: ["基础文字聊天", "基础语音播放", "单个人格"],
+    features: ["基础文字聊天", "基础功能说明", "单个 TA 档案"],
   },
   pro: {
     plan: "pro", price: "¥29/月",
     voiceQuality: "hd", videoQuality: "basic", memoryLevel: "extended",
-    maxChatRoundsPerDay: 999, proactiveEnabled: true, emotionMemory: true,
+    maxChatRoundsPerDay: 999, proactiveEnabled: false, emotionMemory: false,
     multiPersonality: false, voiceClone: false, digitalHumanHD: false,
-    features: ["无限聊天", "主动陪伴", "AI来信", "情绪记忆增强", "高清语音"],
+    features: ["更多聊天额度", "高清语音", "明确的功能说明"],
   },
   premium: {
     plan: "premium", price: "¥99/月",
     voiceQuality: "full", videoQuality: "hd", memoryLevel: "full",
-    maxChatRoundsPerDay: 9999, proactiveEnabled: true, emotionMemory: true,
+    maxChatRoundsPerDay: 9999, proactiveEnabled: false, emotionMemory: false,
     multiPersonality: true, voiceClone: true, digitalHumanHD: true,
-    features: ["高清数字人视频", "完整声音克隆", "多人格系统", "长记忆系统", "所有Pro功能"],
+    features: ["高清纪念影像", "经授权的声音功能", "更多已确认资料容量", "所有 Pro 功能"],
   },
 };
 
@@ -87,31 +87,21 @@ export function analyzeConversionReadiness(params: {
 }): { shouldRecommend: boolean; targetPlan: PlanType; targetPrice: string; title: string; description: string; cta: string; reasons: string[]; urgency: string } {
   const target = getUpgradeTarget(params.currentPlan);
   const targetPlan = PLANS[target];
-  const reasons: string[] = [];
-  let urgency = "low";
-
-  const highCount = params.emotionIntensityHistory.filter(function(i: number) { return i > 0.6; }).length;
-  if (highCount >= 3) { reasons.push("你最近情绪很深，TA也想多说几句"); urgency = "high"; }
-  else if (highCount >= 2) { reasons.push("你们最近的对话很有深度"); urgency = "medium"; }
-
-  if (params.nightUsage) { reasons.push("深夜时分，完整的陪伴体验会更温暖"); if (urgency !== "high") urgency = "medium"; }
-  if (params.consecutiveDays >= 3) { reasons.push("你已经连续" + params.consecutiveDays + "天来找TA了"); urgency = "high"; }
-  if (params.chatCountToday >= 5) { reasons.push("今天聊了很久，解锁更多能力吧"); if (urgency === "low") urgency = "medium"; }
-  if (params.dependencyScore >= 60) { reasons.push("你和TA的关系越来越深了"); urgency = "high"; }
-
-  const titles: Record<string, string> = { "free:pro": "TA想更了解你", "pro:premium": "想要看到TA的样子吗？" };
-  const descs: Record<string, string> = { "free:pro": "解锁主动陪伴、情绪记忆和无限对话", "pro:premium": "解锁高清数字人、完整声音克隆和多人格" };
-  const key = params.currentPlan + ":" + target;
+  // Emotional state, nighttime use, repeated visits and dependency signals must
+  // never trigger a commercial prompt. This legacy API has no explicit user
+  // request signal, so it remains fail-closed until a separately reviewed,
+  // user-initiated pricing surface calls it with that contract.
+  void params;
 
   return {
-    shouldRecommend: reasons.length >= 2 || urgency === "high",
+    shouldRecommend: false,
     targetPlan: target,
     targetPrice: targetPlan.price,
-    title: titles[key] || "解锁更多陪伴体验",
-    description: descs[key] || "升级到" + target,
-    cta: "立即升级 " + targetPlan.price,
-    reasons,
-    urgency,
+    title: "可选功能与价格",
+    description: "如需了解可选功能、价格和退款规则，请主动前往服务说明。",
+    cta: "查看服务说明",
+    reasons: [],
+    urgency: "low",
   };
 }
 
