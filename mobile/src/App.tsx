@@ -36,7 +36,7 @@ const DebugLab = __MOBILE_DEBUG_BUILD__
   ? lazy(() => import("./debug/NativeCapabilityLab").then((module) => ({ default: module.NativeCapabilityLab })))
   : null;
 
-type Screen = "splash" | "welcome" | "login" | "code" | "home" | "create" | "complete" | "presence" | "chat" | "memory" | "video" | "profile" | "offline" | "unavailable" | "debug";
+type Screen = "splash" | "welcome" | "login" | "code" | "home" | "create" | "complete" | "presence" | "chat" | "memory" | "video" | "profile" | "dataExport" | "offline" | "unavailable" | "debug";
 type SessionMode = "remote" | "preview";
 
 const previewMemory = (name: string, relationship: string, lifeStory: string): ProductMemory => ({
@@ -196,6 +196,7 @@ export function App() {
   const [deletionState, setDeletionState] = useState<"idle" | "loading" | "ready" | "unavailable">("idle");
   const [deletionConfirming, setDeletionConfirming] = useState(false);
   const [resumeDeletionAfterLogin, setResumeDeletionAfterLogin] = useState(false);
+  const [resumeExportAfterLogin, setResumeExportAfterLogin] = useState(false);
 
   const hasMemory = Boolean(memory);
   const hasIncompleteMemory = Boolean(incompleteMemory);
@@ -402,6 +403,10 @@ export function App() {
         setResumeDeletionAfterLogin(false);
         setScreen("profile");
         setNotice("短信登录已完成。请在 5 分钟内返回注销确认；系统不会自动提交。");
+      } else if (resumeExportAfterLogin) {
+        setResumeExportAfterLogin(false);
+        setScreen("dataExport");
+        setNotice("短信登录已完成。请在 5 分钟内手动下载资料副本；系统不会自动导出。");
       }
     } catch (error) { setNotice(friendlyError(error)); }
     finally { setBusy(false); }
@@ -660,7 +665,41 @@ export function App() {
     } finally { setBusy(false); }
   };
 
+  const downloadAccountDataExport = async () => {
+    if (busy || mode === "preview") return;
+    setBusy(true); setNotice("");
+    try {
+      const blob = await productApi.downloadAccountDataExport();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = "memoryai-account-data-export.json";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      globalThis.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      setNotice("资料副本已生成，已请求系统下载；请在设备下载列表中核对结果。");
+    } catch (error) {
+      if (error instanceof ProductApiError && error.status === 403) {
+        setResumeExportAfterLogin(true);
+        setNotice("为保护你的资料，请重新完成短信登录后，在 5 分钟内手动下载资料副本。系统不会自动导出。");
+        setScreen("login");
+      } else {
+        setNotice(friendlyError(error));
+      }
+    } finally { setBusy(false); }
+  };
+
   const content = useMemo(() => {
+    if (screen === "dataExport") return <main className="profileScene">
+      <header className="pageHeader"><button className="backButton" onClick={() => setScreen("profile")}>‹</button><span>我的资料</span></header>
+      <h1>下载我的资料副本</h1>
+      <p>副本包含你拥有的 TA、对话、已确认拾忆、原始媒体的 Owner-only 入口、允许保存影像的授权入口、同意记录以及最小订单和退款摘要。</p>
+      <p>副本不包含登录凭据、Provider 请求、对象存储路径、签名链接或内部审计资料；首次不可保存影像不会因为导出而获得下载权。</p>
+      <p>为保护敏感资料，请在重新登录后的 5 分钟内手动下载。系统不会自动导出或重复下载。</p>
+      {mode === "preview" ? <p role="alert">预览模式不能生成或下载资料副本。</p> : <button className="primaryButton" disabled={busy} onClick={() => void downloadAccountDataExport()}>{busy ? "正在生成资料副本" : "下载 JSON 资料副本"}</button>}
+      {notice ? <p className="floatingNotice" role="status">{notice}</p> : null}
+    </main>;
     if (screen === "chat" && memory) return <main className="chatScene">
       <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><div><strong>{title}</strong><small>AI纪念陪伴</small></div><button className="headerAction" onClick={() => setScreen("video")}>影像</button></header>
       <div className="chatBody">{messages.length ? messages.map((message, index) => {
@@ -674,6 +713,7 @@ export function App() {
     if (screen === "profile" && profileState !== "idle") return <main className="profileScene">
       <p className="eyebrow">我的</p>
       <h1>资料与偏好</h1>
+      <button className="quietLink" type="button" disabled={busy || mode === "preview"} onClick={() => setScreen("dataExport")}>下载我的资料副本</button>
       <p>每一段已确认资料都只在你的授权范围内使用。</p>
       <section>
         <h2>当前 TA</h2>
@@ -772,7 +812,7 @@ export function App() {
       {primarySelectorOpen && <section role="dialog" aria-modal="true" aria-label="选择主 TA" className="memoryHero"><h2>选择主 TA</h2><p>只显示本次登录后服务端确认属于你的 TA；此选择只保存为本设备展示偏好。</p>{ownedMemories.map((candidate) => <button key={candidate.id} className="quietLink" type="button" disabled={busy || candidate.id === memory?.id} onClick={() => void openMemory(candidate.id, "home", true)}>{candidate.name}{candidate.id === memory?.id ? "（当前主 TA）" : ""}</button>)}<button className="quietLink" type="button" onClick={() => setPrimarySelectorOpen(false)}>取消</button></section>}
       <button className="primaryButton" onClick={() => press(() => incompleteMemory ? continueIncompleteMemory() : memory ? setScreen("chat") : beginCreateMemory())}>{hasIncompleteMemory ? "继续补充照片" : memory ? "继续查看" : "创建 TA"}</button>{notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="home" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
-  }, [beginTaProfileEdit, birthDate, busy, challengeId, code, conversation, crisisContactExternalId, crisisContacts, crisisState, crisisSupportEnabled, deletionConfirming, deletionProgress, deletionState, hasMemory, incompleteMemory, isFirstMemory, media.length, memory, messages, mode, name, notice, online, ownedMemories, pendingCreation, phone, primarySelectorOpen, profileState, question, refreshCrisisSupport, relationship, resumingMemory, saveTaProfile, screen, story, submitAccountDeletion, taProfileDraft, taProfileEditing, title, updateTaProfileDraft]);
+  }, [beginTaProfileEdit, birthDate, busy, challengeId, code, conversation, crisisContactExternalId, crisisContacts, crisisState, crisisSupportEnabled, deletionConfirming, deletionProgress, deletionState, downloadAccountDataExport, hasMemory, incompleteMemory, isFirstMemory, media.length, memory, messages, mode, name, notice, online, ownedMemories, pendingCreation, phone, primarySelectorOpen, profileState, question, refreshCrisisSupport, relationship, resumingMemory, saveTaProfile, screen, story, submitAccountDeletion, taProfileDraft, taProfileEditing, title, updateTaProfileDraft]);
 
   return <div className={`appRoot ${productOnline ? "isOnline" : ""}`}>{content}</div>;
 }

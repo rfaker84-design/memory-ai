@@ -494,6 +494,18 @@ export const productApi = {
       pendingCrisisContactUpdates.delete(operationKey);
     }
   },
+  async downloadAccountDataExport(): Promise<Blob> {
+    const response = await mobileApiFetch("/api/account/export", { method: "POST", cache: "no-store" });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({})) as Record<string, unknown>;
+      throw new ProductApiError(response.status, typeof body.error === "string" ? body.error : "ACCOUNT_DATA_EXPORT_FAILED");
+    }
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.toLowerCase().startsWith("application/json")) {
+      throw new ProductApiError(502, "ACCOUNT_DATA_EXPORT_INVALID_RESPONSE");
+    }
+    return response.blob();
+  },
   async getAccountDeletion() {
     const result = await request<{ deletion?: unknown }>("/api/account/deletion", { cache: "no-store" });
     if (result.deletion === undefined || result.deletion === null) return null;
