@@ -43,8 +43,16 @@ export type ProductPickup = {
   id: string;
   originalText: string;
   organizedText: string;
+  photoAssetId?: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type ProductPickupPhotoSource = {
+  id: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
 };
 
 export type ProductAccountProfile = {
@@ -286,6 +294,7 @@ function normalizePickup(value: unknown): ProductPickup | null {
     id: pickup.id,
     originalText: pickup.originalText,
     organizedText: pickup.organizedText,
+    photoAssetId: typeof pickup.photoAssetId === "string" ? pickup.photoAssetId : null,
     createdAt: pickup.createdAt,
     updatedAt: pickup.updatedAt,
   };
@@ -536,7 +545,18 @@ export const productApi = {
     if (pickups.some((pickup) => pickup === null)) throw new ProductApiError(502, "服务端确认资料格式不完整");
     return pickups as ProductPickup[];
   },
-  async confirmPickup(memoryId: string, input: { originalText: string; organizedText: string }, idempotencyKey: string) {
+  async listPickupPhotoSources(memoryId: string) {
+    const result = await request<{ photos?: unknown }>(`/api/memories/${encodeURIComponent(memoryId)}/pickup-photo-sources`, { cache: "no-store" });
+    if (!Array.isArray(result.photos)) throw new ProductApiError(502, "服务端未返回照片来源列表");
+    const photos = result.photos.map((value): ProductPickupPhotoSource | null => {
+      const photo = asRecord(value);
+      if (typeof photo.id !== "string" || typeof photo.mimeType !== "string" || typeof photo.sizeBytes !== "number" || typeof photo.createdAt !== "string") return null;
+      return { id: photo.id, mimeType: photo.mimeType, sizeBytes: photo.sizeBytes, createdAt: photo.createdAt };
+    });
+    if (photos.some((photo) => photo === null)) throw new ProductApiError(502, "服务端照片来源格式不完整");
+    return photos as ProductPickupPhotoSource[];
+  },
+  async confirmPickup(memoryId: string, input: { originalText: string; organizedText: string; photoAssetId?: string | null }, idempotencyKey: string) {
     const result = await request<{ pickup?: unknown }>(`/api/memories/${encodeURIComponent(memoryId)}/pickups`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },

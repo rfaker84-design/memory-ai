@@ -24,7 +24,7 @@
     "test:video-opportunity": "tsx --test src/product/video-opportunity.test.ts src/product/occasion-reward-contract.test.ts",
     "test:navigation-contract": "tsx --test src/navigation-contract.test.ts",
     "test:primary-companion": "tsx --test src/product/primary-companion.test.ts",
-    "test:pickup": "tsx --test src/product/pickup.test.ts",
+    "test:pickup": "tsx --test src/product/pickup.test.ts src/product/pickup-photo-source-contract.test.ts",
     "test:pickup-idempotency": "tsx --test src/product/pickup-idempotency-contract.test.ts",
     "test:profile": "tsx --test src/product/profile-contract.test.ts src/product/crisis-support-contract.test.ts src/product/account-data-export-contract.test.ts src/product/video-share-contract.test.ts",
     "test:account-deletion": "tsx --test src/product/account-deletion-contract.test.ts",

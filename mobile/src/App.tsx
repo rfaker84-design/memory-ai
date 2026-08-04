@@ -14,6 +14,7 @@ import {
   type ProductMemory,
   type ProductMemoryProfileInput,
   type ProductPickup,
+  type ProductPickupPhotoSource,
   type ProductVideoShare,
 } from "./product/api";
 import {
@@ -181,6 +182,8 @@ export function App() {
   const [replyCorrectionSuggestion, setReplyCorrectionSuggestion] = useState<ReplyCorrectionSuggestion | null>(null);
   const [replyCorrectionError, setReplyCorrectionError] = useState("");
   const [pickups, setPickups] = useState<ProductPickup[]>([]);
+  const [pickupPhotoSources, setPickupPhotoSources] = useState<ProductPickupPhotoSource[]>([]);
+  const [selectedPickupPhotoAssetId, setSelectedPickupPhotoAssetId] = useState<string | null>(null);
   const [highlightedPickupIds, setHighlightedPickupIds] = useState<string[]>([]);
   const [pickupOriginalText, setPickupOriginalText] = useState("");
   const [pickupOrganizedText, setPickupOrganizedText] = useState("");
@@ -272,11 +275,15 @@ export function App() {
   useEffect(() => {
     if (screen !== "memory" || !memory || mode === "preview") {
       setPickups([]);
+      setPickupPhotoSources([]);
+      setSelectedPickupPhotoAssetId(null);
       return;
     }
     let live = true;
-    void productApi.listPickups(memory.id).then((next) => {
-      if (live) setPickups(next);
+    void Promise.all([productApi.listPickups(memory.id), productApi.listPickupPhotoSources(memory.id)]).then(([nextPickups, nextPhotoSources]) => {
+      if (!live) return;
+      setPickups(nextPickups);
+      setPickupPhotoSources(nextPhotoSources);
     }).catch((error) => {
       if (live) setNotice(friendlyError(error));
     });
@@ -537,6 +544,7 @@ export function App() {
     setPickupOrganizedText("");
     setPickupConfirmed(false);
     setPickupFollowUpAsked(false);
+    setSelectedPickupPhotoAssetId(null);
     setEditingPickupId(null);
     setPickupRequestIdempotencyKey(null);
   };
@@ -545,7 +553,7 @@ export function App() {
     if (!memory || !mayConfirmPickup(pickupOriginalText, pickupOrganizedText, pickupConfirmed) || busy) return;
     setBusy(true); setNotice("");
     try {
-      const input = { originalText: pickupOriginalText.trim(), organizedText: pickupOrganizedText.trim() };
+      const input = { originalText: pickupOriginalText.trim(), organizedText: pickupOrganizedText.trim(), ...(!editingPickupId && selectedPickupPhotoAssetId ? { photoAssetId: selectedPickupPhotoAssetId } : {}) };
       const idempotencyKey = pickupRequestIdempotencyKey ?? pickupRequestKey();
       setPickupRequestIdempotencyKey(idempotencyKey);
       const pickup = editingPickupId
@@ -566,6 +574,7 @@ export function App() {
     setPickupOrganizedText(pickup.organizedText);
     setPickupConfirmed(true);
     setPickupFollowUpAsked(false);
+    setSelectedPickupPhotoAssetId(null);
     setPickupRequestIdempotencyKey(null);
   };
 
@@ -872,6 +881,7 @@ export function App() {
     if (screen === "memory") return <main className="memoryScene">
       <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><span>拾忆</span><button className="headerAction" onClick={() => setScreen("video")}>影像</button></header>
       {memory ? <section className="memoryHero"><div className="personFrame small"><span>{initials(memory.name)}</span></div><p className="eyebrow">忆见整理助手 · 为 {memory.name} 整理资料</p><h1>把想起的事留在这里。</h1><p>你说，忆见帮你整理。只有经过你确认，才会成为 TA 可以引用的资料；忆见不会从普通聊天自动收集，也不会猜测空缺。</p>
+        {!editingPickupId && <section aria-label="从一张照片说起"><h2>从一张照片说起</h2><p>只显示当前 TA 已上传且服务端确认的照片。选择后，只有在你确认保存时才会关联为来源；不会读取相册、麦克风或录音。</p>{pickupPhotoSources.length === 0 ? <p role="status">还没有可选择的已上传照片。你仍可从一件小事开始讲述。</p> : <div>{pickupPhotoSources.map((photo, index) => <button key={photo.id} className="quietLink" type="button" aria-pressed={selectedPickupPhotoAssetId === photo.id} disabled={busy} onClick={() => { setSelectedPickupPhotoAssetId(photo.id); setPickupRequestIdempotencyKey(null); }}> {selectedPickupPhotoAssetId === photo.id ? "已选择" : "选择"}照片 {index + 1} · {new Date(photo.createdAt).toLocaleDateString("zh-CN")}</button>)}</div>}</section>}
         <label>你的原话<textarea className="field" value={pickupOriginalText} onChange={(event) => { setPickupOriginalText(event.target.value); setPickupRequestIdempotencyKey(null); }} placeholder="写下你愿意确认的一件小事" rows={4} maxLength={8000} /></label>
         {!pickupFollowUpAsked && pickupOriginalText.trim() && <button className="quietLink" type="button" onClick={() => setPickupFollowUpAsked(true)}>忆见可以追问一件事</button>}
         {pickupFollowUpAsked && <p>忆见想确认一件事：这件事大约发生在什么时候？你可以直接补充在原话里；每次整理最多提出这一项追问。</p>}
@@ -879,7 +889,7 @@ export function App() {
         <label>整理稿（请核对后编辑）<textarea className="field" value={pickupOrganizedText} onChange={(event) => { setPickupOrganizedText(event.target.value); setPickupRequestIdempotencyKey(null); }} placeholder="整理稿不会自动成为可引用资料" rows={5} maxLength={8000} /></label>
         <label><input type="checkbox" checked={pickupConfirmed} onChange={(event) => setPickupConfirmed(event.target.checked)} /> 我确认原话与整理稿准确，允许忆见将此资料作为可追溯回复来源。</label>
         <button className="primaryButton" disabled={busy || !mayConfirmPickup(pickupOriginalText, pickupOrganizedText, pickupConfirmed)} onClick={() => void savePickup()}>{busy ? "正在保存" : editingPickupId ? "保存编辑" : "确认并保存"}</button>{editingPickupId && <button className="quietLink" type="button" onClick={resetPickupDraft}>取消编辑</button>}
-        <h2>已确认资料</h2>{highlightedPickupIds.length > 0 && <p role="status">以下是本条回复引用的、你已确认的资料；删除后将不再供 TA 引用。</p>}{highlightedPickupIds.length > 0 && pickups.length > 0 && !pickups.some((pickup) => highlightedPickupIds.includes(pickup.id)) && <p role="alert">这条已确认资料已被删除，不能再查看或被 TA 引用。</p>}{pickups.length === 0 ? <p>还没有已确认资料。</p> : pickups.map((pickup) => <article key={pickup.id} data-memory-source-highlighted={highlightedPickupIds.includes(pickup.id) || undefined}><h3>原话</h3><p>{pickup.originalText}</p><h3>整理稿</h3><p>{pickup.organizedText}</p><small>来源：你的主动讲述 · 叙述者：你 · 记录于 {new Date(pickup.createdAt).toLocaleString("zh-CN")}</small><div><button className="quietLink" type="button" onClick={() => editPickup(pickup)}>编辑</button><button className="quietLink" type="button" disabled={busy} onClick={() => void removePickup(pickup)}>删除</button></div></article>)}</section> : <section className="emptyMemory"><h1>还没有一段记忆。</h1><p>从你最想念的人开始。</p><button className="primaryButton" onClick={beginCreateMemory}>创建 TA</button></section>}
+        <h2>已确认资料</h2>{highlightedPickupIds.length > 0 && <p role="status">以下是本条回复引用的、你已确认的资料；删除后将不再供 TA 引用。</p>}{highlightedPickupIds.length > 0 && pickups.length > 0 && !pickups.some((pickup) => highlightedPickupIds.includes(pickup.id)) && <p role="alert">这条已确认资料已被删除，不能再查看或被 TA 引用。</p>}{pickups.length === 0 ? <p>还没有已确认资料。</p> : pickups.map((pickup) => <article key={pickup.id} data-memory-source-highlighted={highlightedPickupIds.includes(pickup.id) || undefined}><h3>原话</h3><p>{pickup.originalText}</p><h3>整理稿</h3><p>{pickup.organizedText}</p><small>来源：你的主动讲述 · 叙述者：你 · 记录于 {new Date(pickup.createdAt).toLocaleString("zh-CN")}</small>{pickup.photoAssetId ? <small> · 附带来源：你确认选择的已上传照片</small> : null}<div><button className="quietLink" type="button" onClick={() => editPickup(pickup)}>编辑</button><button className="quietLink" type="button" disabled={busy} onClick={() => void removePickup(pickup)}>删除</button></div></article>)}</section> : <section className="emptyMemory"><h1>还没有一段记忆。</h1><p>从你最想念的人开始。</p><button className="primaryButton" onClick={beginCreateMemory}>创建 TA</button></section>}
       {notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="memory" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
     if (screen === "profile") return <main className="profileScene"><p className="eyebrow">我的</p><h1>资料与偏好</h1><p>每一段已确认资料都只在你的授权范围内使用。</p><section><h2>生日</h2><p>用于年龄保护和你明确选择的纪念日规则；可以随时修改。</p>{mode === "preview" ? <p>预览模式不会保存个人资料。</p> : profileState === "loading" ? <p role="status">正在读取个人资料…</p> : profileState === "unavailable" ? <p role="alert">个人资料暂时无法读取，未显示或修改任何旧值。</p> : <><label>生日<input className="field" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} inputMode="numeric" placeholder="YYYY-MM-DD" /></label><button className="primaryButton" disabled={busy || !birthDate} onClick={() => void saveBirthDate()}>{busy ? "正在保存" : "保存生日"}</button></>}</section><section><h2>隐私与安全</h2><p>注销、导出、危机支持授权和分享设置需要通过受保护的网页账户设置完成；移动端不会伪造已提交或已删除。</p><a className="quietLink" href="/privacy">查看隐私与删除说明</a><a className="quietLink" href="/help">查看帮助与安全说明</a></section>{notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="profile" onChange={setScreen} hasMemory={hasMemory} /></main>;
