@@ -121,6 +121,8 @@ export function App() {
   const [pickupConfirmed, setPickupConfirmed] = useState(false);
   const [pickupFollowUpAsked, setPickupFollowUpAsked] = useState(false);
   const [editingPickupId, setEditingPickupId] = useState<string | null>(null);
+  const [birthDate, setBirthDate] = useState("");
+  const [profileState, setProfileState] = useState<"idle" | "loading" | "ready" | "unavailable">("idle");
 
   const hasMemory = Boolean(memory);
   const hasIncompleteMemory = Boolean(incompleteMemory);
@@ -193,6 +195,20 @@ export function App() {
     });
     return () => { live = false; };
   }, [memory, mode, screen]);
+
+  useEffect(() => {
+    if (screen !== "profile" || mode === "preview") return;
+    let live = true;
+    setProfileState("loading");
+    void productApi.getAccountProfile().then((profile) => {
+      if (!live) return;
+      setBirthDate(profile.birthDate ?? "");
+      setProfileState("ready");
+    }).catch(() => {
+      if (live) setProfileState("unavailable");
+    });
+    return () => { live = false; };
+  }, [mode, screen]);
 
   const openMemory = useCallback(async (id: string, destination: "memory" | "video" = "memory") => {
     if (__MOBILE_DEBUG_BUILD__ && id === "preview-memory") {
@@ -426,6 +442,21 @@ export function App() {
     finally { setBusy(false); }
   };
 
+  const saveBirthDate = async () => {
+    if (busy || !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
+      if (birthDate) setNotice("请使用 YYYY-MM-DD 格式填写生日。");
+      return;
+    }
+    setBusy(true); setNotice("");
+    try {
+      const profile = await productApi.updateBirthDate(birthDate);
+      setBirthDate(profile.birthDate);
+      setProfileState("ready");
+      setNotice("生日已保存；你可以随时修改。");
+    } catch (error) { setNotice(friendlyError(error)); }
+    finally { setBusy(false); }
+  };
+
   const content = useMemo(() => {
     if (screen === "splash") return <BrandSplash />;
     if (screen === "offline") return <Offline retry={() => setScreen(navigator.onLine ? "welcome" : "offline")} />;
@@ -493,7 +524,7 @@ export function App() {
         <h2>已确认资料</h2>{pickups.length === 0 ? <p>还没有已确认资料。</p> : pickups.map((pickup) => <article key={pickup.id}><h3>原话</h3><p>{pickup.originalText}</p><h3>整理稿</h3><p>{pickup.organizedText}</p><small>来源：你的主动讲述 · 叙述者：你 · 记录于 {new Date(pickup.createdAt).toLocaleString("zh-CN")}</small><div><button className="quietLink" type="button" onClick={() => editPickup(pickup)}>编辑</button><button className="quietLink" type="button" disabled={busy} onClick={() => void removePickup(pickup)}>删除</button></div></article>)}</section> : <section className="emptyMemory"><h1>还没有一段记忆。</h1><p>从你最想念的人开始。</p><button className="primaryButton" onClick={beginCreateMemory}>创建 TA</button></section>}
       {notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="memory" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
-    if (screen === "profile") return <main className="profileScene"><p className="eyebrow">我的</p><h1>把纪念资料，慢慢留住。</h1><section><span>资料与偏好</span><span>隐私与授权</span><span>关于忆见</span></section><p>每一段已确认资料都只在你的授权范围内使用。</p><BottomNav active="profile" onChange={setScreen} hasMemory={hasMemory} /></main>;
+    if (screen === "profile") return <main className="profileScene"><p className="eyebrow">我的</p><h1>资料与偏好</h1><p>每一段已确认资料都只在你的授权范围内使用。</p><section><h2>生日</h2><p>用于年龄保护和你明确选择的纪念日规则；可以随时修改。</p>{mode === "preview" ? <p>预览模式不会保存个人资料。</p> : profileState === "loading" ? <p role="status">正在读取个人资料…</p> : profileState === "unavailable" ? <p role="alert">个人资料暂时无法读取，未显示或修改任何旧值。</p> : <><label>生日<input className="field" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} inputMode="numeric" placeholder="YYYY-MM-DD" /></label><button className="primaryButton" disabled={busy || !birthDate} onClick={() => void saveBirthDate()}>{busy ? "正在保存" : "保存生日"}</button></>}</section><section><h2>隐私与安全</h2><p>注销、导出、危机支持授权和分享设置需要通过受保护的网页账户设置完成；移动端不会伪造已提交或已删除。</p></section>{notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="profile" onChange={setScreen} hasMemory={hasMemory} /></main>;
     return <main className="homeScene"><p className="eyebrow">忆见</p><div className="homeSpace"><div className="homeGlow" aria-hidden="true" />{memory ? <><div className="personFrame"><span>{initials(memory.name)}</span></div><p>AI纪念资料：{memory.name}</p></> : <><div className="emptyPortrait" /><h1>为谁，留一盏灯？</h1><p>从一个名字、一句你确认的资料开始记录。</p></>}</div>
       <button className="primaryButton" onClick={() => press(() => incompleteMemory ? continueIncompleteMemory() : memory ? setScreen("chat") : beginCreateMemory())}>{hasIncompleteMemory ? "继续补充照片" : memory ? "继续查看" : "创建 TA"}</button>{notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="home" onChange={setScreen} hasMemory={hasMemory} />
     </main>;

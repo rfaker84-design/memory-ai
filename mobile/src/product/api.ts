@@ -38,6 +38,11 @@ export type ProductPickup = {
   updatedAt: string;
 };
 
+export type ProductAccountProfile = {
+  birthDate: string | null;
+  adultEligible: boolean;
+};
+
 export type FirstGreeting = {
   session: { id: string; memoryId: string; userId: string };
   greeting: {
@@ -344,6 +349,24 @@ export const productApi = {
       headers: { "Content-Type": "application/json", "Idempotency-Key": `mobile-chat-${crypto.randomUUID()}` },
       body: JSON.stringify({ memoryId, question }),
     });
+  },
+  async getAccountProfile() {
+    const result = await request<{ birthDate?: unknown; adultEligible?: unknown }>("/api/account/profile", { cache: "no-store" });
+    if ((typeof result.birthDate !== "string" && result.birthDate !== null) || typeof result.adultEligible !== "boolean") {
+      throw new ProductApiError(502, "服务端个人资料格式不完整");
+    }
+    return { birthDate: result.birthDate, adultEligible: result.adultEligible } satisfies ProductAccountProfile;
+  },
+  async updateBirthDate(birthDate: string) {
+    const result = await request<{ birthDate?: unknown; adultEligible?: unknown }>("/api/account/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ birthDate }),
+    });
+    if (typeof result.birthDate !== "string" || typeof result.adultEligible !== "boolean") {
+      throw new ProductApiError(502, "服务端未确认生日保存");
+    }
+    return { birthDate: result.birthDate, adultEligible: result.adultEligible } satisfies ProductAccountProfile;
   },
   async listPickups(memoryId: string) {
     const result = await request<{ pickups?: unknown }>(`/api/memories/${encodeURIComponent(memoryId)}/pickups`, { cache: "no-store" });
