@@ -136,6 +136,8 @@ export class ProductApiError extends Error {
   }
 }
 
+export const MOBILE_API_TIMEOUT_MS = 12_000;
+
 function apiUrl(path: string): string {
   if (!runtimeConfig.apiBaseUrl) throw new ProductApiError(0, "当前没有可用的服务连接");
   return new URL(path, `${runtimeConfig.apiBaseUrl}/`).toString();
@@ -187,7 +189,25 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
  * paths, preserves the browser-managed HttpOnly session, and attaches the
  * Debug access header only in a Debug build.
  */
-export async function mobileApiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+async function boundedMobileFetch(input: string, init: RequestInit, timeoutMs = MOBILE_API_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const abortFromCaller = () => controller.abort();
+  if (init.signal?.aborted) controller.abort();
+  else init.signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timer = globalThis.setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (timedOut) throw new ProductApiError(408, "The request timed out before MemoryAI could confirm a result.");
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timer);
+    init.signal?.removeEventListener("abort", abortFromCaller);
+  }
+}
+
+export async function mobileApiFetch(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = MOBILE_API_TIMEOUT_MS): Promise<Response> {
   const path = formalApiPath(input);
   try {
     const headers = new Headers(init.headers);
@@ -195,12 +215,13 @@ export async function mobileApiFetch(input: RequestInfo | URL, init: RequestInit
     if (__MOBILE_DEBUG_BUILD__ && runtimeConfig.stagingAccessToken) {
       headers.set("X-MemoryAI-Staging-Access", runtimeConfig.stagingAccessToken);
     }
-    return await fetch(apiUrl(path), {
+    return await boundedMobileFetch(apiUrl(path), {
       ...init,
       credentials: "include",
       headers,
-    });
-  } catch {
+    }, timeoutMs);
+  } catch (error) {
+    if (error instanceof ProductApiError) throw error;
     throw new ProductApiError(0, "Network connection is temporarily unavailable.");
   }
 }
@@ -213,12 +234,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     if (__MOBILE_DEBUG_BUILD__ && runtimeConfig.stagingAccessToken) {
       headers.set("X-MemoryAI-Staging-Access", runtimeConfig.stagingAccessToken);
     }
-    response = await fetch(apiUrl(path), {
+    response = await boundedMobileFetch(apiUrl(path), {
       ...init,
       credentials: "include",
       headers,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof ProductApiError) throw error;
     throw new ProductApiError(0, "网络暂时不稳定，请稍后再试");
   }
   const body = await response.json().catch(() => ({})) as Record<string, unknown>;
