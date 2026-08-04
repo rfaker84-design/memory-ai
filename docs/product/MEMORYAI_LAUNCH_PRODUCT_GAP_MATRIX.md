@@ -4,7 +4,7 @@
 
 ## 2026-08-04 分享边界复审
 
-P-17 仍为 `PARTIAL`，但候选代码现已明确：仅人工审核通过、已结算、非 `first_preview` 且 `save_allowed=true` 的影像可创建或继续提供公开链接。每次公共元数据和播放读取都会重复该条件；首个 `saveAllowed=false` 影像不能分享。公开路由保持 noindex、无缓存、仅在线播放且不暴露 Provider 或对象存储键。带水印下载仍未实现，因为尚无可审计、可删除的派生产物生命周期；Migration 021 仍未获 Staging 批准或执行。
+P-17 仍为 `PARTIAL`，但候选代码现已明确：仅人工审核通过、已结算、非 `first_preview` 且 `save_allowed=true` 的影像可创建或继续提供公开链接。每次公共元数据和播放读取都会重复该条件；首个 `saveAllowed=false` 影像不能分享。公开路由保持 noindex、无缓存、仅在线播放且不暴露 Provider 或对象存储键。Owner 可显式开启带 `AI Generated | MemoryAI` 标识的下载；每次开启、读取和最终审计均重新检查 Owner、审核、结算、可保存性和可见性 hold。派生文件只存在于私有临时目录并在 `finally` 删除，不创建对象键；审计失败绝不返回文件。Migration 021 仍未获 Staging 批准或执行。
 
 | ID | 冻结规则 | 当前证据 | 差异状态 | 后续动作 |
 |---|---|---|---|---|
@@ -24,7 +24,7 @@ P-17 仍为 `PARTIAL`，但候选代码现已明确：仅人工审核通过、�
 | P-14 | 3 人邀请、反作弊、独立来源 | 移动端在两轮有效对话后的影像机会页可读取、签发并复制服务端邀请码；未签发代码的 404 被视为可创建初始状态，其他错误仍失败关闭。页面明确说明分享不等于达标，不在设备侧写资格或额度。服务端只接受验证器输出的设备证明，并对新人、手机号、设备和三人奖励 cohort 去重 | IMPLEMENTED_NOT_REAL_E2E | 34 项移动端/Commerce/referral 合同、TypeScript 与 production build 已通过；真实设备证明、商户/真实设备及 Staging E2E 仍为独立外部门 |
 | P-15 | 生日/节日奖励独立记账 | Candidate 020 extends the existing Commerce ledger; China-time 30-day/no-cross-year windows, owner-scoped offers/claim, durable claim/video idempotency, explicit `occasion_reward` selection, saveable artifact contract and failed-generation release. Mobile renders an open offer for any current TA with a confirmed photo, lets the Owner choose another photographed TA, and the owner API bypasses the two-round gate only for explicit `occasion_reward` (regular follow-up video remains gated). Isolated PG14.23 evidence was previously obtained | IMPLEMENTED_NOT_REAL_E2E | Keep 020 outside the automatic runner; Staging migration, real Provider/manual review and production evidence remain separate gates |
 | P-16 | 克制问候和通用通知 | 每日首次打开的温和问候已有。浏览器通知权限现在仅在 Owner 视频状态确认 `initial_preview` 成功且正式会话有一轮完成对话后，以用户点击方式提出；锁屏文案固定为“忆见里有一份新的问候。”，不含 TA 名称或正文，用户当前会话拒绝后不再重复提示。旧推送接口继续 410，未发送或伪造通知 | PARTIAL | 真实设备权限、合规推送通道/退订、送达与频控证据仍未取得 |
-| P-17 | noindex/revocable/view-only 分享 | 候选 Migration 021 及 Owner/公共路由提供 noindex、无缓存、撤销后立即失效和仅在线播放；创建与每次公共读取均要求人工审核通过、已结算、非 `first_preview` 且 `save_allowed=true`，不暴露 Provider/对象键。 | PARTIAL | 带水印下载仍缺少可审计、可删除的派生产物生命周期；021 仍需独立 Staging/真实环境证据。 |
+| P-17 | noindex/revocable/view-only 分享 | 候选 Migration 021 及 Owner/公共路由提供 noindex、无缓存、撤销后立即失效和仅在线播放；创建与每次公共读取均要求人工审核通过、已结算、非 `first_preview` 且 `save_allowed=true`，不暴露 Provider/对象键。Owner-only PATCH/GET 下载路径在移动端和受保护 Web 设置页均已接通；水印副本仅临时生成、最终审计成功后才返回，且无持久对象键。 | PARTIAL | 021 仍需独立 Staging 批准；真实设备、公开链接和 Provider/生产运行时证据仍缺。 |
 | P-18 | 多 TA 底部选择器 | 当前头像/姓名可打开共享底部选择器，Owner 已读取的 TA 列表内可手动设为主 TA；选择仅保存界面偏好，服务端仍重新校验 Owner 数据。 | IMPLEMENTED_NOT_REAL_E2E | 仍需真实 UI/设备与 Staging 验收。 |
 | P-19 | 删除消息、fresh export、TA 删除确认 | fresh reauthentication export 与账户注销已存在；主 TA 列表提供显式 TA 删除确认，正式 DELETE 路由要求精确 `DELETE_MEMORY` 确认、Owner Session 和 Origin。聊天记录提供独立的显式清除确认：服务端在 Owner 范围内清除全部正文、排除 UI 与模型上下文，同时保留不含原文的外键账本引用；素材未清理、会话失效或网络不确定均不会显示删除成功 | IMPLEMENTED_NOT_REAL_E2E | 已通过聊天/TA 删除边界、TypeScript、production build 与安全回归；仍需真实 UI/Staging 验收 |
 | P-20 | 危机、预授权升级、未成年人隔离 | 危机退出人格与授权队列已有 | IMPLEMENTED_NOT_REAL_E2E | 外部资源/值班/法律复核 |
