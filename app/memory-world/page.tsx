@@ -42,6 +42,7 @@ function MemoryWorldContent() {
   const [clearConfirmationId, setClearConfirmationId] = useState<string | null>(null);
   const [clearingId, setClearingId] = useState<string | null>(null);
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
+  const [assistanceBlocked, setAssistanceBlocked] = useState(false);
   const restoredPosition = useRef(false);
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -87,6 +88,7 @@ function MemoryWorldContent() {
     if (deletingId || deleteConfirmationId !== memory.id) return;
     setDeletingId(memory.id);
     setDeleteMessage(null);
+    setAssistanceBlocked(false);
     const controller = new AbortController();
     const timer = globalThis.setTimeout(() => controller.abort(), 20_000);
     try {
@@ -99,7 +101,10 @@ function MemoryWorldContent() {
       });
       const body = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) {
-        if (body.error === "MEMORY_MEDIA_NOT_CLEAN") {
+        if (response.status === 409 && body.error === "UNDERSTANDING_ASSISTANCE_REQUIRED") {
+          setDeleteMessage("\u8fd9\u9879\u64cd\u4f5c\u5df2\u6682\u65f6\u505c\u6b62\u3002\u4f60\u53ef\u4ee5\u5148\u518d\u770b\u4e00\u6b21\u8bf4\u660e\uff0c\u6682\u65f6\u4e0d\u5220\u9664 TA\uff0c\u6216\u8bf7\u53ef\u4fe1\u4efb\u7684\u4eba\u534f\u52a9\uff1b\u5fc6\u89c1\u4e0d\u4f1a\u66ff\u4f60\u5224\u65ad\uff0c\u4e5f\u4e0d\u4f1a\u81ea\u52a8\u8054\u7cfb\u4efb\u4f55\u4eba\u3002");
+          setAssistanceBlocked(true);
+        } else if (body.error === "MEMORY_MEDIA_NOT_CLEAN") {
           setDeleteMessage("这位 TA 的素材仍在清理中，尚未删除。请先完成素材删除并等待清理确认。");
         } else if (body.error === "UNAUTHENTICATED") {
           setDeleteMessage("登录状态已失效；尚未删除任何 TA。请重新登录后再确认。");
@@ -263,6 +268,7 @@ function MemoryWorldContent() {
               </MemoryCard>
             ))}
             {deleteMessage ? <p role="status" aria-live="polite" style={{ margin: 0, color: SurfaceToken.content.secondary }}>{deleteMessage}</p> : null}
+            {assistanceBlocked ? <button type="button" onClick={() => router.push("/settings/understanding-assistance")} style={{ minHeight: 44, border: "none", background: "transparent", color: SurfaceToken.content.primary, cursor: "pointer", padding: 0 }}>{"\u8bf7\u53ef\u4fe1\u4efb\u7684\u4eba\u534f\u52a9"}</button> : null}
           </div>
         )}
       </MemorySection>
