@@ -803,7 +803,7 @@ export function App() {
     if (screen === "complete" && resumingMemory) return <main className="createScene">
       <header className="pageHeader"><button className="backButton" onClick={() => setScreen("home")}>‹</button><span>补充照片</span><small>待完成</small></header>
       <div className="presencePlaceholder"><span>{initials(resumingMemory.name)}</span></div><h1>为 {resumingMemory.name} 补充一张照片。</h1><p>照片保存并由服务端确认后，才会继续首次问候。</p>
-      <button className="mediaChoice" disabled={busy || Boolean(pendingCreation?.uploadedMediaUris.length)} onClick={() => void chooseMedia()}><span>照片与声音</span><small>{media.length ? `已选 ${media.length} 项素材` : "从系统相册重新选择"}</small></button>
+      <button className="mediaChoice" disabled={busy || Boolean(pendingCreation?.uploadedMediaUris.length)} onClick={() => void chooseMedia()}><span>照片</span><small>{media.length ? `已选 ${media.length} 张照片` : "从系统相册重新选择；不录音或上传声音"}</small></button>
       {notice ? <p className="notice">{notice}</p> : null}<button className="primaryButton" disabled={busy} onClick={() => void createMemory()}>{busy ? "正在保存" : pendingCreation ? "继续保存素材" : "保存照片"}</button>
     </main>;
     if (screen === "create") return <main className="createScene">
@@ -812,7 +812,7 @@ export function App() {
       <label>TA 的名字<input className="field" value={name} onChange={(event) => setName(event.target.value)} placeholder="姓名或昵称" /></label>
       <label>你们的关系<input className="field" value={relationship} onChange={(event) => setRelationship(event.target.value)} placeholder="例如：母亲、朋友" /></label>
       <label>一段想说的话<textarea className="field" value={story} onChange={(event) => setStory(event.target.value)} placeholder="写下一件你们共同经历过的事" rows={3} /></label>
-      <button className="mediaChoice" disabled={busy || Boolean(pendingCreation?.uploadedMediaUris.length)} onClick={() => void chooseMedia()}><span>照片与声音</span><small>{media.length ? `已选 ${media.length} 项素材` : "从系统相册选择"}</small></button>
+      <button className="mediaChoice" disabled={busy || Boolean(pendingCreation?.uploadedMediaUris.length)} onClick={() => void chooseMedia()}><span>照片</span><small>{media.length ? `已选 ${media.length} 张照片` : "从系统相册选择；不录音或上传声音"}</small></button>
       {notice ? <p className="notice">{notice}</p> : null}<button className="primaryButton" disabled={busy} onClick={() => void createMemory()}>{busy ? "正在保存" : pendingCreation ? "继续保存素材" : "保存 TA 资料"}</button>
     </main>;
     if (screen === "presence" && memory) return <main className="presenceScene">

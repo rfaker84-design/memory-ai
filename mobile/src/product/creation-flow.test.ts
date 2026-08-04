@@ -36,9 +36,13 @@ const greeting: FirstGreeting = {
   replayed: false,
 };
 
-test("a remote creation requires a selected photo before it can advance", () => {
+test("a remote creation accepts only photos, including when a photo is selected", () => {
   assert.throws(
     () => startPendingCreation(memory, [{ ...photo, mimeType: "audio/wav", uri: "content://test/audio" }]),
+    CreationFlowError,
+  );
+  assert.throws(
+    () => startPendingCreation(memory, [photo, { ...photo, mimeType: "audio/wav", uri: "content://test/audio" }]),
     CreationFlowError,
   );
 });
@@ -46,11 +50,11 @@ test("a remote creation requires a selected photo before it can advance", () => 
 test("uploads finish before the formal server greeting and retain retry progress", async () => {
   const calls: string[] = [];
   const updates: number[] = [];
-  const pending = startPendingCreation(memory, [photo, { ...photo, uri: "content://test/audio", mimeType: "audio/wav", name: "voice.wav" }]);
+  const pending = startPendingCreation(memory, [photo, { ...photo, uri: "content://test/second-photo", name: "second-photo.png" }]);
   const api = {
     async uploadMedia(memoryId: string, item: PickedMedia) {
       calls.push(`upload:${memoryId}:${item.uri}`);
-      return { id: item.uri, mediaType: item.mimeType.startsWith("image/") ? "image" as const : "audio" as const, mimeType: item.mimeType, sizeBytes: 1, status: "uploaded" as const, createdAt: "2026-07-29T00:00:00.000Z" };
+      return { id: item.uri, mediaType: "image" as const, mimeType: item.mimeType, sizeBytes: 1, status: "uploaded" as const, createdAt: "2026-07-29T00:00:00.000Z" };
     },
     async createFirstGreeting(memoryId: string, key: string) {
       calls.push(`greeting:${memoryId}:${key.length > 16}`);
@@ -63,6 +67,22 @@ test("uploads finish before the formal server greeting and retain retry progress
   assert.equal(calls.filter((call) => call.startsWith("upload:")).length, 2);
   assert.match(calls[2], /^greeting:/);
   assert.equal(result.greeting.content, greeting.greeting.content);
+});
+
+test("a legacy pending creation with audio cannot resume its upload", async () => {
+  const unsafePending = {
+    ...startPendingCreation(memory, [photo]),
+    media: [photo, { ...photo, mimeType: "audio/wav", uri: "content://test/legacy-audio", name: "legacy.wav" }],
+  };
+  let uploadCalls = 0;
+  await assert.rejects(
+    () => uploadPendingMedia(unsafePending, {
+      async uploadMedia() { uploadCalls += 1; throw new Error("not called"); },
+      async createFirstGreeting() { throw new Error("not called"); },
+    }),
+    CreationFlowError,
+  );
+  assert.equal(uploadCalls, 0);
 });
 
 test("a failed upload does not request a greeting and preserves the persisted retry state", async () => {

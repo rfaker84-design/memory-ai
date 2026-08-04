@@ -3,12 +3,22 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const source = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+const creationSource = readFileSync(new URL("./product/creation-flow.ts", import.meta.url), "utf8");
+const apiSource = readFileSync(new URL("./product/api.ts", import.meta.url), "utf8");
 
 test("mobile shell labels AI memorial conversation and never makes a living-presence claim", () => {
   assert.match(source, /AI纪念陪伴/);
   assert.match(source, /AI生成 · 基于已确认资料/);
   assert.match(source, /message\.role === "assistant" && <>\s*<small>AI生成 · 基于已确认资料<\/small>/);
   assert.doesNotMatch(source, /我在。关于|我一直在听|TA 在这里|让 TA 出现|继续相见/);
+});
+
+test("public TA creation is photo-only and clearly does not record or upload voice", () => {
+  assert.doesNotMatch(source, /照片与声音/);
+  assert.match(source, /不录音或上传声音/);
+  assert.match(creationSource, /media\.every\(isPhoto\)/);
+  assert.match(creationSource, /assertPhotoOnly\(pending\.media\)/);
+  assert.doesNotMatch(apiSource, /"audio\/(?:mpeg|wav|ogg|mp4)"/);
 });
 
 test("mobile offline state does not claim an unsent draft was durably saved", () => {

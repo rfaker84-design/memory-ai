@@ -158,10 +158,6 @@ const mediaExtensions: Readonly<Record<string, string>> = {
   "image/jpeg": ".jpg",
   "image/png": ".png",
   "image/webp": ".webp",
-  "audio/mpeg": ".mp3",
-  "audio/wav": ".wav",
-  "audio/ogg": ".ogg",
-  "audio/mp4": ".m4a",
 };
 
 function mediaFileName(item: PickedMedia): string {

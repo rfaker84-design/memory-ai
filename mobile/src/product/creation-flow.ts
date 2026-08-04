@@ -19,10 +19,14 @@ function isPhoto(item: PickedMedia): boolean {
   return item.mimeType.toLowerCase().startsWith("image/");
 }
 
-export function startPendingCreation(memory: ProductMemory, media: readonly PickedMedia[]): PendingCreation {
-  if (!media.some(isPhoto)) {
-    throw new CreationFlowError("请至少选择一张照片后再继续");
+function assertPhotoOnly(media: readonly PickedMedia[]): void {
+  if (!media.length || !media.every(isPhoto)) {
+    throw new CreationFlowError("创建 TA 仅支持照片，不录音或上传声音");
   }
+}
+
+export function startPendingCreation(memory: ProductMemory, media: readonly PickedMedia[]): PendingCreation {
+  assertPhotoOnly(media);
   return {
     memory,
     media,
@@ -36,6 +40,9 @@ export async function uploadPendingMedia(
   api: CreationApi,
   onProgress?: (next: PendingCreation) => void,
 ): Promise<PendingCreation> {
+  // A pending record can survive an app restart. Re-check it here so a
+  // legacy or tampered pending payload cannot resume an audio upload.
+  assertPhotoOnly(pending.media);
   let next = pending;
   for (const item of pending.media) {
     if (next.uploadedMediaUris.includes(item.uri)) continue;
