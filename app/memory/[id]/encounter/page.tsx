@@ -64,10 +64,14 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
         if (memory.photoAssetId) portraitUrl = await loadOwnedMediaUrl(memory.photoAssetId, signal).catch(() => portraitUrl);
         let playbackUrl: string | null = null;
         if (preview && !viewed) {
-          const { response: playbackResponse, body: playbackBody } = await fetchPickupRequestJson(`/api/memories/${encodeURIComponent(memoryId)}/first-presence-video/${encodeURIComponent(preview.id)}/playback`, {}, signal);
+          const { response: playbackResponse, body: playbackBody } = await fetchPickupRequestJson(`/api/memories/${encodeURIComponent(memoryId)}/first-presence-video/${encodeURIComponent(preview.id)}/encounter-playback`, { method: "POST" }, signal);
           if (playbackResponse.ok) {
-            const playback = playbackBody as { playback?: { url?: unknown; saveAllowed?: unknown } };
-            if (typeof playback.playback?.url === "string" && playback.playback.saveAllowed === false) playbackUrl = playback.playback.url;
+            const encounter = playbackBody as { encounter?: { status?: unknown; playback?: { url?: unknown; saveAllowed?: unknown } } };
+            if (encounter.encounter?.status === "claimed" && typeof encounter.encounter.playback?.url === "string" && encounter.encounter.playback.saveAllowed === false) {
+              playbackUrl = encounter.encounter.playback.url;
+            } else if (encounter.encounter?.status === "already_viewed") {
+              setEncounterViewed(true);
+            }
           }
         }
         if (!signal?.aborted) setState({ status: "ready", name: memory.name, portraitUrl, playbackUrl });

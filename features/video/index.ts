@@ -4,6 +4,7 @@ export * from "./first-presence-video-service";
 export * from "./first-presence-video-owner-api";
 export * from "./first-presence-video-runtime";
 export * from "./first-presence-video-playback";
+export * from "./initial-encounter-playback-claim";
 export * from "./first-presence-uncertain-reconciliation";
 export * from "./first-presence-video-postgres";
 export * from "./vidu-first-presence-provider";
