@@ -197,3 +197,9 @@ test("greeting notification permission is optional and requires both a completed
   assert.match(conversation, /memoryai\.greeting-notification-dismissed/);
   assert.doesNotMatch(conversation, /notification\/push/);
 });
+
+test("ordinary chat names the durable free-chat limit instead of presenting it as a transport failure", () => {
+  assert.match(conversation, /error\.status === 429 && error\.message === "FREE_CHAT_DAILY_LIMIT_REACHED"/);
+  assert.match(conversation, /今天的免费对话已用完；你可以明天再来。安全陪伴始终可用。/);
+  assert.doesNotMatch(conversation, /FREE_CHAT_DAILY_LIMIT_REACHED[\s\S]{0,180}(?:购买|充值|订阅)/);
+});
