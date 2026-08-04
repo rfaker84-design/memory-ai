@@ -11,6 +11,8 @@ test("API observability uses stable route templates and never logs dynamic ident
     ["/api/video-shares/11111111-1111-4111-8111-111111111111", "/api/video-shares/:publicId"],
     ["/api/memories/00000000-0000-4000-8000-000000000001", "/api/memories/:memoryId"],
     ["/api/memories/00000000-0000-4000-8000-000000000001/first-presence-video/00000000-0000-4000-8000-000000000002/playback", "/api/memories/:memoryId/first-presence-video/:jobId/playback"],
+    ["/api/memories/00000000-0000-4000-8000-000000000001/first-presence-video/00000000-0000-4000-8000-000000000002/encounter-playback", "/api/memories/:memoryId/first-presence-video/:jobId/encounter-playback"],
+    ["/api/memories/00000000-0000-4000-8000-000000000001/pickup-photo-sources", "/api/memories/:memoryId/pickup-photo-sources"],
     ["/api/first-presence-video/playback/signed-provider-token", "/api/first-presence-video/playback/:token"],
   ] as const;
 
