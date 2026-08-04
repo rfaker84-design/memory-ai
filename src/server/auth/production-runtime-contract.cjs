@@ -96,15 +96,15 @@ function requireVerificationPepperRotationContract(environment) {
   }
 }
 
-function requireInternalControlTokenRotation(environment, name) {
-  const current = requiredSecret(environment, name, MINIMUM_VIDEO_TOKEN_BYTES);
+function requireInternalControlTokenRotation(environment, name, minimumBytes = MINIMUM_VIDEO_TOKEN_BYTES) {
+  const current = requiredSecret(environment, name, minimumBytes);
   const previous = environment[`${name}_PREVIOUS`];
   const validUntil = environment[`${name}_PREVIOUS_VALID_UNTIL`];
   if (!previous && !validUntil) return;
   const expiry = Date.parse(validUntil || "");
   if (!previous || !validUntil
     || previous !== previous.trim()
-    || Buffer.byteLength(previous, "utf8") < MINIMUM_VIDEO_TOKEN_BYTES
+    || Buffer.byteLength(previous, "utf8") < minimumBytes
     || previous === current
     || !Number.isFinite(expiry)
     || expiry <= Date.now()
@@ -190,6 +190,7 @@ function assertProductionRuntimeContract(environment = process.env) {
   requiredSecret(environment, "SESSION_SECRET", 32);
   requireSessionRotationContract(environment);
   requireInternalControlTokenRotation(environment, "REFUND_REVIEW_ACCESS_TOKEN");
+  requireInternalControlTokenRotation(environment, "OPERATIONS_METRICS_ACCESS_TOKEN", 32);
   requireEnabled(environment, "AUTH_TRUST_NGINX_PROXY", "AUTH_TRUST_NGINX_PROXY_NOT_CONFIGURED");
   requireEnabled(environment, "AUTH_PROXY_LOOPBACK_ONLY", "AUTH_PROXY_LOOPBACK_CONTRACT_NOT_CONFIGURED");
   requireReportReviewAccess(environment);
