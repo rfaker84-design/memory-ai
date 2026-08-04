@@ -8,6 +8,7 @@ import {
   productApi,
   ProductApiError,
   type ProductConversation,
+  type ProductAccountDeletionProgress,
   type ProductMemory,
   type ProductPickup,
 } from "./product/api";
@@ -142,7 +143,11 @@ export function App() {
   const [editingPickupId, setEditingPickupId] = useState<string | null>(null);
   const [pickupRequestIdempotencyKey, setPickupRequestIdempotencyKey] = useState<string | null>(null);
   const [birthDate, setBirthDate] = useState("");
-  const [profileState, setProfileState] = useState<"idle" | "loading" | "ready" | "unavailable">("idle");
+  const [profileState, setProfileState] = useState<"idle" | "loading" | "ready" | "unavailable">("loading");
+  const [deletionProgress, setDeletionProgress] = useState<ProductAccountDeletionProgress | null>(null);
+  const [deletionState, setDeletionState] = useState<"idle" | "loading" | "ready" | "unavailable">("idle");
+  const [deletionConfirming, setDeletionConfirming] = useState(false);
+  const [resumeDeletionAfterLogin, setResumeDeletionAfterLogin] = useState(false);
 
   const hasMemory = Boolean(memory);
   const hasIncompleteMemory = Boolean(incompleteMemory);
@@ -233,6 +238,20 @@ export function App() {
     return () => { live = false; };
   }, [mode, screen]);
 
+  useEffect(() => {
+    if (screen !== "profile" || mode === "preview") return;
+    let live = true;
+    setDeletionState("loading");
+    void productApi.getAccountDeletion().then((progress) => {
+      if (!live) return;
+      setDeletionProgress(progress);
+      setDeletionState("ready");
+    }).catch(() => {
+      if (live) setDeletionState("unavailable");
+    });
+    return () => { live = false; };
+  }, [mode, screen]);
+
   const openMemory = useCallback(async (id: string, destination: "home" | "memory" | "video" = "memory", rememberPrimary = false) => {
     if (__MOBILE_DEBUG_BUILD__ && id === "preview-memory") {
       setMode("preview");
@@ -318,6 +337,11 @@ export function App() {
       const result = await productApi.verifyCode(phone.trim(), challengeId, code.trim());
       if (!result.authenticated) throw new ProductApiError(401);
       applyOwnedMemories(await loadOwnedMemories());
+      if (resumeDeletionAfterLogin) {
+        setResumeDeletionAfterLogin(false);
+        setScreen("profile");
+        setNotice("短信登录已完成。请在 5 分钟内返回注销确认；系统不会自动提交。");
+      }
     } catch (error) { setNotice(friendlyError(error)); }
     finally { setBusy(false); }
   };
@@ -492,7 +516,45 @@ export function App() {
     finally { setBusy(false); }
   };
 
+  const submitAccountDeletion = async () => {
+    if (busy || mode === "preview" || !deletionConfirming) return;
+    setBusy(true); setNotice("");
+    try {
+      const progress = await productApi.requestAccountDeletion();
+      setDeletionProgress(progress);
+      setDeletionState("ready");
+      setDeletionConfirming(false);
+      setNotice("注销申请已受理。当前登录状态已由服务端撤销；请保留此页查看进度。");
+    } catch (error) {
+      if (error instanceof ProductApiError && error.status === 403) {
+        setDeletionConfirming(false);
+        setResumeDeletionAfterLogin(true);
+        setNotice("为保护账户，请重新完成短信登录后，在 5 分钟内返回此页确认。系统不会自动提交。");
+        setScreen("login");
+      } else {
+        setNotice(friendlyError(error));
+      }
+    } finally { setBusy(false); }
+  };
+
   const content = useMemo(() => {
+    if (screen === "profile" && profileState !== "idle") return <main className="profileScene">
+      <p className="eyebrow">我的</p>
+      <h1>资料与偏好</h1>
+      <p>每一段已确认资料都只在你的授权范围内使用。</p>
+      <section>
+        <h2>生日</h2>
+        <p>用于年龄保护和你明确选择的纪念日规则；可以随时修改。</p>
+        {mode === "preview" ? <p>预览模式不会保存个人资料。</p> : profileState === "loading" ? <p role="status">正在读取个人资料…</p> : profileState === "unavailable" ? <p role="alert">个人资料暂时无法读取，未显示或修改任何旧值。</p> : <><label>生日<input className="field" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} inputMode="numeric" placeholder="YYYY-MM-DD" /></label><button className="primaryButton" disabled={busy || !birthDate} onClick={() => void saveBirthDate()}>{busy ? "正在保存" : "保存生日"}</button></>}
+      </section>
+      <section>
+        <h2>账户注销</h2>
+        <p>注销完成后，剩余付费、邀请和节日影像额度及奖励机会会清零且无法恢复。订单、退款、发票和法定记录会与内容资料隔离。</p>
+        {mode === "preview" ? <p>预览模式不能发起或显示注销。</p> : deletionState === "loading" ? <p role="status">正在读取注销进度…</p> : deletionState === "unavailable" ? <p role="alert">注销服务暂时不可用，未提交任何注销申请。</p> : deletionProgress ? <><p role="status">当前状态：{deletionProgress.status}{deletionProgress.legalHold ? "；部分资料受法定保全范围限制，不会用于产品功能。" : ""}</p><p>在线内容不晚于 {new Date(deletionProgress.contentDeleteAfter).toLocaleDateString("zh-CN")} 删除；外部对象不晚于 {new Date(deletionProgress.providerDeleteAfter).toLocaleDateString("zh-CN")} 删除；备份最长保留至 {new Date(deletionProgress.backupExpireAfter).toLocaleDateString("zh-CN")}。</p><button className="quietLink" disabled={busy} onClick={() => { setDeletionState("loading"); void productApi.getAccountDeletion().then((progress) => { setDeletionProgress(progress); setDeletionState("ready"); }).catch(() => setDeletionState("unavailable")); }}>刷新注销进度</button></> : deletionConfirming ? <><p role="alert">确认后将立即撤销所有登录 Session 和设备访问。系统不会自动重试提交。</p><button className="primaryButton" disabled={busy} onClick={() => void submitAccountDeletion()}>{busy ? "正在提交" : "确认注销账户"}</button><button className="quietLink" disabled={busy} onClick={() => setDeletionConfirming(false)}>取消</button></> : <button className="quietLink" disabled={busy} onClick={() => setDeletionConfirming(true)}>申请注销账户</button>}
+      </section>
+      <section><h2>隐私与安全</h2><p>数据导出、危机支持授权和分享设置仍通过同一受保护账户合同完成；移动端不会伪造已提交、已删除或已通知。</p></section>
+      {notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="profile" onChange={setScreen} hasMemory={hasMemory} />
+    </main>;
     if (screen === "splash") return <BrandSplash />;
     if (screen === "offline") return <Offline retry={() => {
       if (!navigator.onLine) return;
@@ -572,7 +634,7 @@ export function App() {
       {primarySelectorOpen && <section role="dialog" aria-modal="true" aria-label="选择主 TA" className="memoryHero"><h2>选择主 TA</h2><p>只显示本次登录后服务端确认属于你的 TA；此选择只保存为本设备展示偏好。</p>{ownedMemories.map((candidate) => <button key={candidate.id} className="quietLink" type="button" disabled={busy || candidate.id === memory?.id} onClick={() => void openMemory(candidate.id, "home", true)}>{candidate.name}{candidate.id === memory?.id ? "（当前主 TA）" : ""}</button>)}<button className="quietLink" type="button" onClick={() => setPrimarySelectorOpen(false)}>取消</button></section>}
       <button className="primaryButton" onClick={() => press(() => incompleteMemory ? continueIncompleteMemory() : memory ? setScreen("chat") : beginCreateMemory())}>{hasIncompleteMemory ? "继续补充照片" : memory ? "继续查看" : "创建 TA"}</button>{notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="home" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
-  }, [busy, challengeId, code, conversation, hasMemory, incompleteMemory, isFirstMemory, media.length, memory, messages, mode, name, notice, online, ownedMemories, pendingCreation, phone, primarySelectorOpen, question, relationship, resumingMemory, screen, story, title]);
+  }, [birthDate, busy, challengeId, code, conversation, deletionConfirming, deletionProgress, deletionState, hasMemory, incompleteMemory, isFirstMemory, media.length, memory, messages, mode, name, notice, online, ownedMemories, pendingCreation, phone, primarySelectorOpen, profileState, question, relationship, resumingMemory, screen, story, submitAccountDeletion, title]);
 
   return <div className={`appRoot ${productOnline ? "isOnline" : ""}`}>{content}</div>;
 }

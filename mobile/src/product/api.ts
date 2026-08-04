@@ -43,6 +43,16 @@ export type ProductAccountProfile = {
   adultEligible: boolean;
 };
 
+export type ProductAccountDeletionProgress = {
+  requestId: string;
+  status: "requested" | "content_pending" | "provider_pending" | "legal_hold" | "completed" | "failed";
+  contentDeleteAfter: string;
+  providerDeleteAfter: string;
+  backupExpireAfter: string;
+  legalHold: boolean;
+  completedAt: string | null;
+};
+
 export type FirstGreeting = {
   session: { id: string; memoryId: string; userId: string };
   greeting: {
@@ -259,6 +269,29 @@ function normalizePickup(value: unknown): ProductPickup | null {
   };
 }
 
+function normalizeAccountDeletion(value: unknown): ProductAccountDeletionProgress | null {
+  const deletion = asRecord(value);
+  const status = deletion.status;
+  if (
+    typeof deletion.requestId !== "string"
+    || !["requested", "content_pending", "provider_pending", "legal_hold", "completed", "failed"].includes(status as string)
+    || typeof deletion.contentDeleteAfter !== "string"
+    || typeof deletion.providerDeleteAfter !== "string"
+    || typeof deletion.backupExpireAfter !== "string"
+    || typeof deletion.legalHold !== "boolean"
+    || (typeof deletion.completedAt !== "string" && deletion.completedAt !== null)
+  ) return null;
+  return {
+    requestId: deletion.requestId,
+    status: status as ProductAccountDeletionProgress["status"],
+    contentDeleteAfter: deletion.contentDeleteAfter,
+    providerDeleteAfter: deletion.providerDeleteAfter,
+    backupExpireAfter: deletion.backupExpireAfter,
+    legalHold: deletion.legalHold,
+    completedAt: deletion.completedAt,
+  };
+}
+
 export const productApi = {
   enabled: () => Boolean(runtimeConfig.apiBaseUrl),
   async session() {
@@ -367,6 +400,23 @@ export const productApi = {
       throw new ProductApiError(502, "服务端未确认生日保存");
     }
     return { birthDate: result.birthDate, adultEligible: result.adultEligible } satisfies ProductAccountProfile;
+  },
+  async getAccountDeletion() {
+    const result = await request<{ deletion?: unknown }>("/api/account/deletion", { cache: "no-store" });
+    if (result.deletion === undefined || result.deletion === null) return null;
+    const deletion = normalizeAccountDeletion(result.deletion);
+    if (!deletion) throw new ProductApiError(502, "服务端未确认注销进度");
+    return deletion;
+  },
+  async requestAccountDeletion() {
+    const result = await request<{ deletion?: unknown }>("/api/account/deletion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmation: "DELETE_ACCOUNT" }),
+    });
+    const deletion = normalizeAccountDeletion(result.deletion);
+    if (!deletion) throw new ProductApiError(502, "服务端未确认注销申请");
+    return deletion;
   },
   async listPickups(memoryId: string) {
     const result = await request<{ pickups?: unknown }>(`/api/memories/${encodeURIComponent(memoryId)}/pickups`, { cache: "no-store" });
