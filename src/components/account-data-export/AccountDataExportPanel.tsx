@@ -8,6 +8,7 @@ const ACCOUNT_EXPORT_TIMEOUT_MS = 12_000;
 export function AccountDataExportPanel() {
   const [downloading, setDownloading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [assistanceBlocked, setAssistanceBlocked] = useState(false);
   const [unauthenticated, setUnauthenticated] = useState(false);
   const activeRequest = useRef<AbortController | null>(null);
 
@@ -21,6 +22,7 @@ export function AccountDataExportPanel() {
     activeRequest.current = controller;
     setDownloading(true);
     setMessage(null);
+    setAssistanceBlocked(false);
     setUnauthenticated(false);
     try {
       const response = await fetch("/api/account/export", {
@@ -32,6 +34,11 @@ export function AccountDataExportPanel() {
       if (activeRequest.current !== controller) return;
       if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { error?: string };
+        if (response.status === 409 && body.error === "UNDERSTANDING_ASSISTANCE_REQUIRED") {
+          setMessage("\u8fd9\u9879\u64cd\u4f5c\u5df2\u6682\u65f6\u505c\u6b62\u3002\u4f60\u53ef\u4ee5\u5148\u518d\u770b\u4e00\u6b21\u8bf4\u660e\uff0c\u6682\u65f6\u4e0d\u4e0b\u8f7d\uff0c\u6216\u8bf7\u53ef\u4fe1\u4efb\u7684\u4eba\u534f\u52a9\uff1b\u5fc6\u89c1\u4e0d\u4f1a\u66ff\u4f60\u5224\u65ad\uff0c\u4e5f\u4e0d\u4f1a\u81ea\u52a8\u8054\u7cfb\u4efb\u4f55\u4eba\u3002");
+          setAssistanceBlocked(true);
+          return;
+        }
         if (response.status === 401 && body.error === "UNAUTHENTICATED") {
           setMessage("请先登录，再下载你的资料副本。未登录时不会生成或泄露任何资料。");
           setUnauthenticated(true);
@@ -74,6 +81,7 @@ export function AccountDataExportPanel() {
     <p>副本包含你拥有的 TA、对话、原始媒体的 Owner-only 下载入口、允许保存影像的授权入口、同意记录以及最小订单和退款摘要。首次不可保存影像不会因为导出而获得下载权。它不包含登录凭据、Provider 请求、对象存储路径、签名链接或内部审计资料。</p>
     <p>为避免他人拿到已登录设备后导出敏感内容，请在重新登录后的 5 分钟内下载。</p>
     {message ? <p role="status">{message}</p> : null}
+    {assistanceBlocked ? <p><Link href="/settings/understanding-assistance">{"\u8bf7\u53ef\u4fe1\u4efb\u7684\u4eba\u534f\u52a9"}</Link></p> : null}
     {unauthenticated ? <Link href="/login">前往登录</Link> : <button type="button" disabled={downloading} onClick={() => void download()}>
       {downloading ? "正在生成资料副本…" : "下载 JSON 资料副本"}
     </button>}

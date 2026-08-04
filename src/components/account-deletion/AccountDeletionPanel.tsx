@@ -26,6 +26,7 @@ export function AccountDeletionPanel() {
   const [confirming, setConfirming] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [assistanceBlocked, setAssistanceBlocked] = useState(false);
 
   const load = useCallback(async (parentSignal?: AbortSignal) => {
     setLoadState("loading");
@@ -68,6 +69,7 @@ export function AccountDeletionPanel() {
     if (submitting) return;
     setSubmitting(true);
     setMessage(null);
+    setAssistanceBlocked(false);
     const controller = new AbortController();
     let timedOut = false;
     const timer = globalThis.setTimeout(() => { timedOut = true; controller.abort(); }, ACCOUNT_DELETION_SUBMIT_TIMEOUT_MS);
@@ -82,6 +84,12 @@ export function AccountDeletionPanel() {
       const body = await response.json().catch(() => ({})) as { deletion?: Progress; error?: string };
       if (response.status === 403 && body.error === "REAUTH_REQUIRED") {
         setMessage("为保护你的账户，请重新完成短信登录后，在 5 分钟内返回此页确认注销。");
+        setConfirming(false);
+        return;
+      }
+      if (response.status === 409 && body.error === "UNDERSTANDING_ASSISTANCE_REQUIRED") {
+        setMessage("\u8fd9\u9879\u64cd\u4f5c\u5df2\u6682\u65f6\u505c\u6b62\u3002\u4f60\u53ef\u4ee5\u5148\u518d\u770b\u4e00\u6b21\u8bf4\u660e\uff0c\u6682\u65f6\u4e0d\u64cd\u4f5c\uff0c\u6216\u8bf7\u53ef\u4fe1\u4efb\u7684\u4eba\u534f\u52a9\uff1b\u5fc6\u89c1\u4e0d\u4f1a\u66ff\u4f60\u5224\u65ad\uff0c\u4e5f\u4e0d\u4f1a\u81ea\u52a8\u8054\u7cfb\u4efb\u4f55\u4eba\u3002");
+        setAssistanceBlocked(true);
         setConfirming(false);
         return;
       }
@@ -136,6 +144,7 @@ export function AccountDeletionPanel() {
       <li>支付、退款、发票、投诉和法定审计记录不会与内容资料混存。</li>
     </ul>
     {message ? <p role="status">{message}</p> : null}
+    {assistanceBlocked ? <p><Link href="/settings/understanding-assistance">{"\u8bf7\u53ef\u4fe1\u4efb\u7684\u4eba\u534f\u52a9"}</Link></p> : null}
     {confirming ? <section aria-label="注销确认"><p>请确认：你理解注销后无法恢复内容，且将立即退出所有设备。</p><button type="button" disabled={submitting} onClick={() => void submit()}>{submitting ? "正在提交…" : "确认注销账户"}</button><button type="button" disabled={submitting} onClick={() => setConfirming(false)}>取消</button></section> : <button type="button" onClick={() => setConfirming(true)}>申请注销</button>}
   </main>;
 }
