@@ -40,9 +40,23 @@ function pem(environment: NodeJS.ProcessEnv, name: string): string {
 
 export function loadWeChatPayConfig(environment: NodeJS.ProcessEnv = process.env): WeChatPayConfig {
   const notifyUrl = value(environment, "WECHAT_PAY_NOTIFY_URL");
+  const allowedOrigin = value(environment, "AUTH_ALLOWED_ORIGIN");
   try {
-    const parsed = new URL(notifyUrl);
-    if (parsed.protocol !== "https:" || parsed.username || parsed.password) throw new Error("unsafe notify url");
+    const callback = new URL(notifyUrl);
+    const origin = new URL(allowedOrigin);
+    if (
+      callback.protocol !== "https:"
+      || callback.username
+      || callback.password
+      || origin.protocol !== "https:"
+      || origin.username
+      || origin.password
+      || origin.origin !== allowedOrigin.replace(/\/$/, "")
+      || callback.origin !== origin.origin
+      || callback.pathname !== "/api/payments/wechat/callback"
+      || callback.search
+      || callback.hash
+    ) throw new Error("unsafe notify url");
   } catch {
     throw new PaymentConfigurationError("WECHAT_PAY_NOT_CONFIGURED");
   }

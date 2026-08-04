@@ -252,3 +252,29 @@ test("WeChat provider sends a full refund with the stable server-issued refund n
 test("WeChat configuration never accepts partial merchant credentials", () => {
   assert.throws(() => loadWeChatPayConfig({ WECHAT_PAY_MCH_ID: "123" } as unknown as NodeJS.ProcessEnv), PaymentConfigurationError);
 });
+
+test("WeChat callback configuration is bound to the approved application origin and exact callback path", () => {
+  const pem = Buffer.from("-----BEGIN TEST KEY-----\nvalue\n-----END TEST KEY-----").toString("base64");
+  const base = {
+    AUTH_ALLOWED_ORIGIN: "https://app.memoryai.test",
+    WECHAT_PAY_NOTIFY_URL: "https://app.memoryai.test/api/payments/wechat/callback",
+    WECHAT_PAY_API_V3_KEY: "01234567890123456789012345678901",
+    WECHAT_PAY_APP_ID: "wx123",
+    WECHAT_PAY_MCH_ID: "123456",
+    WECHAT_PAY_MERCHANT_SERIAL_NO: "AABBCCDD",
+    WECHAT_PAY_MERCHANT_PRIVATE_KEY_PEM_BASE64: pem,
+    WECHAT_PAY_PLATFORM_SERIAL_NO: "EEFF0011",
+    WECHAT_PAY_PLATFORM_CERTIFICATE_PEM_BASE64: pem,
+  } as unknown as NodeJS.ProcessEnv;
+  assert.equal(loadWeChatPayConfig(base).notifyUrl, "https://app.memoryai.test/api/payments/wechat/callback");
+  for (const notifyUrl of [
+    "https://other.example.test/api/payments/wechat/callback",
+    "https://app.memoryai.test/api/payments/wechat/other",
+    "https://app.memoryai.test/api/payments/wechat/callback?redirect=elsewhere",
+  ]) {
+    assert.throws(
+      () => loadWeChatPayConfig({ ...base, WECHAT_PAY_NOTIFY_URL: notifyUrl }),
+      (error: unknown) => error instanceof PaymentConfigurationError && error.code === "WECHAT_PAY_NOT_CONFIGURED",
+    );
+  }
+});
