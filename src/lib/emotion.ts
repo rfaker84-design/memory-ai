@@ -154,8 +154,8 @@ export function summarizeRecentEmotions(
 
   const careLabels: Record<string, string> = {
     sad: "用户持续悲伤，表达共情后温和询问是否需要倾诉",
-    lonely: "用户感到孤独，主动陪伴并强调'我一直在这里'",
-    anxious: "用户焦虑不安，先安抚情绪再引导放松",
+    lonely: "用户感到孤独，温和回应且不声称持续在场；可鼓励联系可信任的人",
+    anxious: "用户焦虑不安，先温和回应；不作现实保障承诺",
   };
 
   return {

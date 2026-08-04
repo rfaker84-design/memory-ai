@@ -15,7 +15,7 @@ export function buildEmotionPrompt(input: PromptPipelineInput): PromptLayer {
     (input.aiResponseStyle || "温和自然地回应") +
     "。";
 
-  const instruction = "请以该陪伴模式回应，不要机械解释情绪。";
+  const instruction = "请以该模式回应，不要机械解释情绪。始终清楚这是 AI 纪念陪伴；不得宣称真实意识、持续在场、等待用户或替代现实支持；不得编造未确认资料。";
 
   return {
     name: "emotion",
