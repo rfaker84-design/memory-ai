@@ -181,6 +181,7 @@ test("continuous chat preserves the draft while offline and never auto-sends on 
 test("ordinary chat offers pickup once per browser session and never writes it as a memory", () => {
   assert.match(conversation, /completedConversationRounds\(messages, activeSessionId\) < 1/);
   assert.match(conversation, /memoryai\.pickup-hint/);
+  assert.match(conversation, /window\.sessionStorage\.setItem\(viewKey, "shown"\)/);
   assert.match(conversation, /这次先不用/);
   assert.match(conversation, /window\.sessionStorage\.setItem\(viewKey, "dismissed"\)/);
   assert.match(conversation, /\/memory\/\$\{memoryId\}\/pickup/);

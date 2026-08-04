@@ -183,7 +183,15 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
       setPickupSuggestionVisible(false);
       return;
     }
-    setPickupSuggestionVisible(window.sessionStorage.getItem(viewKey) !== "dismissed");
+    // The suggestion is deliberately a single, non-blocking invitation. A
+    // refresh, navigation away, or simply carrying on elsewhere counts as
+    // ignoring it; reopening this session must not turn silence into a nudge.
+    if (window.sessionStorage.getItem(viewKey)) {
+      setPickupSuggestionVisible(false);
+      return;
+    }
+    window.sessionStorage.setItem(viewKey, "shown");
+    setPickupSuggestionVisible(true);
   }, [activeSessionId, messages]);
 
   useEffect(() => {
