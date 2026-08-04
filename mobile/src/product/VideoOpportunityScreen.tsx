@@ -266,6 +266,11 @@ export function VideoOpportunityScreen({
       <p>只计算当前会话中服务端完整保存的有效对话，不统计本地草稿或失败消息。</p>
     </article>}
 
-    {unavailable ? <p className="videoUnavailable" role="status">暂时无法确认账户影像状态，请检查网络后重试。</p> : null}
+    {unavailable ? <section className="videoUnavailable">
+      <p role="status">暂时无法确认账户影像状态，请检查网络后重新读取。</p>
+      <button className="secondaryButton" disabled={loading} onClick={() => setRefreshKey((value) => value + 1)}>
+        {loading ? "正在重新读取" : "重新读取账户状态"}
+      </button>
+    </section> : null}
   </main>;
 }

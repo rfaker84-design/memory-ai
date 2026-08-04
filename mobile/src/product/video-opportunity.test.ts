@@ -134,3 +134,11 @@ test("the mobile opportunity shell reuses the Core gate and has no release-only 
   assert.doesNotMatch(screen, /app\.staging|api\.staging|VITE_MOBILE|test_callback|previewGreeting/i);
   assert.doesNotMatch(screen, /createCommerceVideoOrder|\/api\/commerce\/orders|saveSignedVideo/);
 });
+
+test("an unavailable account snapshot exposes an explicit read-only refresh instead of local success", () => {
+  const screen = readFileSync(new URL("./VideoOpportunityScreen.tsx", import.meta.url), "utf8");
+  assert.match(screen, /暂时无法确认账户影像状态，请检查网络后重新读取/);
+  assert.match(screen, /\{unavailable \? <section className="videoUnavailable">[\s\S]*<p role="status">[\s\S]*重新读取账户状态/);
+  assert.match(screen, /disabled=\{loading\} onClick=\{\(\) => setRefreshKey\(\(value\) => value \+ 1\)\}/);
+  assert.doesNotMatch(screen, /unavailable[\s\S]{0,500}(?:setJobs\(|setCommerce\(|artifactAvailable:\s*true)/);
+});
