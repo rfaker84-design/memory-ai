@@ -10,6 +10,7 @@ import {
   type ProductConversation,
   type ProductAccountDeletionProgress,
   type ProductMemory,
+  type ProductMemoryProfileInput,
   type ProductPickup,
 } from "./product/api";
 import {
@@ -84,6 +85,17 @@ function confirmedPickupSourceIds(metadata: Record<string, unknown> | null | und
     }
   }
   return ids;
+}
+
+function profileDraft(memory: ProductMemory): ProductMemoryProfileInput {
+  return {
+    name: memory.name,
+    relationship: memory.relationship,
+    lifeStory: memory.lifeStory ?? null,
+    personalityProfile: memory.personalityProfile ?? null,
+    speechStyle: memory.speechStyle ?? null,
+    catchPhrases: memory.catchPhrases ?? null,
+  };
 }
 
 function press(action: () => void) {
@@ -172,6 +184,8 @@ export function App() {
   const [editingPickupId, setEditingPickupId] = useState<string | null>(null);
   const [pickupRequestIdempotencyKey, setPickupRequestIdempotencyKey] = useState<string | null>(null);
   const [birthDate, setBirthDate] = useState("");
+  const [taProfileDraft, setTaProfileDraft] = useState<ProductMemoryProfileInput | null>(null);
+  const [taProfileEditing, setTaProfileEditing] = useState(false);
   const [profileState, setProfileState] = useState<"idle" | "loading" | "ready" | "unavailable">("loading");
   const [deletionProgress, setDeletionProgress] = useState<ProductAccountDeletionProgress | null>(null);
   const [deletionState, setDeletionState] = useState<"idle" | "loading" | "ready" | "unavailable">("idle");
@@ -545,6 +559,35 @@ export function App() {
     finally { setBusy(false); }
   };
 
+  const beginTaProfileEdit = () => {
+    if (!memory || busy) return;
+    setTaProfileDraft(profileDraft(memory));
+    setTaProfileEditing(true);
+    setNotice("");
+  };
+
+  const updateTaProfileDraft = (field: keyof ProductMemoryProfileInput, value: string) => {
+    setTaProfileDraft((current) => current ? { ...current, [field]: value || null } : current);
+  };
+
+  const saveTaProfile = async () => {
+    if (!memory || !taProfileDraft || busy || !taProfileDraft.name.trim() || !taProfileDraft.relationship.trim()) return;
+    setBusy(true); setNotice("");
+    try {
+      const updated = await productApi.updateMemoryProfile(memory.id, {
+        ...taProfileDraft,
+        name: taProfileDraft.name.trim(),
+        relationship: taProfileDraft.relationship.trim(),
+      });
+      setMemory(updated);
+      setOwnedMemories((current) => current.map((candidate) => candidate.id === updated.id ? updated : candidate));
+      setTaProfileDraft(profileDraft(updated));
+      setTaProfileEditing(false);
+      setNotice("TA 资料已由服务端确认保存；这不会改写已经发生的对话。");
+    } catch (error) { setNotice(friendlyError(error)); }
+    finally { setBusy(false); }
+  };
+
   const openReplyCorrection = (content: string) => {
     setReplyCorrectionContent(content);
     setReplyCorrectionReason("称呼不对");
@@ -614,6 +657,10 @@ export function App() {
       <p className="eyebrow">我的</p>
       <h1>资料与偏好</h1>
       <p>每一段已确认资料都只在你的授权范围内使用。</p>
+      <section>
+        <h2>当前 TA</h2>
+        {!memory ? <p>还没有可编辑的 TA。</p> : taProfileEditing && taProfileDraft ? <><p>只编辑你已确认的资料；保存后只影响之后的回复，不改写历史对话。</p><label>名称<input className="field" value={taProfileDraft.name} onChange={(event) => updateTaProfileDraft("name", event.target.value)} /></label><label>与你的关系<input className="field" value={taProfileDraft.relationship} onChange={(event) => updateTaProfileDraft("relationship", event.target.value)} /></label><label>性格<textarea className="field" value={taProfileDraft.personalityProfile ?? ""} onChange={(event) => updateTaProfileDraft("personalityProfile", event.target.value)} /></label><label>表达习惯<textarea className="field" value={taProfileDraft.speechStyle ?? ""} onChange={(event) => updateTaProfileDraft("speechStyle", event.target.value)} /></label><label>常说的话<textarea className="field" value={taProfileDraft.catchPhrases ?? ""} onChange={(event) => updateTaProfileDraft("catchPhrases", event.target.value)} /></label><label>已确认的共同经历<textarea className="field" value={taProfileDraft.lifeStory ?? ""} onChange={(event) => updateTaProfileDraft("lifeStory", event.target.value)} /></label><button className="primaryButton" disabled={busy || !taProfileDraft.name.trim() || !taProfileDraft.relationship.trim()} onClick={() => void saveTaProfile()}>{busy ? "正在保存" : "保存 TA 资料"}</button><button className="quietLink" disabled={busy} onClick={() => setTaProfileEditing(false)}>取消</button></> : <><p>{memory.name} · {memory.relationship}</p><button className="quietLink" disabled={busy} onClick={beginTaProfileEdit}>编辑 TA 资料</button></>}
+      </section>
       <section>
         <h2>生日</h2>
         <p>用于年龄保护和你明确选择的纪念日规则；可以随时修改。</p>
@@ -706,7 +753,7 @@ export function App() {
       {primarySelectorOpen && <section role="dialog" aria-modal="true" aria-label="选择主 TA" className="memoryHero"><h2>选择主 TA</h2><p>只显示本次登录后服务端确认属于你的 TA；此选择只保存为本设备展示偏好。</p>{ownedMemories.map((candidate) => <button key={candidate.id} className="quietLink" type="button" disabled={busy || candidate.id === memory?.id} onClick={() => void openMemory(candidate.id, "home", true)}>{candidate.name}{candidate.id === memory?.id ? "（当前主 TA）" : ""}</button>)}<button className="quietLink" type="button" onClick={() => setPrimarySelectorOpen(false)}>取消</button></section>}
       <button className="primaryButton" onClick={() => press(() => incompleteMemory ? continueIncompleteMemory() : memory ? setScreen("chat") : beginCreateMemory())}>{hasIncompleteMemory ? "继续补充照片" : memory ? "继续查看" : "创建 TA"}</button>{notice ? <p className="floatingNotice">{notice}</p> : null}<BottomNav active="home" onChange={setScreen} hasMemory={hasMemory} />
     </main>;
-  }, [birthDate, busy, challengeId, code, conversation, deletionConfirming, deletionProgress, deletionState, hasMemory, incompleteMemory, isFirstMemory, media.length, memory, messages, mode, name, notice, online, ownedMemories, pendingCreation, phone, primarySelectorOpen, profileState, question, relationship, resumingMemory, screen, story, submitAccountDeletion, title]);
+  }, [beginTaProfileEdit, birthDate, busy, challengeId, code, conversation, deletionConfirming, deletionProgress, deletionState, hasMemory, incompleteMemory, isFirstMemory, media.length, memory, messages, mode, name, notice, online, ownedMemories, pendingCreation, phone, primarySelectorOpen, profileState, question, relationship, resumingMemory, saveTaProfile, screen, story, submitAccountDeletion, taProfileDraft, taProfileEditing, title, updateTaProfileDraft]);
 
   return <div className={`appRoot ${productOnline ? "isOnline" : ""}`}>{content}</div>;
 }

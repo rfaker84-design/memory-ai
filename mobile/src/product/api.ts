@@ -21,8 +21,14 @@ export type ProductMemory = {
   photoAssetId?: string | null;
   personalityProfile?: string | null;
   speechStyle?: string | null;
+  catchPhrases?: string | null;
   createdAt?: string;
 };
+
+export type ProductMemoryProfileInput = Pick<
+  ProductMemory,
+  "name" | "relationship" | "lifeStory" | "personalityProfile" | "speechStyle" | "catchPhrases"
+>;
 
 export type ProductMediaAsset = {
   id: string;
@@ -363,6 +369,17 @@ export const productApi = {
   },
   async getMemory(id: string) {
     return request<ProductMemory>(`/api/memories/${encodeURIComponent(id)}`, { cache: "no-store" });
+  },
+  async updateMemoryProfile(memoryId: string, input: ProductMemoryProfileInput) {
+    const updated = await request<ProductMemory>(`/api/memories/${encodeURIComponent(memoryId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    if (typeof updated.id !== "string" || updated.id !== memoryId || !updated.name.trim() || !updated.relationship.trim()) {
+      throw new ProductApiError(502, "服务端未确认 TA 资料保存");
+    }
+    return updated;
   },
   async appendConfirmedReplyCorrection(memoryId: string, suggestion: ReplyCorrectionSuggestion) {
     const current = await this.getMemory(memoryId);
