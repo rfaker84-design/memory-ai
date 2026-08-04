@@ -2,13 +2,21 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { fetchReportJson, fetchReportRequest, prepareReportSubmission, ReportRequestError, type ReportDraft } from "./reportIntakeClient";
+import { fetchReportJson, fetchReportRequest, prepareReportSubmission, reportRequestId, ReportRequestError, type ReportDraft } from "./reportIntakeClient";
 
 const draft: ReportDraft = {
   category: "rights",
   requestedAction: "review",
   details: "Please review this content concern.",
 };
+
+test("report support correlation exposes only a valid server-generated request ID", () => {
+  assert.equal(
+    reportRequestId(new Response(null, { headers: { "x-request-id": "2c6a0caa-2cbf-4a1c-8eaf-5df64d2541f1" } })),
+    "2c6a0caa-2cbf-4a1c-8eaf-5df64d2541f1",
+  );
+  assert.equal(reportRequestId(new Response(null, { headers: { "x-request-id": "caller-controlled-id" } })), null);
+});
 
 test("an unconfirmed report retry reuses only the exact in-memory draft key", () => {
   let calls = 0;
@@ -59,6 +67,8 @@ test("report UI gates submission on a confirmed session and serializes an in-fli
   assert.match(source, /重新读取/);
   assert.match(source, /if \(submitting\) return/);
   assert.match(source, /disabled=\{submitting\}/);
+  assert.match(source, /reportRequestId\(response\)/);
+  assert.match(source, /requestId \? <p/);
   assert.match(source, /fetchReportJson\("\/api\/reports"/);
   assert.match(source, /const controller = new AbortController\(\)/);
   assert.match(source, /void load\(controller\.signal\)/);

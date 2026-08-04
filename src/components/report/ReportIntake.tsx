@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
-import { fetchReportJson, prepareReportSubmission, type PendingReportSubmission } from "./reportIntakeClient";
+import { fetchReportJson, prepareReportSubmission, reportRequestId, type PendingReportSubmission } from "./reportIntakeClient";
 
 type Report = { id: string; category: string; requestedAction: string; status: string; createdAt: string; resolvedAt: string | null };
 
@@ -13,12 +13,13 @@ export function ReportIntake({ publicShareId, notLikeTa = false }: { publicShare
   const [category, setCategory] = useState("rights");
   const [requestedAction, setRequestedAction] = useState(publicShareId && !notLikeTa ? "remove_content" : "review");
   const [message, setMessage] = useState<string | null>(null);
+  const [requestId, setRequestId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "unauthenticated" | "unavailable">("loading");
   const pendingSubmission = useRef<PendingReportSubmission | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
-    setLoadState("loading");
+    setLoadState("loading"); setRequestId(null);
     try {
       const { response, body } = await fetchReportJson("/api/reports", { credentials: "include", cache: "no-store" }, fetch, signal);
       if (signal?.aborted) return;
@@ -28,9 +29,11 @@ export function ReportIntake({ publicShareId, notLikeTa = false }: { publicShare
         setMessage(null);
         setLoadState("ready");
       } else if (reportBody.error === "UNAUTHENTICATED") {
+        setRequestId(reportRequestId(response));
         setMessage("请先登录后提交应用内工单。非登录状态的权利或隐私请求渠道尚未配置；请勿向未核验地址发送身份材料、照片、声音或聊天内容。");
         setLoadState("unauthenticated");
       } else {
+        setRequestId(reportRequestId(response));
         setMessage("暂时无法读取工单状态；尚未提交新的工单。请恢复网络后刷新。");
         setLoadState("unavailable");
       }
@@ -49,13 +52,14 @@ export function ReportIntake({ publicShareId, notLikeTa = false }: { publicShare
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (submitting) return;
-    setSubmitting(true); setMessage(null);
+    setSubmitting(true); setMessage(null); setRequestId(null);
     const submission = prepareReportSubmission(pendingSubmission.current, { category, requestedAction, details });
     pendingSubmission.current = submission;
     try {
       const { response, body } = await fetchReportJson("/api/reports", { method: "POST", credentials: "include", headers: { "content-type": "application/json", "idempotency-key": submission.idempotencyKey }, body: JSON.stringify({ category, subjectType: publicShareId ? "public_share" : "other", subjectId: publicShareId ?? null, requestedAction, details }) });
       const reportBody = body as { report?: Report; error?: string };
       if (!response.ok) {
+        setRequestId(reportRequestId(response));
         if (reportBody.error === "UNAUTHENTICATED") {
           setMessage("登录状态已失效。请重新登录后再提交；这份尚未确认受理的说明仍只保留在当前页面内。");
           setLoadState("unauthenticated");
@@ -89,6 +93,7 @@ export function ReportIntake({ publicShareId, notLikeTa = false }: { publicShare
       <button className="rounded bg-[#d5b172] px-4 py-2 text-[#1b120a]" type="submit" disabled={submitting}>{submitting ? "正在提交…" : "提交工单"}</button>
     </form>
     {message ? <p className="mt-3" role="status">{message}</p> : null}
+    {requestId ? <p className="mt-2 text-sm text-[#d8bfaa]" role="status">{`\u8bf7\u6c42\u7f16\u53f7\uff1a${requestId}`}</p> : null}
     {reports.length ? <ul className="mt-5 space-y-2" aria-label="我的工单">{reports.map((report) => <li key={report.id}>#{report.id.slice(0, 8)} · {report.category} · {report.status} · {new Date(report.createdAt).toLocaleString("zh-CN")}</li>)}</ul> : null}
   </section>;
 }

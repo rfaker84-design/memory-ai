@@ -10,8 +10,16 @@ export type PendingReportSubmission = {
 };
 
 const REPORT_REQUEST_TIMEOUT_MS = 12_000;
+const REQUEST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type ReportJsonResponse = { response: Response; body: unknown };
+
+/** Only display a server-generated opaque correlation ID. Never reflect an
+ * arbitrary response header into a sensitive support surface. */
+export function reportRequestId(response: Pick<Response, "headers">): string | null {
+  const value = response.headers.get("x-request-id")?.trim();
+  return value && REQUEST_ID_PATTERN.test(value) ? value.toLowerCase() : null;
+}
 
 type ReportResponseReader<T> = (response: Response, signal: AbortSignal) => Promise<T>;
 
