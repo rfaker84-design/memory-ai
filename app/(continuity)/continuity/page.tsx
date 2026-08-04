@@ -1,12 +1,13 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { MemoryTheme as T, WarmMotion as M } from "../../../src/lib/design-system/memory-theme";
 import { clearPresentationCache } from "../../../src/components/continuity/clearPresentationCache";
 
 export default function ContinuityPage() {
   const router = useRouter();
+  const reducedMotion = useReducedMotion();
   const [cacheNotice, setCacheNotice] = useState("");
 
   const clearCache = () => {
@@ -22,7 +23,7 @@ export default function ContinuityPage() {
     }
   };
   return (
-    <motion.div {...M.enter} style={{minHeight:"calc(100dvh - var(--nav-height,64px) - env(safe-area-inset-bottom,0px) - 16px)",padding:"clamp(20px,5vw,32px) clamp(16px,4vw,24px) calc(96px + env(safe-area-inset-bottom,0px))",background:T.colors.bg}}>
+    <motion.div {...(reducedMotion ? {} : M.enter)} style={{minHeight:"calc(100dvh - var(--nav-height,64px) - env(safe-area-inset-bottom,0px) - 16px)",padding:"clamp(20px,5vw,32px) clamp(16px,4vw,24px) calc(96px + env(safe-area-inset-bottom,0px))",background:T.colors.bg}}>
       <h2 style={{fontSize:"clamp(20px,5vw,26px)",fontWeight:700,color:T.colors.text,margin:"0 0 4px"}}>我的</h2>
       <p style={{fontSize:11,color:T.colors.textFaint,letterSpacing:"0.06em",marginBottom:26}}>管理你的资料、隐私与帮助选项</p>
       <div style={{borderRadius:T.radius.lg,border:`0.5px solid ${T.colors.border}`,background:T.colors.card,boxShadow:T.shadow.card,padding:16,marginBottom:20}}>

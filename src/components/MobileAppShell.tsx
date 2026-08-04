@@ -2,7 +2,7 @@
 
 import React from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import Footer from "../../components/Footer";
 import { MemoryTheme as T } from "../lib/design-system/memory-theme";
 
@@ -17,6 +17,7 @@ const TABS = [
 export default function MobileAppShell({ children }:{ children:React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const reducedMotion = useReducedMotion();
 
   // The three-tab shell belongs only to its three root destinations. Creation,
   // encounter, companion chat, playback, and memory-detail routes must stay
@@ -47,7 +48,7 @@ export default function MobileAppShell({ children }:{ children:React.ReactNode }
         {TABS.map(t => {
           const a = active(t);
           return (
-            <motion.button key={t.key} type="button" onClick={() => router.push(t.path)} aria-current={a ? "page" : undefined} whileTap={{ scale:0.96 }}
+            <motion.button key={t.key} type="button" onClick={() => router.push(t.path)} aria-current={a ? "page" : undefined} whileTap={reducedMotion ? undefined : { scale: 0.96 }}
               style={{
                 display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,
                 background:"none",border:"none",cursor:"pointer",padding:"6px 10px",minWidth:56,minHeight:44,

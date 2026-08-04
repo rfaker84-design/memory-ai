@@ -15,7 +15,15 @@ test("global accessibility keeps browser zoom, focus visibility, and a keyboard 
   assert.match(shell, /aria-label="主导航"/);
   assert.match(shell, /aria-current=\{a \? "page" : undefined\}/);
   assert.match(shell, /<motion\.button key=\{t\.key\} type="button"/);
+  assert.match(shell, /const reducedMotion = useReducedMotion\(\)/);
+  assert.match(shell, /whileTap=\{reducedMotion \? undefined : \{ scale: 0\.96 \}\}/);
   assert.doesNotMatch(shell, /outline:"none"/);
+});
+
+test("first-release shell and account entry do not animate motion-sensitive users", () => {
+  const continuity = readFileSync("app/(continuity)/continuity/page.tsx", "utf8");
+  assert.match(continuity, /const reducedMotion = useReducedMotion\(\)/);
+  assert.match(continuity, /\{\.\.\.\(reducedMotion \? \{\} : M\.enter\)\}/);
 });
 
 test("bottom navigation is limited to first-release root destinations", () => {
