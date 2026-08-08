@@ -22,9 +22,10 @@ export default function MobileAppShell({ children }:{ children:React.ReactNode }
   // The three-tab shell belongs only to its three root destinations. Creation,
   // encounter, companion chat, playback, and memory-detail routes must stay
   // focused and never inherit a second navigation surface.
-  // The shell is available immediately after login. Focused chat, playback and
-  // detail routes still opt out, but onboarding must never trap a signed-in user.
-  const showsRootNavigation = pathname === "/memory" || pathname === "/continuity" || pathname === "/memory-world" || pathname === "/create-memory";
+  // The shell is available immediately after login on its three root destinations.
+  // Creation is a focused first-encounter ritual; navigation returns only after
+  // the successful transition into memory-world.
+  const showsRootNavigation = pathname === "/memory" || pathname === "/continuity" || pathname === "/memory-world";
   if (!showsRootNavigation) {
     return <>{children}</>;
   }

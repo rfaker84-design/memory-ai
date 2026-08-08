@@ -9,7 +9,7 @@ test("companion home announces bounded cold-start and recovery states", () => {
   assert.match(page, /state === "error" \|\| state === "timeout"\) && <MemoryCard role="alert" aria-live="assertive">/);
   assert.match(page, /fetchCompanionHomeMemoriesJson\(fetch, signal\)/);
   assert.match(page, /<button type="button" onClick=\{\(\) => router\.push\("\/"\)\}/);
-  assert.match(page, /<button key=\{item\.label\} type="button" onClick=\{\(\) => router\.push\(item\.href\)\}/);
+  assert.doesNotMatch(page, /<nav aria-label="主导航"/);
   assert.match(page, /MemoryButton variant="secondary" onClick=\{\(\) => void load\(\)\}>重试/);
   assert.match(page, /state === "unauthenticated"[\s\S]*?<MemoryButton href="\/login" variant="primary">/);
   assert.match(page, /state === "empty"[\s\S]*?<MemoryButton variant="primary" onClick=\{\(\) => router\.push\("\/create-memory"\)\}>/);

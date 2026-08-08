@@ -29,11 +29,11 @@ test("first-release shell and account entry do not animate motion-sensitive user
 test("bottom navigation is limited to first-release root destinations", () => {
   const shell = readFileSync("src/components/MobileAppShell.tsx", "utf8");
   assert.match(shell, /pathname === "\/memory" \|\| pathname === "\/continuity"/);
+  assert.doesNotMatch(shell, /pathname === "\/create-memory"/);
   assert.match(shell, /if \(!showsRootNavigation\) \{[\s\S]*?return <>\{children\}<\/>;/);
   assert.match(shell, /Creation,[\s\S]*companion chat,[\s\S]*memory-detail/);
   const companion = readFileSync("app/memory-world/page.tsx", "utf8");
-  assert.match(companion, /<nav aria-label="主导航"/);
-  assert.match(companion, /aria-current=\{item\.href === "\/memory-world" \? "page" : undefined\}/);
+  assert.doesNotMatch(companion, /<nav aria-label="主导航"/);
 });
 
 test("the retired four-tab navigation cannot be wired back into the first release", () => {

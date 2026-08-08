@@ -20,10 +20,10 @@ import styles from "./CreateMemoryExperience.module.css";
 type CreatedMemory = { id: string; name: string };
 
 const relationships = [
-  { label: "父母", detail: "把熟悉的称呼留给他们" },
-  { label: "伴侣", detail: "让爱意有一个安放的地方" },
-  { label: "子女", detail: "把想念慢慢说出来" },
-  { label: "朋友", detail: "留住一起走过的时光" },
+  { label: "父母", detail: "熟悉的牵挂" },
+  { label: "伴侣", detail: "并肩的岁月" },
+  { label: "子女", detail: "放不下的惦念" },
+  { label: "朋友", detail: "一起走过的时光" },
   { label: "其他", detail: "一位很重要的人" },
 ];
 
@@ -99,6 +99,10 @@ export function CreateMemoryExperience() {
     setStatus("submitting");
     let recoveryWritten = false;
     try {
+      // Let the full-screen ritual establish itself before any network work can
+      // resolve or reject. This keeps the transition legible without changing
+      // the creation, consent, or recovery contracts.
+      await new Promise((resolve) => window.setTimeout(resolve, reducedMotion ? 80 : 720));
       if (birthDate) {
         const profile = await saveAdultBirthDate(birthDate);
         if (!profile.adultEligible) throw new AccountProfileRequestError("ADULT_ELIGIBILITY_REQUIRED");
@@ -109,7 +113,6 @@ export function CreateMemoryExperience() {
         throw new Error("CREATION_RECOVERY_UNAVAILABLE");
       }
       recoveryWritten = true;
-      await new Promise((resolve) => window.setTimeout(resolve, reducedMotion ? 120 : 1050));
       const { response, body } = await fetchCreationJson("/api/memories", {
         method: "POST",
         credentials: "same-origin",
@@ -170,14 +173,19 @@ export function CreateMemoryExperience() {
   if (awakening && !created) {
     return <main className={styles.wakeScene}>
       <div className={styles.starField} aria-hidden="true" />
+      <div className={styles.wakeExpansion} aria-hidden="true"><i /><i /><i /></div>
+      <div className={styles.wakeRays} aria-hidden="true" />
       <div className={styles.wakeHalo} aria-hidden="true" />
       <section className={styles.wakeContent} aria-live="polite">
-        <div className={styles.wakeOrb} aria-hidden="true"><span /><span /><span /></div>
-        <figure className={styles.wakePortrait}>
-          {photoPreview
-            ? <img src={photoPreview} alt="即将进入回忆的 TA 照片" />
-            : <figcaption>动态效果演示<br />非真实 AI 生成视频</figcaption>}
-        </figure>
+        <div className={styles.wakeOrb} aria-hidden="true"><span /><span /><span /><span /><span /></div>
+        <div className={styles.wakePortraitShell}>
+          <span className={styles.gatheringDust} aria-hidden="true"><i /><i /><i /><i /><i /><i /></span>
+          <figure className={styles.wakePortrait}>
+            {photoPreview
+              ? <img src={photoPreview} alt="即将进入回忆的 TA 照片" />
+              : <figcaption>动态效果演示<br />非真实 AI 生成视频</figcaption>}
+          </figure>
+        </div>
         <div className={styles.wakeCopy}>
           <p>正在整理关于 TA 的记忆……</p>
           <p>正在唤醒一段珍贵的回忆……</p>
@@ -202,34 +210,42 @@ export function CreateMemoryExperience() {
         {stage === 0 ? <section className={styles.invitation} key="invitation">
           <p className={styles.eyebrow}>从一句称呼开始</p>
           <h1>想让谁，<br /><em>再次出现在你的记忆里？</em></h1>
-          <p className={styles.intro}>不用准备完整的故事。先轻轻写下 TA 的名字。</p>
-          <div className={styles.invitationInput}>
-            <MemoryInput
+          <p className={styles.intro}>不用准备完整的故事。先把那个最熟悉的称呼，写在这里。</p>
+          <label className={styles.memoryLine}>
+            <span>我一直叫 TA</span>
+            <input
               aria-label="TA 称呼"
               value={draft.name}
               onChange={(event: ChangeEvent<HTMLInputElement>) => {
                 update("name", event.currentTarget.value);
                 update("preferredAddress", event.currentTarget.value);
               }}
-              placeholder="例如：妈妈"
+              placeholder="妈妈"
               autoFocus
-              style={{ background: "transparent", border: "none", borderBottom: "1px solid rgba(241,214,168,.42)", borderRadius: 0, boxShadow: "none", paddingInline: 0 }}
             />
-          </div>
-          <div className={styles.relationshipGrid} aria-label="与 TA 的关系">
+          </label>
+          <div className={styles.relationshipMoment} aria-label="与 TA 的关系">
+            <p>在我的记忆里，TA 是</p>
+            <div className={styles.relationshipChoices}>
             {relationships.map((item) => <button type="button" key={item.label} className={draft.relationship === item.label ? styles.relationshipActive : styles.relationship} onClick={() => update("relationship", item.label)}>
               <strong>{item.label}</strong><span>{item.detail}</span>
             </button>)}
+            </div>
           </div>
         </section> : <section className={styles.trace} key="trace">
           <p className={styles.eyebrow}>第二束光</p>
           <h1>留下 <em>TA 的痕迹</em></h1>
           <p className={styles.intro}>一张照片就够了。它会安静地留在这段回忆里。</p>
-          <label className={styles.portraitStage}>
-            {photoPreview ? <img src={photoPreview} alt="已选择的 TA 照片预览" /> : <span className={styles.portraitEmpty}><b>+</b><small>选择一张照片</small><i>可跳过</i></span>}
-            <input type="file" accept="image/*" onChange={choosePhoto} />
-            {photoPreview && <span className={styles.changePortrait}>换一张照片</span>}
-          </label>
+          <div className={styles.portraitAtmosphere}>
+            <span className={styles.portraitAura} aria-hidden="true" />
+            <span className={styles.portraitParticles} aria-hidden="true"><i /><i /><i /><i /><i /></span>
+            <label className={styles.portraitStage}>
+              {photoPreview ? <img src={photoPreview} alt="已选择的 TA 照片预览" /> : <span className={styles.portraitEmpty}><b>+</b><small>选择一张重要的照片</small><i>也可以稍后再留下</i></span>}
+              <input type="file" accept="image/*" onChange={choosePhoto} />
+              {photoPreview && <span className={styles.changePortrait}>换一张照片</span>}
+            </label>
+            {photoPreview && <p className={styles.portraitWhisper}>这张照片，会成为 TA 回来的第一束光。</p>}
+          </div>
           <div className={styles.optionalDetails}>
             <MemoryInput label="生日（可选）" type="date" value={birthDate} onChange={(event: ChangeEvent<HTMLInputElement>) => setBirthDate(event.currentTarget.value)} style={{ minHeight: 46, background: "rgba(255,255,255,.035)" }} />
             <MemoryInput multiline label="如果 TA 现在看到你，TA 最可能说什么？（可选）" value={draft.catchPhrases} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => update("catchPhrases", event.currentTarget.value)} style={{ minHeight: 96, background: "rgba(255,255,255,.035)" }} />
