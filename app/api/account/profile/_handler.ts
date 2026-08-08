@@ -19,7 +19,7 @@ const profileService: ProfileService = {
   async read(externalUserId) {
     return withPostgresTransaction(async (client) => {
       const result = await client.query<{ birth_date: string | null }>(
-        `SELECT profile ->> 'birth_date' AS birth_date FROM public.users WHERE external_id=$1 LIMIT 1`,
+        `SELECT profile ->> 'birth_date' AS birth_date FROM public.users WHERE external_id=$1::text LIMIT 1`,
         [externalUserId],
       );
       const birthDate = result.rows[0]?.birth_date ?? null;
@@ -30,7 +30,7 @@ const profileService: ProfileService = {
     return withPostgresTransaction(async (client) => {
       const result = await client.query<{ birth_date: string }>(
         `INSERT INTO public.users (external_id, profile)
-         VALUES ($1, jsonb_build_object('birth_date', $2))
+         VALUES ($1::text, jsonb_build_object('birth_date', $2::text))
          ON CONFLICT (external_id) DO UPDATE
            SET profile = jsonb_set(COALESCE(public.users.profile, '{}'::jsonb), '{birth_date}', to_jsonb($2::text), true),
                updated_at = NOW()
