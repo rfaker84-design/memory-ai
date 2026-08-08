@@ -18,7 +18,14 @@ import {
 import styles from "./CreateMemoryExperience.module.css";
 
 type CreatedMemory = { id: string; name: string };
-const relationships = ["父母", "伴侣", "子女", "朋友", "其他"];
+
+const relationships = [
+  { label: "父母", detail: "把熟悉的称呼留给他们" },
+  { label: "伴侣", detail: "让爱意有一个安放的地方" },
+  { label: "子女", detail: "把想念慢慢说出来" },
+  { label: "朋友", detail: "留住一起走过的时光" },
+  { label: "其他", detail: "一位很重要的人" },
+];
 
 export function CreateMemoryExperience() {
   const router = useRouter();
@@ -52,7 +59,7 @@ export function CreateMemoryExperience() {
 
   const moveNext = () => {
     if (validateStage(0, draft)) {
-      setError("请填写 TA 的称呼，并选择你们的关系。");
+      setError("请写下 TA 的称呼，并选择你们的关系。");
       return;
     }
     setError("");
@@ -161,55 +168,83 @@ export function CreateMemoryExperience() {
   };
 
   if (awakening && !created) {
-    return <main className={styles.scene}>
-      <section className={styles.awakening} aria-live="polite">
-        <div className={styles.stars} />
-        <div className={styles.awakeningPhoto}>
+    return <main className={styles.wakeScene}>
+      <div className={styles.starField} aria-hidden="true" />
+      <div className={styles.wakeHalo} aria-hidden="true" />
+      <section className={styles.wakeContent} aria-live="polite">
+        <div className={styles.wakeOrb} aria-hidden="true"><span /><span /><span /></div>
+        <figure className={styles.wakePortrait}>
           {photoPreview
             ? <img src={photoPreview} alt="即将进入回忆的 TA 照片" />
-            : <span>动态效果演示<br />非真实 AI 生成视频</span>}
+            : <figcaption>动态效果演示<br />非真实 AI 生成视频</figcaption>}
+        </figure>
+        <div className={styles.wakeCopy}>
+          <p>正在整理关于 TA 的记忆……</p>
+          <p>正在唤醒一段珍贵的回忆……</p>
         </div>
-        <p>正在整理关于 TA 的记忆……</p>
-        <p>正在寻找 TA 留下的痕迹……</p>
       </section>
     </main>;
   }
 
   return <main className={styles.scene}>
-    <section className={styles.shell}>
-      <section className={styles.presence} aria-hidden="true"><div className={styles.aura} /><div className={styles.figure} /></section>
-      <section className={styles.panel}>
-        {created ? <div className={styles.success}>
-          <div className={styles.eyebrow}>记忆已经收好</div>
-          <h1 className={styles.title}>{created.name}，已经在这里了。</h1>
-          <p className={styles.desc}>这是 AI 纪念陪伴，不代表真实意识或真实出现。</p>
-          <MemoryButton onClick={() => router.replace("/memory-world")}>进入相伴</MemoryButton>
-        </div> : <>
-          <div className={styles.progress} aria-label={`第 ${stage + 1} 步，共 2 步`}><span className={styles.active} /><span className={stage === 1 ? styles.active : ""} /></div>
-          <div className={styles.eyebrow}>{stage === 0 ? "01 开始回忆" : "02 留下 TA 的痕迹"}</div>
-          <h1 className={styles.title}>{stage === 0 ? "想让谁，再一次出现在你的记忆里？" : "留下 TA 的痕迹"}</h1>
-          <p className={styles.desc}>{stage === 0 ? "先从一个称呼开始。" : "照片、生日和一句话，都可以跳过或以后补充。"}</p>
-          <div className={styles.step} key={reducedMotion ? "still" : stage}>
-            {stage === 0 ? <>
-              <MemoryInput label="TA 称呼 *" value={draft.name} onChange={(event: ChangeEvent<HTMLInputElement>) => { update("name", event.currentTarget.value); update("preferredAddress", event.currentTarget.value); }} placeholder="例如：妈妈、爸爸、奶奶" autoFocus />
-              <div className={styles.relationships}>{relationships.map((item) => <button type="button" key={item} className={draft.relationship === item ? styles.relationshipActive : styles.relationship} onClick={() => update("relationship", item)}>{item}</button>)}</div>
-            </> : <>
-              <label className={styles.file}>选择一张照片<small>{photo?.name || "可跳过 · JPG、PNG、WebP，最大 20MB"}</small><input type="file" accept="image/*" onChange={choosePhoto} /></label>
-              <MemoryInput label="生日（可选）" type="date" value={birthDate} onChange={(event: ChangeEvent<HTMLInputElement>) => setBirthDate(event.currentTarget.value)} />
-              <MemoryInput multiline label="如果 TA 现在看到你，TA 最可能说什么？（可选）" value={draft.catchPhrases} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => update("catchPhrases", event.currentTarget.value)} />
-              <p className={styles.safetyCopy}>首发只收集你选择提交的照片和文字资料，不收集声音文件，也不提供声音克隆。未来回应越能贴近你确认的内容；忆见不是现实中的 TA。</p>
-              <label className={styles.consent}><input type="checkbox" checked={draft.consent} onChange={(event) => update("consent", event.target.checked)} /><span>我已年满 18 周岁，确认拥有资料使用权，并同意隐私说明。</span></label>
-            </>}
+    <div className={styles.starField} aria-hidden="true" />
+    <div className={styles.ambientGlow} aria-hidden="true" />
+    <section className={styles.ritual}>
+      {created ? <div className={styles.success}>
+        <div className={styles.eyebrow}>记忆已经收好</div>
+        <h1>{created.name}，已经在这里了。</h1>
+        <p>这是 AI 纪念陪伴，不代表真实意识或真实出现。</p>
+        <MemoryButton onClick={() => router.replace("/memory-world")}>进入相伴</MemoryButton>
+      </div> : <>
+        <div className={styles.stageMark} aria-label={`第 ${stage + 1} 步，共 2 步`}>
+          <span className={styles.stageCurrent}>0{stage + 1}</span><i /><span>02</span>
+        </div>
+        {stage === 0 ? <section className={styles.invitation} key="invitation">
+          <p className={styles.eyebrow}>从一句称呼开始</p>
+          <h1>想让谁，<br /><em>再次出现在你的记忆里？</em></h1>
+          <p className={styles.intro}>不用准备完整的故事。先轻轻写下 TA 的名字。</p>
+          <div className={styles.invitationInput}>
+            <MemoryInput
+              aria-label="TA 称呼"
+              value={draft.name}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                update("name", event.currentTarget.value);
+                update("preferredAddress", event.currentTarget.value);
+              }}
+              placeholder="例如：妈妈"
+              autoFocus
+              style={{ background: "transparent", border: "none", borderBottom: "1px solid rgba(241,214,168,.42)", borderRadius: 0, boxShadow: "none", paddingInline: 0 }}
+            />
           </div>
-          {error && <p className={styles.error} role="alert">{error}</p>}
-          <div className={styles.actions}>
-            {stage === 1 && <MemoryButton variant="ghost" onClick={() => setStage(0)}>上一步</MemoryButton>}
-            {stage === 0
-              ? <MemoryButton onClick={moveNext}>继续</MemoryButton>
-              : <MemoryButton loading={status === "submitting" || status === "uploading"} onClick={creationUncertain ? recoverCreation : create}>{creationUncertain ? "确认创建结果" : "唤醒 TA"}</MemoryButton>}
+          <div className={styles.relationshipGrid} aria-label="与 TA 的关系">
+            {relationships.map((item) => <button type="button" key={item.label} className={draft.relationship === item.label ? styles.relationshipActive : styles.relationship} onClick={() => update("relationship", item.label)}>
+              <strong>{item.label}</strong><span>{item.detail}</span>
+            </button>)}
           </div>
-        </>}
-      </section>
+        </section> : <section className={styles.trace} key="trace">
+          <p className={styles.eyebrow}>第二束光</p>
+          <h1>留下 <em>TA 的痕迹</em></h1>
+          <p className={styles.intro}>一张照片就够了。它会安静地留在这段回忆里。</p>
+          <label className={styles.portraitStage}>
+            {photoPreview ? <img src={photoPreview} alt="已选择的 TA 照片预览" /> : <span className={styles.portraitEmpty}><b>+</b><small>选择一张照片</small><i>可跳过</i></span>}
+            <input type="file" accept="image/*" onChange={choosePhoto} />
+            {photoPreview && <span className={styles.changePortrait}>换一张照片</span>}
+          </label>
+          <div className={styles.optionalDetails}>
+            <MemoryInput label="生日（可选）" type="date" value={birthDate} onChange={(event: ChangeEvent<HTMLInputElement>) => setBirthDate(event.currentTarget.value)} style={{ minHeight: 46, background: "rgba(255,255,255,.035)" }} />
+            <MemoryInput multiline label="如果 TA 现在看到你，TA 最可能说什么？（可选）" value={draft.catchPhrases} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => update("catchPhrases", event.currentTarget.value)} style={{ minHeight: 96, background: "rgba(255,255,255,.035)" }} />
+          </div>
+          <p className={styles.safetyCopy}>首发只收集你选择提交的照片和文字资料，不收集声音文件，也不提供声音克隆。未来回应越能贴近你确认的内容；忆见不是现实中的 TA。</p>
+          <label className={styles.consent}><input type="checkbox" checked={draft.consent} onChange={(event) => update("consent", event.target.checked)} /><span>我已年满 18 周岁，确认拥有资料使用权，并同意隐私说明。</span></label>
+        </section>}
+        {error && <p className={styles.error} role="alert">{error}</p>}
+        <div className={styles.actions}>
+          {stage === 1 && <MemoryButton variant="ghost" onClick={() => setStage(0)}>上一步</MemoryButton>}
+          {stage === 0
+            ? <MemoryButton onClick={moveNext} style={{ minWidth: 132 }}>继续</MemoryButton>
+            : <MemoryButton loading={status === "submitting" || status === "uploading"} onClick={creationUncertain ? recoverCreation : create} style={{ minWidth: 148 }}>{creationUncertain ? "确认创建结果" : "唤醒 TA"}</MemoryButton>}
+        </div>
+      </>}
     </section>
   </main>;
 }
