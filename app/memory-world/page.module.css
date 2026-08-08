@@ -1,0 +1,322 @@
+.world {
+  position: relative;
+  min-height: 100dvh;
+  overflow: hidden;
+  padding-bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+  background:
+    radial-gradient(circle at 50% 34%, rgba(211, 157, 83, 0.12), transparent 32%),
+    linear-gradient(180deg, #08080a 0%, #0d0a08 58%, #090909 100%) !important;
+}
+
+.stars {
+  position: absolute;
+  inset: -8%;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.62;
+  background-image:
+    radial-gradient(circle at 14% 17%, rgba(255, 233, 190, 0.82) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 72% 21%, rgba(255, 255, 255, 0.54) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 32% 68%, rgba(244, 199, 128, 0.48) 0 1px, transparent 1.6px),
+    radial-gradient(circle at 84% 76%, rgba(255, 231, 185, 0.42) 0 1px, transparent 1.8px);
+  background-size: 230px 214px, 310px 282px, 270px 248px, 360px 326px;
+  animation: worldDrift 28s linear infinite;
+}
+
+.ambientLight {
+  position: absolute;
+  top: 12%;
+  left: 50%;
+  z-index: 0;
+  width: min(104vw, 780px);
+  aspect-ratio: 1;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(231, 179, 101, 0.16), rgba(126, 77, 46, 0.05) 46%, transparent 72%);
+  filter: blur(22px);
+  pointer-events: none;
+}
+
+.topBar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: max(22px, env(safe-area-inset-top, 0px)) 24px 8px;
+}
+
+.topBar button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #e7c07b;
+  font-family: Georgia, "Songti SC", serif;
+  font-size: 16px;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+}
+
+.topBar span {
+  color: rgba(236, 221, 201, 0.42);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+}
+
+.content {
+  position: relative;
+  z-index: 1;
+}
+
+.readyWorld {
+  display: grid;
+}
+
+.hero {
+  display: grid;
+  min-height: calc(100dvh - 142px - env(safe-area-inset-bottom, 0px));
+  align-content: start;
+  justify-items: center;
+  padding: clamp(20px, 4vh, 38px) 24px 44px;
+  text-align: center;
+  animation: worldArrive 0.72s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.heroCopy {
+  display: grid;
+  justify-items: center;
+}
+
+.identity {
+  margin: 0 0 16px;
+  color: rgba(226, 189, 125, 0.7);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+}
+
+.hero h1 {
+  margin: 0;
+  color: #fbf5ed;
+  font-family: Georgia, "Songti SC", serif;
+  font-size: clamp(34px, 10vw, 52px);
+  font-weight: 400;
+  line-height: 1.14;
+  letter-spacing: -0.045em;
+}
+
+.hero h1 em {
+  color: #e8bf76;
+  font-style: normal;
+  text-shadow: 0 0 34px rgba(228, 176, 91, 0.25);
+}
+
+.relationship {
+  margin: 16px 0 0;
+  color: rgba(236, 223, 205, 0.52);
+  font-family: Georgia, "Songti SC", serif;
+  font-size: 13px;
+  letter-spacing: 0.05em;
+}
+
+.portraitSpace {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(340px, 88vw);
+  min-height: 310px;
+  margin-top: 18px;
+}
+
+.portraitGlow {
+  position: absolute;
+  width: 112%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(241, 194, 116, 0.25), rgba(173, 105, 60, 0.08) 44%, transparent 70%);
+  filter: blur(17px);
+  animation: quietGlow 5.4s ease-in-out infinite;
+}
+
+.portraitStars {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.portraitStars i {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #f1ca88;
+  box-shadow: 0 0 12px rgba(241, 202, 136, 0.74);
+  animation: quietParticle 5.8s ease-in-out infinite;
+}
+
+.portraitStars i:nth-child(1) { top: 13%; left: 4%; }
+.portraitStars i:nth-child(2) { top: 28%; right: 1%; animation-delay: -1.4s; }
+.portraitStars i:nth-child(3) { bottom: 21%; left: 2%; animation-delay: -2.8s; }
+.portraitStars i:nth-child(4) { right: 9%; bottom: 8%; animation-delay: -4s; }
+
+.portraitButton {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  min-width: 260px;
+  min-height: 260px;
+  place-items: center;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.heroPortrait {
+  position: relative !important;
+  z-index: 1;
+  border: 1px solid rgba(241, 211, 161, 0.26);
+  border-radius: 48% 48% 26px 26px !important;
+  background: linear-gradient(150deg, #6e5942, #221c1a 58%, #121112) !important;
+  box-shadow: 0 30px 76px rgba(0, 0, 0, 0.48), 0 0 0 14px rgba(240, 197, 125, 0.025), 0 0 88px rgba(226, 169, 82, 0.2) !important;
+  animation: portraitSettle 0.72s 0.08s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.greeting {
+  max-width: 350px;
+  margin: 2px 0 0;
+  color: rgba(230, 214, 195, 0.62);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px 18px;
+  width: min(350px, 100%);
+  margin-top: 22px;
+}
+
+.heroActions > button:first-child {
+  width: 100%;
+  min-height: 52px;
+  border-color: rgba(255, 231, 185, 0.38) !important;
+  background: linear-gradient(135deg, #f0d59d, #c38f4b) !important;
+  box-shadow: 0 14px 38px rgba(199, 143, 68, 0.2) !important;
+  color: #2a1c13 !important;
+}
+
+.heroActions > button:not(:first-child) {
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: rgba(225, 210, 191, 0.56);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.heroActions > button:not(:first-child):hover {
+  border-bottom-color: rgba(226, 185, 116, 0.5);
+  color: #e4c38e;
+}
+
+.management {
+  display: grid;
+  gap: 14px;
+  padding: 54px 24px 44px;
+  border-top: 1px solid rgba(247, 239, 228, 0.055);
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.012));
+}
+
+.managementHeading {
+  margin-bottom: 8px;
+}
+
+.managementHeading p {
+  margin: 0;
+  color: rgba(245, 232, 214, 0.78);
+  font-family: Georgia, "Songti SC", serif;
+  font-size: 18px;
+}
+
+.managementHeading span {
+  display: block;
+  margin-top: 7px;
+  color: rgba(223, 208, 189, 0.4);
+  font-size: 11px;
+}
+
+@keyframes worldArrive {
+  from { opacity: 0; transform: translateY(24px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes portraitSettle {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes quietGlow {
+  50% { transform: scale(1.06); opacity: 0.72; }
+}
+
+@keyframes quietParticle {
+  50% { transform: translate3d(6px, -10px, 0); opacity: 0.42; }
+}
+
+@keyframes worldDrift {
+  to { background-position: 230px 214px, -310px 282px, 270px -248px, -360px 326px; }
+}
+
+@media (min-width: 760px) {
+  .hero {
+    grid-template-columns: minmax(280px, 1fr) minmax(320px, 0.9fr);
+    grid-template-areas:
+      "copy portrait"
+      "greeting portrait"
+      "actions portrait";
+    column-gap: clamp(36px, 7vw, 84px);
+    width: min(980px, 100%);
+    margin: 0 auto;
+    align-items: center;
+    justify-items: start;
+    text-align: left;
+  }
+
+  .heroCopy { grid-area: copy; justify-items: start; }
+  .portraitSpace { grid-area: portrait; margin-top: 0; }
+  .greeting { grid-area: greeting; }
+  .heroActions { grid-area: actions; justify-content: flex-start; }
+  .management { padding-inline: max(24px, calc((100vw - 980px) / 2)); }
+}
+
+@media (max-height: 760px) and (max-width: 759px) {
+  .hero {
+    min-height: auto;
+  }
+
+  .portraitSpace {
+    min-height: 252px;
+  }
+
+  .heroPortrait {
+    width: 210px !important;
+    height: 210px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stars,
+  .hero,
+  .portraitGlow,
+  .portraitStars i,
+  .heroPortrait {
+    animation: none !important;
+  }
+}

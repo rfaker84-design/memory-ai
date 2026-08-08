@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { MemoryAvatar, MemoryBottomSheet, MemoryButton, MemoryCard, MemorySection, MemorySurface } from "../../src/components/memory-ui";
-import { MemoryRadius, MemorySpacing, MemorySurface as SurfaceToken, MemoryTypography, MemoryZIndex } from "../../src/design";
+import { MemoryRadius, MemorySpacing, MemorySurface as SurfaceToken, MemoryTypography } from "../../src/design";
 import { MotionProvider } from "../../src/motion";
 import {
   COMPANION_DAILY_GREETING_KEY,
@@ -19,6 +19,8 @@ import {
   serializeCompanionPosition,
 } from "../../src/components/companion/companionHomeState";
 import { CompanionHomeRequestError, fetchCompanionHomeMemoriesJson } from "../../src/components/companion/companionHomeRequest";
+import { loadOwnedMediaUrl } from "../../src/components/memory/ownedMemoryClient";
+import styles from "./page.module.css";
 
 type MemoryWorldItem = {
   id: string;
@@ -26,6 +28,7 @@ type MemoryWorldItem = {
   relationship?: string | null;
   lifeStory?: string | null;
   photoUrl?: string | null;
+  photoAssetId?: string | null;
 };
 
 type MemoryWorldState = "loading" | "unauthenticated" | "empty" | "ready" | "error" | "timeout";
@@ -43,6 +46,7 @@ function MemoryWorldContent() {
   const [clearingId, setClearingId] = useState<string | null>(null);
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
   const [assistanceBlocked, setAssistanceBlocked] = useState(false);
+  const [primaryPortraitUrl, setPrimaryPortraitUrl] = useState<string | null>(null);
   const restoredPosition = useRef(false);
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -77,6 +81,19 @@ function MemoryWorldContent() {
   }, []);
 
   const primary = selectPrimaryCompanion(memories, primaryId);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setPrimaryPortraitUrl(primary?.photoUrl ?? null);
+    if (!primary?.photoAssetId) return () => controller.abort();
+    void loadOwnedMediaUrl(primary.photoAssetId, controller.signal)
+      .then((url) => setPrimaryPortraitUrl(url))
+      .catch(() => {
+        if (!controller.signal.aborted) setPrimaryPortraitUrl(primary.photoUrl ?? null);
+      });
+    return () => controller.abort();
+  }, [primary?.id, primary?.photoAssetId, primary?.photoUrl]);
+
   const choosePrimary = (memory: MemoryWorldItem) => {
     setPrimaryId(memory.id);
     window.localStorage.setItem(COMPANION_PRIMARY_KEY, memory.id);
@@ -188,19 +205,16 @@ function MemoryWorldContent() {
   return (
     <MemorySurface
       variant="background"
-      style={{
-        minHeight: "100dvh",
-        paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
-        background: `radial-gradient(circle at 50% 18%, rgba(196,168,130,0.13), transparent 32%), ${SurfaceToken.background.base}`,
-      }}
+      className={styles.world}
     >
-      <header style={{ padding: `calc(${MemorySpacing["2xl"]} + env(safe-area-inset-top, 0px)) ${MemorySpacing.pageXMobile} ${MemorySpacing.lg}`, position: "relative", zIndex: MemoryZIndex.content }}>
-        <button type="button" onClick={() => router.push("/")} style={{ minHeight: 44, border: "none", background: "transparent", color: SurfaceToken.content.muted, cursor: "pointer" }}>← 返回首页</button>
-        <h1 style={{ margin: `${MemorySpacing.lg} 0 ${MemorySpacing.sm}`, color: SurfaceToken.content.primary, fontFamily: MemoryTypography.fontFamily.zh, fontSize: MemoryTypography.size.hero, lineHeight: MemoryTypography.lineHeight.compact }}>记忆空间</h1>
-        <p style={{ margin: 0, color: SurfaceToken.content.secondary, lineHeight: MemoryTypography.lineHeight.normal }}>这里只展示你已经真实创建的记忆体。</p>
+      <div className={styles.stars} aria-hidden="true" />
+      <div className={styles.ambientLight} aria-hidden="true" />
+      <header className={styles.topBar}>
+        <button type="button" onClick={() => router.push("/")} aria-label="返回首页">忆见</button>
+        <span>AI 纪念陪伴</span>
       </header>
 
-      <MemorySection>
+      <MemorySection className={styles.content} style={state === "ready" ? { padding: 0 } : undefined}>
         {state === "loading" && <MemoryCard role="status" aria-live="polite">正在整理记忆空间…</MemoryCard>}
         {(state === "error" || state === "timeout") && <MemoryCard role="alert" aria-live="assertive"><div style={{ display: "grid", gap: MemorySpacing.md }}><span>{state === "timeout" ? "读取等待过久，没有创建或修改任何资料。" : "暂时无法读取记忆。"}</span><MemoryButton variant="secondary" onClick={() => void load()}>重试</MemoryButton></div></MemoryCard>}
         {state === "unauthenticated" && (
@@ -222,33 +236,47 @@ function MemoryWorldContent() {
           </MemoryCard>
         )}
         {state === "ready" && (
-          <div style={{ display: "grid", gap: MemorySpacing.md }}>
+          <div className={styles.readyWorld}>
             {primary && (
-              <MemoryCard depth="elevated">
-                <div style={{ display: "grid", gap: MemorySpacing.md }}>
-                  <span style={{ color: SurfaceToken.accent.gold, fontSize: MemoryTypography.size.meta, letterSpacing: "0.08em" }}>AI纪念陪伴 · 主 TA</span>
-                  <button type="button" onClick={() => setPrimarySelectorOpen(true)} aria-haspopup="dialog" aria-expanded={primarySelectorOpen} aria-label={`切换主 TA，当前为 ${primary.name}`} style={{ display: "flex", alignItems: "center", gap: MemorySpacing.lg, padding: 0, border: "none", background: "transparent", color: "inherit", cursor: "pointer", textAlign: "left", minHeight: 44 }}>
-                    <MemoryAvatar image={primary.photoUrl} initials={primary.name} presence="quiet" size={96} />
-                    <div><div style={{ color: SurfaceToken.content.primary, fontSize: MemoryTypography.size.title }}>{primary.name}</div><div style={{ color: SurfaceToken.content.muted, marginTop: 4 }}>{primary.relationship || "关系待补充"}</div></div>
-                  </button>
-                  {dailyGreetingVisible && <p role="status" style={{ margin: 0, color: SurfaceToken.content.secondary, lineHeight: MemoryTypography.lineHeight.normal }}>{dailyCompanionGreeting(primary.name)}</p>}
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: MemorySpacing.sm }}>
-                    <MemoryButton variant="primary" onClick={() => router.push(`/memory/${primary.id}/encounter`)}>遇见</MemoryButton>
-                    <MemoryButton variant="secondary" onClick={() => router.push(`/memory-chat/${primary.id}`)}>稍后再看</MemoryButton>
-                    <MemoryButton variant="secondary" onClick={() => router.push(`/memory/${primary.id}/profile`)}>编辑 TA 资料</MemoryButton>
-                  </div>
+              <section className={styles.hero} aria-labelledby="memory-world-welcome">
+                <div className={styles.heroCopy}>
+                  <p className={styles.identity}>AI 纪念陪伴 · 基于你确认的资料</p>
+                  <h1 id="memory-world-welcome">你好，<em>{primary.name}</em><br />已经在这里。</h1>
+                  <p className={styles.relationship}>{primary.relationship ? `你记忆中的${primary.relationship}` : "一位对你很重要的人"}</p>
                 </div>
-              </MemoryCard>
+                <div className={styles.portraitSpace}>
+                  <span className={styles.portraitGlow} aria-hidden="true" />
+                  <span className={styles.portraitStars} aria-hidden="true"><i /><i /><i /><i /></span>
+                  {memories.length > 1 ? (
+                    <button type="button" className={styles.portraitButton} onClick={() => setPrimarySelectorOpen(true)} aria-haspopup="dialog" aria-expanded={primarySelectorOpen} aria-label={`切换主 TA，当前为 ${primary.name}`}>
+                      <MemoryAvatar className={styles.heroPortrait} image={primaryPortraitUrl} initials={primary.name} alt={`${primary.name} 的照片`} size={252} />
+                    </button>
+                  ) : (
+                    <MemoryAvatar className={styles.heroPortrait} image={primaryPortraitUrl} initials={primary.name} alt={`${primary.name} 的照片`} size={252} />
+                  )}
+                </div>
+                {dailyGreetingVisible && <p role="status" className={styles.greeting}>{dailyCompanionGreeting(primary.name)}</p>}
+                <div className={styles.heroActions}>
+                  <MemoryButton variant="primary" onClick={() => router.push(`/memory-chat/${primary.id}`)}>进入陪伴</MemoryButton>
+                  <button type="button" onClick={() => router.push(`/memory/${primary.id}/encounter`)}>看看首次相遇</button>
+                  <button type="button" onClick={() => router.push(`/memory/${primary.id}/profile`)}>整理 TA 资料</button>
+                </div>
+              </section>
             )}
             {primary && memories.length > 1 && primarySelectorOpen && <MemoryBottomSheet open title="切换主 TA" description="选择后，相伴首页会以这位 TA 为主。" footer={<MemoryButton variant="secondary" onClick={() => setPrimarySelectorOpen(false)}>取消</MemoryButton>}>
               <div style={{ display: "grid", gap: MemorySpacing.sm }}>
                 {memories.map((memory) => <button key={`primary-${memory.id}`} type="button" onClick={() => choosePrimary(memory)} aria-pressed={primary.id === memory.id} style={{ minHeight: 44, borderRadius: MemoryRadius.full, border: `1px solid ${primary.id === memory.id ? SurfaceToken.accent.gold : SurfaceToken.border.subtle}`, background: "transparent", color: primary.id === memory.id ? SurfaceToken.accent.gold : SurfaceToken.content.secondary, padding: "0 14px", cursor: "pointer", textAlign: "left" }}>{primary.id === memory.id ? `${memory.name} · 当前主 TA` : `设 ${memory.name} 为主 TA`}</button>)}
               </div>
             </MemoryBottomSheet>}
-            {memories.map((memory) => (
+            <section className={styles.management} aria-labelledby="memory-world-management">
+              <div className={styles.managementHeading}>
+                <p id="memory-world-management">你的相伴</p>
+                <span>轻触 TA 可以继续上次的陪伴</span>
+              </div>
+              {memories.map((memory) => (
               <MemoryCard key={memory.id} interactive reveal onClick={() => router.push(`/memory-chat/${memory.id}`)}>
                 <div style={{ display: "flex", gap: MemorySpacing.md, alignItems: "center" }}>
-                  <MemoryAvatar image={memory.photoUrl} initials={memory.name} presence="quiet" size={52} />
+                  <MemoryAvatar image={memory.id === primary?.id ? primaryPortraitUrl : memory.photoUrl} initials={memory.name} presence="quiet" size={52} />
                   <div style={{ minWidth: 0 }}>
                     <div style={{ color: SurfaceToken.content.primary, fontSize: MemoryTypography.size.bodyLarge }}>{memory.name}</div>
                     <div style={{ marginTop: 4, color: SurfaceToken.content.muted, fontSize: MemoryTypography.size.meta }}>{memory.relationship || "关系待补充"}</div>
@@ -266,9 +294,10 @@ function MemoryWorldContent() {
                   <div style={{ display: "flex", gap: MemorySpacing.sm }}><MemoryButton variant="primary" disabled={clearingId === memory.id} onClick={() => void clearChatHistory(memory)}>{clearingId === memory.id ? "正在确认…" : "确认清除记录"}</MemoryButton><MemoryButton variant="secondary" disabled={clearingId === memory.id} onClick={() => setClearConfirmationId(null)}>取消</MemoryButton></div>
                 </section> : <button type="button" onClick={(event) => { event.stopPropagation(); setClearConfirmationId(memory.id); setDeleteMessage(null); }} style={{ minHeight: 44, marginTop: MemorySpacing.sm, border: "none", background: "transparent", color: SurfaceToken.content.muted, cursor: "pointer", padding: "0 14px" }}>清除聊天记录</button>}
               </MemoryCard>
-            ))}
-            {deleteMessage ? <p role="status" aria-live="polite" style={{ margin: 0, color: SurfaceToken.content.secondary }}>{deleteMessage}</p> : null}
-            {assistanceBlocked ? <button type="button" onClick={() => router.push("/settings/understanding-assistance")} style={{ minHeight: 44, border: "none", background: "transparent", color: SurfaceToken.content.primary, cursor: "pointer", padding: 0 }}>{"\u8bf7\u53ef\u4fe1\u4efb\u7684\u4eba\u534f\u52a9"}</button> : null}
+              ))}
+              {deleteMessage ? <p role="status" aria-live="polite" style={{ margin: 0, color: SurfaceToken.content.secondary }}>{deleteMessage}</p> : null}
+              {assistanceBlocked ? <button type="button" onClick={() => router.push("/settings/understanding-assistance")} style={{ minHeight: 44, border: "none", background: "transparent", color: SurfaceToken.content.primary, cursor: "pointer", padding: 0 }}>{"\u8bf7\u53ef\u4fe1\u4efb\u7684\u4eba\u534f\u52a9"}</button> : null}
+            </section>
           </div>
         )}
       </MemorySection>

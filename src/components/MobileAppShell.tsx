@@ -26,6 +26,7 @@ export default function MobileAppShell({ children }:{ children:React.ReactNode }
   // Creation is a focused first-encounter ritual; navigation returns only after
   // the successful transition into memory-world.
   const showsRootNavigation = pathname === "/memory" || pathname === "/continuity" || pathname === "/memory-world";
+  const immersiveCompanion = pathname === "/memory-world";
   if (!showsRootNavigation) {
     return <>{children}</>;
   }
@@ -33,20 +34,20 @@ export default function MobileAppShell({ children }:{ children:React.ReactNode }
   function active(t:typeof TABS[number]):boolean { return t.path==="/"?pathname==="/":pathname.startsWith(t.path); }
 
   return (
-    <div style={{ display:"flex",flexDirection:"column",minHeight:"100dvh",background:T.colors.bg }}>
+    <div style={{ display:"flex",flexDirection:"column",minHeight:"100dvh",background:immersiveCompanion ? "#08080A" : T.colors.bg }}>
       <a className="skip-link" href="#main-content">跳至主要内容</a>
       <main id="main-content" tabIndex={-1} style={{ flex:1,paddingBottom:"calc(var(--nav-height,64px) + env(safe-area-inset-bottom,0px) + 12px)",overflowY:"auto",WebkitOverflowScrolling:"touch" }}>{children}</main>
-      <Footer />
+      {!immersiveCompanion && <Footer />}
       <nav aria-label="主导航" style={{
         position:"fixed",bottom:0,left:0,right:0,zIndex:50,
         display:"flex",justifyContent:"space-around",alignItems:"center",
         height:"calc(var(--nav-height,64px) + env(safe-area-inset-bottom,0px))",
         paddingBottom:"env(safe-area-inset-bottom,0px)",
-        background:"rgba(246,241,232,0.94)",
+        background:immersiveCompanion ? "rgba(8,8,10,0.94)" : "rgba(246,241,232,0.94)",
         backdropFilter:"blur(22px) saturate(180%)",
         WebkitBackdropFilter:"blur(22px) saturate(180%)",
-        borderTop:`0.5px solid ${T.colors.border}`,
-        boxShadow:"0 -1px 8px rgba(0,0,0,0.03)",
+        borderTop:immersiveCompanion ? "0.5px solid rgba(231,192,123,0.16)" : `0.5px solid ${T.colors.border}`,
+        boxShadow:immersiveCompanion ? "0 -12px 40px rgba(0,0,0,0.28)" : "0 -1px 8px rgba(0,0,0,0.03)",
       }}>
         {TABS.map(t => {
           const a = active(t);
