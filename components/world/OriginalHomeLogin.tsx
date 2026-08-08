@@ -30,7 +30,7 @@ function WeChatMark() {
   );
 }
 
-export function OriginalHomeLogin({ onAuthenticated, onPreview }: { onAuthenticated: () => void; onPreview?: () => void }) {
+export function OriginalHomeLogin({ onAuthenticated, onPreview }: { onAuthenticated: () => void | Promise<void>; onPreview?: () => void }) {
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"phone" | "code">("phone");
@@ -114,11 +114,11 @@ export function OriginalHomeLogin({ onAuthenticated, onPreview }: { onAuthentica
       });
       const data = body as AuthPayload;
       if (response.ok && data.authenticated) {
+        await onAuthenticated();
         setStep("phone");
         setPhone("");
         setCode("");
         setChallengeId("");
-        onAuthenticated();
       } else {
         setNotice("验证码暂时无法确认，请重新获取后再试。");
       }

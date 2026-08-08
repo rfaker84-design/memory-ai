@@ -4,7 +4,7 @@ import test from "node:test";
 
 const read = (file: string) => readFileSync(file, "utf8");
 
-test("the direct login URL enters the server-verified SMS flow before the first immersive question", () => {
+test("the direct login URL confirms the server session before entering the owner memory world", () => {
   const loginPage = read("app/login/page.tsx");
   const flow = read("src/components/first-presence/FirstPresenceFlow.tsx");
 
@@ -14,6 +14,17 @@ test("the direct login URL enters the server-verified SMS flow before the first 
   assert.match(flow, /fetchAuthRequestJson\("\/api\/auth\/verify-code"/);
   assert.match(flow, /const authenticated = sessionResponse\.ok && Boolean\(sessionPayload\.authenticated\)/);
   assert.match(flow, /if \(!authenticated\)/);
-  assert.match(flow, /setStage\("questions"\)/);
+  assert.match(flow, /if \(directLogin\) \{[\s\S]*?resolvePostLoginDestination\(/);
+  assert.match(flow, /router\.replace\(destination\)/);
+  assert.doesNotMatch(flow, /if \(directLogin\) setStage\("questions"\)/);
   assert.doesNotMatch(flow, /(?:demo|test)[ -]?(?:code|验证码)/i);
+});
+
+test("the public home login no longer mounts the retired eight-question creator", () => {
+  const home = read("app/page.tsx");
+
+  assert.match(home, /onAuthenticated=\{enterOwnerProduct\}/);
+  assert.match(home, /const destination = await resolvePostLoginDestination\(\)/);
+  assert.doesNotMatch(home, /FirstPresenceFlow initialStage="create"/);
+  assert.match(home, /FirstPresenceFlow initialStage="preview-create"/);
 });

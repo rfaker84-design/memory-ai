@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 
 import { FirstPresenceFlow } from "../src/components/first-presence/FirstPresenceFlow";
+import { resolvePostLoginDestination } from "../src/components/auth/postLoginDestination";
 import StaticBrandLaunch from "../src/components/launch/StaticBrandLaunch";
 import { claimBrandLaunch } from "../src/components/launch/staticBrandLaunchPolicy";
 import { MotionProvider } from "../src/motion";
@@ -29,9 +31,10 @@ const OriginalHomeLogin = dynamic(
 
 const VISUAL_PREVIEW_ENABLED = process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_MEMORYAI_ENABLE_PRESENCE_PREVIEW === "true";
 
-type EntryStage = "checking" | "launch" | "home" | "presence" | "preview";
+type EntryStage = "checking" | "launch" | "home" | "preview";
 
 export default function HomePage() {
+  const router = useRouter();
   const [stage, setStage] = useState<EntryStage>("checking");
 
   useEffect(() => {
@@ -39,14 +42,17 @@ export default function HomePage() {
   }, []);
 
   const completeLaunch = useCallback(() => setStage((current) => current === "launch" ? "home" : current), []);
+  const enterOwnerProduct = useCallback(async () => {
+    const destination = await resolvePostLoginDestination();
+    router.replace(destination);
+  }, [router]);
   const homeIsMounted = stage === "launch" || stage === "home";
 
   return (
     <MotionProvider>
-      {homeIsMounted && <OriginalHomeLogin onAuthenticated={() => setStage("presence")} onPreview={VISUAL_PREVIEW_ENABLED ? () => setStage("preview") : undefined} />}
+      {homeIsMounted && <OriginalHomeLogin onAuthenticated={enterOwnerProduct} onPreview={VISUAL_PREVIEW_ENABLED ? () => setStage("preview") : undefined} />}
       {stage === "checking" && <HomeLoadingFallback />}
       {stage === "launch" && <StaticBrandLaunch onComplete={completeLaunch} />}
-      {stage === "presence" && <FirstPresenceFlow initialStage="create" onLeaveHome={() => setStage("home")} />}
       {stage === "preview" && <FirstPresenceFlow initialStage="preview-create" onLeaveHome={() => setStage("home")} />}
     </MotionProvider>
   );

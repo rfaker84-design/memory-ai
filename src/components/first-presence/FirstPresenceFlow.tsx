@@ -31,6 +31,7 @@ import styles from "./FirstPresenceFlow.module.css";
 import { AiGeneratedLabel } from "../safety/AiGeneratedLabel";
 import { resolveSmsLoginAction } from "../auth/loginExperienceClient";
 import { fetchAuthRequestJson } from "../auth/authRequestClient";
+import { resolvePostLoginDestination } from "../auth/postLoginDestination";
 
 type EntryStage = "create" | "login-phone" | "preview-create";
 type FlowStage =
@@ -241,12 +242,16 @@ export function FirstPresenceFlow({
       cache: "no-store",
       credentials: "same-origin",
     }, fetch, controller.signal)
-      .then(({ response, body }) => {
+      .then(async ({ response, body }) => {
         const payload = body as ApiPayload;
         if (controller.signal.aborted) return;
         if (response.ok && payload.authenticated) {
+          if (directLogin) {
+            const destination = await resolvePostLoginDestination(fetch, controller.signal);
+            if (!controller.signal.aborted) router.replace(destination);
+            return;
+          }
           setAuthState("authenticated");
-          if (directLogin) setStage("questions");
         } else {
           setAuthState("unauthenticated");
           if (!directLogin) setStage("auth-required");
@@ -256,7 +261,7 @@ export function FirstPresenceFlow({
         if (!controller.signal.aborted) setAuthState("unavailable");
       });
     return () => controller.abort();
-  }, [directLogin, previewMode]);
+  }, [directLogin, previewMode, router]);
 
   useEffect(() => {
     if (stage !== "preview-forming") return;
@@ -367,6 +372,11 @@ export function FirstPresenceFlow({
         return;
       }
       setAuthState("authenticated");
+      if (directLogin) {
+        const destination = await resolvePostLoginDestination();
+        router.replace(destination);
+        return;
+      }
       setStage("questions");
     } catch {
       setError("网络连接中断，登录结果尚未确认。系统不会自动重试；请重新验证或刷新后确认。");
