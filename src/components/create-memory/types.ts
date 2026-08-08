@@ -1,4 +1,5 @@
-export type CreateStage = 0 | 1 | 2 | 3;
+/** Two input stages; the third, non-interactive stage is the awakening transition. */
+export type CreateStage = 0 | 1;
 export type CreateStatus = "loading" | "editing" | "saving-draft" | "uploading" | "submitting" | "success" | "media-recovery" | "recoverable-error" | "fatal-error";
 
 export type CreateDraft = {

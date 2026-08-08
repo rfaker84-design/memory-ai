@@ -7,7 +7,8 @@ const source = readFileSync(new URL("./CreateMemoryExperience.tsx", import.meta.
 test("creation UI preserves an uncertain create through the formal recovery path", () => {
   assert.match(source, /writeCreationRecovery\(\{ idempotencyKey, phase: "creating" \}\)/);
   assert.match(source, /fetchCreationJson\("\/api\/memories"/);
-  assert.match(source, /uploadCurrentCreationMedia\(\{ memoryId, idempotencyKey, files \}\)/);
+  assert.match(source, /const files = photo \? \{ photo \} : \{\};/);
+  assert.match(source, /uploadCurrentCreationMedia\(\{ memoryId: memory\.id, idempotencyKey, files \}\)/);
   assert.match(source, /CreationRecoveryRequestError && cause\.code === "CREATION_REQUEST_TIMEOUT"/);
   assert.match(source, /const recoverCreation = async/);
   assert.match(source, /recoverCreatedMemory\(idempotencyKey\)/);

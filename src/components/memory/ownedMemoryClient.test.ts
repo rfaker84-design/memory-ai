@@ -165,7 +165,7 @@ test("legacy detail and automatic-memory deep links only reach approved first-re
   assert.doesNotMatch(conversationAdapter, /history:\s*messages/);
   assert.doesNotMatch(conversationAdapter, /fragments:\s*fragments/);
   assert.match(chat, /firstGreetingKey\(state\.memory\.id\)/);
-  assert.match(create, /`\/memory-chat\/\$\{created\.id\}`/);
+  assert.match(create, /router\.replace\("\/memory-world"\)/);
   for (const source of [detail, chat, conversation, conversationAdapter, create]) {
     assert.doesNotMatch(source, forbiddenClientAuth);
   }

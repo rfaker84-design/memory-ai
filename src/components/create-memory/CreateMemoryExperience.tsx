@@ -1,16 +1,14 @@
 "use client";
 
-import { ChangeEvent, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MemoryButton, MemoryInput } from "../memory-ui";
 import { useReducedMotion } from "../../motion";
 import { useCreateMemoryDraft } from "./useCreateMemoryDraft";
-import type { CreateStage } from "./types";
-import { canEnterConversation, completion, creationCompletionStatus, createMemoryRequestHeaders, validateStage } from "./createMemoryLogic";
-import { recordTrustConsent, TrustConsentRequestError } from "../trust/trustConsentClient";
+import { createMemoryRequestHeaders, validateStage } from "./createMemoryLogic";
+import { recordTrustConsent } from "../trust/trustConsentClient";
 import { AccountProfileRequestError, saveAdultBirthDate } from "../trust/accountProfileClient";
 import {
-  clearCreationRecovery,
   CreationRecoveryRequestError,
   fetchCreationJson,
   recoverCreatedMemory,
@@ -19,182 +17,199 @@ import {
 } from "../first-presence/creationRecoveryClient";
 import styles from "./CreateMemoryExperience.module.css";
 
-const stages = [
-  ["01 身份", "先告诉我们，TA是谁"], ["02 记忆", "只记录你愿意确认的事实"],
-  ["03 素材与授权", "素材留在本次会话，绝不写入本地草稿"], ["04 预览与创建", "确认后写入你的记忆空间"],
-] as const;
-
-type UploadState = "idle" | "selected" | "uploading" | "ready" | "unavailable" | "error";
 type CreatedMemory = { id: string; name: string };
+const relationships = ["父母", "伴侣", "子女", "朋友", "其他"];
 
 export function CreateMemoryExperience() {
   const router = useRouter();
   const reducedMotion = useReducedMotion();
   const { draft, status, setStatus, update, clear, idempotencyKey } = useCreateMemoryDraft();
-  const [stage, setStage] = useState<CreateStage>(0);
-  const [photo, setPhoto] = useState<File | null>(null);
+  const [stage, setStage] = useState<0 | 1>(0);
   const [birthDate, setBirthDate] = useState("");
-  const [uploadState, setUploadState] = useState<UploadState>("idle");
-  const [error, setError] = useState("");
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState("");
   const [created, setCreated] = useState<CreatedMemory | null>(null);
+  const [awakening, setAwakening] = useState(false);
   const [creationUncertain, setCreationUncertain] = useState(false);
+  const [error, setError] = useState("");
   const submitting = useRef(false);
 
-  const completeness = completion(draft);
-  const clarity = 0.36 + stage * .13 + completeness * .002;
-  const blur = Math.max(2, 16 - stage * 3 - completeness * .045);
+  useEffect(() => {
+    if (!photo) { setPhotoPreview(""); return; }
+    const objectUrl = URL.createObjectURL(photo);
+    setPhotoPreview(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [photo]);
 
-  const validate = () => {
-    const validationError = validateStage(stage, draft);
-    if (stage === 0 && !birthDate) {
-      setError("请填写你的出生日期。忆见首发仅向年满 18 周岁的用户提供服务。"); return false;
+  useEffect(() => {
+    if (!created) return;
+    const timer = window.setTimeout(
+      () => router.replace("/memory-world"),
+      reducedMotion ? 80 : 650,
+    );
+    return () => window.clearTimeout(timer);
+  }, [created, reducedMotion, router]);
+
+  const moveNext = () => {
+    if (validateStage(0, draft)) {
+      setError("请填写 TA 的称呼，并选择你们的关系。");
+      return;
     }
-    if (validationError === "identity-required") {
-      setError("请先完成姓名、关系、称呼和创建目的。即使资料很少，也可以在下一步选择稍后补充。"); return false;
-    }
-    if (validationError === "consent-required") { setError("创建前需要确认你拥有素材使用权，并同意隐私说明。"); return false; }
-    setError(""); return true;
+    setError("");
+    setStage(1);
   };
 
-  const next = () => { if (validate()) setStage(current => Math.min(3, current + 1) as CreateStage); };
   const choosePhoto = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] ?? null;
-    if (file && (!file.type.startsWith("image/") || file.size > 20 * 1024 * 1024)) { setError("请选择 20MB 以内的照片文件。"); return; }
+    const file = event.currentTarget.files?.[0] ?? null;
+    if (file && (!file.type.startsWith("image/") || file.size > 20 * 1024 * 1024)) {
+      setError("请选择 20MB 以内的图片。");
+      return;
+    }
     setPhoto(file);
-    setUploadState(file ? "selected" : "idle"); setError("");
+    setError("");
   };
 
-  const uploadSelectedMedia = async (memoryId: string) => {
-    const files = { photo: photo ?? undefined };
-    if (!files.photo) return [];
-
+  const completeCreatedMemory = async (memory: CreatedMemory) => {
+    const files = photo ? { photo } : {};
+    if (photo) await recordTrustConsent("media_asset", memory.id);
     setStatus("uploading");
-    setUploadState("uploading");
-    await recordTrustConsent("media_asset", memoryId);
-    try {
-      const assets = await uploadCurrentCreationMedia({ memoryId, idempotencyKey, files });
-      setUploadState("ready");
-      return assets;
-    } catch (error) {
-      setUploadState("error");
-      throw error;
-    }
-  };
-
-  const completeCreation = async (createdMemory: CreatedMemory) => {
-    setCreated(createdMemory);
-    try {
-      await uploadSelectedMedia(createdMemory.id);
-      clearCreationRecovery();
-      setStatus(creationCompletionStatus(true));
-      clear();
-    } catch (mediaError) {
-      setStatus(creationCompletionStatus(false));
-      setError(mediaError instanceof Error ? mediaError.message : "MEDIA_UPLOAD_FAILED");
-    }
+    await uploadCurrentCreationMedia({ memoryId: memory.id, idempotencyKey, files });
+    setCreated(memory);
+    clear();
+    setStatus("success");
   };
 
   const create = async () => {
-    if (submitting.current || created || !validate()) return;
-    submitting.current = true; setError("");
+    if (submitting.current) return;
+    if (validateStage(1, draft)) {
+      setError("请确认资料使用权与隐私说明后再继续。");
+      return;
+    }
+    submitting.current = true;
+    setError("");
+    setCreationUncertain(false);
+    setAwakening(true);
+    setStatus("submitting");
+    let recoveryWritten = false;
     try {
-      setStatus("submitting");
-      const adultProfile = await saveAdultBirthDate(birthDate);
-      if (!adultProfile.adultEligible) throw new AccountProfileRequestError("ADULT_ELIGIBILITY_REQUIRED");
+      if (birthDate) {
+        const profile = await saveAdultBirthDate(birthDate);
+        if (!profile.adultEligible) throw new AccountProfileRequestError("ADULT_ELIGIBILITY_REQUIRED");
+      }
       await recordTrustConsent("adult_eligibility");
       await recordTrustConsent("memory_profile");
       if (!writeCreationRecovery({ idempotencyKey, phase: "creating" })) {
         throw new Error("CREATION_RECOVERY_UNAVAILABLE");
       }
-      const fragments = [
-        ["personality", draft.personality], ["catch_phrase", draft.catchPhrases], ["shared_experience", draft.sharedExperiences],
-        ["life_moment", draft.lifeMoments], ["interest", draft.interests], ["purpose", draft.purpose], ["preferred_address", draft.preferredAddress],
-      ].filter(([, content]) => content.trim()).map(([sourceType, content]) => ({ sourceType, content }));
-      const { response, body: data } = await fetchCreationJson("/api/memories", { method: "POST", credentials: "same-origin", headers: createMemoryRequestHeaders(idempotencyKey), body: JSON.stringify({
-        name: draft.name.trim(), relationship: draft.relationship.trim(),
-        lifeStory: [draft.sharedExperiences, draft.lifeMoments].filter(Boolean).join("\n\n") || null,
-        personalityProfile: draft.personality.trim() || null, catchPhrases: draft.catchPhrases.trim() || null,
-        personalityTags: draft.interests.split(/[，,、\n]/).map(v => v.trim()).filter(Boolean), photoUrl: null, fragments,
-      }) });
-      if (!response.ok || typeof data.id !== "string") {
-        throw new Error(typeof data.error === "string" ? data.error : "创建失败，请重试。");
+      recoveryWritten = true;
+      await new Promise((resolve) => window.setTimeout(resolve, reducedMotion ? 120 : 1050));
+      const { response, body } = await fetchCreationJson("/api/memories", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: createMemoryRequestHeaders(idempotencyKey),
+        body: JSON.stringify({
+          name: draft.name.trim(),
+          relationship: draft.relationship,
+          lifeStory: null,
+          personalityProfile: null,
+          catchPhrases: draft.catchPhrases.trim() || null,
+          personalityTags: [],
+          photoUrl: null,
+          fragments: draft.catchPhrases.trim()
+            ? [{ sourceType: "catch_phrase", content: draft.catchPhrases.trim() }]
+            : [],
+        }),
+      });
+      if (!response.ok || typeof body.id !== "string") {
+        throw new Error(typeof body.error === "string" ? body.error : "CREATE_MEMORY_FAILED");
       }
-      const createdMemory = { id: data.id, name: typeof data.name === "string" ? data.name : draft.name };
-      await completeCreation(createdMemory);
+      await completeCreatedMemory({
+        id: body.id,
+        name: typeof body.name === "string" ? body.name : draft.name,
+      });
     } catch (cause) {
-      if (cause instanceof TrustConsentRequestError) {
-        setStatus("recoverable-error"); setError("确认记录暂未安全保存；尚未创建 TA 或上传素材。恢复连接后可明确重试。");
-        return;
-      }
-      if (cause instanceof AccountProfileRequestError) {
-        setStatus("recoverable-error");
-        setError(cause.code === "ADULT_ELIGIBILITY_REQUIRED" ? "忆见首发仅向年满 18 周岁的用户提供服务。" : "出生日期尚未安全保存；尚未创建 TA 或上传素材。请检查后明确重试。");
-        return;
-      }
-      if (cause instanceof CreationRecoveryRequestError && cause.code === "CREATION_REQUEST_TIMEOUT") {
-        setCreationUncertain(true);
-        setStatus("recoverable-error");
-        setError("创建结果尚未确认。不会再次提交创建请求；请先确认这次创建结果。");
-        return;
-      }
-      setStatus("recoverable-error"); setError(cause instanceof Error ? cause.message : "创建失败，请重试。");
-    } finally { submitting.current = false; }
+      setAwakening(false);
+      setStatus("recoverable-error");
+      setCreationUncertain(
+        recoveryWritten || (cause instanceof CreationRecoveryRequestError && cause.code === "CREATION_REQUEST_TIMEOUT"),
+      );
+      setError(
+        cause instanceof AccountProfileRequestError
+          ? "首发服务仅面向年满 18 周岁的用户。"
+          : cause instanceof Error ? cause.message : "暂时无法完成创建，请明确重试。",
+      );
+    } finally {
+      submitting.current = false;
+    }
   };
 
   const recoverCreation = async () => {
-    if (submitting.current || created || !creationUncertain) return;
+    if (submitting.current) return;
     submitting.current = true;
     setError("");
+    setStatus("submitting");
     try {
-      const memory = await recoverCreatedMemory(idempotencyKey);
+      const recovered = await recoverCreatedMemory(idempotencyKey);
+      await completeCreatedMemory({ id: recovered.id, name: recovered.name });
       setCreationUncertain(false);
-      await completeCreation({ id: memory.id, name: memory.name || draft.name });
     } catch (cause) {
-      if (cause instanceof CreationRecoveryRequestError && cause.status === 404) {
-        setError("创建结果尚未确认。请稍后再次确认；不会自动重新提交创建请求。");
-      } else {
-        setError("暂时无法确认创建结果。不会自动重新提交创建请求，请稍后再试。");
-      }
-    } finally { submitting.current = false; }
+      setStatus("recoverable-error");
+      setError(cause instanceof Error ? cause.message : "CREATION_RECOVERY_FAILED");
+    } finally {
+      submitting.current = false;
+    }
   };
 
-  const retryMediaUpload = async () => {
-    if (!created || submitting.current) return;
-    submitting.current = true;
-    setError("");
-    try {
-      await uploadSelectedMedia(created.id);
-      setStatus(creationCompletionStatus(true));
-      clear();
-    } catch (cause) {
-      setStatus(creationCompletionStatus(false));
-      setError(cause instanceof Error ? cause.message : "MEDIA_UPLOAD_FAILED");
-    } finally { submitting.current = false; }
-  };
+  if (awakening && !created) {
+    return <main className={styles.scene}>
+      <section className={styles.awakening} aria-live="polite">
+        <div className={styles.stars} />
+        <div className={styles.awakeningPhoto}>
+          {photoPreview
+            ? <img src={photoPreview} alt="即将进入回忆的 TA 照片" />
+            : <span>动态效果演示<br />非真实 AI 生成视频</span>}
+        </div>
+        <p>正在整理关于 TA 的记忆……</p>
+        <p>正在寻找 TA 留下的痕迹……</p>
+      </section>
+    </main>;
+  }
 
-  if (status === "loading") return <main className={styles.scene} aria-busy="true" />;
   return <main className={styles.scene}>
-    <button className={`${styles.skip} ${styles.back}`} onClick={() => stage ? setStage((stage - 1) as CreateStage) : router.back()} aria-label="返回">← 返回</button>
-    <div className={styles.shell}>
-      <section className={styles.presence} aria-label="人物资料预览">
-        <div className={styles.aura} /><div className={styles.figure} style={{ "--blur": `${blur}px`, "--clarity": clarity } as React.CSSProperties}><div className={styles.head}/><div className={styles.body}/></div>
-      </section>
+    <section className={styles.shell}>
+      <section className={styles.presence} aria-hidden="true"><div className={styles.aura} /><div className={styles.figure} /></section>
       <section className={styles.panel}>
-        {!created ? <>
-          <div className={styles.progress} aria-label={`第 ${stage + 1} 步，共 4 步`}>{stages.map((_, index) => <span key={index} className={index <= stage ? styles.active : ""}/>)}</div>
-          <div className={styles.eyebrow}>{stages[stage][0]}</div><h1 className={styles.title}>{stages[stage][1]}</h1>
-          <p className={styles.desc}>{stage === 1 ? "所有内容都可以留空或稍后补充；空白不会被编造成事实。" : "资料越充实，未来回应越能贴近你确认的内容。"}</p>
-          <div className={styles.step} key={reducedMotion ? "static" : stage}>
-            {stage === 0 && <><MemoryInput label="你的出生日期 *" type="date" value={birthDate} onChange={(e: ChangeEvent<HTMLInputElement>) => setBirthDate(e.currentTarget.value)} autoFocus/><div className={styles.grid2}><MemoryInput label="姓名或昵称 *" value={draft.name} onChange={(e: ChangeEvent<HTMLInputElement>) => update("name", e.currentTarget.value)}/><MemoryInput label="与你的关系 *" value={draft.relationship} onChange={(e: ChangeEvent<HTMLInputElement>) => update("relationship", e.currentTarget.value)}/></div><MemoryInput label="你希望如何称呼 TA *" value={draft.preferredAddress} onChange={(e: ChangeEvent<HTMLInputElement>) => update("preferredAddress", e.currentTarget.value)}/><MemoryInput label="创建目的 *" value={draft.purpose} onChange={(e: ChangeEvent<HTMLInputElement>) => update("purpose", e.currentTarget.value)} placeholder="例如：保存共同记忆、获得陪伴"/></>}
-            {stage === 1 && <><MemoryInput multiline label="性格" value={draft.personality} onChange={(e: ChangeEvent<HTMLTextAreaElement>) => update("personality", e.currentTarget.value)}/><MemoryInput multiline label="常说的话" value={draft.catchPhrases} onChange={(e: ChangeEvent<HTMLTextAreaElement>) => update("catchPhrases", e.currentTarget.value)}/><MemoryInput multiline label="共同经历" value={draft.sharedExperiences} onChange={(e: ChangeEvent<HTMLTextAreaElement>) => update("sharedExperiences", e.currentTarget.value)}/><div className={styles.grid2}><MemoryInput multiline label="生活片段" value={draft.lifeMoments} onChange={(e: ChangeEvent<HTMLTextAreaElement>) => update("lifeMoments", e.currentTarget.value)}/><MemoryInput multiline label="兴趣爱好" value={draft.interests} onChange={(e: ChangeEvent<HTMLTextAreaElement>) => update("interests", e.currentTarget.value)}/></div></>}
-            {stage === 2 && <><label className={styles.file}>选择照片<small>{photo?.name || "JPG、PNG 等，最大 20MB"}</small><input type="file" accept="image/*" onChange={choosePhoto}/></label><div className={styles.muted}>首发只收集你选择提交的照片和文字资料，不收集声音文件，也不提供声音克隆。忆见的回应由 AI 生成，不是现实中的 TA；素材只在创建后上传，不会写入 localStorage。请先阅读 <a href="/privacy">隐私政策</a>、<a href="/terms">用户协议</a> 和 <a href="/authorization">AI 内容和素材说明</a>。数据删除或退款相关请求可从 <a href="/report">投诉与删除</a> 提交。</div><label className={styles.consent}><input type="checkbox" checked={draft.consent} onChange={e => update("consent", e.target.checked)}/><span>我已年满 18 周岁，理解 AI 内容说明，确认拥有上述照片和资料的合法使用权，并同意按隐私政策处理；创建和上传前会记录本次确认。</span></label></>}
-            {stage === 3 && <><div className={styles.summary}><div className={styles.metric}><strong>{completeness}%</strong><span>资料完整度</span></div><div className={styles.metric}><strong>{[draft.personality, draft.catchPhrases, photo].filter(Boolean).length}</strong><span>已确认资料项</span></div></div><div className={styles.metric}><strong>{draft.name}</strong><span>{draft.relationship} · 你称呼 TA 为 {draft.preferredAddress}</span></div><div className={styles.muted}>待完善：{[!draft.personality && "性格", !draft.catchPhrases && "常说的话", !photo && "照片"].filter(Boolean).join("、") || "基础资料已齐全"}</div></>}
+        {created ? <div className={styles.success}>
+          <div className={styles.eyebrow}>记忆已经收好</div>
+          <h1 className={styles.title}>{created.name}，已经在这里了。</h1>
+          <p className={styles.desc}>这是 AI 纪念陪伴，不代表真实意识或真实出现。</p>
+          <MemoryButton onClick={() => router.replace("/memory-world")}>进入相伴</MemoryButton>
+        </div> : <>
+          <div className={styles.progress} aria-label={`第 ${stage + 1} 步，共 2 步`}><span className={styles.active} /><span className={stage === 1 ? styles.active : ""} /></div>
+          <div className={styles.eyebrow}>{stage === 0 ? "01 开始回忆" : "02 留下 TA 的痕迹"}</div>
+          <h1 className={styles.title}>{stage === 0 ? "想让谁，再一次出现在你的记忆里？" : "留下 TA 的痕迹"}</h1>
+          <p className={styles.desc}>{stage === 0 ? "先从一个称呼开始。" : "照片、生日和一句话，都可以跳过或以后补充。"}</p>
+          <div className={styles.step} key={reducedMotion ? "still" : stage}>
+            {stage === 0 ? <>
+              <MemoryInput label="TA 称呼 *" value={draft.name} onChange={(event: ChangeEvent<HTMLInputElement>) => { update("name", event.currentTarget.value); update("preferredAddress", event.currentTarget.value); }} placeholder="例如：妈妈、爸爸、奶奶" autoFocus />
+              <div className={styles.relationships}>{relationships.map((item) => <button type="button" key={item} className={draft.relationship === item ? styles.relationshipActive : styles.relationship} onClick={() => update("relationship", item)}>{item}</button>)}</div>
+            </> : <>
+              <label className={styles.file}>选择一张照片<small>{photo?.name || "可跳过 · JPG、PNG、WebP，最大 20MB"}</small><input type="file" accept="image/*" onChange={choosePhoto} /></label>
+              <MemoryInput label="生日（可选）" type="date" value={birthDate} onChange={(event: ChangeEvent<HTMLInputElement>) => setBirthDate(event.currentTarget.value)} />
+              <MemoryInput multiline label="如果 TA 现在看到你，TA 最可能说什么？（可选）" value={draft.catchPhrases} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => update("catchPhrases", event.currentTarget.value)} />
+              <p className={styles.safetyCopy}>首发只收集你选择提交的照片和文字资料，不收集声音文件，也不提供声音克隆。未来回应越能贴近你确认的内容；忆见不是现实中的 TA。</p>
+              <label className={styles.consent}><input type="checkbox" checked={draft.consent} onChange={(event) => update("consent", event.target.checked)} /><span>我已年满 18 周岁，确认拥有资料使用权，并同意隐私说明。</span></label>
+            </>}
           </div>
-          {error && <div className={styles.error} role="alert">{error}</div>}
-          <div className={styles.status}>{status === "saving-draft" ? "正在保存草稿…" : status === "uploading" ? "正在上传素材…" : status === "submitting" ? "正在写入 PostgreSQL…" : uploadState === "unavailable" ? "素材服务尚未就绪" : "草稿已自动保存（不含素材）"}</div>
-          <div className={styles.actions}>{stage > 0 && <MemoryButton variant="ghost" onClick={() => setStage((stage - 1) as CreateStage)}>上一步</MemoryButton>}{stage === 1 && <button className={styles.skip} onClick={() => setStage(2)}>稍后补充</button>}{stage < 3 ? <MemoryButton onClick={next} disabled={stage === 2 && !draft.consent}>继续</MemoryButton> : <MemoryButton loading={status === "submitting" || status === "uploading"} onClick={creationUncertain ? recoverCreation : create}>{creationUncertain ? "确认创建结果" : "创建 TA"}</MemoryButton>}</div>
-        </> : <div className={styles.success}><div className={styles.eyebrow}>{status === "media-recovery" ? "素材等待确认" : "创建完成"}</div><h1 className={styles.title}>{status === "media-recovery" ? `${created.name} 已创建，素材尚未保存` : `${created.name} 的资料已保存`}</h1><p className={styles.desc}>{status === "media-recovery" ? "TA 资料已写入记忆空间，但所选素材尚未收到服务端确认。请使用同一 TA 明确重试上传。" : "资料已写入你的记忆空间。"}</p>{error && <p className={styles.error} role="alert">{error}</p>}{status === "media-recovery" && photo && <MemoryButton variant="secondary" onClick={retryMediaUpload}>重试素材上传</MemoryButton>}<MemoryButton onClick={() => router.push(`/memory-chat/${created.id}`)}>进入相伴</MemoryButton></div>}
+          {error && <p className={styles.error} role="alert">{error}</p>}
+          <div className={styles.actions}>
+            {stage === 1 && <MemoryButton variant="ghost" onClick={() => setStage(0)}>上一步</MemoryButton>}
+            {stage === 0
+              ? <MemoryButton onClick={moveNext}>继续</MemoryButton>
+              : <MemoryButton loading={status === "submitting" || status === "uploading"} onClick={creationUncertain ? recoverCreation : create}>{creationUncertain ? "确认创建结果" : "唤醒 TA"}</MemoryButton>}
+          </div>
+        </>}
       </section>
-    </div>
+    </section>
   </main>;
 }
