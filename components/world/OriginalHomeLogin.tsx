@@ -30,7 +30,15 @@ function WeChatMark() {
   );
 }
 
-export function OriginalHomeLogin({ onAuthenticated, onPreview }: { onAuthenticated: () => void | Promise<void>; onPreview?: () => void }) {
+export function OriginalHomeLogin({
+  onAuthenticated,
+  onBackToExperience,
+  onPreview,
+}: {
+  onAuthenticated: () => void | Promise<void>;
+  onBackToExperience?: () => void;
+  onPreview?: () => void;
+}) {
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"phone" | "code">("phone");
@@ -158,6 +166,7 @@ export function OriginalHomeLogin({ onAuthenticated, onPreview }: { onAuthentica
             </div>
             <p id="login-account-note" className={homeLoginStyles.accountNote}>未注册的手机号验证后将自动创建忆见账号</p>
             <a href="/help" className={homeLoginStyles.legalLink}>帮助与安全说明</a>
+            {onBackToExperience && <button type="button" onClick={onBackToExperience} className={homeLoginStyles.previewButton}>返回公开体验</button>}
             {process.env.NODE_ENV !== "production" && onPreview && <button type="button" onClick={onPreview} className={homeLoginStyles.previewButton}>开发视觉预览</button>}
           </> : <>
             <p style={{ margin: 0, color: "#8a7060", fontSize: 12, textAlign: "center" }}>验证码已发送至 {phone}</p>

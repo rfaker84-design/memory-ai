@@ -1,0 +1,331 @@
+.experience {
+  position: fixed;
+  inset: 0;
+  min-height: 100dvh;
+  overflow: auto;
+  isolation: isolate;
+  padding: max(22px, env(safe-area-inset-top)) 22px max(34px, env(safe-area-inset-bottom));
+  color: #f7efe3;
+  background:
+    radial-gradient(circle at 50% 34%, rgba(181, 125, 55, 0.13), transparent 29%),
+    linear-gradient(180deg, #09090a 0%, #0b0908 56%, #080809 100%);
+}
+.stars,
+.ambientLight {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+}
+
+.stars {
+  opacity: 0.52;
+  background-image:
+    radial-gradient(circle at 11% 19%, rgba(255, 235, 198, 0.72) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 76% 13%, rgba(224, 181, 105, 0.62) 0 1px, transparent 1.4px),
+    radial-gradient(circle at 32% 67%, rgba(255, 244, 223, 0.42) 0 1px, transparent 1.4px),
+    radial-gradient(circle at 91% 58%, rgba(221, 167, 80, 0.46) 0 1px, transparent 1.4px);
+  background-size: 211px 229px, 263px 281px, 307px 271px, 239px 317px;
+  animation: starDrift 18s ease-in-out infinite alternate;
+}
+
+.ambientLight {
+  top: 18%;
+  left: 50%;
+  width: min(760px, 110vw);
+  height: 68vh;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(178, 119, 45, 0.12), transparent 67%);
+}
+
+.header {
+  width: min(100%, 720px);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.wordmark {
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: 20px;
+  letter-spacing: 0.18em;
+}
+
+.mode {
+  color: rgba(226, 189, 123, 0.76);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+}
+
+.disclosure {
+  width: min(100%, 720px);
+  margin: 15px auto 0;
+  color: rgba(239, 220, 192, 0.52);
+  font-size: 11px;
+  line-height: 1.65;
+  text-align: center;
+}
+
+.entry,
+.awakening,
+.companion {
+  width: min(100%, 620px);
+  min-height: calc(100dvh - 116px);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 34px 0 42px;
+  text-align: center;
+}
+
+.entry h1,
+.awakening h1,
+.companion h1 {
+  margin: 17px 0 0;
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: clamp(31px, 8vw, 50px);
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: 0.035em;
+}
+
+.eyebrow {
+  margin: 0;
+  color: rgba(224, 183, 110, 0.82);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+}
+
+.lead,
+.companionCopy {
+  width: min(100%, 470px);
+  margin: 22px auto 0;
+  color: rgba(238, 223, 200, 0.64);
+  font-size: 14px;
+  line-height: 1.85;
+}
+
+.samplePresence {
+  position: relative;
+  width: 126px;
+  height: 150px;
+  margin-bottom: 34px;
+  display: grid;
+  place-items: center;
+}
+
+.presenceHalo {
+  position: absolute;
+  inset: 4px -24px -12px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(224, 178, 96, 0.28), transparent 68%);
+  animation: haloBreathe 6s ease-in-out infinite;
+}
+
+.sampleInitials,
+.companionPortrait,
+.awakeningPortrait {
+  border: 1px solid rgba(232, 199, 139, 0.28);
+  color: rgba(240, 211, 159, 0.82);
+  background: linear-gradient(150deg, rgba(50, 42, 32, 0.94), rgba(18, 17, 17, 0.98));
+  box-shadow: 0 28px 72px rgba(0, 0, 0, 0.42), 0 0 54px rgba(176, 117, 43, 0.12);
+}
+
+.sampleInitials {
+  position: relative;
+  width: 104px;
+  height: 132px;
+  display: grid;
+  place-items: center;
+  border-radius: 49% 49% 42% 42% / 39% 39% 28% 28%;
+  font-family: serif;
+  font-size: 30px;
+}
+
+.samplePresence i,
+.awakeningPortrait i {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #e7c483;
+  box-shadow: 0 0 12px rgba(231, 196, 131, 0.82);
+}
+
+.samplePresence i:nth-of-type(1) { top: 13%; left: 0; }
+.samplePresence i:nth-of-type(2) { top: 38%; right: 2%; }
+.samplePresence i:nth-of-type(3) { bottom: 18%; left: 8%; }
+
+.actions {
+  width: min(100%, 360px);
+  margin-top: 32px;
+  display: grid;
+  gap: 12px;
+}
+
+.primaryAction,
+.secondaryAction {
+  min-height: 50px;
+  border-radius: 999px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.primaryAction {
+  border: 1px solid rgba(239, 206, 145, 0.52);
+  color: #261b0e;
+  background: linear-gradient(135deg, #ead09c, #bb8440);
+  box-shadow: 0 14px 38px rgba(145, 94, 33, 0.18);
+}
+
+.secondaryAction {
+  border: 0;
+  color: rgba(239, 220, 192, 0.68);
+  background: transparent;
+}
+
+.primaryAction:focus-visible,
+.secondaryAction:focus-visible {
+  outline: 3px solid rgba(255, 226, 172, 0.9);
+  outline-offset: 4px;
+}
+
+.awakeningPortrait {
+  position: relative;
+  width: 188px;
+  height: 244px;
+  margin-bottom: 42px;
+  display: grid;
+  place-items: center;
+  overflow: visible;
+  border-radius: 50% 50% 43% 43% / 39% 39% 29% 29%;
+  font: 42px serif;
+  animation: portraitReveal 2.1s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.awakeningPortrait::before,
+.awakeningPortrait::after {
+  content: "";
+  position: absolute;
+  inset: -38px;
+  border: 1px solid rgba(224, 181, 104, 0.2);
+  border-radius: 50%;
+  animation: memoryRing 1.8s ease-out both;
+}
+
+.awakeningPortrait::after { inset: -72px; animation-delay: 240ms; }
+.awakeningPortrait i:nth-child(2) { top: 6%; left: -20%; }
+.awakeningPortrait i:nth-child(3) { top: 30%; right: -23%; }
+.awakeningPortrait i:nth-child(4) { bottom: 8%; left: -16%; }
+.awakeningPortrait i:nth-child(5) { bottom: 29%; right: -15%; }
+
+.awakeningCopy {
+  height: 46px;
+  margin-top: 17px;
+  display: grid;
+  color: rgba(238, 222, 199, 0.57);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.awakeningCopy span { grid-area: 1 / 1; animation: copyStep 2.1s ease both; }
+.awakeningCopy span:last-child { animation-delay: 1.05s; }
+
+.companionPortrait {
+  width: 148px;
+  height: 190px;
+  margin: 34px auto 6px;
+  display: grid;
+  place-items: center;
+  border-radius: 49% 49% 42% 42% / 39% 39% 28% 28%;
+  font: 36px serif;
+  animation: companionArrive 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.relationship {
+  margin: 10px 0 0;
+  color: rgba(236, 221, 197, 0.48);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+}
+
+.dailyGreeting {
+  width: min(100%, 500px);
+  margin-top: 42px;
+  padding-block: 26px;
+  border-block: 1px solid rgba(229, 198, 143, 0.14);
+}
+
+.dailyGreeting > span {
+  color: rgba(223, 182, 109, 0.76);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+}
+
+.dailyGreeting blockquote {
+  margin: 18px 0;
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: clamp(20px, 5.2vw, 27px);
+  line-height: 1.75;
+}
+
+.dailyGreeting small {
+  color: rgba(236, 221, 197, 0.48);
+  line-height: 1.65;
+}
+
+@keyframes starDrift {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(0, -8px, 0); }
+}
+
+@keyframes haloBreathe {
+  0%, 100% { opacity: 0.66; transform: scale(0.98); }
+  50% { opacity: 0.94; transform: scale(1.03); }
+}
+
+@keyframes portraitReveal {
+  from { opacity: 0.18; transform: translateY(18px) scale(0.86); filter: blur(9px); }
+  to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+
+@keyframes memoryRing {
+  from { opacity: 0; transform: scale(0.62); }
+  45% { opacity: 0.68; }
+  to { opacity: 0; transform: scale(1.08); }
+}
+
+@keyframes copyStep {
+  0%, 40% { opacity: 0; transform: translateY(8px); }
+  52%, 84% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; }
+}
+
+@keyframes companionArrive {
+  from { opacity: 0; transform: translateY(18px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (min-width: 760px) {
+  .experience { padding-inline: 40px; }
+  .entry, .awakening, .companion { padding-top: 52px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stars,
+  .presenceHalo,
+  .awakeningPortrait,
+  .awakeningPortrait::before,
+  .awakeningPortrait::after,
+  .awakeningCopy span,
+  .companionPortrait {
+    animation: none !important;
+    transform: none !important;
+    filter: none !important;
+  }
+  .awakeningCopy span { opacity: 1; position: static; }
+}

@@ -31,7 +31,7 @@ test("bottom navigation is limited to first-release root destinations", () => {
   assert.match(shell, /pathname === "\/memory" \|\| pathname === "\/continuity"/);
   assert.doesNotMatch(shell, /pathname === "\/create-memory"/);
   assert.match(shell, /if \(!showsRootNavigation\) \{[\s\S]*?return <>\{children\}<\/>;/);
-  assert.match(shell, /Creation,[\s\S]*companion chat,[\s\S]*memory-detail/);
+  assert.match(shell, /Creation, encounter, formal[\s\S]*chat, playback, and memory-detail routes stay focused/);
   const companion = readFileSync("app/memory-world/page.tsx", "utf8");
   assert.doesNotMatch(companion, /<nav aria-label="主导航"/);
 });

@@ -55,6 +55,10 @@ function MemoryWorldContent() {
       const { response, body: data } = await fetchCompanionHomeMemoriesJson(fetch, signal);
       if (signal?.aborted) return;
       if (response.status === 401) {
+        setMemories([]);
+        setPrimaryId(null);
+        setPrimaryPortraitUrl(null);
+        setDailyGreetingVisible(false);
         setState("unauthenticated");
         return;
       }
@@ -228,6 +232,7 @@ function MemoryWorldContent() {
               <span style={{ color: SurfaceToken.content.primary }}>请先登录，再查看或创建你的 TA。</span>
               <span style={{ color: SurfaceToken.content.muted, lineHeight: MemoryTypography.lineHeight.normal }}>当前没有读取或修改任何资料。</span>
               <MemoryButton href="/login" variant="primary">前往登录</MemoryButton>
+              <MemoryButton href="/" variant="secondary">先看看忆见的公开体验</MemoryButton>
             </div>
           </MemoryCard>
         )}

@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 
 import { FirstPresenceFlow } from "../src/components/first-presence/FirstPresenceFlow";
 import { resolvePostLoginDestination } from "../src/components/auth/postLoginDestination";
+import { fetchAuthRequestJson } from "../src/components/auth/authRequestClient";
 import StaticBrandLaunch from "../src/components/launch/StaticBrandLaunch";
 import { claimBrandLaunch } from "../src/components/launch/staticBrandLaunchPolicy";
 import { MotionProvider } from "../src/motion";
+import { GuestExperience } from "../components/world/GuestExperience";
 
 function HomeLoadingFallback() {
   return (
@@ -31,29 +33,50 @@ const OriginalHomeLogin = dynamic(
 
 const VISUAL_PREVIEW_ENABLED = process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_MEMORYAI_ENABLE_PRESENCE_PREVIEW === "true";
 
-type EntryStage = "checking" | "launch" | "home" | "preview";
+type EntryStage = "checking" | "launch" | "guest" | "login" | "preview";
+type SessionPayload = { authenticated?: unknown };
 
 export default function HomePage() {
   const router = useRouter();
   const [stage, setStage] = useState<EntryStage>("checking");
 
   useEffect(() => {
-    setStage(claimBrandLaunch(window.sessionStorage) ? "launch" : "home");
-  }, []);
+    const controller = new AbortController();
+    const showGuestEntry = () => {
+      if (!controller.signal.aborted) {
+        setStage(claimBrandLaunch(window.sessionStorage) ? "launch" : "guest");
+      }
+    };
 
-  const completeLaunch = useCallback(() => setStage((current) => current === "launch" ? "home" : current), []);
+    void fetchAuthRequestJson("/api/auth/session", {
+      cache: "no-store",
+      credentials: "same-origin",
+    }, fetch, controller.signal).then(async ({ response, body }) => {
+      const payload = body as SessionPayload;
+      if (response.ok && payload.authenticated === true) {
+        const destination = await resolvePostLoginDestination(fetch, controller.signal);
+        if (!controller.signal.aborted) router.replace(destination);
+        return;
+      }
+      showGuestEntry();
+    }).catch(showGuestEntry);
+
+    return () => controller.abort();
+  }, [router]);
+
+  const completeLaunch = useCallback(() => setStage((current) => current === "launch" ? "guest" : current), []);
   const enterOwnerProduct = useCallback(async () => {
     const destination = await resolvePostLoginDestination();
     router.replace(destination);
   }, [router]);
-  const homeIsMounted = stage === "launch" || stage === "home";
 
   return (
     <MotionProvider>
-      {homeIsMounted && <OriginalHomeLogin onAuthenticated={enterOwnerProduct} onPreview={VISUAL_PREVIEW_ENABLED ? () => setStage("preview") : undefined} />}
       {stage === "checking" && <HomeLoadingFallback />}
       {stage === "launch" && <StaticBrandLaunch onComplete={completeLaunch} />}
-      {stage === "preview" && <FirstPresenceFlow initialStage="preview-create" onLeaveHome={() => setStage("home")} />}
+      {stage === "guest" && <GuestExperience onLogin={() => setStage("login")} />}
+      {stage === "login" && <OriginalHomeLogin onAuthenticated={enterOwnerProduct} onBackToExperience={() => setStage("guest")} onPreview={VISUAL_PREVIEW_ENABLED ? () => setStage("preview") : undefined} />}
+      {stage === "preview" && <FirstPresenceFlow initialStage="preview-create" onLeaveHome={() => setStage("guest")} />}
     </MotionProvider>
   );
 }
