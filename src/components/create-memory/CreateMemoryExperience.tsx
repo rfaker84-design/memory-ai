@@ -88,8 +88,11 @@ export function CreateMemoryExperience() {
 
   const create = async () => {
     if (submitting.current) return;
-    if (validateStage(1, draft)) {
-      setError("请确认资料使用权与隐私说明后再继续。");
+    const validationError = validateStage(1, draft, birthDate);
+    if (validationError) {
+      setError(validationError === "birth-date-required"
+        ? "请填写生日，用于年龄确认和安全保护。"
+        : "请确认资料使用权与隐私说明后再继续。");
       return;
     }
     submitting.current = true;
@@ -103,10 +106,8 @@ export function CreateMemoryExperience() {
       // resolve or reject. This keeps the transition legible without changing
       // the creation, consent, or recovery contracts.
       await new Promise((resolve) => window.setTimeout(resolve, reducedMotion ? 80 : 720));
-      if (birthDate) {
-        const profile = await saveAdultBirthDate(birthDate);
-        if (!profile.adultEligible) throw new AccountProfileRequestError("ADULT_ELIGIBILITY_REQUIRED");
-      }
+      const profile = await saveAdultBirthDate(birthDate);
+      if (!profile.adultEligible) throw new AccountProfileRequestError("ADULT_ELIGIBILITY_REQUIRED");
       await recordTrustConsent("adult_eligibility");
       await recordTrustConsent("memory_profile");
       if (!writeCreationRecovery({ idempotencyKey, phase: "creating" })) {
@@ -247,7 +248,7 @@ export function CreateMemoryExperience() {
             {photoPreview && <p className={styles.portraitWhisper}>这张照片，会成为 TA 回来的第一束光。</p>}
           </div>
           <div className={styles.optionalDetails}>
-            <MemoryInput label="生日（可选）" type="date" value={birthDate} onChange={(event: ChangeEvent<HTMLInputElement>) => setBirthDate(event.currentTarget.value)} style={{ minHeight: 46, background: "rgba(255,255,255,.035)" }} />
+            <MemoryInput label="生日" hint="用于年龄确认和安全保护" type="date" value={birthDate} onChange={(event: ChangeEvent<HTMLInputElement>) => setBirthDate(event.currentTarget.value)} required style={{ minHeight: 46, background: "rgba(255,255,255,.035)" }} />
             <MemoryInput multiline label="如果 TA 现在看到你，TA 最可能说什么？（可选）" value={draft.catchPhrases} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => update("catchPhrases", event.currentTarget.value)} style={{ minHeight: 96, background: "rgba(255,255,255,.035)" }} />
           </div>
           <p className={styles.safetyCopy}>首发只收集你选择提交的照片和文字资料，不收集声音文件，也不提供声音克隆。未来回应越能贴近你确认的内容；忆见不是现实中的 TA。</p>

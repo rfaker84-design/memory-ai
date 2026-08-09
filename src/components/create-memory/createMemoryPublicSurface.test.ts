@@ -34,8 +34,20 @@ test("creation copy keeps AI responses grounded in confirmed material", () => {
   assert.doesNotMatch(source, /逐渐清晰的存在体/);
 });
 
-test("birth date is optional and, when supplied, is verified before adult eligibility consent", () => {
-  assert.doesNotMatch(source, /stage === 0 && !birthDate/);
-  assert.match(source, /if \(birthDate\) \{[\s\S]*?const profile = await saveAdultBirthDate\(birthDate\);[\s\S]*?await recordTrustConsent\("adult_eligibility"\)/);
-  assert.match(source, /label="生日（可选）"/);
+test("birth date is required, explained, and verified before adult eligibility consent", () => {
+  const validation = source.indexOf("const validationError = validateStage(1, draft, birthDate)");
+  const validationReturn = source.indexOf("return;", validation);
+  const submitting = source.indexOf("submitting.current = true", validation);
+  const profileWrite = source.indexOf("saveAdultBirthDate(birthDate)", submitting);
+  const consentWrite = source.indexOf('recordTrustConsent("adult_eligibility")', profileWrite);
+  const recoveryWrite = source.indexOf("writeCreationRecovery", consentWrite);
+  const memoryCreate = source.indexOf('fetchCreationJson("/api/memories"', recoveryWrite);
+
+  assert.ok(validation >= 0);
+  assert.ok(validation < validationReturn && validationReturn < submitting);
+  assert.ok(submitting < profileWrite && profileWrite < consentWrite);
+  assert.ok(consentWrite < recoveryWrite && recoveryWrite < memoryCreate);
+  assert.match(source, /label="生日" hint="用于年龄确认和安全保护"[\s\S]*?required/);
+  assert.doesNotMatch(source, /生日（可选）/);
+  assert.doesNotMatch(source, /if \(birthDate\)/);
 });
