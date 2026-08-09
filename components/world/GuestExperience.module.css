@@ -278,6 +278,36 @@
   line-height: 1.65;
 }
 
+.conversionInvitation {
+  width: min(100%, 460px);
+  margin-top: 34px;
+  text-align: center;
+}
+
+.conversionInvitation p {
+  margin: 0;
+  color: rgba(223, 182, 109, 0.76);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+}
+
+.conversionInvitation h2 {
+  margin: 12px 0 0;
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: clamp(24px, 6vw, 32px);
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+}
+
+.conversionInvitation span {
+  display: block;
+  margin-top: 12px;
+  color: rgba(238, 223, 200, 0.58);
+  font-size: 13px;
+  line-height: 1.75;
+}
+
 @keyframes starDrift {
   from { transform: translate3d(0, 0, 0); }
   to { transform: translate3d(0, -8px, 0); }

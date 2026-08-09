@@ -23,8 +23,17 @@ test("the guest state machine demonstrates entry, awakening, and companion witho
   assert.match(experience, /setStage\("awakening"\)/);
   assert.match(experience, /setStage\("companion"\)/);
   assert.match(experience, /陪伴空间示例/);
-  assert.match(experience, /登录后创建我的 TA/);
+  assert.match(experience, /创建属于你的 TA/);
+  assert.match(experience, /onClick=\{onLogin\}>创建我的 TA/);
   assert.doesNotMatch(experience, /<form|<input|<textarea|type="file"|contentEditable/);
+});
+
+test("the conversion asks for login only after an explicit real-TA action", () => {
+  const awakeningEffect = experience.slice(experience.indexOf("  useEffect(() => {"), experience.indexOf("  return ("));
+  assert.doesNotMatch(awakeningEffect, /onLogin/);
+  assert.match(experience, /已有账号，直接登录/);
+  assert.match(experience, /刚才的虚构示例不会保存，也不会带入你的 TA/);
+  assert.equal((experience.match(/onClick=\{onLogin\}/g) ?? []).length, 2);
 });
 
 test("the public experience is isolated from Owner data, storage, providers, and write paths", () => {

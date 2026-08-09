@@ -46,7 +46,7 @@ export function GuestExperience({ onLogin }: { onLogin: () => void }) {
           <p className={styles.lead}>看看一段虚构示例，感受从记忆被唤醒，到进入安静陪伴空间的过程。</p>
           <div className={styles.actions}>
             <button className={styles.primaryAction} type="button" onClick={() => setStage("awakening")}>进入示例体验</button>
-            <button className={styles.secondaryAction} type="button" onClick={onLogin}>登录 / 创建我的 TA</button>
+            <button className={styles.secondaryAction} type="button" onClick={onLogin}>已有账号，直接登录</button>
           </div>
         </section>
       )}
@@ -78,8 +78,13 @@ export function GuestExperience({ onLogin }: { onLogin: () => void }) {
             <small>预设 AI 示例文案 · 未调用 AI 服务 · 不是任何真实人物的留言</small>
           </div>
           <p className={styles.companionCopy}>正式使用时，陪伴空间只会读取你登录后拥有并确认的 TA 资料。</p>
+          <div className={styles.conversionInvitation}>
+            <p>体验到这里</p>
+            <h2>创建属于你的 TA</h2>
+            <span>当你愿意开始时，再登录并留下真实资料。刚才的虚构示例不会保存，也不会带入你的 TA。</span>
+          </div>
           <div className={styles.actions}>
-            <button className={styles.primaryAction} type="button" onClick={onLogin}>登录后创建我的 TA</button>
+            <button className={styles.primaryAction} type="button" onClick={onLogin}>创建我的 TA</button>
             <button className={styles.secondaryAction} type="button" onClick={() => setStage("entry")}>重新体验</button>
           </div>
         </section>

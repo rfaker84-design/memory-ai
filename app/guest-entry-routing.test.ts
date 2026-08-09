@@ -21,6 +21,12 @@ test("an authenticated Owner still routes only from the formal Owner-scoped memo
   assert.match(home, /cache: "no-store"/);
 });
 
+test("the guest conversion opens login on demand and then uses the formal post-login destination", () => {
+  assert.match(home, /<GuestExperience onLogin=\{\(\) => setStage\("login"\)\}/);
+  assert.match(home, /<OriginalHomeLogin onAuthenticated=\{enterOwnerProduct\}/);
+  assert.match(home, /const enterOwnerProduct = useCallback\(async \(\) => \{[\s\S]*?resolvePostLoginDestination\(\)[\s\S]*?router\.replace\(destination\)/);
+});
+
 test("a stale Owner view is cleared before memory-world exposes the public experience link", () => {
   const unauthenticated = world.slice(world.indexOf("if (response.status === 401)"), world.indexOf("if (!response.ok)"));
   for (const reset of [
