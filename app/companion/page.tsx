@@ -8,9 +8,13 @@ import {
   selectPrimaryCompanion,
 } from "@/src/components/companion/companionHomeState";
 import {
-  companionFirstGreeting,
+  COMPANION_VISIT_MARKER,
   companionRelationship,
+  companionVisitGreeting,
+  companionVisitStorageKey,
   companionVideoEntry,
+  resolveCompanionVisitState,
+  type CompanionVisitState,
 } from "@/src/components/companion/companionSpaceState";
 import {
   CompanionHomeRequestError,
@@ -32,6 +36,22 @@ type CompanionMemory = {
 
 type CompanionState = "loading" | "unauthenticated" | "empty" | "ready" | "error" | "timeout";
 
+function readPresentationValue(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writePresentationValue(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Presentation preferences must never block the Owner-scoped page.
+  }
+}
+
 function CompanionContent() {
   const router = useRouter();
   const reducedMotion = useReducedMotion();
@@ -39,6 +59,7 @@ function CompanionContent() {
   const [state, setState] = useState<CompanionState>("loading");
   const [memory, setMemory] = useState<CompanionMemory | null>(null);
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null);
+  const [visitState, setVisitState] = useState<CompanionVisitState>("first_visit");
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setState("loading");
@@ -53,7 +74,7 @@ function CompanionContent() {
       const memories = Array.isArray(body) ? body as CompanionMemory[] : [];
       const selected = selectPrimaryCompanion(
         memories,
-        window.localStorage.getItem(COMPANION_PRIMARY_KEY),
+        readPresentationValue(COMPANION_PRIMARY_KEY),
       );
       if (!selected) {
         setState("empty");
@@ -62,7 +83,13 @@ function CompanionContent() {
 
       // Local storage remains presentation-only: selection happens only after
       // the server has returned this Owner's current memories.
-      window.localStorage.setItem(COMPANION_PRIMARY_KEY, selected.id);
+      writePresentationValue(COMPANION_PRIMARY_KEY, selected.id);
+      const visitStorageKey = companionVisitStorageKey(selected.id);
+      const nextVisitState = resolveCompanionVisitState(readPresentationValue(visitStorageKey));
+      setVisitState(nextVisitState);
+      if (nextVisitState === "first_visit") {
+        writePresentationValue(visitStorageKey, COMPANION_VISIT_MARKER);
+      }
       setMemory(selected);
       setPortraitUrl(selected.photoUrl ?? null);
       setState("ready");
@@ -98,12 +125,12 @@ function CompanionContent() {
     return <section className={styles.statusPage} aria-label="陪伴空间"><p role="alert">{state === "timeout" ? "读取等待过久，没有创建或修改任何内容。" : "陪伴空间暂时无法打开。"}</p><button type="button" onClick={() => void load()}>重新读取</button></section>;
   }
 
-  const greeting = companionFirstGreeting(memory.name);
+  const greeting = companionVisitGreeting(memory.name, visitState);
   const relationship = companionRelationship(memory.relationship);
   const chatRoute = `/memory-chat/${encodeURIComponent(memory.id)}`;
 
   return (
-    <div className={styles.space} data-presence={presence}>
+    <div className={styles.space} data-presence={presence} data-visit={visitState}>
       <div className={styles.stars} aria-hidden="true" />
       <div className={styles.horizon} aria-hidden="true" />
 
@@ -132,30 +159,29 @@ function CompanionContent() {
         </figure>
       </section>
 
-      <section className={styles.greeting} aria-labelledby="first-companion-greeting">
-        <p className={styles.greetingLabel}>第一次来到这里</p>
-        <h2 id="first-companion-greeting">{greeting.title}</h2>
-        <blockquote>“{greeting.message}”</blockquote>
-        <p className={styles.disclosure}>{greeting.disclosure}</p>
+      <section className={styles.today} aria-labelledby="today-companion-title">
+        <p className={styles.greetingLabel}>{greeting.label}</p>
+        <h2 id="today-companion-title">{greeting.title}</h2>
+        <blockquote aria-describedby="today-companion-disclosure">{greeting.message}</blockquote>
+        <p id="today-companion-disclosure" className={styles.disclosure}>{greeting.disclosure}</p>
       </section>
 
-      <section className={styles.today} aria-labelledby="today-companion-title">
-        <p>今天</p>
-        <h2 id="today-companion-title">陪你聊一会儿</h2>
-        <span>今天想和 {memory.name} 说些什么？</span>
-        <button className={styles.primaryAction} type="button" onClick={() => router.push(chatRoute)}>开始聊天</button>
-        <small>聊天由现有正式能力提供；如果暂时不可用，会明确说明状态，不会伪造回复。</small>
+      <section className={styles.recent} aria-labelledby="recent-companion-title">
+        <p>最近一次交流</p>
+        <h2 id="recent-companion-title">上次停留的地方</h2>
+        <span>当前没有可安全展示的只读摘要。进入聊天后会恢复真实记录；这里不会为预览创建会话，也不会用示例内容替代。</span>
+        <button className={styles.sourceLink} type="button" onClick={() => router.push(`/memory/${encodeURIComponent(memory.id)}/sources`)}>查看已确认资料</button>
       </section>
 
       <nav className={styles.nextSteps} aria-label="陪伴空间入口">
-        <button type="button" onClick={() => router.push(`/memory/${encodeURIComponent(memory.id)}/sources`)}>
-          <span>查看记忆</span><small>查看 TA 当前可以引用的已确认资料</small>
+        <button className={styles.primaryAction} type="button" onClick={() => router.push(chatRoute)}>
+          <span>陪 TA 聊聊</span><small>进入现有正式聊天；不可用时会明确说明，不会伪造回复</small>
         </button>
         <button type="button" onClick={() => router.push(`/memory/${encodeURIComponent(memory.id)}/pickup`)}>
-          <span>拾忆</span><small>主动讲述，确认后才会成为可引用记忆</small>
+          <span>看看拾忆</span><small>主动讲述，只有确认后才会成为 TA 可引用的记忆</small>
         </button>
         <button type="button" onClick={() => router.push(companionVideoEntry(memory.id))}>
-          <span>生成新的影像</span><small>沿用正式相伴入口，满足既有条件后才会开放</small>
+          <span>查看影像机会</span><small>生成新的影像前，正式入口会核验照片、完整对话与可用影像机会；条件不足时会说明原因</small>
         </button>
       </nav>
 

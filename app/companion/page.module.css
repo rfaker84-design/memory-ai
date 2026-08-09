@@ -27,7 +27,7 @@
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  padding: max(20px, env(safe-area-inset-top)) 22px 56px;
+  padding: calc(18px + env(safe-area-inset-top, 0px)) 22px 64px;
 }
 
 .stars,
@@ -88,6 +88,8 @@
   margin: 0;
 }
 
+.identityBar > div:nth-child(2) { min-width: 0; }
+
 .identityBar p {
   overflow: hidden;
   font-size: 15px;
@@ -105,17 +107,18 @@
   color: rgba(222, 188, 128, 0.72);
   font-size: 11px;
   letter-spacing: 0.12em;
+  white-space: nowrap;
 }
 
 .presence {
   width: min(100%, 720px);
-  margin: 84px auto 0;
+  margin: 48px auto 0;
   text-align: center;
 }
 
 .eyebrow,
 .greetingLabel,
-.today > p {
+.recent > p {
   margin: 0;
   color: rgba(222, 185, 115, 0.78);
   font-size: 12px;
@@ -123,9 +126,9 @@
 }
 
 .presence h1 {
-  margin: 17px 0 0;
+  margin: 14px 0 0;
   font-family: "Noto Serif SC", "Songti SC", serif;
-  font-size: clamp(34px, 8vw, 54px);
+  font-size: clamp(30px, 7vw, 44px);
   font-weight: 400;
   line-height: 1.35;
   letter-spacing: 0.04em;
@@ -133,8 +136,8 @@
 
 .portraitScene {
   position: relative;
-  width: min(82vw, 340px);
-  margin: 56px auto 0;
+  width: min(58vw, 230px);
+  margin: 32px auto 0;
 }
 
 .portraitHalo {
@@ -169,7 +172,7 @@
 .portraitScene figcaption {
   display: grid;
   gap: 7px;
-  margin-top: 22px;
+  margin-top: 16px;
   font-family: "Noto Serif SC", "Songti SC", serif;
   font-size: 21px;
   letter-spacing: 0.08em;
@@ -201,96 +204,83 @@
 .orbit i:nth-child(2) { top: 35%; right: -2%; }
 .orbit i:nth-child(3) { bottom: 18%; left: 6%; }
 
-.greeting,
 .today,
+.recent,
 .nextSteps,
 .safetyNote {
   width: min(100%, 620px);
   margin-inline: auto;
 }
 
-.greeting {
-  margin-top: 92px;
-  padding: 34px 30px;
-  border: 1px solid rgba(220, 181, 110, 0.2);
-  border-radius: 26px;
-  background: linear-gradient(145deg, rgba(255, 249, 237, 0.055), rgba(136, 91, 35, 0.045));
-  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.28);
-}
-
-.greeting h2 {
-  margin: 13px 0 0;
-  color: #f0e2ca;
-  font-family: "Noto Serif SC", "Songti SC", serif;
-  font-size: 21px;
-  font-weight: 400;
-}
-
-.greeting blockquote {
-  margin: 24px 0;
-  color: #fff7e9;
-  font-family: "Noto Serif SC", "Songti SC", serif;
-  font-size: clamp(22px, 5vw, 28px);
-  line-height: 1.75;
-}
-
 .disclosure {
-  margin: 0;
-  color: rgba(235, 222, 199, 0.52);
+  margin: 24px 0 0;
+  color: rgba(235, 222, 199, 0.66);
   font-size: 12px;
   line-height: 1.7;
 }
 
 .today {
-  margin-top: 78px;
-  text-align: center;
+  margin-top: 58px;
+  padding: 4px 0 4px 20px;
+  border-left: 1px solid rgba(226, 187, 116, 0.34);
 }
 
 .today h2 {
-  margin: 12px 0 0;
+  margin: 13px 0 0;
   font-family: "Noto Serif SC", "Songti SC", serif;
-  font-size: 30px;
+  font-size: clamp(27px, 7vw, 36px);
   font-weight: 400;
 }
 
-.today > span {
+.today blockquote {
+  margin: 20px 0 0;
+  color: rgba(255, 247, 233, 0.88);
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: clamp(19px, 5vw, 24px);
+  line-height: 1.75;
+}
+
+.recent {
+  margin-top: 62px;
+}
+
+.recent h2 {
+  margin: 12px 0 0;
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: 22px;
+  font-weight: 400;
+}
+
+.recent blockquote {
+  margin: 20px 0 0;
+  color: rgba(248, 236, 216, 0.88);
+  font-size: 17px;
+  line-height: 1.75;
+}
+
+.recent > span {
   display: block;
-  margin-top: 10px;
-  color: rgba(239, 227, 207, 0.68);
-}
-
-.primaryAction {
-  width: min(100%, 360px);
-  min-height: 54px;
-  margin-top: 28px;
-  border: 1px solid rgba(238, 202, 135, 0.54);
-  border-radius: 999px;
-  color: #251b0e;
-  background: linear-gradient(135deg, #ebd09b, #bd8741);
-  box-shadow: 0 14px 40px rgba(152, 101, 38, 0.18);
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.statusPage button:focus-visible,
-.primaryAction:focus-visible,
-.nextSteps button:focus-visible {
-  outline: 3px solid rgba(255, 226, 172, 0.9);
-  outline-offset: 4px;
-}
-
-.today small {
-  display: block;
-  width: min(100%, 430px);
-  margin: 13px auto 0;
-  color: rgba(235, 222, 199, 0.46);
+  margin-top: 14px;
+  color: rgba(235, 222, 199, 0.66);
   line-height: 1.6;
+}
+
+.sourceLink {
+  min-height: 44px;
+  margin-top: 12px;
+  padding: 0;
+  border: 0;
+  color: rgba(226, 190, 124, 0.82);
+  background: transparent;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
 }
 
 .nextSteps {
   display: grid;
-  margin-top: 64px;
+  gap: 0;
+  margin-top: 58px;
   border-block: 1px solid rgba(230, 204, 158, 0.12);
 }
 
@@ -305,15 +295,37 @@
   background: transparent;
   text-align: left;
   cursor: pointer;
+  transition: transform 90ms ease, color 180ms ease, background-color 180ms ease;
 }
 
 .nextSteps button:last-child { border-bottom: 0; }
 .nextSteps button span { font-size: 16px; }
-.nextSteps button small { color: rgba(233, 219, 196, 0.5); line-height: 1.5; }
+.nextSteps button small { color: rgba(233, 219, 196, 0.66); line-height: 1.5; }
+
+.nextSteps .primaryAction {
+  min-height: 88px;
+  margin: 14px 0;
+  padding: 18px 20px;
+  border: 1px solid rgba(238, 202, 135, 0.46);
+  border-radius: 22px;
+  color: #2a1d0e;
+  background: linear-gradient(135deg, #ead09e, #bc8744);
+  box-shadow: 0 18px 48px rgba(148, 97, 34, 0.16);
+}
+
+.nextSteps .primaryAction small { color: rgba(54, 36, 15, 0.66); }
+.nextSteps button:active { transform: scale(0.98); }
+
+.statusPage button:focus-visible,
+.sourceLink:focus-visible,
+.nextSteps button:focus-visible {
+  outline: 3px solid rgba(255, 226, 172, 0.9);
+  outline-offset: 4px;
+}
 
 .safetyNote {
   margin-top: 42px;
-  color: rgba(233, 219, 196, 0.42);
+  color: rgba(233, 219, 196, 0.64);
   font-size: 12px;
   line-height: 1.7;
   text-align: center;
@@ -348,7 +360,8 @@
 @media (min-width: 760px) {
   .space { padding-inline: 40px; }
   .identityBar { margin-top: 8px; }
-  .presence { margin-top: 104px; }
+  .presence { margin-top: 72px; }
+  .portraitScene { width: min(36vw, 280px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -360,4 +373,7 @@
     animation: none !important;
     transform: none !important;
   }
+
+  .nextSteps button { transition: none; }
+  .nextSteps button:active { transform: none; }
 }
