@@ -9,7 +9,7 @@ import { MemoryTheme as T } from "../lib/design-system/memory-theme";
 /** Approved first-release navigation: companion, explicitly confirmed memories, and account. */
 
 const TABS = [
-  { key:"companion",label:"相伴",path:"/memory-world",icon:(a:boolean)=>(<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={a?T.colors.primary:T.colors.textFaint} strokeWidth={a?1.8:1.3} strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>) },
+  { key:"companion",label:"相伴",path:"/companion",icon:(a:boolean)=>(<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={a?T.colors.primary:T.colors.textFaint} strokeWidth={a?1.8:1.3} strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>) },
   { key:"memory",label:"拾忆",path:"/memory",icon:(a:boolean)=>(<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={a?T.colors.primary:T.colors.textFaint} strokeWidth={a?1.8:1.3} strokeLinecap="round" strokeLinejoin="round"><path d="M4 20c0-4 4-7 8-7s8 3 8 7"/><circle cx="12" cy="8" r="4"/></svg>) },
   { key:"account",label:"我的",path:"/continuity",icon:(a:boolean)=>(<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={a?T.colors.primary:T.colors.textFaint} strokeWidth={a?1.8:1.3} strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 01-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>) },
 ];
@@ -19,19 +19,22 @@ export default function MobileAppShell({ children }:{ children:React.ReactNode }
   const router = useRouter();
   const reducedMotion = useReducedMotion();
 
-  // The three-tab shell belongs only to its three root destinations. Creation,
-  // encounter, companion chat, playback, and memory-detail routes must stay
-  // focused and never inherit a second navigation surface.
-  // The shell is available immediately after login on its three root destinations.
+  // The three-tab shell belongs to its root destinations and the memory-world
+  // handoff into the dedicated companion space. Creation, encounter, formal
+  // chat, playback, and memory-detail routes stay focused without a second nav.
+  // The shell is available immediately after login on these root destinations.
   // Creation is a focused first-encounter ritual; navigation returns only after
   // the successful transition into memory-world.
-  const showsRootNavigation = pathname === "/memory" || pathname === "/continuity" || pathname === "/memory-world";
-  const immersiveCompanion = pathname === "/memory-world";
+  const showsRootNavigation = pathname === "/memory" || pathname === "/continuity" || pathname === "/memory-world" || pathname === "/companion";
+  const immersiveCompanion = pathname === "/memory-world" || pathname === "/companion";
   if (!showsRootNavigation) {
     return <>{children}</>;
   }
 
-  function active(t:typeof TABS[number]):boolean { return t.path==="/"?pathname==="/":pathname.startsWith(t.path); }
+  function active(t:typeof TABS[number]):boolean {
+    if (t.key === "companion") return pathname === "/memory-world" || pathname === "/companion";
+    return pathname.startsWith(t.path);
+  }
 
   return (
     <div style={{ display:"flex",flexDirection:"column",minHeight:"100dvh",background:immersiveCompanion ? "#08080A" : T.colors.bg }}>

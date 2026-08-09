@@ -83,7 +83,7 @@ test("formal creation leaves React memory state for the stable owned chat URL", 
   assert.match(chatPage, /clearCreationRecovery\(\)/);
   assert.match(chatPage, /router\.replace\("\/login"\)/);
   assert.match(chatPage, /firstGreetingKey\(state\.memory\.id\)/);
-  assert.match(chatPage, /router\.replace\("\/memory-world"\)/);
+  assert.match(chatPage, /router\.replace\("\/companion"\)/);
   assert.doesNotMatch(chatPage, /onLeave=\{\(\) => router\.replace\("\/"\)\}/);
   assert.match(chatPage, /CreationMediaRecoveryGate/);
   assert.match(chatPage, /<MotionProvider>/);

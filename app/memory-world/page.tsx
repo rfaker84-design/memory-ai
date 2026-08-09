@@ -101,6 +101,11 @@ function MemoryWorldContent() {
     setPrimarySelectorOpen(false);
   };
 
+  const enterCompanion = (memory: MemoryWorldItem) => {
+    window.localStorage.setItem(COMPANION_PRIMARY_KEY, memory.id);
+    router.push("/companion");
+  };
+
   const deleteMemory = async (memory: MemoryWorldItem) => {
     if (deletingId || deleteConfirmationId !== memory.id) return;
     setDeletingId(memory.id);
@@ -257,7 +262,7 @@ function MemoryWorldContent() {
                 </div>
                 {dailyGreetingVisible && <p role="status" className={styles.greeting}>{dailyCompanionGreeting(primary.name)}</p>}
                 <div className={styles.heroActions}>
-                  <MemoryButton variant="primary" onClick={() => router.push(`/memory-chat/${primary.id}`)}>进入陪伴</MemoryButton>
+                  <MemoryButton variant="primary" onClick={() => enterCompanion(primary)}>进入陪伴</MemoryButton>
                   <button type="button" onClick={() => router.push(`/memory/${primary.id}/encounter`)}>看看首次相遇</button>
                   <button type="button" onClick={() => router.push(`/memory/${primary.id}/profile`)}>整理 TA 资料</button>
                 </div>
@@ -274,7 +279,7 @@ function MemoryWorldContent() {
                 <span>轻触 TA 可以继续上次的陪伴</span>
               </div>
               {memories.map((memory) => (
-              <MemoryCard key={memory.id} interactive reveal onClick={() => router.push(`/memory-chat/${memory.id}`)}>
+              <MemoryCard key={memory.id} interactive reveal onClick={() => enterCompanion(memory)}>
                 <div style={{ display: "flex", gap: MemorySpacing.md, alignItems: "center" }}>
                   <MemoryAvatar image={memory.id === primary?.id ? primaryPortraitUrl : memory.photoUrl} initials={memory.name} presence="quiet" size={52} />
                   <div style={{ minWidth: 0 }}>

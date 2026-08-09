@@ -20,7 +20,7 @@ test("the primary TA uses the formal owner-scoped portrait and existing companio
   assert.match(page, /photoAssetId\?: string \| null/);
   assert.match(page, /loadOwnedMediaUrl\(primary\.photoAssetId, controller\.signal\)/);
   assert.match(page, /image=\{primaryPortraitUrl\}/);
-  assert.match(page, /router\.push\(`\/memory-chat\/\$\{primary\.id\}`\)/);
+  assert.match(page, /router\.push\("\/companion"\)/);
   assert.match(page, /router\.push\(`\/memory\/\$\{primary\.id\}\/encounter`\)/);
   assert.match(page, />进入陪伴<\/MemoryButton>/);
   assert.doesNotMatch(page, /\/api\/payments|\/api\/first-presence-video|video/i);
@@ -28,7 +28,7 @@ test("the primary TA uses the formal owner-scoped portrait and existing companio
 
 test("memory-world keeps exactly the shared three-tab shell in its dark immersive treatment", () => {
   assert.doesNotMatch(page, /<nav aria-label="主导航"/);
-  assert.match(shell, /const immersiveCompanion = pathname === "\/memory-world"/);
+  assert.match(shell, /const immersiveCompanion = pathname === "\/memory-world" \|\| pathname === "\/companion"/);
   assert.match(shell, /\{!immersiveCompanion && <Footer \/>\}/);
   assert.match(shell, /immersiveCompanion \? "rgba\(8,8,10,0\.94\)"/);
   for (const label of ["相伴", "拾忆", "我的"]) assert.match(shell, new RegExp(`label:"${label}"`));
