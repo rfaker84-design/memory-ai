@@ -7,6 +7,7 @@ import { MemoryAvatar, MemoryButton } from "../memory-ui";
 import { recordBusinessView } from "../business-metrics/businessMetricsClient";
 import { CommerceVideoCreditsEntry } from "./CommerceVideoCreditsEntry";
 import { AiGeneratedLabel } from "../safety/AiGeneratedLabel";
+import { stageChatPickupDraft } from "../memory/pickupDraftHandoff";
 import { updateNotificationPreferences } from "../trust/notificationPreferencesClient";
 import { CRISIS_RESPONSE } from "@/features/memory-engine/crisis-response";
 import {
@@ -507,6 +508,23 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
                 </span>
               )}
               <p>{message.content}</p>
+              {message.role === "user" && (
+                <Link
+                  className={styles.saveMoment}
+                  href={`/memory/${encodeURIComponent(memoryId)}/pickup?from=chat`}
+                  onClick={() => {
+                    stageChatPickupDraft({
+                      memoryId,
+                      sourceMessageId: message.id,
+                      originalText: message.content,
+                      ...(message.createdAt ? { createdAt: message.createdAt } : {}),
+                    });
+                    dismissPickupSuggestion();
+                  }}
+                >
+                  保存这一刻
+                </Link>
+              )}
               {isSafetyAssistantMessage(message) && (
                 <p className={styles.safetyActions} role="note">
                   请先联系现实中的紧急服务或可信赖的人。你也可以查看

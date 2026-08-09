@@ -12,3 +12,13 @@ test("a pickup suggestion is shown at most once per session, including silent ig
   assert.match(source, /setPickupSuggestionVisible\(false\)/);
   assert.match(source, /must not turn silence into a nudge/);
 });
+
+test("only a user-selected chat sentence can enter the explicit pickup draft handoff", () => {
+  assert.match(source, /message\.role === "user" && \(/);
+  assert.match(source, /stageChatPickupDraft\(\{/);
+  assert.match(source, /sourceMessageId: message\.id/);
+  assert.match(source, /originalText: message\.content/);
+  assert.match(source, /\/pickup\?from=chat/);
+  assert.match(source, />\s*保存这一刻\s*<\/Link>/);
+  assert.doesNotMatch(source, /stageChatPickupDraft[\s\S]{0,160}(?:POST|confirmed: true)/);
+});

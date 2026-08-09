@@ -309,6 +309,32 @@
   outline-offset: 0.22rem;
 }
 
+.saveMoment {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  margin-top: 0.58rem;
+  color: rgba(238, 204, 160, 0.88);
+  font-size: 0.76rem;
+  text-decoration: none;
+  text-underline-offset: 0.24rem;
+}
+
+.saveMoment::before {
+  width: 0.34rem;
+  height: 0.34rem;
+  margin-right: 0.42rem;
+  border-radius: 50%;
+  background: #d4a85d;
+  box-shadow: 0 0 0.8rem rgba(212, 168, 93, 0.42);
+  content: "";
+}
+
+.saveMoment:focus-visible {
+  outline: 2px solid #d7b184;
+  outline-offset: 0.22rem;
+}
+
 .userMessage,
 .pendingMessage {
   justify-self: end;
