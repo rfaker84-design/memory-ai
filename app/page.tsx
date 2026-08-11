@@ -35,18 +35,21 @@ const VISUAL_PREVIEW_ENABLED = process.env.NODE_ENV !== "production" && process.
 
 type EntryStage = "checking" | "launch" | "guest" | "login" | "preview";
 type SessionPayload = { authenticated?: unknown };
+type EntryResolution = "guest" | "/create-memory" | "/memory-world" | null;
 
 export default function HomePage() {
   const router = useRouter();
-  const [stage, setStage] = useState<EntryStage>("checking");
+  const [stage, setStage] = useState<EntryStage>("launch");
+  const [entryResolution, setEntryResolution] = useState<EntryResolution>(null);
+  const [launchComplete, setLaunchComplete] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
-    const showGuestEntry = () => {
-      if (!controller.signal.aborted) {
-        setStage(claimBrandLaunch(window.sessionStorage) ? "launch" : "guest");
-      }
-    };
+    const showLaunch = claimBrandLaunch(window.sessionStorage);
+    if (!showLaunch) {
+      setLaunchComplete(true);
+      setStage("checking");
+    }
 
     void fetchAuthRequestJson("/api/auth/session", {
       cache: "no-store",
@@ -55,16 +58,27 @@ export default function HomePage() {
       const payload = body as SessionPayload;
       if (response.ok && payload.authenticated === true) {
         const destination = await resolvePostLoginDestination(fetch, controller.signal);
-        if (!controller.signal.aborted) router.replace(destination);
+        if (!controller.signal.aborted) setEntryResolution(destination);
         return;
       }
-      showGuestEntry();
-    }).catch(showGuestEntry);
+      if (!controller.signal.aborted) setEntryResolution("guest");
+    }).catch(() => {
+      if (!controller.signal.aborted) setEntryResolution("guest");
+    });
 
     return () => controller.abort();
-  }, [router]);
+  }, []);
 
-  const completeLaunch = useCallback(() => setStage((current) => current === "launch" ? "guest" : current), []);
+  useEffect(() => {
+    if (!launchComplete || entryResolution === null) return;
+    if (entryResolution === "guest") {
+      setStage("guest");
+      return;
+    }
+    router.replace(entryResolution);
+  }, [entryResolution, launchComplete, router]);
+
+  const completeLaunch = useCallback(() => setLaunchComplete(true), []);
   const enterOwnerProduct = useCallback(async () => {
     const destination = await resolvePostLoginDestination();
     router.replace(destination);
@@ -73,7 +87,7 @@ export default function HomePage() {
   return (
     <MotionProvider>
       {stage === "checking" && <HomeLoadingFallback />}
-      {stage === "launch" && <StaticBrandLaunch onComplete={completeLaunch} />}
+      {stage === "launch" && <StaticBrandLaunch onComplete={completeLaunch} ready={entryResolution !== null} />}
       {stage === "guest" && <GuestExperience onLogin={() => setStage("login")} />}
       {stage === "login" && <OriginalHomeLogin onAuthenticated={enterOwnerProduct} onBackToExperience={() => setStage("guest")} onPreview={VISUAL_PREVIEW_ENABLED ? () => setStage("preview") : undefined} />}
       {stage === "preview" && <FirstPresenceFlow initialStage="preview-create" onLeaveHome={() => setStage("guest")} />}

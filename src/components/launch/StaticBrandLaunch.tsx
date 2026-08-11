@@ -1,29 +1,50 @@
 "use client";
 
-import { useEffect } from "react";
+import Image from "next/image";
+import { useEffect, useState } from "react";
 
-import { BRAND_LAUNCH_DURATION_MS } from "./staticBrandLaunchPolicy";
+import {
+  BRAND_LAUNCH_EXIT_MS,
+  BRAND_LAUNCH_HOLD_MS,
+} from "./staticBrandLaunchPolicy";
 import styles from "./StaticBrandLaunch.module.css";
 
 type StaticBrandLaunchProps = {
   onComplete: () => void;
+  ready: boolean;
 };
 
-export default function StaticBrandLaunch({ onComplete }: StaticBrandLaunchProps) {
+export default function StaticBrandLaunch({ onComplete, ready }: StaticBrandLaunchProps) {
+  const [minimumElapsed, setMinimumElapsed] = useState(false);
+  const [exiting, setExiting] = useState(false);
+
   useEffect(() => {
-    const timer = window.setTimeout(onComplete, BRAND_LAUNCH_DURATION_MS);
+    const timer = window.setTimeout(() => setMinimumElapsed(true), BRAND_LAUNCH_HOLD_MS);
     return () => window.clearTimeout(timer);
-  }, [onComplete]);
+  }, []);
+
+  useEffect(() => {
+    if (!minimumElapsed || !ready) return;
+    setExiting(true);
+    const timer = window.setTimeout(onComplete, BRAND_LAUNCH_EXIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [minimumElapsed, onComplete, ready]);
 
   return (
-    <section className={styles.launch} aria-label="忆见品牌介绍">
+    <section className={`${styles.launch} ${exiting ? styles.exiting : ""}`} aria-label="忆见，忆一人 见一生">
+      <Image
+        alt=""
+        aria-hidden="true"
+        className={styles.background}
+        fill
+        priority
+        sizes="100vw"
+        src="/splash/owner-confirmed-warm-presence.png"
+      />
+      <div aria-hidden="true" className={styles.tone} />
       <div className={styles.content}>
-        <h1 className={styles.brand}>
-          <span>忆见</span>
-          <span className={styles.english}>MEMORYAI</span>
-        </h1>
-        <p className={styles.tagline}>把确认过的记忆，留在这里。</p>
-        <p className={styles.capabilities}>AI 纪念陪伴 · 已确认资料</p>
+        <h1 className={styles.brand}>忆见</h1>
+        <p className={styles.tagline}>忆一人 见一生</p>
       </div>
     </section>
   );

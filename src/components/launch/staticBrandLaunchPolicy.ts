@@ -1,4 +1,6 @@
-export const BRAND_LAUNCH_DURATION_MS = 1000;
+export const BRAND_LAUNCH_DURATION_MS = 1600;
+export const BRAND_LAUNCH_EXIT_MS = 250;
+export const BRAND_LAUNCH_HOLD_MS = BRAND_LAUNCH_DURATION_MS - BRAND_LAUNCH_EXIT_MS;
 export const BRAND_LAUNCH_SESSION_KEY = "memoryai:static-brand-launch-seen";
 
 type SessionStorageLike = Pick<Storage, "getItem" | "setItem">;

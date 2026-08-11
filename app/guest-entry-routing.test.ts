@@ -7,7 +7,11 @@ const world = readFileSync(new URL("./memory-world/page.tsx", import.meta.url), 
 
 test("the root sends a guest to the public experience instead of forcing the login surface", () => {
   assert.match(home, /type EntryStage = "checking" \| "launch" \| "guest" \| "login" \| "preview"/);
-  assert.match(home, /setStage\(claimBrandLaunch\(window\.sessionStorage\) \? "launch" : "guest"\)/);
+  assert.match(home, /useState<EntryStage>\("launch"\)/);
+  assert.match(home, /const showLaunch = claimBrandLaunch\(window\.sessionStorage\)/);
+  assert.match(home, /if \(!showLaunch\) \{[\s\S]*?setLaunchComplete\(true\)[\s\S]*?setStage\("checking"\)/);
+  assert.match(home, /entryResolution === "guest"[\s\S]*?setStage\("guest"\)/);
+  assert.match(home, /<StaticBrandLaunch onComplete=\{completeLaunch\} ready=\{entryResolution !== null\} \/>/);
   assert.match(home, /stage === "guest" && <GuestExperience/);
   assert.match(home, /onLogin=\{\(\) => setStage\("login"\)\}/);
   assert.doesNotMatch(home, /router\.(?:push|replace)\("\/login"\)/);
@@ -16,7 +20,9 @@ test("an authenticated Owner still routes only from the formal Owner-scoped memo
   assert.match(home, /fetchAuthRequestJson\("\/api\/auth\/session"/);
   assert.match(home, /response\.ok && payload\.authenticated === true/);
   assert.match(home, /await resolvePostLoginDestination\(fetch, controller\.signal\)/);
-  assert.match(home, /router\.replace\(destination\)/);
+  assert.match(home, /setEntryResolution\(destination\)/);
+  assert.match(home, /if \(!launchComplete \|\| entryResolution === null\) return/);
+  assert.match(home, /router\.replace\(entryResolution\)/);
   assert.match(home, /credentials: "same-origin"/);
   assert.match(home, /cache: "no-store"/);
 });
