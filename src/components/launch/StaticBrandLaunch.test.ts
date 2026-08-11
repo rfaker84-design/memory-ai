@@ -45,6 +45,8 @@ test("the splash uses the exact approved copy, real background, and restrained m
   assert.match(component, /忆见/);
   assert.match(component, /忆一人 见一生/);
   assert.match(component, /owner-confirmed-warm-presence\.png/);
+  assert.match(component, /id="splash-background-sharpen"/);
+  assert.match(component, /feConvolveMatrix/);
   assert.match(component, /if \(!minimumElapsed \|\| !ready\) return/);
   assert.match(component, /setExiting\(true\)/);
   assert.match(styles, /\.exiting \{[\s\S]*?opacity: 0/);
@@ -52,6 +54,9 @@ test("the splash uses the exact approved copy, real background, and restrained m
   assert.match(styles, /@keyframes brand-arrival/);
   assert.match(styles, /@keyframes tagline-arrival/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(styles, /\.background \{[\s\S]*?filter: url\("#splash-background-sharpen"\) contrast\(1\.06\)/);
+  assert.match(styles, /\.content \{[\s\S]*?filter: none;[\s\S]*?backdrop-filter: none;/);
+  assert.doesNotMatch(styles, /\.launch \{[\s\S]*?(?:filter: blur|backdrop-filter: blur)/);
   assert.doesNotMatch(component, /MEMORYAI|AI |轻轻相遇中|正在进入忆见|仍在这里|温柔抵达/);
   assert.doesNotMatch(component, /fetch\(|button|progress|百分比|loading/i);
   assert.doesNotMatch(styles, /bounce|rotate|scale\(/i);

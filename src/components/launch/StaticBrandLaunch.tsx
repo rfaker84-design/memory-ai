@@ -32,6 +32,22 @@ export default function StaticBrandLaunch({ onComplete, ready }: StaticBrandLaun
 
   return (
     <section className={`${styles.launch} ${exiting ? styles.exiting : ""}`} aria-label="忆见，忆一人 见一生">
+      <svg aria-hidden="true" className={styles.filters} focusable="false">
+        <filter
+          id="splash-background-sharpen"
+          x="-5%"
+          y="-5%"
+          width="110%"
+          height="110%"
+          colorInterpolationFilters="sRGB"
+        >
+          <feConvolveMatrix
+            order="3"
+            kernelMatrix="0 -0.16 0 -0.16 1.64 -0.16 0 -0.16 0"
+            preserveAlpha="true"
+          />
+        </filter>
+      </svg>
       <Image
         alt=""
         aria-hidden="true"

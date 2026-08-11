@@ -16,10 +16,19 @@
   opacity: 0;
 }
 
+.filters {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 .background {
   z-index: -2;
   object-fit: cover;
   object-position: center center;
+  filter: url("#splash-background-sharpen") contrast(1.06);
   opacity: 0;
   animation: backdrop-arrival 1600ms ease-out both;
 }
@@ -38,6 +47,8 @@
   left: max(24px, env(safe-area-inset-left));
   text-align: center;
   transform: translateY(-50%);
+  filter: none;
+  backdrop-filter: none;
 }
 
 .brand {
@@ -48,6 +59,8 @@
   font-weight: 400;
   letter-spacing: 0.14em;
   line-height: 1;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
   opacity: 0;
   transform: translateY(4px);
   animation: brand-arrival 1600ms cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -62,6 +75,8 @@
   font-weight: 400;
   letter-spacing: 0.42em;
   line-height: 1.4;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
   opacity: 0;
   transform: translateY(3px);
   animation: tagline-arrival 1600ms cubic-bezier(0.22, 1, 0.36, 1) both;
