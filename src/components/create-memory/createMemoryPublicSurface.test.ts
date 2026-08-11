@@ -47,7 +47,7 @@ test("birth date is required, explained, and verified before adult eligibility c
   assert.ok(validation < validationReturn && validationReturn < submitting);
   assert.ok(submitting < profileWrite && profileWrite < consentWrite);
   assert.ok(consentWrite < recoveryWrite && recoveryWrite < memoryCreate);
-  assert.match(source, /label="生日" hint="用于年龄确认和安全保护"[\s\S]*?required/);
+  assert.match(source, /<span>TA 的生日<\/span>[\s\S]*?<input aria-label="TA 的生日" type="date"[\s\S]*?required/);
   assert.doesNotMatch(source, /生日（可选）/);
   assert.doesNotMatch(source, /if \(birthDate\)/);
 });

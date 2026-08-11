@@ -668,3 +668,539 @@
     transition: none !important;
   }
 }
+
+/* Owner-approved create ritual: a real room outside, a handwritten paper inside. */
+.scene {
+  position: relative;
+  display: block;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0;
+  background: #241a11;
+  color: #2d261f;
+  font-family: "Songti SC", "STSong", Georgia, serif;
+}
+
+.roomBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background:
+    linear-gradient(180deg, rgba(27, 18, 10, 0.24) 0%, rgba(31, 21, 13, 0.42) 46%, rgba(20, 13, 8, 0.88) 100%),
+    url("/login/owner-confirmed-warm-presence.png") center 29% / cover no-repeat;
+  transform: scale(1.015);
+}
+
+.roomBackdrop::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background:
+    radial-gradient(circle at 67% 23%, transparent 0 24%, rgba(20, 13, 8, 0.16) 58%, rgba(13, 9, 6, 0.48) 100%),
+    linear-gradient(180deg, rgba(65, 43, 25, 0.04), rgba(17, 11, 7, 0.28));
+}
+
+.creationHeader {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  align-items: center;
+  width: min(100%, 520px);
+  padding: max(24px, calc(env(safe-area-inset-top, 0px) + 15px)) 22px 16px;
+  transform: translateX(-50%);
+  color: rgba(255, 249, 238, 0.92);
+  text-shadow: 0 2px 16px rgba(20, 12, 7, 0.38);
+}
+
+.backButton {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.backButton span {
+  display: block;
+  font-family: system-ui, sans-serif;
+  font-size: 42px;
+  font-weight: 200;
+  line-height: 1;
+  transform: translateY(-2px);
+}
+
+.brand {
+  justify-self: center;
+  font-size: 22px;
+  letter-spacing: 0.16em;
+}
+
+.progress {
+  justify-self: end;
+  font-size: 17px;
+  letter-spacing: 0.08em;
+}
+
+.ritual {
+  width: 100%;
+  max-width: none;
+}
+
+.invitation,
+.trace {
+  position: relative;
+  width: min(100%, 520px);
+  min-height: 100dvh;
+  margin: 0 auto;
+  animation: paperEnter 0.72s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.invitation {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: clamp(218px, 30dvh, 292px) 12px max(34px, calc(env(safe-area-inset-bottom, 0px) + 22px));
+}
+
+.paperSheet,
+.detailPaper,
+.photoPaper {
+  position: relative;
+  color: #302a23;
+  background-color: #e8dcc7;
+  background-image:
+    linear-gradient(112deg, rgba(255, 255, 255, 0.36), transparent 31%),
+    repeating-linear-gradient(12deg, rgba(88, 66, 40, 0.018) 0 1px, transparent 1px 4px),
+    radial-gradient(circle at 20% 18%, rgba(255, 250, 236, 0.58), transparent 37%),
+    linear-gradient(154deg, #efe4d0 0%, #e2d2ba 100%);
+  box-shadow: 0 22px 52px rgba(22, 13, 7, 0.33), inset 0 0 0 1px rgba(107, 81, 48, 0.1);
+}
+
+.paperSheet {
+  z-index: 2;
+  width: calc(100% - 16px);
+  min-height: 410px;
+  padding: 62px 34px 76px;
+  clip-path: polygon(1.2% 2.2%, 8% 1.1%, 15% 2%, 24% 0.8%, 34% 1.8%, 43% 0.4%, 52% 1.4%, 63% 0.6%, 74% 1.9%, 84% 0.7%, 94% 1.6%, 99% 0.8%, 100% 96.8%, 92% 98.4%, 83% 97.2%, 72% 99.1%, 61% 97.8%, 50% 99.4%, 39% 98%, 27% 99.2%, 15% 97.5%, 2% 99%);
+  transform: rotate(-1.15deg);
+  transform-origin: center top;
+}
+
+.paperSheet::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  background: linear-gradient(118deg, transparent 0 56%, rgba(99, 70, 38, 0.08) 71%, transparent 84%);
+  mix-blend-mode: multiply;
+}
+
+.paperCopy h1,
+.detailPaper h1 {
+  margin: 0;
+  color: #27221d;
+  font-family: "Songti SC", "STSong", Georgia, serif;
+  font-size: clamp(31px, 8.4vw, 41px);
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: 0.06em;
+}
+
+.paperCopy .intro {
+  margin: 14px 0 0;
+  color: rgba(67, 57, 47, 0.62);
+  font-size: 15px;
+  line-height: 1.6;
+  letter-spacing: 0.08em;
+}
+
+.memoryLine {
+  display: grid;
+  gap: 7px;
+  width: 100%;
+  margin-top: 48px;
+  color: rgba(65, 55, 45, 0.62);
+  font-size: 14px;
+  letter-spacing: 0.08em;
+}
+
+.memoryLine input {
+  width: 100%;
+  min-height: 56px;
+  padding: 3px 0 10px;
+  border: 0;
+  border-bottom: 1px solid rgba(55, 44, 33, 0.72);
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  color: #27211b;
+  font: 500 clamp(28px, 7vw, 34px) / 1.3 "Songti SC", "STSong", Georgia, serif;
+  text-shadow: none;
+}
+
+.memoryLine input::placeholder {
+  color: rgba(60, 50, 40, 0.38);
+}
+
+.memoryLine input:focus {
+  border-color: #7d633e;
+  text-shadow: none;
+}
+
+.relationshipMoment {
+  width: 100%;
+  max-width: none;
+  margin-top: 38px;
+}
+
+.relationshipMoment > p {
+  margin: 0 0 17px;
+  color: rgba(65, 55, 45, 0.58);
+  font: 14px / 1.5 "Songti SC", "STSong", Georgia, serif;
+  letter-spacing: 0.06em;
+}
+
+.relationshipChoices {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+
+.relationship,
+.relationshipActive {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 58px;
+  padding: 11px 2px 4px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(54, 45, 37, 0.78);
+  text-align: center;
+  cursor: pointer;
+  transition: color 180ms ease, background-color 180ms ease;
+}
+
+.relationship strong,
+.relationshipActive strong {
+  white-space: nowrap;
+  font: 400 clamp(13px, 3.8vw, 16px) / 1 "Songti SC", "STSong", Georgia, serif;
+}
+
+.relationship span,
+.relationshipActive span {
+  display: block;
+  width: 5px;
+  height: 5px;
+  margin: 0;
+  border-radius: 50%;
+  background: rgba(76, 62, 46, 0.24);
+}
+
+.relationshipActive {
+  background: radial-gradient(circle, rgba(190, 151, 91, 0.3), rgba(190, 151, 91, 0.08) 60%, transparent 62%);
+  color: #594222;
+  text-shadow: none;
+}
+
+.relationshipActive span {
+  background: #9d7741;
+}
+
+.invitation .actions {
+  position: relative;
+  z-index: 1;
+  width: calc(100% - 42px);
+  margin: -28px 0 0;
+  padding: 88px 12px 22px;
+}
+
+.invitation .actions::before {
+  position: absolute;
+  inset: 0 -28px -16px;
+  z-index: -1;
+  content: "";
+  clip-path: polygon(0 20%, 50% 0, 100% 20%, 100% 100%, 0 100%);
+  background:
+    linear-gradient(142deg, transparent 0 49%, rgba(111, 83, 49, 0.13) 50%, transparent 51%),
+    linear-gradient(38deg, transparent 0 49%, rgba(111, 83, 49, 0.1) 50%, transparent 51%),
+    linear-gradient(155deg, #d7c7ad, #bfa98a);
+  box-shadow: 0 24px 50px rgba(22, 13, 7, 0.38);
+}
+
+.actions {
+  display: block;
+}
+
+.actions button.primaryAction {
+  width: 100%;
+  min-height: 68px !important;
+  justify-content: space-between !important;
+  padding-inline: 30px !important;
+  border: 1px solid rgba(255, 255, 255, 0.48) !important;
+  border-radius: 34px !important;
+  background: rgba(255, 251, 244, 0.88) !important;
+  box-shadow: 0 12px 30px rgba(61, 40, 20, 0.15) !important;
+  color: #6c4e23 !important;
+  font: 400 22px / 1 "Songti SC", "STSong", Georgia, serif !important;
+}
+
+.actions button.primaryAction span:last-child {
+  font-family: system-ui, sans-serif;
+  font-size: 28px;
+  font-weight: 200;
+}
+
+.invitation > .error {
+  position: relative;
+  z-index: 4;
+  width: calc(100% - 56px);
+  margin: 14px 0 0;
+}
+
+.trace {
+  padding: 112px 10px max(38px, calc(env(safe-area-inset-bottom, 0px) + 24px));
+}
+
+.photoPaper {
+  z-index: 3;
+  width: calc(100% - 24px);
+  margin: 0 auto;
+  padding: 20px 18px 58px;
+  transform: rotate(1.8deg);
+}
+
+.photoPaper::after {
+  position: absolute;
+  top: 8px;
+  right: 34px;
+  width: 22px;
+  height: 68px;
+  border: 3px solid rgba(91, 65, 34, 0.66);
+  border-radius: 13px;
+  content: "";
+  pointer-events: none;
+  transform: rotate(12deg);
+  box-shadow: inset 0 0 0 2px rgba(232, 208, 163, 0.35);
+}
+
+.portraitStage {
+  position: relative;
+  display: grid;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  place-items: center;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background:
+    linear-gradient(180deg, rgba(41, 28, 18, 0.18), rgba(41, 28, 18, 0.48)),
+    url("/login/owner-confirmed-warm-presence.png") center 34% / cover no-repeat;
+  box-shadow: inset 0 0 0 1px rgba(78, 58, 38, 0.18);
+  cursor: pointer;
+  animation: none;
+}
+
+.portraitStage input {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.portraitStage > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: photoSettle 0.52s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.portraitEmpty {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 24px;
+  color: #fff8eb;
+  text-align: center;
+  text-shadow: 0 2px 16px rgba(21, 13, 7, 0.5);
+}
+
+.portraitEmpty b {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border: 1px solid rgba(255, 248, 232, 0.54);
+  border-radius: 50%;
+  font: 300 29px / 1 system-ui, sans-serif;
+}
+
+.portraitEmpty small {
+  font: 400 17px / 1.4 "Songti SC", "STSong", Georgia, serif;
+}
+
+.portraitEmpty i {
+  color: rgba(255, 244, 225, 0.72);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.changePortrait {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 2;
+  padding: 8px 13px;
+  border-radius: 18px;
+  background: rgba(32, 22, 14, 0.64);
+  color: #fff9ef;
+  font: 12px / 1 system-ui, sans-serif;
+}
+
+.detailPaper {
+  z-index: 2;
+  width: 100%;
+  margin: -18px auto 0;
+  padding: 82px 32px 40px;
+  clip-path: polygon(0 3%, 8% 2%, 18% 3.4%, 30% 1.6%, 42% 3.2%, 54% 1.5%, 66% 2.8%, 79% 1.2%, 91% 2.7%, 100% 1.8%, 100% 100%, 0 100%);
+}
+
+.detailPaper h1 {
+  font-size: clamp(30px, 8vw, 38px);
+}
+
+.paperField {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  margin-top: 32px;
+  color: rgba(63, 52, 42, 0.68);
+  font-size: 14px;
+  line-height: 1.65;
+  letter-spacing: 0.05em;
+}
+
+.paperField input,
+.paperField textarea {
+  width: 100%;
+  padding: 8px 0 12px;
+  border: 0;
+  border-bottom: 1px solid rgba(57, 46, 35, 0.66);
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  color: #30271f;
+  font: 400 18px / 1.55 "Songti SC", "STSong", Georgia, serif;
+}
+
+.paperField textarea {
+  min-height: 66px;
+  resize: none;
+}
+
+.paperField input:focus,
+.paperField textarea:focus {
+  border-color: #7c5c31;
+}
+
+.paperField textarea::placeholder {
+  color: rgba(65, 52, 40, 0.55);
+}
+
+.paperField small {
+  position: absolute;
+  right: 0;
+  bottom: -22px;
+  color: rgba(68, 56, 43, 0.48);
+  font-size: 12px;
+}
+
+.consent {
+  display: flex;
+  gap: 10px;
+  margin-top: 42px;
+  color: rgba(58, 48, 39, 0.64);
+  font: 12px / 1.65 system-ui, sans-serif;
+}
+
+.consent input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  accent-color: #80613b;
+}
+
+.safetyCopy {
+  margin: 13px 0 0;
+  color: rgba(66, 54, 42, 0.48);
+  font: 11px / 1.7 system-ui, sans-serif;
+}
+
+.detailPaper .actions {
+  margin-top: 28px;
+}
+
+.error {
+  color: #8b3d31;
+  font: 12px / 1.6 system-ui, sans-serif;
+}
+
+.success {
+  width: min(100% - 40px, 480px);
+  margin: 0 auto;
+  padding-top: clamp(150px, 26vh, 260px);
+  color: #fff8ee;
+}
+
+.success h1 {
+  color: #fff8ee;
+}
+
+@keyframes paperEnter {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes photoSettle {
+  from { opacity: 0; transform: scale(0.975); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@media (max-width: 374px) {
+  .paperSheet { padding-inline: 27px; }
+  .relationship strong,
+  .relationshipActive strong { font-size: 12px; }
+  .detailPaper { padding-inline: 26px; }
+}
+
+@media (min-width: 700px) {
+  .scene { padding-block: 22px; }
+  .creationHeader { position: fixed; }
+  .invitation,
+  .trace {
+    min-height: calc(100dvh - 44px);
+    border-radius: 28px;
+    box-shadow: 0 28px 80px rgba(13, 8, 5, 0.42);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .invitation,
+  .trace,
+  .portraitStage > img {
+    animation: none !important;
+  }
+}

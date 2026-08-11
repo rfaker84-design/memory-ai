@@ -9,17 +9,23 @@ const shell = readFileSync(new URL("../MobileAppShell.tsx", import.meta.url), "u
 test("creation stays a full-screen ritual until memory-world", () => {
   assert.doesNotMatch(shell, /pathname === "\/create-memory"/);
   assert.match(experience, /router\.replace\("\/memory-world"\)/);
+  assert.match(experience, /className=\{styles\.paperSheet\}/);
   assert.match(experience, /className=\{styles\.memoryLine\}/);
-  assert.match(experience, /在我的记忆里，TA 是/);
+  assert.match(experience, /从一个称呼开始/);
+  assert.match(experience, /在你的记忆里，TA 是/);
+  assert.doesNotMatch(experience, /TA 的故事，从这里开始/);
+  assert.match(styles, /url\("\/login\/owner-confirmed-warm-presence\.png"\)/);
 });
 
-test("the selected portrait is treated as the center of the memory scene", () => {
-  assert.match(experience, /className=\{styles\.portraitAtmosphere\}/);
-  assert.match(experience, /className=\{styles\.portraitAura\}/);
-  assert.match(experience, /className=\{styles\.portraitParticles\}/);
-  assert.match(experience, /这张照片，会成为 TA 回来的第一束光/);
-  assert.match(styles, /@keyframes portraitBreathe/);
-  assert.match(styles, /@keyframes particleFloat/);
+test("the selected portrait sits on paper while required creation contracts remain", () => {
+  assert.match(experience, /className=\{styles\.photoPaper\}/);
+  assert.match(experience, /className=\{styles\.portraitStage\}/);
+  assert.match(experience, /更换照片/);
+  assert.match(experience, /aria-label="TA 的生日"/);
+  assert.match(experience, /如果 TA 看到你，最可能会说什么/);
+  assert.match(experience, /开始遇见/);
+  assert.match(styles, /\.photoPaper[\s\S]*?transform: rotate\(1\.8deg\)/);
+  assert.match(styles, /\.portraitStage[\s\S]*?aspect-ratio: 4 \/ 5/);
 });
 
 test("awakening is a dedicated transition scene with a reduced-motion fallback", () => {
