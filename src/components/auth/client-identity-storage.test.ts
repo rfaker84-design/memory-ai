@@ -7,7 +7,7 @@ import { sourceAuditFiles } from "@/scripts/security/source-audit-files";
 
 // Generated and untracked files are excluded by `git ls-files`. These are the
 // only binary formats currently tracked; every other tracked file is audited.
-const trackedBinaryExtensions = new Set([".jar", ".png", ".webm"]);
+const trackedBinaryExtensions = new Set([".jar", ".mp4", ".png", ".webm", ".webp"]);
 const identityTerms = /phone|user(?:Id|_id)|session|token/i;
 const storageOperation = /(?:localStorage|sessionStorage)\s*(?:\.|\?\.)\s*(?:getItem|setItem)\s*\(\s*([\s\S]{0,240}?)(?:\)|$)/gi;
 const legacyIdentityKeys = [

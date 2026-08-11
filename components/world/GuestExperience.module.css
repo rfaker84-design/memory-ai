@@ -1,4 +1,9 @@
 .experience {
+  --home-warm-black: #0d0a07;
+  --home-soft-white: #f8f3ea;
+  --home-pale-gold: #c9ad7a;
+  --home-transition: 1s cubic-bezier(0.22, 1, 0.36, 1);
+
   position: fixed;
   inset: 0;
   min-height: 100dvh;
@@ -9,6 +14,180 @@
   background:
     radial-gradient(circle at 50% 34%, rgba(181, 125, 55, 0.13), transparent 29%),
     linear-gradient(180deg, #09090a 0%, #0b0908 56%, #080809 100%);
+}
+
+.experience[data-stage="entry"] {
+  overflow: hidden;
+  padding: 0;
+  color: var(--home-soft-white);
+  background: var(--home-warm-black);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
+.media,
+.poster,
+.video,
+.mediaVeil {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.media {
+  z-index: -1;
+  overflow: hidden;
+  background: var(--home-warm-black);
+}
+
+.poster,
+.video {
+  object-fit: cover;
+  object-position: center;
+}
+
+.poster,
+.video {
+  opacity: 0.92;
+}
+
+.video {
+  transition: opacity var(--home-transition);
+}
+
+.videoOutgoing,
+.videoIncoming {
+  opacity: 0;
+}
+
+.videoIncomingVisible {
+  opacity: 0.92;
+}
+
+.mediaVeil {
+  background:
+    linear-gradient(180deg, rgba(10, 7, 5, 0.18), rgba(10, 7, 5, 0.04) 44%, rgba(10, 7, 5, 0.72)),
+    linear-gradient(90deg, rgba(10, 7, 5, 0.06), transparent 45%, rgba(10, 7, 5, 0.12));
+  pointer-events: none;
+}
+
+.heroHeader {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: max(24px, calc(env(safe-area-inset-top) + 16px)) 24px 0;
+}
+
+.heroWordmark {
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+  font-size: 20px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.42);
+}
+
+.loginAction {
+  min-width: 48px;
+  min-height: 44px;
+  border: 0;
+  padding: 0;
+  color: var(--home-soft-white);
+  background: transparent;
+  font: inherit;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.48);
+  cursor: pointer;
+}
+
+.heroInvitation {
+  position: absolute;
+  inset: auto 24px max(108px, calc(env(safe-area-inset-bottom) + 86px));
+  z-index: 2;
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.invitationLine {
+  margin: 0 0 2px;
+  color: rgba(248, 243, 234, 0.88);
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.6;
+  letter-spacing: 0.08em;
+  text-shadow: 0 3px 22px rgba(0, 0, 0, 0.72);
+}
+
+.heroPrimaryAction {
+  width: min(100%, 300px);
+  min-height: 52px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 14px;
+  color: #2a2117;
+  background: rgba(250, 247, 241, 0.96);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  cursor: pointer;
+  transition: transform 90ms ease, background-color 180ms ease;
+}
+
+.heroPrimaryAction:active {
+  transform: scale(0.97);
+}
+
+.heroSecondaryAction {
+  min-width: 132px;
+  min-height: 44px;
+  border: 0;
+  border-bottom: 1px solid rgba(248, 243, 234, 0.54);
+  padding: 0 2px;
+  color: rgba(248, 243, 234, 0.8);
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.68);
+  cursor: pointer;
+  transition: color 180ms ease, border-color 180ms ease;
+}
+
+.loginAction:focus-visible,
+.heroPrimaryAction:focus-visible,
+.heroSecondaryAction:focus-visible {
+  outline: 2px solid var(--home-pale-gold);
+  outline-offset: 4px;
+}
+
+.heroDisclosure {
+  position: absolute;
+  inset: auto 20px max(18px, calc(env(safe-area-inset-bottom) + 10px));
+  z-index: 2;
+  margin: 0;
+  color: rgba(248, 243, 234, 0.48);
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.72);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 .stars,
 .ambientLight {
@@ -342,10 +521,45 @@
 
 @media (min-width: 760px) {
   .experience { padding-inline: 40px; }
+  .experience[data-stage="entry"] { padding-inline: 0; }
   .entry, .awakening, .companion { padding-top: 52px; }
 }
 
+@media (max-height: 680px) {
+  .heroHeader {
+    padding-top: max(16px, calc(env(safe-area-inset-top) + 10px));
+  }
+
+  .heroInvitation {
+    inset-inline: 20px;
+    bottom: max(78px, calc(env(safe-area-inset-bottom) + 64px));
+    gap: 10px;
+  }
+
+  .invitationLine {
+    font-size: 13px;
+  }
+
+  .heroPrimaryAction {
+    min-height: 48px;
+  }
+
+  .heroDisclosure {
+    bottom: max(12px, calc(env(safe-area-inset-bottom) + 7px));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .video {
+    display: none;
+    transition: none;
+  }
+
+  .heroPrimaryAction,
+  .heroSecondaryAction {
+    transition: none;
+  }
+
   .stars,
   .presenceHalo,
   .awakeningPortrait,
