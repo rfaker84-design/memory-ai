@@ -32,6 +32,7 @@ import { AiGeneratedLabel } from "../safety/AiGeneratedLabel";
 import { resolveSmsLoginAction } from "../auth/loginExperienceClient";
 import { fetchAuthRequestJson } from "../auth/authRequestClient";
 import { resolvePostLoginDestination } from "../auth/postLoginDestination";
+import { DirectLoginExperience } from "./DirectLoginExperience";
 
 type EntryStage = "create" | "login-phone" | "preview-create";
 type FlowStage =
@@ -295,6 +296,16 @@ export function FirstPresenceFlow({
   const leaveFlow = () => {
     if (onLeaveHome) onLeaveHome();
     else window.location.assign("/");
+  };
+
+  const reviseLoginPhone = (value: string) => {
+    setError("");
+    setPhone(value);
+    if (stage === "login-code") {
+      setCode("");
+      setChallengeId("");
+      setStage("login-phone");
+    }
   };
 
   const sendCode = async () => {
@@ -699,6 +710,26 @@ export function FirstPresenceFlow({
         };
     }
   })();
+
+  if (directLogin) {
+    return (
+      <DirectLoginExperience
+        stage={stage === "login-code" || stage === "sms-unavailable" ? stage : "login-phone"}
+        phone={phone}
+        code={code}
+        agreementAccepted={loginAgreementAccepted}
+        busy={busy}
+        error={error}
+        sessionChecking={authState === "checking"}
+        onPhoneChange={reviseLoginPhone}
+        onCodeChange={(value) => { setError(""); setCode(value); }}
+        onAgreementChange={(accepted) => { setError(""); setLoginAgreementAccepted(accepted); }}
+        onSendCode={sendCode}
+        onVerifyCode={verifyCode}
+        onLeave={leaveFlow}
+      />
+    );
+  }
 
   return (
     <MemorySurface
