@@ -12,7 +12,7 @@ type HomeStory = {
   label: string;
 };
 
-const DISCLOSURE = "AI生成示例 · 使用虚构示例资料 · 不代表真实人物或其真实表达 · 不会上传或保存，也不会创建账号或 TA";
+const DISCLOSURE = "AI生成示例 · 使用虚构示例资料 · 不代表真实人物或其真实表达 · 不会上传或保存，也不会产生账号或正式人物记录";
 
 const HOME_STORIES: readonly HomeStory[] = [
   { slug: "elderly-woman", label: "窗边的母亲" },
@@ -40,7 +40,27 @@ function assetPath(story: HomeStory, extension: "mp4" | "poster.webp") {
   return `/home-hero-assets/${story.slug}.${extension}`;
 }
 
-export function GuestExperience({ onLogin }: { onLogin: () => void }) {
+type GuestExperienceProps = {
+  authenticated?: boolean;
+  people?: readonly HomePerson[];
+  onLogin: () => void;
+  onStart?: () => void;
+  onOpenPerson?: (id: string) => void;
+};
+
+export type HomePerson = {
+  id: string;
+  name: string;
+  image: string | null;
+};
+
+export function GuestExperience({
+  authenticated = false,
+  people = [],
+  onLogin,
+  onStart = onLogin,
+  onOpenPerson,
+}: GuestExperienceProps) {
   const reducedMotion = useReducedMotion();
   const [stage, setStage] = useState<GuestStage>("entry");
   const [videoEnabled, setVideoEnabled] = useState(false);
@@ -161,14 +181,40 @@ export function GuestExperience({ onLogin }: { onLogin: () => void }) {
 
           <header className={styles.heroHeader}>
             <span className={styles.heroWordmark}>忆见</span>
-            <button className={styles.loginAction} type="button" onClick={onLogin}>登录</button>
+            {!authenticated && <button className={styles.loginAction} type="button" onClick={onLogin}>登录</button>}
           </header>
 
-          <section className={styles.heroInvitation} aria-labelledby="guest-entry-title">
-            <p className={styles.invitationLine} id="guest-entry-title">把想念，放在一个温柔的地方。</p>
-            <button className={styles.heroPrimaryAction} type="button" onClick={onLogin}>创建 TA</button>
-            <button className={styles.heroSecondaryAction} type="button" onClick={() => setStage("awakening")}>体验一次遇见</button>
-          </section>
+          {authenticated && people.length > 0 ? (
+            <section className={styles.peopleInvitation} aria-label="你记住的人">
+              <div className={styles.peopleList}>
+                {people.map((person) => (
+                  <button
+                    className={styles.personAction}
+                    key={person.id}
+                    type="button"
+                    aria-label={`${person.name}，进入相伴`}
+                    onClick={() => onOpenPerson?.(person.id)}
+                  >
+                    <span className={styles.personPortrait}>
+                      {person.image
+                        ? <img src={person.image} alt={`${person.name}的照片`} />
+                        : <span aria-hidden="true">{person.name.slice(0, 1)}</span>}
+                    </span>
+                    <strong>{person.name}</strong>
+                  </button>
+                ))}
+                {people.length < 3 && (
+                  <button className={styles.addPersonAction} type="button" aria-label="开始记录另一个人" onClick={onStart}>＋</button>
+                )}
+              </div>
+            </section>
+          ) : (
+            <section className={styles.heroInvitation} aria-labelledby="guest-entry-title">
+              <p className={styles.invitationLine} id="guest-entry-title">把想念，放在一个温柔的地方。</p>
+              <button className={styles.heroPrimaryAction} type="button" onClick={onStart}>开始</button>
+              {!authenticated && <button className={styles.heroSecondaryAction} type="button" onClick={() => setStage("awakening")}>体验一次遇见</button>}
+            </section>
+          )}
 
           <p className={styles.heroDisclosure} role="note">{DISCLOSURE}</p>
           <p className={styles.srOnly} aria-live="polite">正在展示：{activeStory.label}</p>
@@ -214,11 +260,11 @@ export function GuestExperience({ onLogin }: { onLogin: () => void }) {
               <p className={styles.companionCopy}>正式使用时，陪伴空间只会读取你登录后拥有并确认的 TA 资料。</p>
               <div className={styles.conversionInvitation}>
                 <p>体验到这里</p>
-                <h2>创建属于你的 TA</h2>
+                <h2>把想念留在这里</h2>
                 <span>当你愿意开始时，再登录并留下真实资料。刚才的虚构示例不会保存，也不会带入你的 TA。</span>
               </div>
               <div className={styles.actions}>
-                <button className={styles.primaryAction} type="button" onClick={onLogin}>创建我的 TA</button>
+                <button className={styles.primaryAction} type="button" onClick={onStart}>开始</button>
                 <button className={styles.secondaryAction} type="button" onClick={() => setStage("entry")}>重新体验</button>
               </div>
             </section>

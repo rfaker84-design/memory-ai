@@ -180,6 +180,95 @@
   text-shadow: 0 2px 16px rgba(0, 0, 0, 0.72);
 }
 
+.peopleInvitation {
+  position: absolute;
+  inset: auto 20px max(76px, calc(env(safe-area-inset-bottom) + 58px));
+  z-index: 2;
+  display: grid;
+  place-items: center;
+}
+
+.peopleList {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: clamp(18px, 6vw, 30px);
+}
+
+.personAction,
+.addPersonAction {
+  border: 0;
+  padding: 0;
+  color: var(--home-soft-white);
+  background: transparent;
+  cursor: pointer;
+}
+
+.personAction {
+  width: 78px;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+
+.personPortrait,
+.addPersonAction {
+  width: 66px;
+  height: 82px;
+  border-radius: 44% 44% 40% 40% / 38% 38% 34% 34%;
+}
+
+.personPortrait {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(248, 243, 234, 0.54);
+  color: rgba(248, 243, 234, 0.9);
+  background: rgba(34, 27, 20, 0.48);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+  font-size: 24px;
+  backdrop-filter: blur(8px);
+}
+
+.personPortrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.personAction strong {
+  max-width: 78px;
+  overflow: hidden;
+  color: rgba(248, 243, 234, 0.94);
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-overflow: ellipsis;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.72);
+  white-space: nowrap;
+}
+
+.addPersonAction {
+  display: grid;
+  place-items: center;
+  min-width: 66px;
+  min-height: 82px;
+  border: 1px solid rgba(248, 243, 234, 0.48);
+  color: rgba(248, 243, 234, 0.86);
+  background: rgba(28, 23, 18, 0.22);
+  font: 300 26px/1 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+}
+
+.personAction:focus-visible,
+.addPersonAction:focus-visible {
+  outline: 2px solid var(--home-pale-gold);
+  outline-offset: 5px;
+}
+
 .srOnly {
   position: absolute;
   width: 1px;
@@ -546,6 +635,18 @@
 
   .heroDisclosure {
     bottom: max(12px, calc(env(safe-area-inset-bottom) + 7px));
+  }
+
+  .peopleInvitation {
+    bottom: max(58px, calc(env(safe-area-inset-bottom) + 46px));
+  }
+
+  .personPortrait,
+  .addPersonAction {
+    width: 58px;
+    height: 70px;
+    min-width: 58px;
+    min-height: 70px;
   }
 }
 

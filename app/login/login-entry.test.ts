@@ -4,27 +4,25 @@ import test from "node:test";
 
 const read = (file: string) => readFileSync(file, "utf8");
 
-test("the direct login URL confirms the server session before entering the owner memory world", () => {
+test("the direct login URL returns an authenticated user to the root home", () => {
   const loginPage = read("app/login/page.tsx");
   const flow = read("src/components/first-presence/FirstPresenceFlow.tsx");
 
   assert.match(loginPage, /FirstPresenceFlow initialStage="login-phone"/);
-  assert.doesNotMatch(loginPage, /router\.push\("\/"\)/);
   assert.match(flow, /fetchAuthRequestJson\("\/api\/auth\/send-code"/);
   assert.match(flow, /fetchAuthRequestJson\("\/api\/auth\/verify-code"/);
   assert.match(flow, /const authenticated = sessionResponse\.ok && Boolean\(sessionPayload\.authenticated\)/);
-  assert.match(flow, /if \(!authenticated\)/);
-  assert.match(flow, /if \(directLogin\) \{[\s\S]*?resolvePostLoginDestination\(/);
-  assert.match(flow, /router\.replace\(destination\)/);
+  assert.match(flow, /if \(directLogin\) \{[\s\S]*?if \(onAuthenticated\) await onAuthenticated\(\);[\s\S]*?router\.replace\("\/"\)/);
+  assert.doesNotMatch(flow, /resolvePostLoginDestination/);
   assert.doesNotMatch(flow, /if \(directLogin\) setStage\("questions"\)/);
-  assert.doesNotMatch(flow, /(?:demo|test)[ -]?(?:code|验证码)/i);
 });
 
-test("the public home login no longer mounts the retired eight-question creator", () => {
+test("the home distinguishes login from an explicitly requested creation", () => {
   const home = read("app/page.tsx");
 
-  assert.match(home, /onAuthenticated=\{enterOwnerProduct\}/);
-  assert.match(home, /const destination = await resolvePostLoginDestination\(\)/);
+  assert.match(home, /type LoginIntent = "login" \| "create"/);
+  assert.match(home, /onAuthenticated=\{completeAuthentication\}/);
+  assert.match(home, /loginIntent === "create"[\s\S]*?router\.replace\("\/create-memory"\)/);
   assert.doesNotMatch(home, /FirstPresenceFlow initialStage="create"/);
   assert.match(home, /FirstPresenceFlow initialStage="preview-create"/);
 });

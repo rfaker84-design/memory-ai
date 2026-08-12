@@ -5,32 +5,36 @@ import test from "node:test";
 const home = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 const world = readFileSync(new URL("./memory-world/page.tsx", import.meta.url), "utf8");
 
-test("the root sends a guest to the public experience instead of forcing the login surface", () => {
-  assert.match(home, /type EntryStage = "checking" \| "launch" \| "guest" \| "login" \| "preview"/);
+test("the root always resolves to the home after the existing launch", () => {
+  assert.match(home, /type EntryStage = "checking" \| "launch" \| "home" \| "login" \| "preview"/);
   assert.match(home, /useState<EntryStage>\("launch"\)/);
   assert.match(home, /const showLaunch = claimBrandLaunch\(window\.sessionStorage\)/);
-  assert.match(home, /if \(!showLaunch\) \{[\s\S]*?setLaunchComplete\(true\)[\s\S]*?setStage\("checking"\)/);
-  assert.match(home, /entryResolution === "guest"[\s\S]*?setStage\("guest"\)/);
-  assert.match(home, /<StaticBrandLaunch onComplete=\{completeLaunch\} ready=\{entryResolution !== null\} \/>/);
-  assert.match(home, /stage === "guest" && <GuestExperience/);
-  assert.match(home, /onLogin=\{\(\) => setStage\("login"\)\}/);
-  assert.doesNotMatch(home, /router\.(?:push|replace)\("\/login"\)/);
-});
-test("an authenticated Owner still routes only from the formal Owner-scoped memory list", () => {
-  assert.match(home, /fetchAuthRequestJson\("\/api\/auth\/session"/);
-  assert.match(home, /response\.ok && payload\.authenticated === true/);
-  assert.match(home, /await resolvePostLoginDestination\(fetch, controller\.signal\)/);
-  assert.match(home, /setEntryResolution\(destination\)/);
-  assert.match(home, /if \(!launchComplete \|\| entryResolution === null\) return/);
-  assert.match(home, /router\.replace\(entryResolution\)/);
-  assert.match(home, /credentials: "same-origin"/);
-  assert.match(home, /cache: "no-store"/);
+  assert.match(home, /if \(!launchComplete \|\| homeState === null\) return;[\s\S]*?setStage\("home"\)/);
+  assert.match(home, /<StaticBrandLaunch onComplete=\{completeLaunch\} ready=\{homeState !== null\} \/>/);
+  assert.match(home, /stage === "home" && homeState/);
+  assert.doesNotMatch(home, /resolvePostLoginDestination|router\.replace\(entryResolution\)/);
+  const startup = home.slice(home.indexOf("useEffect(() => {"), home.indexOf("const completeLaunch"));
+  assert.doesNotMatch(startup, /router\.(?:push|replace)\(/);
 });
 
-test("the guest conversion opens login on demand and then uses the formal post-login destination", () => {
-  assert.match(home, /<GuestExperience onLogin=\{\(\) => setStage\("login"\)\}/);
-  assert.match(home, /<OriginalHomeLogin onAuthenticated=\{enterOwnerProduct\}/);
-  assert.match(home, /const enterOwnerProduct = useCallback\(async \(\) => \{[\s\S]*?resolvePostLoginDestination\(\)[\s\S]*?router\.replace\(destination\)/);
+test("the root reads only the current Owner list and resolves real portraits", () => {
+  assert.match(home, /fetchAuthRequestJson\("\/api\/auth\/session"/);
+  assert.match(home, /response\.ok \|\| payload\.authenticated !== true/);
+  assert.match(home, /fetchCompanionHomeMemoriesJson\(fetch, signal\)/);
+  assert.match(home, /loadOwnedMediaUrl\(assetId, signal\)/);
+  assert.match(home, /credentials: "same-origin"/);
+  assert.match(home, /cache: "no-store"/);
+  assert.match(home, /memoriesBody\.slice\(0, 3\)/);
+});
+
+test("formal creation and person selection use the existing product routes", () => {
+  assert.match(home, /if \(homeState\?\.authenticated\) \{[\s\S]*?router\.push\("\/create-memory"\)/);
+  assert.match(home, /setLoginIntent\("create"\)[\s\S]*?setStage\("login"\)/);
+  assert.match(home, /if \(loginIntent === "create"\) \{[\s\S]*?router\.replace\("\/create-memory"\)/);
+  assert.match(home, /window\.localStorage\.setItem\(COMPANION_PRIMARY_KEY, personId\)/);
+  assert.match(home, /router\.push\("\/companion"\)/);
+  assert.doesNotMatch(home, /FirstPresenceFlow initialStage="create"/);
+  assert.match(home, /FirstPresenceFlow initialStage="preview-create"/);
 });
 
 test("a stale Owner view is cleared before memory-world exposes the public experience link", () => {

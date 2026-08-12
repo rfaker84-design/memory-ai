@@ -8,10 +8,11 @@ type OriginalHomeLoginProps = {
   onPreview?: () => void;
 };
 
-export function OriginalHomeLogin({ onBackToExperience }: OriginalHomeLoginProps) {
+export function OriginalHomeLogin({ onAuthenticated, onBackToExperience }: OriginalHomeLoginProps) {
   return (
     <FirstPresenceFlow
       initialStage="login-phone"
+      onAuthenticated={onAuthenticated}
       onLeaveHome={onBackToExperience}
     />
   );

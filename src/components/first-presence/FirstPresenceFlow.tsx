@@ -31,7 +31,6 @@ import styles from "./FirstPresenceFlow.module.css";
 import { AiGeneratedLabel } from "../safety/AiGeneratedLabel";
 import { resolveSmsLoginAction } from "../auth/loginExperienceClient";
 import { fetchAuthRequestJson } from "../auth/authRequestClient";
-import { resolvePostLoginDestination } from "../auth/postLoginDestination";
 import { DirectLoginExperience } from "./DirectLoginExperience";
 
 type EntryStage = "create" | "login-phone" | "preview-create";
@@ -57,6 +56,7 @@ type ApiPayload = {
 };
 type FirstPresenceFlowProps = {
   initialStage?: EntryStage;
+  onAuthenticated?: () => void | Promise<void>;
   onLeaveHome?: () => void;
 };
 
@@ -197,6 +197,7 @@ function PreviewConversation({
 
 export function FirstPresenceFlow({
   initialStage = "create",
+  onAuthenticated,
   onLeaveHome,
 }: FirstPresenceFlowProps) {
   const reducedMotion = useReducedMotion();
@@ -248,8 +249,8 @@ export function FirstPresenceFlow({
         if (controller.signal.aborted) return;
         if (response.ok && payload.authenticated) {
           if (directLogin) {
-            const destination = await resolvePostLoginDestination(fetch, controller.signal);
-            if (!controller.signal.aborted) router.replace(destination);
+            if (onAuthenticated) await onAuthenticated();
+            else if (!controller.signal.aborted) router.replace("/");
             return;
           }
           setAuthState("authenticated");
@@ -262,7 +263,7 @@ export function FirstPresenceFlow({
         if (!controller.signal.aborted) setAuthState("unavailable");
       });
     return () => controller.abort();
-  }, [directLogin, previewMode, router]);
+  }, [directLogin, onAuthenticated, previewMode, router]);
 
   useEffect(() => {
     if (stage !== "preview-forming") return;
@@ -384,8 +385,8 @@ export function FirstPresenceFlow({
       }
       setAuthState("authenticated");
       if (directLogin) {
-        const destination = await resolvePostLoginDestination();
-        router.replace(destination);
+        if (onAuthenticated) await onAuthenticated();
+        else router.replace("/");
         return;
       }
       setStage("questions");

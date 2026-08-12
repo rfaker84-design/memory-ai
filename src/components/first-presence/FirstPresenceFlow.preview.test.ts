@@ -54,7 +54,8 @@ test("home cold start is a disclosed static loading state, not a blank client-on
   assert.match(page, /正在准备陪伴空间/);
   assert.match(page, /loading: \(\) => <HomeLoadingFallback \/>/);
   assert.match(page, /stage === "checking" && <HomeLoadingFallback \/>/);
-  assert.match(page, /stage === "guest" && <GuestExperience/);
+  assert.match(page, /stage === "home" && homeState && \(/);
+  assert.match(page, /<GuestExperience/);
   assert.match(page, /stage === "login" && <OriginalHomeLogin/);
 });
 

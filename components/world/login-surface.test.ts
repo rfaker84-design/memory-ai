@@ -36,12 +36,14 @@ test("the mobile login keeps accessible focus, compact controls, and reduced mot
   assert.match(surface, /aria-live="polite"/);
 });
 
-test("the formal consent, SMS, session, and destination contracts remain in the shared flow", () => {
+test("the formal consent, SMS, session, and explicit continuation contracts remain in the shared flow", () => {
   assert.match(flow, /resolveSmsLoginAction\(loginAgreementAccepted\)/);
   assert.match(flow, /fetchAuthRequestJson\("\/api\/auth\/send-code"/);
   assert.match(flow, /fetchAuthRequestJson\("\/api\/auth\/verify-code"/);
   assert.match(flow, /credentials: "same-origin"/);
-  assert.match(flow, /resolvePostLoginDestination/);
+  assert.match(flow, /if \(onAuthenticated\) await onAuthenticated\(\)/);
+  assert.match(flow, /else router\.replace\("\/"\)/);
+  assert.doesNotMatch(flow, /resolvePostLoginDestination/);
   assert.match(surface, /agreementAccepted/);
   assert.doesNotMatch(surface, /fetch\(|response\.json\(/);
 });
