@@ -16,3 +16,4 @@ export * from "./first-presence-video-worker";
 export * from "./ai-content-marking";
 export * from "./video-share-links";
 export * from "./watermarked-share-download";
+export * from "./companion-micro-motion";

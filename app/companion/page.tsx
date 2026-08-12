@@ -20,6 +20,7 @@ import {
   CompanionHomeRequestError,
   fetchCompanionHomeMemoriesJson,
 } from "@/src/components/companion/companionHomeRequest";
+import { CompanionMotionBackground } from "@/src/components/companion/CompanionMotionBackground";
 import { useQuietCompanionPresence } from "@/src/components/first-presence/quietCompanionPresence";
 import { loadOwnedMediaUrl } from "@/src/components/memory/ownedMemoryClient";
 import { memoryCollectionTitle } from "@/src/components/memory/memoryCollectionState";
@@ -182,7 +183,15 @@ function CompanionContent() {
       <section className={styles.hero} aria-labelledby="companion-space-title">
         <div className={styles.heroMedia} aria-hidden="true">
           {portraitUrl
-            ? <img src={portraitUrl} alt="" />
+            ? (
+                <CompanionMotionBackground
+                  className={styles.heroMotion}
+                  memoryId={memory.id}
+                  portraitUrl={portraitUrl}
+                  variant="idle"
+                  motionEnabled={presence !== "static"}
+                />
+              )
             : <span className={styles.heroFallback}>{memory.name.slice(0, 1)}</span>}
           <span className={styles.heroVeil} />
         </div>

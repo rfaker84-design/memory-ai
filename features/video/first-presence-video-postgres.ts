@@ -36,12 +36,15 @@ type JobRow = {
   error_code: string | null;
   created_at: Date | string;
   updated_at: Date | string;
+  use_case: "first_presence" | "companion_micro_motion";
+  motion_variant: "idle" | "attentive" | "reflective" | null;
+  pack_version: number;
 };
 
 const COLUMNS = `j.id, u.external_id AS external_user_id, j.memory_id,
   j.idempotency_key, j.status, j.provider, j.provider_task_id,
   j.provider_state, j.input_sha256, j.actual_credits, j.artifact_key,
-  j.quality_payload,
+  j.quality_payload, j.use_case, j.motion_variant, j.pack_version,
   (SELECT jsonb_build_object(
     'reviewerAccount', r.reviewer_account,
     'reviewedAt', r.reviewed_at,
@@ -75,6 +78,9 @@ function job(row: JobRow): FirstPresenceVideoJob {
     errorCode: row.error_code,
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
+    useCase: row.use_case,
+    motionVariant: row.motion_variant,
+    packVersion: row.pack_version,
   };
 }
 
@@ -149,12 +155,25 @@ export class FirstPresenceVideoPostgresRepository
         return job(found.rows[0]);
       }
       const inserted = await client.query<JobRow>(
-        `INSERT INTO public.video_generation_jobs (user_id, memory_id, idempotency_key, input_sha256)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO public.video_generation_jobs (
+           user_id, memory_id, idempotency_key, input_sha256,
+           use_case, motion_variant, pack_version
+         )
+         VALUES ($1, $2, $3, $4, $6, $7, $8)
          RETURNING id, $5::text AS external_user_id, memory_id, idempotency_key, status,
            provider, provider_task_id, provider_state, input_sha256, actual_credits,
-           artifact_key, quality_payload, error_code, created_at, updated_at`,
-        [userId, input.memoryId, input.idempotencyKey, input.imageSha256, input.externalUserId],
+           artifact_key, quality_payload, error_code, created_at, updated_at,
+           use_case, motion_variant, pack_version`,
+        [
+          userId,
+          input.memoryId,
+          input.idempotencyKey,
+          input.imageSha256,
+          input.externalUserId,
+          input.useCase ?? "first_presence",
+          input.motionVariant ?? null,
+          input.packVersion ?? 1,
+        ],
       );
       return job(inserted.rows[0]);
     });
@@ -173,7 +192,8 @@ export class FirstPresenceVideoPostgresRepository
        ) SELECT claimed.id, u.external_id AS external_user_id, claimed.memory_id,
          claimed.idempotency_key, claimed.status, claimed.provider, claimed.provider_task_id,
          claimed.provider_state, claimed.input_sha256, claimed.actual_credits, claimed.artifact_key,
-         claimed.quality_payload, claimed.error_code, claimed.created_at, claimed.updated_at
+         claimed.quality_payload, claimed.error_code, claimed.created_at, claimed.updated_at,
+         claimed.use_case, claimed.motion_variant, claimed.pack_version
        FROM claimed JOIN public.users u ON u.id = claimed.user_id`,
       [id],
     );
@@ -191,7 +211,8 @@ export class FirstPresenceVideoPostgresRepository
          RETURNING j.id, (SELECT external_id FROM public.users WHERE id = j.user_id) AS external_user_id,
            j.memory_id, j.idempotency_key, j.status, j.provider, j.provider_task_id,
            j.provider_state, j.input_sha256, j.actual_credits, j.artifact_key,
-           j.quality_payload, j.error_code, j.created_at, j.updated_at`,
+            j.quality_payload, j.error_code, j.created_at, j.updated_at,
+            j.use_case, j.motion_variant, j.pack_version`,
         [id],
       );
       if (!result.rows[0]) throw new Error("FIRST_PRESENCE_VIDEO_RESERVATION_NOT_FOUND");
@@ -211,8 +232,21 @@ export class FirstPresenceVideoPostgresRepository
     return this.update(input.id, `status = 'quality_pending', provider_state = $2, actual_credits = $3`, [input.providerState, input.actualCredits]);
   }
 
-  async markSubmissionUncertain(input: { id: string; errorCode: string }): Promise<FirstPresenceVideoJob> {
-    return this.update(input.id, `status = 'submission_uncertain', provider_submission_state = 'uncertain', error_code = $2`, [input.errorCode]);
+  async markSubmissionUncertain(input: {
+    id: string;
+    errorCode: string;
+    providerTaskId?: string;
+    providerState?: string;
+    actualCredits?: number | null;
+  }): Promise<FirstPresenceVideoJob> {
+    return this.update(
+      input.id,
+      `status = 'submission_uncertain', provider_submission_state = 'uncertain',
+       error_code = $2, provider_task_id = COALESCE($3, provider_task_id),
+       provider_state = COALESCE($4, provider_state),
+       actual_credits = COALESCE($5, actual_credits)`,
+      [input.errorCode, input.providerTaskId ?? null, input.providerState ?? null, input.actualCredits ?? null],
+    );
   }
 
   /**
@@ -250,6 +284,12 @@ export class FirstPresenceVideoPostgresRepository
         ? "attach_provider_task"
         : "release_unresolved";
       const providerTaskId = input.providerTaskId ?? null;
+      if (current.providerTaskId && (
+        input.action !== "ATTACH_PROVIDER_TASK"
+        || providerTaskId !== current.providerTaskId
+      )) {
+        throw new Error("FIRST_PRESENCE_RECONCILIATION_PROVIDER_TASK_CONFLICT");
+      }
       if (existing.rows[0]) {
         if (
           existing.rows[0].action !== action
@@ -278,18 +318,21 @@ export class FirstPresenceVideoPostgresRepository
            RETURNING j.id, (SELECT external_id FROM public.users WHERE id = j.user_id) AS external_user_id,
              j.memory_id, j.idempotency_key, j.status, j.provider, j.provider_task_id,
              j.provider_state, j.input_sha256, j.actual_credits, j.artifact_key,
-             j.quality_payload, j.error_code, j.created_at, j.updated_at`,
+              j.quality_payload, j.error_code, j.created_at, j.updated_at,
+              j.use_case, j.motion_variant, j.pack_version`,
           [input.id, providerTaskId],
         );
         if (!attached.rows[0]) throw new Error("FIRST_PRESENCE_RECONCILIATION_STATE_LOST");
         return job(attached.rows[0]);
       }
 
-      await settleGenerationInPostgresTransaction(client, {
-        externalUserId: current.externalUserId,
-        requestKey: current.idempotencyKey,
-        outcome: "system_failed",
-      });
+      if (current.useCase !== "companion_micro_motion") {
+        await settleGenerationInPostgresTransaction(client, {
+          externalUserId: current.externalUserId,
+          requestKey: current.idempotencyKey,
+          outcome: "system_failed",
+        });
+      }
       const released = await client.query<JobRow>(
         `UPDATE public.video_generation_jobs j
          SET status = 'failed', provider_state = 'unresolved_released',
@@ -298,7 +341,8 @@ export class FirstPresenceVideoPostgresRepository
          RETURNING j.id, (SELECT external_id FROM public.users WHERE id = j.user_id) AS external_user_id,
            j.memory_id, j.idempotency_key, j.status, j.provider, j.provider_task_id,
            j.provider_state, j.input_sha256, j.actual_credits, j.artifact_key,
-           j.quality_payload, j.error_code, j.created_at, j.updated_at`,
+            j.quality_payload, j.error_code, j.created_at, j.updated_at,
+            j.use_case, j.motion_variant, j.pack_version`,
         [input.id],
       );
       if (!released.rows[0]) throw new Error("FIRST_PRESENCE_RECONCILIATION_STATE_LOST");
@@ -390,11 +434,13 @@ export class FirstPresenceVideoPostgresRepository
           JSON.stringify({ quality: currentJob.quality, manualReview: input.manualReview }),
         ],
       );
-      await settleGenerationInPostgresTransaction(client, {
-        externalUserId: currentJob.externalUserId,
-        requestKey: currentJob.idempotencyKey,
-        outcome: approved ? "succeeded" : "invalidated",
-      });
+      if (currentJob.useCase !== "companion_micro_motion") {
+        await settleGenerationInPostgresTransaction(client, {
+          externalUserId: currentJob.externalUserId,
+          requestKey: currentJob.idempotencyKey,
+          outcome: approved ? "succeeded" : "invalidated",
+        });
+      }
       const updated = await client.query<JobRow>(
         `UPDATE public.video_generation_jobs j
          SET status = $2, quality_status = $3, quality_payload = $4::jsonb,
@@ -403,7 +449,8 @@ export class FirstPresenceVideoPostgresRepository
          RETURNING j.id, (SELECT external_id FROM public.users WHERE id = j.user_id) AS external_user_id,
            j.memory_id, j.idempotency_key, j.status, j.provider, j.provider_task_id,
            j.provider_state, j.input_sha256, j.actual_credits, j.artifact_key,
-           j.quality_payload, j.error_code, j.created_at, j.updated_at`,
+            j.quality_payload, j.error_code, j.created_at, j.updated_at,
+            j.use_case, j.motion_variant, j.pack_version`,
         [
           input.id,
           approved ? "succeeded" : "rejected",
@@ -510,7 +557,8 @@ export class FirstPresenceVideoPostgresRepository
        RETURNING j.id, (SELECT external_id FROM public.users WHERE id = j.user_id) AS external_user_id,
          j.memory_id, j.idempotency_key, j.status, j.provider, j.provider_task_id,
          j.provider_state, j.input_sha256, j.actual_credits, j.artifact_key,
-         j.quality_payload, j.error_code, j.created_at, j.updated_at`,
+          j.quality_payload, j.error_code, j.created_at, j.updated_at,
+          j.use_case, j.motion_variant, j.pack_version`,
       [id, ...values],
     );
     if (result.rows[0]) return job(result.rows[0]);

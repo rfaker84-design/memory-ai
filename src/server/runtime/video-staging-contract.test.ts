@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { mkdtemp, mkdir, rm, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -154,4 +155,10 @@ test("worker startup validation is configuration-only and does not create a job 
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("the durable worker entry reruns the full Staging startup contract on every process start", () => {
+  const worker = readFileSync(new URL("../../../scripts/video-worker.ts", import.meta.url), "utf8");
+  assert.match(worker, /assertVideoWorkerStartupConfiguration\(\)/);
+  assert.match(worker, /assertVideoWorkerRuntimeConfiguration\(\)/);
 });

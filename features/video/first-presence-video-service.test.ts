@@ -12,6 +12,7 @@ import { createVideoReviewsHandler } from "@/app/api/internal/video-reviews/_han
 import {
   evaluateFirstPresenceQuality,
   FfmpegFirstPresenceMediaInspector,
+  COMPANION_MOTION_PROVIDER_HARD_TIMEOUT_MS,
   FirstPresenceVideoService,
   SecureVideoDownloader,
   VideoDownloadSecurityError,
@@ -23,6 +24,9 @@ import {
   VIDU_FIRST_PRESENCE_NEGATIVE_PROMPT,
   VIDU_FIRST_PRESENCE_PROMPT,
   VIDU_FIRST_PRESENCE_RESOLUTION,
+  VIDU_COMPANION_MOTION_NEGATIVE_PROMPT,
+  VIDU_COMPANION_MOTION_PROMPTS,
+  companionMotionStagingReviewEnabled,
   type FirstPresenceQualityDecision,
   type FirstPresenceVideoJob,
   type FirstPresenceVideoRepository,
@@ -69,7 +73,11 @@ class MemoryFirstPresenceRepository implements FirstPresenceVideoRepository {
     externalUserId: string;
     memoryId: string;
     idempotencyKey: string;
+    imageDataUrl: string;
     imageSha256: string;
+    useCase?: FirstPresenceVideoJob["useCase"];
+    motionVariant?: FirstPresenceVideoJob["motionVariant"];
+    packVersion?: number;
   }) {
     const existing = [...this.jobs.values()].find(
       (job) => job.externalUserId === input.externalUserId
@@ -95,6 +103,9 @@ class MemoryFirstPresenceRepository implements FirstPresenceVideoRepository {
       errorCode: null,
       createdAt: now,
       updatedAt: now,
+      useCase: input.useCase ?? "first_presence",
+      motionVariant: input.motionVariant ?? null,
+      packVersion: input.packVersion ?? 1,
     };
     this.jobs.set(job.id, job);
     return job;
@@ -148,10 +159,19 @@ class MemoryFirstPresenceRepository implements FirstPresenceVideoRepository {
     });
   }
 
-  async markSubmissionUncertain(input: { id: string; errorCode: string }) {
+  async markSubmissionUncertain(input: {
+    id: string;
+    errorCode: string;
+    providerTaskId?: string;
+    providerState?: string;
+    actualCredits?: number | null;
+  }) {
     return this.patch(input.id, {
       status: "submission_uncertain",
       errorCode: input.errorCode,
+      ...(input.providerTaskId ? { providerTaskId: input.providerTaskId } : {}),
+      ...(input.providerState ? { providerState: input.providerState } : {}),
+      ...(input.actualCredits !== undefined ? { actualCredits: input.actualCredits } : {}),
     });
   }
 
@@ -270,9 +290,11 @@ function validProbe(evidenceRoot: string) {
 function serviceWith(input: {
   provider?: ConstructorParameters<typeof FirstPresenceVideoService>[1];
   quality?: FirstPresenceQualityDecision;
+  companionEntitlements?: ConstructorParameters<typeof FirstPresenceVideoService>[6];
 } = {}) {
   const repository = new MemoryFirstPresenceRepository();
   const entitlements = new FakeEntitlements();
+  const deletedInputs: string[] = [];
   const provider =
     input.provider ??
     ({
@@ -295,7 +317,9 @@ function serviceWith(input: {
     {
       stageInput: async () => undefined,
       readInput: async () => image,
-      deleteInput: async () => undefined,
+      deleteInput: async ({ jobId }) => {
+        deletedInputs.push(jobId);
+      },
       download: async () => ({
         artifactKey: "first-presence/video.mp4",
         body: Buffer.from("mp4"),
@@ -314,9 +338,10 @@ function serviceWith(input: {
           throw new Error("FIRST_PRESENCE_REVIEW_UNAUTHORIZED");
         }
       },
-    }
+    },
+    input.companionEntitlements,
   );
-  return { service, repository, entitlements };
+  return { service, repository, entitlements, deletedInputs };
 }
 
 test("Vidu first-presence provider freezes the China Q2 Pro Fast 8s silent 1080p contract", async () => {
@@ -374,6 +399,32 @@ test("Vidu first-presence provider freezes the China Q2 Pro Fast 8s silent 1080p
   assert.equal(requests[0].body.is_rec, false);
   assert.equal(requests[0].body.prompt, VIDU_FIRST_PRESENCE_PROMPT);
   assert.equal(requests[0].body.negative_prompt, VIDU_FIRST_PRESENCE_NEGATIVE_PROMPT);
+});
+
+test("Vidu companion variants keep identity and freeze silent micro-motion prompts", async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  const provider = new ViduFirstPresenceProvider({
+    environment: { VIDU_API_KEY: "raw-key" },
+    fetchImpl: (async (_request, init) => {
+      requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return Response.json({ task_id: `task-${requests.length}`, state: "created", credits: 44 });
+    }) as typeof fetch,
+  });
+  for (const motionVariant of ["idle", "attentive", "reflective"] as const) {
+    await provider.submit({ imageDataUrl: image, imageSha256: sha, idempotencyKey: `motion-${motionVariant}`, motionVariant });
+  }
+  assert.deepEqual(requests.map((request) => request.prompt), [
+    VIDU_COMPANION_MOTION_PROMPTS.idle,
+    VIDU_COMPANION_MOTION_PROMPTS.attentive,
+    VIDU_COMPANION_MOTION_PROMPTS.reflective,
+  ]);
+  for (const request of requests) {
+    assert.equal(request.negative_prompt, VIDU_COMPANION_MOTION_NEGATIVE_PROMPT);
+    assert.equal(request.duration, 8);
+    assert.equal(request.audio, false);
+    assert.equal(request.bgm, false);
+    assert.equal(request.movement_amplitude, "small");
+  }
 });
 
 test("secure downloader rejects client supplied unsafe URLs, private redirects, and oversized files", async () => {
@@ -542,6 +593,167 @@ test("idempotent submission and lost response recovery protection never submit o
   assert.equal(submits, 2, "uncertain recovery never re-submits to the provider");
   assert.equal(uncertain.entitlements.commits, 0);
   assert.equal(uncertain.entitlements.releases, 0);
+});
+
+test("Staging review eligibility is default-off and can never activate in Production", () => {
+  assert.equal(companionMotionStagingReviewEnabled({}), false);
+  assert.equal(companionMotionStagingReviewEnabled({
+    NODE_ENV: "production",
+    DEPLOYMENT_ENV: "staging",
+  }), false);
+  assert.equal(companionMotionStagingReviewEnabled({
+    NODE_ENV: "development",
+    DEPLOYMENT_ENV: "staging",
+    YIJIAN_COMPANION_MOTION_STAGING_REVIEW_ENABLED: "true",
+  }), false);
+  assert.equal(companionMotionStagingReviewEnabled({
+    NODE_ENV: "production",
+    DEPLOYMENT_ENV: "production",
+    YIJIAN_COMPANION_MOTION_STAGING_REVIEW_ENABLED: "true",
+  }), false);
+  assert.equal(companionMotionStagingReviewEnabled({
+    NODE_ENV: "production",
+    DEPLOYMENT_ENV: "staging",
+    YIJIAN_COMPANION_MOTION_STAGING_REVIEW_ENABLED: "true",
+  }), true);
+});
+
+test("provider acceptance followed by a ledger write failure stays reconcilable and never resubmits", async () => {
+  let submits = 0;
+  const accepted = serviceWith({
+    provider: {
+      submit: async () => {
+        submits += 1;
+        return { taskId: "vidu-accepted-before-ledger-failure", providerState: "created", credits: 44 };
+      },
+      poll: async () => { throw new Error("unused"); },
+    },
+  });
+  accepted.repository.markSubmitted = async () => {
+    throw new Error("database connection lost after provider acceptance");
+  };
+
+  const first = await accepted.service.submit({
+    externalUserId: owner,
+    memoryId,
+    idempotencyKey: "video-provider-accepted-ledger-failure",
+    imageDataUrl: image,
+    imageSha256: sha,
+  });
+  assert.equal(first.status, "submission_uncertain");
+  assert.equal(first.errorCode, "SUBMIT_ACCEPTED_LEDGER_WRITE_FAILED");
+  assert.equal(first.providerTaskId, "vidu-accepted-before-ledger-failure");
+  assert.equal(first.providerState, "created");
+  assert.equal(first.actualCredits, 44);
+  assert.deepEqual(accepted.deletedInputs, [], "reconciliation input is retained");
+  assert.equal(accepted.entitlements.releases, 0, "an accepted Provider task never releases its reservation");
+  assert.equal((await accepted.service.submit({
+    externalUserId: owner,
+    memoryId,
+    idempotencyKey: "video-provider-accepted-ledger-failure",
+    imageDataUrl: image,
+    imageSha256: sha,
+  })).id, first.id);
+  assert.equal(submits, 1);
+});
+
+test("deterministic provider submission failure deletes staged input and never retries", async () => {
+  let submits = 0;
+  const failed = serviceWith({
+    provider: {
+      submit: async () => {
+        submits += 1;
+        throw new Error("provider rejected request");
+      },
+      poll: async () => {
+        throw new Error("unused");
+      },
+    },
+  });
+  const markFailed = failed.repository.markFailed.bind(failed.repository);
+  failed.repository.markFailed = async (input) => {
+    assert.deepEqual(
+      failed.deletedInputs,
+      [],
+      "the durable terminal state is persisted before best-effort private input cleanup",
+    );
+    return markFailed(input);
+  };
+  const result = await failed.service.submit({
+    externalUserId: owner,
+    memoryId,
+    idempotencyKey: "video-deterministic-submit-failure",
+    imageDataUrl: image,
+    imageSha256: sha,
+  });
+  assert.equal(result.status, "failed");
+  assert.equal(result.errorCode, "SUBMIT_FAILED");
+  assert.deepEqual(failed.deletedInputs, [result.id]);
+  assert.equal((await failed.service.recover(result.id)).status, "failed");
+  assert.equal(submits, 1);
+});
+
+test("micro-motion submitted or running jobs hard-timeout from durable created_at after 30 minutes", async () => {
+  let polls = 0;
+  const timedOut = serviceWith({
+    provider: {
+      submit: async () => ({ taskId: "unused", providerState: "created", credits: 1 }),
+      poll: async () => {
+        polls += 1;
+        return { state: "running", providerState: "processing", credits: 1 };
+      },
+    },
+    companionEntitlements: { assertActive: async () => undefined },
+  });
+  const queued = await timedOut.repository.createQueued({
+    externalUserId: owner,
+    memoryId,
+    idempotencyKey: "companion-motion.v1.idle",
+    imageDataUrl: image,
+    imageSha256: sha,
+    useCase: "companion_micro_motion",
+    motionVariant: "idle",
+    packVersion: 1,
+  });
+  timedOut.repository.jobs.set(queued.id, {
+    ...queued,
+    status: "running",
+    providerTaskId: "vidu-micro-timeout",
+    providerState: "processing",
+    createdAt: new Date(Date.now() - COMPANION_MOTION_PROVIDER_HARD_TIMEOUT_MS - 1_000).toISOString(),
+  });
+
+  const result = await timedOut.service.recover(queued.id);
+  assert.equal(result.status, "failed");
+  assert.equal(result.errorCode, "COMPANION_MOTION_PROVIDER_TIMEOUT");
+  assert.equal(polls, 0, "terminal timeout never polls or automatically resubmits");
+  assert.deepEqual(timedOut.deletedInputs, [queued.id]);
+  assert.equal((await timedOut.service.recover(queued.id)).status, "failed");
+  assert.equal(polls, 0);
+});
+
+test("micro-motion quality payload persists the frozen motion-specific manual checklist", async () => {
+  const micro = serviceWith({
+    companionEntitlements: { assertActive: async () => undefined },
+  });
+  const submitted = await micro.service.submit({
+    externalUserId: owner,
+    memoryId,
+    idempotencyKey: "companion-motion.v1.reflective",
+    imageDataUrl: image,
+    imageSha256: sha,
+    useCase: "companion_micro_motion",
+    motionVariant: "reflective",
+    packVersion: 1,
+  });
+  const reviewable = await micro.service.recover(submitted.id);
+  assert.equal(reviewable.status, "manual_review_required");
+  assert.deepEqual(reviewable.quality?.manualReviewReasons.slice(-4), [
+    "NO_TALK_OR_LIP_MOVEMENT_UNVERIFIED",
+    "NO_WAVE_LARGE_GESTURE_OR_LOUD_LAUGH_UNVERIFIED",
+    "FIXED_CAMERA_UNVERIFIED",
+    "LOOP_POSTURE_CONTINUITY_UNVERIFIED",
+  ]);
 });
 
 test("concurrent submitters claim one durable submission and call Vidu once", async () => {

@@ -11,6 +11,7 @@ import {
 } from "./first-presence-media-inspection";
 import { FirstPresenceVideoService } from "./first-presence-video-service";
 import { ViduFirstPresenceProvider } from "./vidu-first-presence-provider";
+import { PostgresCompanionMotionEntitlementPort } from "./companion-micro-motion";
 import {
   createVideoArtifactStorageFromEnvironment,
   type VideoArtifactStoragePort,
@@ -33,6 +34,8 @@ export function createFirstPresenceVideoRuntime(): FirstPresenceVideoService {
     new FirstPresenceCommerceEntitlementPort(),
     artifacts,
     new FfmpegFirstPresenceMediaInspector({ evidenceRoot: requiredEvidenceRoot() }),
+    undefined,
+    new PostgresCompanionMotionEntitlementPort(),
   );
 }
 

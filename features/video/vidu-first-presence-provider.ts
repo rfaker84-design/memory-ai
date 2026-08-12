@@ -19,6 +19,20 @@ export const VIDU_FIRST_PRESENCE_NEGATIVE_PROMPT =
   "identity change, age change, face change, hairstyle change, clothing change, background change, new person, new object, fast motion, " +
   "exaggerated expression, camera movement, zoom, pan, tilt, cut, flicker, subtitles, watermark";
 
+export const VIDU_COMPANION_MOTION_NEGATIVE_PROMPT =
+  "talking, speaking, lip movement, open mouth, waving, laughing, exaggerated smile, exaggerated emotion, large gesture, walking, " +
+  "leaving frame, identity change, age change, face change, hairstyle change, clothing change, background change, new person, new object, " +
+  "camera movement, zoom, pan, tilt, cut, flicker, fantasy effect, resurrection effect, subtitles, watermark, audio";
+
+export const VIDU_COMPANION_MOTION_PROMPTS = Object.freeze({
+  idle:
+    "Static camera, vertical 9:16 realistic companion portrait. Preserve the exact identity, age, facial features, hairstyle, clothing, environment, lighting, and framing from the source photo. The person remains quietly present in the original place with only gentle breathing, natural blinking, and an extremely subtle eye movement. Closed mouth, no speaking, no lip movement, no hand gesture, no camera movement. Warm natural life-documentary feeling. The first and final posture should be nearly identical for a soft loop.",
+  attentive:
+    "Static camera, vertical 9:16 realistic companion portrait. Preserve the exact identity, age, facial features, hairstyle, clothing, environment, lighting, and framing from the source photo. The person appears to listen quietly, with gentle breathing, natural blinking, an extremely slight eye adjustment, and a tiny relaxed head-posture change. Closed mouth, no speaking, no lip movement, no nodding performance, no hand gesture, no camera movement. Warm restrained life-documentary feeling. The first and final posture should be nearly identical for a soft loop.",
+  reflective:
+    "Static camera, vertical 9:16 realistic companion portrait. Preserve the exact identity, age, facial features, hairstyle, clothing, environment, lighting, and framing from the source photo. The person holds a quiet reflective pause with gentle breathing, natural blinking, a very small gaze change, and an extremely subtle posture adjustment. Closed mouth, no speaking, no lip movement, no dramatic emotion, no hand gesture, no camera movement. Warm restrained life-documentary feeling. The first and final posture should be nearly identical for a soft loop.",
+} as const);
+
 export type ViduFirstPresenceSubmission = {
   taskId: string;
   providerState: string;
@@ -48,6 +62,7 @@ export type ViduFirstPresenceSubmitInput = {
   imageDataUrl: string;
   imageSha256: string;
   idempotencyKey: string;
+  motionVariant?: keyof typeof VIDU_COMPANION_MOTION_PROMPTS;
 };
 
 function requireRawViduApiKey(environment: Record<string, string | undefined>): string {
@@ -145,14 +160,20 @@ export class ViduFirstPresenceProvider {
   async submit(
     input: ViduFirstPresenceSubmitInput
   ): Promise<ViduFirstPresenceSubmission> {
+    const prompt = input.motionVariant
+      ? VIDU_COMPANION_MOTION_PROMPTS[input.motionVariant]
+      : VIDU_FIRST_PRESENCE_PROMPT;
+    const negativePrompt = input.motionVariant
+      ? VIDU_COMPANION_MOTION_NEGATIVE_PROMPT
+      : VIDU_FIRST_PRESENCE_NEGATIVE_PROMPT;
     const data = await this.requestJson(`${this.baseUrl}/ent/v2/img2video`, {
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify({
         model: VIDU_FIRST_PRESENCE_MODEL,
         images: [input.imageDataUrl],
-        prompt: VIDU_FIRST_PRESENCE_PROMPT,
-        negative_prompt: VIDU_FIRST_PRESENCE_NEGATIVE_PROMPT,
+        prompt,
+        negative_prompt: negativePrompt,
         is_rec: false,
         bgm: false,
         audio: false,
@@ -163,6 +184,7 @@ export class ViduFirstPresenceProvider {
         payload: JSON.stringify({
           idempotency_key: input.idempotencyKey,
           input_sha256: input.imageSha256,
+          ...(input.motionVariant ? { motion_variant: input.motionVariant } : {}),
         }),
       }),
     });

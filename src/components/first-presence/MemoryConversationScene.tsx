@@ -4,6 +4,8 @@ import { FormEvent, useCallback, useEffect, useId, useRef, useState } from "reac
 import Link from "next/link";
 
 import { MemoryButton } from "../memory-ui";
+import { CompanionMotionBackground } from "../companion/CompanionMotionBackground";
+import { resolveConversationMotionVariant } from "../companion/companionMotionState";
 import { recordBusinessView } from "../business-metrics/businessMetricsClient";
 import { CommerceVideoCreditsEntry } from "./CommerceVideoCreditsEntry";
 import { stageChatPickupDraft } from "../memory/pickupDraftHandoff";
@@ -435,7 +437,15 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   };
 
   const isBusy = phase === "loading" || phase === "greeting" || phase === "sending" || phase === "replying" || phase === "recovering";
-  const quietPresence = useQuietCompanionPresence({ reducedMotion: reducedMotion || assistanceOfferVisible, replying: replyPulse });
+  const motionVariant = resolveConversationMotionVariant({
+    phase,
+    draft,
+    hasPendingMessage: Boolean(pendingMessage),
+  });
+  const quietPresence = useQuietCompanionPresence({
+    reducedMotion: reducedMotion || assistanceOfferVisible,
+    replying: motionVariant !== "idle" || replyPulse,
+  });
   const completedRounds = completedConversationRounds(messages, activeSessionId);
   const status = phase === "sending" ? "正在送出这句话…" : phase === "replying" ? "忆见正在整理回复…" : phase === "greeting" ? "忆见正在生成第一句回复…" : phase === "recovering" ? "正在找回刚才的对话…" : "";
 
@@ -444,7 +454,13 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
       <section className={styles.presence} data-presence={quietPresence} aria-label={`${memoryName} 的生活场景`}>
         <div className={styles.portraitFrame} role="img" aria-label={portraitUrl ? `${memoryName} 的照片` : `${memoryName} 的文字形象`}>
           {portraitUrl ? (
-            <div className={styles.portraitPhoto} style={{ backgroundImage: `url("${portraitUrl}")` }} />
+            <CompanionMotionBackground
+              className={styles.portraitMotion}
+              memoryId={memoryId}
+              portraitUrl={portraitUrl}
+              variant={motionVariant}
+              motionEnabled={quietPresence !== "static"}
+            />
           ) : (
             <span className={styles.portraitInitials}>{Array.from(memoryName).slice(0, 2).join("")}</span>
           )}

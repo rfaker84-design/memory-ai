@@ -5,6 +5,7 @@ import {
   createFirstPresenceVideoRuntime,
 } from "../features/video";
 import { assertVideoWorkerRuntimeConfiguration } from "../features/video/video-artifact-runtime";
+import { assertVideoWorkerStartupConfiguration } from "../src/server/runtime/video-staging-contract";
 
 function positiveInteger(value: string | undefined, fallback: number, maximum: number): number {
   const parsed = value ? Number.parseInt(value, 10) : fallback;
@@ -12,6 +13,9 @@ function positiveInteger(value: string | undefined, fallback: number, maximum: n
 }
 
 async function main(): Promise<void> {
+  if (process.env.NODE_ENV === "production" && process.env.DEPLOYMENT_ENV === "staging") {
+    assertVideoWorkerStartupConfiguration();
+  }
   assertVideoWorkerRuntimeConfiguration();
   const service = createFirstPresenceVideoRuntime();
   const worker = new FirstPresenceVideoWorker(new FirstPresenceVideoPostgresRepository(), service);

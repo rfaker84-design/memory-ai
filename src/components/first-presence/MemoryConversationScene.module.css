@@ -23,7 +23,7 @@
 }
 
 .portraitFrame,
-.portraitPhoto,
+.portraitMotion,
 .sceneVeil {
   position: absolute;
   inset: 0;
@@ -36,9 +36,7 @@
     linear-gradient(150deg, #4b392c, #211913 72%);
 }
 
-.portraitPhoto {
-  background-position: center 31%;
-  background-size: cover;
+.portraitMotion {
   filter: saturate(0.82) sepia(0.07) contrast(0.96) brightness(0.8);
   transform: scale(1.045);
   transform-origin: 52% 38%;
@@ -63,16 +61,16 @@
   text-indent: 0.12em;
 }
 
-.presence[data-presence="quiet"] .portraitPhoto,
-.presence[data-presence="replying"] .portraitPhoto {
+.presence[data-presence="quiet"] .portraitMotion,
+.presence[data-presence="replying"] .portraitMotion {
   animation: sceneBreath 12s ease-in-out infinite alternate;
 }
 
-.presence[data-presence="replying"] .portraitPhoto {
+.presence[data-presence="replying"] .portraitMotion {
   filter: saturate(0.86) sepia(0.07) contrast(0.97) brightness(0.825);
 }
 
-.presence[data-presence="static"] .portraitPhoto {
+.presence[data-presence="static"] .portraitMotion {
   animation: none;
   transform: scale(1.045);
 }
@@ -448,5 +446,5 @@
     transition-duration: 1ms !important;
   }
 
-  .portraitPhoto { animation: none !important; transform: scale(1.045) !important; }
+  .portraitMotion { animation: none !important; transform: scale(1.045) !important; }
 }

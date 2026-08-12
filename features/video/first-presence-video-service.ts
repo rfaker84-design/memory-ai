@@ -21,6 +21,9 @@ export type FirstPresenceVideoStatus =
   | "failed"
   | "submission_uncertain";
 
+export type VideoGenerationUseCase = "first_presence" | "companion_micro_motion";
+export type CompanionMotionVariant = "idle" | "attentive" | "reflective";
+
 export type FirstPresenceManualReview = {
   reviewerAccount: string;
   reviewedAt: string;
@@ -45,6 +48,10 @@ export type FirstPresenceVideoJob = {
   errorCode: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Undefined is accepted only for legacy in-memory adapters and means first_presence. */
+  useCase?: VideoGenerationUseCase;
+  motionVariant?: CompanionMotionVariant | null;
+  packVersion?: number;
 };
 
 export type CreateFirstPresenceVideoInput = {
@@ -53,6 +60,9 @@ export type CreateFirstPresenceVideoInput = {
   idempotencyKey: string;
   imageDataUrl: string;
   imageSha256: string;
+  useCase?: VideoGenerationUseCase;
+  motionVariant?: CompanionMotionVariant | null;
+  packVersion?: number;
 };
 
 export type FirstPresenceVideoRepository = {
@@ -87,6 +97,9 @@ export type FirstPresenceVideoRepository = {
   markSubmissionUncertain(input: {
     id: string;
     errorCode: string;
+    providerTaskId?: string;
+    providerState?: string;
+    actualCredits?: number | null;
   }): Promise<FirstPresenceVideoJob>;
   markFailed(input: {
     id: string;
@@ -144,6 +157,13 @@ export type FirstPresenceEntitlementPort = {
   }): Promise<void>;
 };
 
+export type CompanionMotionEntitlementPort = {
+  assertActive(input: {
+    externalUserId: string;
+    memoryId: string;
+  }): Promise<void>;
+};
+
 export type FirstPresenceArtifactStore = {
   stageInput(input: { jobId: string; imageDataUrl: string }): Promise<void>;
   readInput(input: { jobId: string }): Promise<string>;
@@ -168,6 +188,29 @@ const TERMINAL_STATUSES = new Set<FirstPresenceVideoStatus>([
   "submission_uncertain",
 ]);
 
+export const COMPANION_MOTION_PROVIDER_HARD_TIMEOUT_MS = 30 * 60 * 1000;
+export const COMPANION_MOTION_MANUAL_REVIEW_REASONS = [
+  "NO_TALK_OR_LIP_MOVEMENT_UNVERIFIED",
+  "NO_WAVE_LARGE_GESTURE_OR_LOUD_LAUGH_UNVERIFIED",
+  "FIXED_CAMERA_UNVERIFIED",
+  "LOOP_POSTURE_CONTINUITY_UNVERIFIED",
+] as const;
+
+function companionMotionProviderTimedOut(
+  job: FirstPresenceVideoJob,
+  nowMs: number = Date.now(),
+): boolean {
+  if (
+    job.useCase !== "companion_micro_motion"
+    || (job.status !== "submitted" && job.status !== "running")
+  ) {
+    return false;
+  }
+  const createdAtMs = Date.parse(job.createdAt);
+  return Number.isFinite(createdAtMs)
+    && nowMs - createdAtMs >= COMPANION_MOTION_PROVIDER_HARD_TIMEOUT_MS;
+}
+
 export class EnvironmentFirstPresenceReviewPolicy implements FirstPresenceReviewPolicy {
   constructor(private readonly environment: Record<string, string | undefined> = process.env) {}
 
@@ -187,7 +230,8 @@ export class FirstPresenceVideoService {
     private readonly entitlements: FirstPresenceEntitlementPort,
     private readonly artifacts: FirstPresenceArtifactStore,
     private readonly mediaInspector: FirstPresenceMediaProbePort,
-    private readonly reviewPolicy: FirstPresenceReviewPolicy = new EnvironmentFirstPresenceReviewPolicy()
+    private readonly reviewPolicy: FirstPresenceReviewPolicy = new EnvironmentFirstPresenceReviewPolicy(),
+    private readonly companionEntitlements?: CompanionMotionEntitlementPort,
   ) {}
 
   async submit(input: CreateFirstPresenceVideoInput): Promise<FirstPresenceVideoJob> {
@@ -220,7 +264,7 @@ export class FirstPresenceVideoService {
       await this.artifacts.stageInput({ jobId: created.id, imageDataUrl: input.imageDataUrl });
       return created;
     } catch (error) {
-      await this.repository.markFailed({
+      await this.markFailedAfterInputCleanup({
         id: created.id,
         providerState: null,
         actualCredits: null,
@@ -240,33 +284,53 @@ export class FirstPresenceVideoService {
     if (!job) {
       return (await this.repository.findById(current.id)) ?? current;
     }
-    const reservation = await this.entitlements.reserve({
-      externalUserId: job.externalUserId,
-      memoryId: job.memoryId,
-      idempotencyKey: job.idempotencyKey,
-    });
-    if (reservation === "unavailable") {
-      return this.repository.markFailed({
-        id: job.id,
-        providerState: null,
-        actualCredits: null,
-        errorCode: "ENTITLEMENT_UNAVAILABLE",
+    const isCompanionMotion = job.useCase === "companion_micro_motion";
+    if (isCompanionMotion) {
+      if (!this.companionEntitlements) {
+        return this.markFailedAfterInputCleanup({
+          id: job.id,
+          providerState: null,
+          actualCredits: null,
+          errorCode: "COMPANION_ENTITLEMENT_UNAVAILABLE",
+        });
+      }
+      try {
+        await this.companionEntitlements.assertActive({
+          externalUserId: job.externalUserId,
+          memoryId: job.memoryId,
+        });
+      } catch {
+        return this.markFailedAfterInputCleanup({
+          id: job.id,
+          providerState: null,
+          actualCredits: null,
+          errorCode: "COMPANION_ENTITLEMENT_UNAVAILABLE",
+        });
+      }
+    } else {
+      const reservation = await this.entitlements.reserve({
+        externalUserId: job.externalUserId,
+        memoryId: job.memoryId,
+        idempotencyKey: job.idempotencyKey,
       });
+      if (reservation === "unavailable") {
+        return this.markFailedAfterInputCleanup({
+          id: job.id,
+          providerState: null,
+          actualCredits: null,
+          errorCode: "ENTITLEMENT_UNAVAILABLE",
+        });
+      }
+      await this.repository.markReserved(job.id);
     }
-    await this.repository.markReserved(job.id);
-    let submitted: FirstPresenceVideoJob;
+    let submission: Awaited<ReturnType<ViduFirstPresenceProvider["submit"]>>;
     try {
       const imageDataUrl = await this.artifacts.readInput({ jobId: job.id });
-      const submission = await this.provider.submit({
+      submission = await this.provider.submit({
         imageDataUrl,
         imageSha256: job.inputSha256,
         idempotencyKey: job.id,
-      });
-      submitted = await this.repository.markSubmitted({
-        id: job.id,
-        providerTaskId: submission.taskId,
-        providerState: submission.providerState,
-        actualCredits: submission.credits,
+        motionVariant: job.motionVariant ?? undefined,
       });
     } catch (error) {
       if (error instanceof ViduFirstPresenceNetworkError) {
@@ -275,25 +339,36 @@ export class FirstPresenceVideoService {
           errorCode: "SUBMIT_RESPONSE_LOST",
         });
       }
-      await this.entitlements.release({
-        externalUserId: job.externalUserId,
-        memoryId: job.memoryId,
-        idempotencyKey: job.idempotencyKey,
-      });
-      return this.repository.markFailed({
+      await this.releaseUserEntitlement(job);
+      return this.markFailedAfterInputCleanup({
         id: job.id,
         providerState: null,
         actualCredits: null,
         errorCode: "SUBMIT_FAILED",
       });
     }
+    let submitted: FirstPresenceVideoJob;
     try {
-      await this.artifacts.deleteInput({ jobId: job.id });
+      submitted = await this.repository.markSubmitted({
+        id: job.id,
+        providerTaskId: submission.taskId,
+        providerState: submission.providerState,
+        actualCredits: submission.credits,
+      });
     } catch {
-      console.error("[video] submitted input cleanup failed", {
-        error: "VIDEO_INPUT_CLEANUP_FAILED",
+      // Vidu has already accepted the request. Never reinterpret a local
+      // persistence failure as a deterministic Provider failure, release the
+      // entitlement, delete the input, or retry the external submit. Persist
+      // every known Provider identifier for explicit reconciliation instead.
+      return this.repository.markSubmissionUncertain({
+        id: job.id,
+        errorCode: "SUBMIT_ACCEPTED_LEDGER_WRITE_FAILED",
+        providerTaskId: submission.taskId,
+        providerState: submission.providerState,
+        actualCredits: submission.credits,
       });
     }
+    await this.deleteInputBestEffort(job.id);
     return submitted;
   }
 
@@ -301,6 +376,15 @@ export class FirstPresenceVideoService {
     const job = await this.repository.findById(jobId);
     if (!job) throw new Error("FIRST_PRESENCE_VIDEO_JOB_NOT_FOUND");
     if (TERMINAL_STATUSES.has(job.status)) return job;
+    if (companionMotionProviderTimedOut(job)) {
+      await this.releaseUserEntitlement(job);
+      return this.markFailedAfterInputCleanup({
+        id: job.id,
+        providerState: job.providerState,
+        actualCredits: job.actualCredits,
+        errorCode: "COMPANION_MOTION_PROVIDER_TIMEOUT",
+      });
+    }
     if (!job.providerTaskId) {
       if (job.status === "submitting") {
         return this.repository.markSubmissionUncertain({
@@ -349,7 +433,7 @@ export class FirstPresenceVideoService {
     }
     if (poll.state === "failed") {
       await this.releaseUserEntitlement(job);
-      return this.repository.markFailed({
+      return this.markFailedAfterInputCleanup({
         id: job.id,
         providerState: poll.providerState,
         actualCredits: poll.credits,
@@ -378,7 +462,7 @@ export class FirstPresenceVideoService {
       });
     } catch {
       await this.releaseUserEntitlement(job);
-      return this.repository.markFailed({
+      return this.markFailedAfterInputCleanup({
         id: job.id,
         providerState: poll.providerState,
         actualCredits: poll.credits,
@@ -395,7 +479,7 @@ export class FirstPresenceVideoService {
       });
     } catch {
       await this.releaseUserEntitlement(job);
-      return this.repository.markFailed({
+      return this.markFailedAfterInputCleanup({
         id: job.id,
         providerState: poll.providerState,
         actualCredits: poll.credits,
@@ -408,10 +492,22 @@ export class FirstPresenceVideoService {
       quality = evaluateFirstPresenceQuality({
         media: await this.mediaInspector.inspect(artifact),
       });
+      if (
+        job.useCase === "companion_micro_motion"
+        && quality.status === "manual_review_required"
+      ) {
+        quality = {
+          ...quality,
+          manualReviewReasons: [
+            ...quality.manualReviewReasons,
+            ...COMPANION_MOTION_MANUAL_REVIEW_REASONS,
+          ],
+        };
+      }
     } catch {
       await this.artifacts.deleteArtifact({ artifactKey: artifact.artifactKey });
       await this.releaseUserEntitlement(job);
-      return this.repository.markFailed({
+      return this.markFailedAfterInputCleanup({
         id: job.id,
         providerState: poll.providerState,
         actualCredits: poll.credits,
@@ -432,7 +528,7 @@ export class FirstPresenceVideoService {
       });
     }
 
-    await this.artifacts.deleteInput({ jobId: job.id });
+    await this.deleteInputBestEffort(job.id);
     return this.repository.markManualReviewRequired({
       id: job.id,
       providerState: poll.providerState,
@@ -446,11 +542,33 @@ export class FirstPresenceVideoService {
     job: FirstPresenceVideoJob,
     outcome: "system_failed" | "invalidated" = "system_failed",
   ): Promise<void> {
+    if (job.useCase === "companion_micro_motion") return Promise.resolve();
     return this.entitlements.release({
       externalUserId: job.externalUserId,
       memoryId: job.memoryId,
       idempotencyKey: job.idempotencyKey,
       outcome,
     });
+  }
+
+  private async markFailedAfterInputCleanup(input: {
+    id: string;
+    providerState: string | null;
+    actualCredits: number | null;
+    errorCode: string;
+  }): Promise<FirstPresenceVideoJob> {
+    const failedJob = await this.repository.markFailed(input);
+    await this.deleteInputBestEffort(input.id);
+    return failedJob;
+  }
+
+  private async deleteInputBestEffort(jobId: string): Promise<void> {
+    try {
+      await this.artifacts.deleteInput({ jobId });
+    } catch {
+      console.error("[video] input cleanup failed", {
+        error: "VIDEO_INPUT_CLEANUP_FAILED",
+      });
+    }
   }
 }

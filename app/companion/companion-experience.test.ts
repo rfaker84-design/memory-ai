@@ -21,10 +21,12 @@ test("memory-world enters the dedicated companion space and the four-tab shell k
 
 test("companion presents one warm Owner portrait scene without status gamification", () => {
   assert.match(page, /className=\{styles\.heroMedia\}/);
-  assert.match(page, /portraitUrl[\s\S]*?<img src=\{portraitUrl\} alt=""/);
+  assert.match(page, /portraitUrl[\s\S]*?<CompanionMotionBackground/);
+  assert.match(page, /variant="idle"/);
+  assert.match(page, /motionEnabled=\{presence !== "static"\}/);
   assert.match(page, /想对 \{memory\.name\} 说的话/);
   assert.match(page, /AI 纪念陪伴 · 基于你确认的资料/);
-  assert.match(styles, /\.heroMedia img[\s\S]*?object-fit: cover/);
+  assert.match(styles, /\.heroMotion[\s\S]*?filter: saturate/);
   assert.doesNotMatch(page, /相伴多少天|在线|亲密度|礼物|热度|陪伴时长|连续天数|打卡|等级|视频通话|语音通话|送礼物/);
   assert.doesNotMatch(styles, /stars|portraitHalo|radial-gradient\(circle at 50% 28%/);
 });
@@ -66,7 +68,7 @@ test("formal Owner and media reads fail closed without a parallel backend", () =
   assert.match(page, /loadOwnedMediaUrl\(selected\.photoAssetId, signal\)/);
   assert.match(page, /response\.status === 401/);
   assert.doesNotMatch(page, /loadCommerceCreditBalance|\/api\/commerce\/credits/);
-  assert.doesNotMatch(page, /\/api\/(payments|first-presence-video)/);
+  assert.doesNotMatch(page, /\/api\/payments/);
 });
 
 test("presentation storage failure cannot block the Owner-scoped companion page", () => {

@@ -6,6 +6,7 @@ const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("./page.module.css", import.meta.url), "utf8");
 const scene = readFileSync(new URL("../../../src/components/first-presence/MemoryConversationScene.tsx", import.meta.url), "utf8");
 const sceneStyles = readFileSync(new URL("../../../src/components/first-presence/MemoryConversationScene.module.css", import.meta.url), "utf8");
+const motionStyles = readFileSync(new URL("../../../src/components/companion/CompanionMotionBackground.module.css", import.meta.url), "utf8");
 
 test("formal chat announces cold-start and recovery states without changing the read boundary", () => {
   assert.match(page, /role=\{state\.status === "loading" \? "status" : "alert"\}/);
@@ -24,7 +25,9 @@ test("formal chat matches the restrained living-scene and warm-ivory composition
   assert.match(sceneStyles, /background-color: var\(--paper\)/);
   assert.match(sceneStyles, /\.assistantMessage[\s\S]*?justify-self: start/);
   assert.match(sceneStyles, /\.userMessage,[\s\S]*?justify-self: end/);
-  assert.match(sceneStyles, /data-presence="static"\] \.portraitPhoto/);
+  assert.match(sceneStyles, /data-presence="static"\] \.portraitMotion/);
+  assert.match(motionStyles, /data-motion-enabled="false"\] \.video/);
+  assert.match(motionStyles, /prefers-reduced-motion: reduce/);
   assert.doesNotMatch(`${styles}\n${sceneStyles}`, /stars|radial-gradient\(circle at 18%|#0b0907|orbit|replyGlow/);
   assert.doesNotMatch(scene, /相伴多少天|在线|亲密度|等级|打卡|永远陪着你|一直等你|礼物|视频通话|语音通话/);
 });
