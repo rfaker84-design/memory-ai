@@ -26,12 +26,12 @@ test("the primary TA uses the formal owner-scoped portrait and existing companio
   assert.doesNotMatch(page, /\/api\/payments|\/api\/first-presence-video|video/i);
 });
 
-test("memory-world keeps exactly the shared three-tab shell in its dark immersive treatment", () => {
+test("memory-world keeps the shared four-tab shell in its dark immersive treatment", () => {
   assert.doesNotMatch(page, /<nav aria-label="主导航"/);
   assert.match(shell, /const immersiveCompanion = pathname === "\/memory-world" \|\| pathname === "\/companion"/);
   assert.match(shell, /\{!immersiveCompanion && <Footer \/>\}/);
   assert.match(shell, /immersiveCompanion \? "rgba\(8,8,10,0\.94\)"/);
-  for (const label of ["相伴", "拾忆", "我的"]) assert.match(shell, new RegExp(`label:"${label}"`));
+  for (const label of ["首页", "相伴", "拾忆", "我的"]) assert.match(shell, new RegExp(`label:"${label}"`));
 });
 
 test("motion remains restrained and has a reduced-motion fallback", () => {

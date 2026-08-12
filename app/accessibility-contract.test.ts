@@ -36,9 +36,12 @@ test("bottom navigation is limited to first-release root destinations", () => {
   assert.doesNotMatch(companion, /<nav aria-label="主导航"/);
 });
 
-test("the retired four-tab navigation cannot be wired back into the first release", () => {
+test("the signed-in four-tab navigation stays in the shared accessible shell", () => {
   assert.equal(existsSync("src/components/BottomNav.tsx"), false);
   assert.equal(existsSync("src/components/BottomNavWrapper.tsx"), false);
+  const shell = readFileSync("src/components/MobileAppShell.tsx", "utf8");
+  for (const label of ["首页", "相伴", "拾忆", "我的"]) assert.match(shell, new RegExp(`label:"${label}"`));
+  assert.match(shell, /onClick=\{\(\) => router\.push\(t\.path\)\}/);
 });
 
 test("first encounter respects the shared static fallback before it can autoplay a meeting video", () => {

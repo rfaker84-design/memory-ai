@@ -7,14 +7,15 @@ const styles = readFileSync(new URL("./page.module.css", import.meta.url), "utf8
 const shell = readFileSync(new URL("../../src/components/MobileAppShell.tsx", import.meta.url), "utf8");
 const world = readFileSync(new URL("../memory-world/page.tsx", import.meta.url), "utf8");
 
-test("memory-world enters the dedicated companion space and the three-tab shell keeps it active", () => {
+test("memory-world enters the dedicated companion space and the four-tab shell keeps it active", () => {
   assert.match(world, /router\.push\("\/companion"\)/);
   assert.match(shell, /path:"\/companion"/);
   assert.match(shell, /pathname === "\/companion"/);
   const tabs = shell.slice(shell.indexOf("const TABS"), shell.indexOf("];", shell.indexOf("const TABS")));
-  assert.equal((tabs.match(/key:/g) ?? []).length, 3);
-  for (const path of ["/companion", "/memory", "/continuity"]) assert.match(tabs, new RegExp(`path:"${path}"`));
-  for (const label of ["相伴", "拾忆", "我的"]) assert.match(shell, new RegExp(`label:"${label}"`));
+  assert.equal((tabs.match(/key:/g) ?? []).length, 4);
+  for (const path of ["/", "/companion", "/memory", "/continuity"]) assert.match(tabs, new RegExp(`path:"${path}"`));
+  for (const label of ["首页", "相伴", "拾忆", "我的"]) assert.match(shell, new RegExp(`label:"${label}"`));
+  assert.match(shell, /if \(t\.key === "home"\) return pathname === "\/"/);
   assert.doesNotMatch(shell, /components\/ui\/BottomTab/);
 });
 

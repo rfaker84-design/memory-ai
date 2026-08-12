@@ -6,9 +6,10 @@ import { motion, useReducedMotion } from "framer-motion";
 import Footer from "../../components/Footer";
 import { MemoryTheme as T } from "../lib/design-system/memory-theme";
 
-/** Approved first-release navigation: companion, explicitly confirmed memories, and account. */
+/** Signed-in product navigation: home, companion, confirmed memories, and account. */
 
 const TABS = [
+  { key:"home",label:"首页",path:"/",icon:(a:boolean)=>(<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={a?T.colors.primary:T.colors.textFaint} strokeWidth={a?1.8:1.3} strokeLinecap="round" strokeLinejoin="round"><path d="M3 11.5L12 4l9 7.5"/><path d="M5.5 10.5V20h13v-9.5"/><path d="M9.5 20v-6h5v6"/></svg>) },
   { key:"companion",label:"相伴",path:"/companion",icon:(a:boolean)=>(<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={a?T.colors.primary:T.colors.textFaint} strokeWidth={a?1.8:1.3} strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>) },
   { key:"memory",label:"拾忆",path:"/memory",icon:(a:boolean)=>(<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={a?T.colors.primary:T.colors.textFaint} strokeWidth={a?1.8:1.3} strokeLinecap="round" strokeLinejoin="round"><path d="M4 20c0-4 4-7 8-7s8 3 8 7"/><circle cx="12" cy="8" r="4"/></svg>) },
   { key:"account",label:"我的",path:"/continuity",icon:(a:boolean)=>(<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={a?T.colors.primary:T.colors.textFaint} strokeWidth={a?1.8:1.3} strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 01-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>) },
@@ -19,10 +20,11 @@ export default function MobileAppShell({ children }:{ children:React.ReactNode }
   const router = useRouter();
   const reducedMotion = useReducedMotion();
 
-  // The three-tab shell belongs to its root destinations and the memory-world
-  // handoff into the dedicated companion space. Creation, encounter, formal
+  // The four-tab shell belongs to the signed-in product destinations and the
+  // memory-world handoff into the dedicated companion space. Creation, encounter, formal
   // chat, playback, and memory-detail routes stay focused without a second nav.
-  // The shell is available immediately after login on these root destinations.
+  // The public home stays immersive; signed-in users can always return to it
+  // from any root destination through the Home tab.
   // Creation is a focused first-encounter ritual; navigation returns only after
   // the successful transition into memory-world.
   const showsRootNavigation = pathname === "/memory" || pathname === "/continuity" || pathname === "/memory-world" || pathname === "/companion";
@@ -32,6 +34,7 @@ export default function MobileAppShell({ children }:{ children:React.ReactNode }
   }
 
   function active(t:typeof TABS[number]):boolean {
+    if (t.key === "home") return pathname === "/";
     if (t.key === "companion") return pathname === "/memory-world" || pathname === "/companion";
     return pathname.startsWith(t.path);
   }
