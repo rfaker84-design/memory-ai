@@ -5,9 +5,12 @@ import test from "node:test";
 test("generated canonical surfaces retain the non-impersonation disclosure and legacy unsafe surfaces are quarantined", () => {
   for (const source of [
     "src/components/first-presence/FirstPresenceFlow.tsx",
-    "src/components/first-presence/MemoryConversationScene.tsx",
     "app/memory/[id]/encounter/page.tsx",
   ]) assert.match(readFileSync(source, "utf8"), /AiGeneratedLabel/);
+  assert.match(
+    readFileSync("src/components/first-presence/MemoryConversationScene.tsx", "utf8"),
+    /AI生成 · 基于你确认的记忆/,
+  );
   const label = readFileSync("src/components/safety/AiGeneratedLabel.tsx", "utf8");
   assert.match(label, /AI 生成内容/);
   assert.match(label, /不代表真实人物/);

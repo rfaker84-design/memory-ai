@@ -21,29 +21,32 @@ export default function MobileAppShell({ children }:{ children:React.ReactNode }
   const reducedMotion = useReducedMotion();
 
   // The four-tab shell belongs to the signed-in product destinations and the
-  // memory-world handoff into the dedicated companion space. Creation, encounter, formal
-  // chat, playback, and memory-detail routes stay focused without a second nav.
+  // memory-world handoff into the dedicated companion space. Formal chat keeps
+  // the same primary navigation so its Owner can leave the conversation without
+  // losing the Home / Companion / Memory / Account wayfinding.
   // The public home stays immersive; signed-in users can always return to it
   // from any root destination through the Home tab.
   // Creation is a focused first-encounter ritual; navigation returns only after
   // the successful transition into memory-world.
-  const showsRootNavigation = pathname === "/memory" || pathname === "/continuity" || pathname === "/memory-world" || pathname === "/companion";
+  const companionChat = pathname.startsWith("/memory-chat/");
+  const showsRootNavigation = pathname === "/memory" || pathname === "/continuity" || pathname === "/memory-world" || pathname === "/companion" || companionChat;
   const immersiveCompanion = pathname === "/memory-world" || pathname === "/companion";
+  const hidesFooter = immersiveCompanion || companionChat;
   if (!showsRootNavigation) {
     return <>{children}</>;
   }
 
   function active(t:typeof TABS[number]):boolean {
     if (t.key === "home") return pathname === "/";
-    if (t.key === "companion") return pathname === "/memory-world" || pathname === "/companion";
+    if (t.key === "companion") return pathname === "/memory-world" || pathname === "/companion" || companionChat;
     return pathname.startsWith(t.path);
   }
 
   return (
-    <div style={{ display:"flex",flexDirection:"column",minHeight:"100dvh",background:immersiveCompanion ? "#08080A" : T.colors.bg }}>
+    <div style={{ display:"flex",flexDirection:"column",minHeight:"100dvh",background:immersiveCompanion ? "#08080A" : companionChat ? "#F4EDE2" : T.colors.bg }}>
       <a className="skip-link" href="#main-content">跳至主要内容</a>
       <main id="main-content" tabIndex={-1} style={{ flex:1,paddingBottom:"calc(var(--nav-height,64px) + env(safe-area-inset-bottom,0px) + 12px)",overflowY:"auto",WebkitOverflowScrolling:"touch" }}>{children}</main>
-      {!immersiveCompanion && <Footer />}
+      {!hidesFooter && <Footer />}
       <nav aria-label="主导航" style={{
         position:"fixed",bottom:0,left:0,right:0,zIndex:50,
         display:"flex",justifyContent:"space-around",alignItems:"center",

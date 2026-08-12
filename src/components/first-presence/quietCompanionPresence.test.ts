@@ -20,10 +20,10 @@ test("companion scene uses an independent quiet state and never loops a first-me
   assert.match(scene, /data-presence=\{quietPresence\}/);
   assert.doesNotMatch(scene, /<video|\bloop\b|audioRef|lip/);
   assert.match(css, /data-presence="static"/);
-  assert.match(css, /data-presence="static"\] \.portraitFrame/);
-  assert.match(css, /replyGlow/);
+  assert.match(css, /data-presence="static"\] \.portraitPhoto/);
+  assert.match(css, /@keyframes sceneBreath/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(css, /\.conversation[\s\S]*?animation: none !important/);
+  assert.match(css, /\.portraitPhoto \{ animation: none !important;/);
   assert.match(presence, /connection\?\.saveData === true/);
   assert.match(presence, /connection\?\.effectiveType === "2g"/);
   assert.match(presence, /document\.visibilityState !== "visible"/);

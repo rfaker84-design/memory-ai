@@ -88,7 +88,6 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
           : "正在回到这段记忆…";
     return (
       <main className={styles.loading}>
-        <div className={styles.stars} aria-hidden="true" />
         <p
           role={state.status === "loading" ? "status" : "alert"}
           aria-live={state.status === "loading" ? "polite" : "assertive"}
@@ -113,7 +112,6 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
 
   return (
     <main className={styles.page}>
-      <div className={styles.stars} aria-hidden="true" />
       <MotionProvider>
         {state.requiresMediaRecovery ? (
           <CreationMediaRecoveryGate

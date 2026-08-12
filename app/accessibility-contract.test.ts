@@ -26,12 +26,14 @@ test("first-release shell and account entry do not animate motion-sensitive user
   assert.match(continuity, /\{\.\.\.\(reducedMotion \? \{\} : M\.enter\)\}/);
 });
 
-test("bottom navigation is limited to first-release root destinations", () => {
+test("bottom navigation includes formal chat without duplicating page navigation", () => {
   const shell = readFileSync("src/components/MobileAppShell.tsx", "utf8");
   assert.match(shell, /pathname === "\/memory" \|\| pathname === "\/continuity"/);
   assert.doesNotMatch(shell, /pathname === "\/create-memory"/);
   assert.match(shell, /if \(!showsRootNavigation\) \{[\s\S]*?return <>\{children\}<\/>;/);
-  assert.match(shell, /Creation, encounter, formal[\s\S]*chat, playback, and memory-detail routes stay focused/);
+  assert.match(shell, /const companionChat = pathname\.startsWith\("\/memory-chat\/"\)/);
+  assert.match(shell, /showsRootNavigation[\s\S]*\|\| companionChat/);
+  assert.match(shell, /t\.key === "companion"[\s\S]*\|\| companionChat/);
   const companion = readFileSync("app/memory-world/page.tsx", "utf8");
   assert.doesNotMatch(companion, /<nav aria-label="主导航"/);
 });

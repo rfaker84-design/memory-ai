@@ -3,10 +3,9 @@
 import { FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 
-import { MemoryAvatar, MemoryButton } from "../memory-ui";
+import { MemoryButton } from "../memory-ui";
 import { recordBusinessView } from "../business-metrics/businessMetricsClient";
 import { CommerceVideoCreditsEntry } from "./CommerceVideoCreditsEntry";
-import { AiGeneratedLabel } from "../safety/AiGeneratedLabel";
 import { stageChatPickupDraft } from "../memory/pickupDraftHandoff";
 import { updateNotificationPreferences } from "../trust/notificationPreferencesClient";
 import { CRISIS_RESPONSE } from "@/features/memory-engine/crisis-response";
@@ -442,25 +441,24 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
 
   return (
     <section className={`${styles.scene} ${reducedMotion ? styles.reduced : ""}`} aria-labelledby={titleId}>
-      <div className={styles.presence} data-presence={quietPresence} aria-label={`${memoryName} 的形象`}>
-        <div className={styles.orbit} aria-hidden="true" />
-        <div className={styles.replyGlow} aria-hidden="true" />
+      <section className={styles.presence} data-presence={quietPresence} aria-label={`${memoryName} 的生活场景`}>
         <div className={styles.portraitFrame} role="img" aria-label={portraitUrl ? `${memoryName} 的照片` : `${memoryName} 的文字形象`}>
           {portraitUrl ? (
             <div className={styles.portraitPhoto} style={{ backgroundImage: `url("${portraitUrl}")` }} />
           ) : (
             <span className={styles.portraitInitials}>{Array.from(memoryName).slice(0, 2).join("")}</span>
           )}
+          <span className={styles.sceneVeil} aria-hidden="true" />
         </div>
-        <p>{memoryName}</p>
-      </div>
+
+        <p className={styles.brand} aria-label="忆见">忆见</p>
+        <header className={styles.identity}>
+          <h1 id={titleId}>{memoryName}</h1>
+          <span role="note">AI生成 · 基于你确认的记忆</span>
+        </header>
+      </section>
 
       <div className={styles.conversation}>
-        <p className={styles.eyebrow}>AI纪念陪伴</p>
-        <h1 id={titleId}>第一句之后，慢慢说。</h1>
-        <p className={styles.intro}>离开再回来，你们说过的话仍会留在这里。</p>
-        <AiGeneratedLabel />
-
         {notificationPrompt === "available" && (
           <aside className={styles.notificationPrompt} aria-label="问候通知选择">
             <p>如果你愿意，可以在这里开启忆见的问候提醒。锁屏提醒只会显示“忆见里有一份新的问候。”，不会显示 TA 姓名或内容。</p>
@@ -499,9 +497,8 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
                     </>
                   ) : (
                     <>
-                      <MemoryAvatar image={portraitUrl} initials={memoryName} alt={`${memoryName} 的照片`} presence="quiet" size={30} />
                       <i>{memoryName}</i>
-                      <AiGeneratedLabel compact confirmedSources />
+                      <span role="note">AI生成 · 基于你确认的记忆</span>
                       <Link className={styles.sourceLink} href={`/memory/${memoryId}/sources`}>查看资料来源</Link>
                     </>
                   )}
@@ -641,8 +638,9 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
 
         {controlsVisible && (
           <form className={styles.composer} onSubmit={(event) => void submit(event)}>
-            <label htmlFor={`${titleId}-draft`}>对 {memoryName} 说</label>
+            <label className={styles.visuallyHidden} htmlFor={`${titleId}-draft`}>对 {memoryName} 说</label>
             <div>
+              <button className={styles.voicePlaceholder} type="button" disabled aria-label="声音输入暂未开放">声音</button>
               <textarea
                 ref={inputRef}
                 id={`${titleId}-draft`}
@@ -656,19 +654,22 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
                 }}
                 placeholder="说一件此刻想让 TA 知道的事…"
                 disabled={isBusy || phase === "error"}
-                rows={2}
+                rows={1}
               />
-              <MemoryButton type="submit" loading={phase === "sending" || phase === "replying"} disabled={!draft.trim() || isBusy || phase === "error" || networkOffline}>{networkOffline ? "等待网络恢复" : "送出"}</MemoryButton>
+              <MemoryButton type="submit" loading={phase === "sending" || phase === "replying"} disabled={!draft.trim() || isBusy || phase === "error" || networkOffline}>{networkOffline ? "等待" : "发送"}</MemoryButton>
             </div>
             <p>网络不稳定时，这句话不会被自动重复发送。</p>
           </form>
         )}
 
         {completedRounds >= 2 && activeSessionId && (
-          <CommerceVideoCreditsEntry memoryId={memoryId} />
+          <details className={styles.videoOpportunity}>
+            <summary>影像机会</summary>
+            <CommerceVideoCreditsEntry memoryId={memoryId} />
+          </details>
         )}
 
-        <button type="button" className={styles.leave} onClick={onLeave}>回到首页</button>
+        <button type="button" className={styles.leave} onClick={onLeave}>返回相伴</button>
       </div>
     </section>
   );
