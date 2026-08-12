@@ -16,6 +16,7 @@ const mutationPaths = [
   "/api/memories/memory-id",
   "/api/memories/memory-id/chat-session",
   "/api/memories/memory-id/first-greeting",
+  "/api/memories/memory-id/companion-motion",
   "/api/memories/memory-id/first-presence-video",
   "/api/memories/memory-id/video-shares",
   "/api/memories/memory-id/video-shares/share-id",
@@ -126,6 +127,7 @@ test("safe methods pass through without Origin", () => {
   for (const pathname of [
     "/api/health",
     "/api/memories/memory-id/first-presence-video/job-id/playback",
+    "/api/memories/memory-id/companion-motion",
     "/api/first-presence-video/playback/signed-token",
   ]) {
     const response = middleware(new NextRequest(`https://memoryai.test${pathname}`));
