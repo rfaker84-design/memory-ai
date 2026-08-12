@@ -22,6 +22,8 @@ import {
 } from "@/src/components/companion/companionHomeRequest";
 import { useQuietCompanionPresence } from "@/src/components/first-presence/quietCompanionPresence";
 import { loadOwnedMediaUrl } from "@/src/components/memory/ownedMemoryClient";
+import { memoryCollectionTitle } from "@/src/components/memory/memoryCollectionState";
+import { fetchPickupRequestJson } from "@/src/components/memory/pickupRequestClient";
 import { MotionProvider, useReducedMotion } from "@/src/motion";
 
 import styles from "./page.module.css";
@@ -35,6 +37,26 @@ type CompanionMemory = {
 };
 
 type CompanionState = "loading" | "unauthenticated" | "empty" | "ready" | "error" | "timeout";
+
+type CompanionPickup = {
+  id: string;
+  organizedText: string;
+  createdAt: string;
+  updatedAt?: string;
+  photoAssetId?: string | null;
+};
+
+function pickupPreview(value: string): string {
+  const normalized = value.replace(/^[-•]\s*/gmu, "").replace(/\s+/gu, " ").trim();
+  return normalized.length > 82 ? `${normalized.slice(0, 82)}…` : normalized;
+}
+
+function pickupDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "时间待同步"
+    : new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" }).format(date);
+}
 
 function readPresentationValue(key: string): string | null {
   try {
@@ -59,6 +81,8 @@ function CompanionContent() {
   const [state, setState] = useState<CompanionState>("loading");
   const [memory, setMemory] = useState<CompanionMemory | null>(null);
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null);
+  const [latestPickup, setLatestPickup] = useState<CompanionPickup | null>(null);
+  const [pickupImageUrl, setPickupImageUrl] = useState<string | null>(null);
   const [visitState, setVisitState] = useState<CompanionVisitState>("first_visit");
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -92,10 +116,32 @@ function CompanionContent() {
       }
       setMemory(selected);
       setPortraitUrl(selected.photoUrl ?? null);
+      setLatestPickup(null);
+      setPickupImageUrl(null);
       setState("ready");
-      if (selected.photoAssetId) {
-        const ownedUrl = await loadOwnedMediaUrl(selected.photoAssetId, signal).catch(() => null);
-        if (!signal?.aborted && ownedUrl) setPortraitUrl(ownedUrl);
+      const [ownedUrl, pickupResult] = await Promise.all([
+        selected.photoAssetId ? loadOwnedMediaUrl(selected.photoAssetId, signal).catch(() => null) : Promise.resolve(null),
+        fetchPickupRequestJson(`/api/memories/${encodeURIComponent(selected.id)}/pickups`, {}, signal).catch(() => null),
+      ]);
+      if (signal?.aborted) return;
+      if (ownedUrl) setPortraitUrl(ownedUrl);
+      if (pickupResult?.response.ok) {
+        const pickups = (pickupResult.body as { pickups?: unknown }).pickups;
+        const candidate = Array.isArray(pickups) ? pickups[0] as Partial<CompanionPickup> | undefined : undefined;
+        if (candidate && typeof candidate.id === "string" && typeof candidate.organizedText === "string" && typeof candidate.createdAt === "string") {
+          const recent: CompanionPickup = {
+            id: candidate.id,
+            organizedText: candidate.organizedText,
+            createdAt: candidate.createdAt,
+            updatedAt: typeof candidate.updatedAt === "string" ? candidate.updatedAt : candidate.createdAt,
+            photoAssetId: typeof candidate.photoAssetId === "string" ? candidate.photoAssetId : null,
+          };
+          setLatestPickup(recent);
+          if (recent.photoAssetId) {
+            const recentImage = await loadOwnedMediaUrl(recent.photoAssetId, signal).catch(() => null);
+            if (!signal?.aborted && recentImage) setPickupImageUrl(recentImage);
+          }
+        }
       }
     } catch (error) {
       if (signal?.aborted) return;
@@ -118,74 +164,82 @@ function CompanionContent() {
   }
 
   if (state === "empty") {
-    return <section className={styles.statusPage} aria-label="陪伴空间"><p role="status">还没有可以进入陪伴的 TA。</p><button type="button" onClick={() => router.replace("/create-memory")}>开始回忆</button></section>;
+    return <section className={styles.statusPage} aria-label="相伴空间"><p role="status">还没有可以进入相伴的人物。</p><button type="button" onClick={() => router.replace("/create-memory")}>开始</button></section>;
   }
 
   if (state === "error" || state === "timeout" || !memory) {
     return <section className={styles.statusPage} aria-label="陪伴空间"><p role="alert">{state === "timeout" ? "读取等待过久，没有创建或修改任何内容。" : "陪伴空间暂时无法打开。"}</p><button type="button" onClick={() => void load()}>重新读取</button></section>;
   }
 
-  const greeting = companionVisitGreeting(memory.name, visitState);
+  const disclosure = companionVisitGreeting(memory.name, visitState).disclosure;
   const relationship = companionRelationship(memory.relationship);
   const chatRoute = `/memory-chat/${encodeURIComponent(memory.id)}`;
+  const pickupRoute = `/memory/${encodeURIComponent(memory.id)}/pickup`;
+  const sourcesRoute = `/memory/${encodeURIComponent(memory.id)}/sources`;
 
   return (
     <div className={styles.space} data-presence={presence} data-visit={visitState}>
-      <div className={styles.stars} aria-hidden="true" />
-      <div className={styles.horizon} aria-hidden="true" />
-
-      <header className={styles.identityBar}>
-        <div className={styles.miniPortrait} aria-hidden="true">
-          {portraitUrl ? <img src={portraitUrl} alt="" /> : <span>{memory.name.slice(0, 1)}</span>}
-        </div>
-        <div>
-          <p>{memory.name}</p>
-          <span>{relationship}</span>
-        </div>
-        <span className={styles.aiIdentity}>AI 纪念陪伴</span>
-      </header>
-
-      <section className={styles.presence} aria-labelledby="companion-space-title">
-        <p className={styles.eyebrow}>TA 在这里</p>
-        <h1 id="companion-space-title">和 {memory.name}<br />安静地待一会儿</h1>
-
-        <figure className={styles.portraitScene}>
-          <span className={styles.portraitHalo} aria-hidden="true" />
-          <span className={styles.orbit} aria-hidden="true"><i /><i /><i /></span>
+      <section className={styles.hero} aria-labelledby="companion-space-title">
+        <div className={styles.heroMedia} aria-hidden="true">
           {portraitUrl
-            ? <img className={styles.portrait} src={portraitUrl} alt={`${memory.name} 的照片`} />
-            : <div className={styles.portraitFallback} role="img" aria-label={`${memory.name} 的静态形象`}>{memory.name.slice(0, 1)}</div>}
-          <figcaption>{memory.name}<span>{relationship}</span></figcaption>
-        </figure>
+            ? <img src={portraitUrl} alt="" />
+            : <span className={styles.heroFallback}>{memory.name.slice(0, 1)}</span>}
+          <span className={styles.heroVeil} />
+        </div>
+
+        <header className={styles.heroHeader}>
+          <strong>忆见</strong>
+          <span>AI 纪念陪伴 · 基于你确认的资料</span>
+        </header>
+
+        <div className={styles.heroCopy}>
+          <h1 id="companion-space-title">想对 {memory.name} 说的话，<br />就从这里开始</h1>
+          <p><strong>{memory.name}</strong><span>{relationship}</span></p>
+        </div>
       </section>
 
-      <section className={styles.today} aria-labelledby="today-companion-title">
-        <p className={styles.greetingLabel}>{greeting.label}</p>
-        <h2 id="today-companion-title">{greeting.title}</h2>
-        <blockquote aria-describedby="today-companion-disclosure">{greeting.message}</blockquote>
-        <p id="today-companion-disclosure" className={styles.disclosure}>{greeting.disclosure}</p>
+      <section className={styles.paper} aria-label={`${memory.name}的相伴入口`}>
+        <section className={styles.chatInvitation} aria-labelledby="companion-chat-title">
+          <p id="companion-chat-title">我们聊聊</p>
+          <button type="button" onClick={() => router.push(chatRoute)}>
+            <span>今天想从哪件小事说起？</span>
+            <small>进入聊天</small>
+          </button>
+        </section>
+
+        <section className={styles.recent} aria-labelledby="recent-companion-title">
+          <header>
+            <h2 id="recent-companion-title">最近拾忆</h2>
+            <button type="button" onClick={() => router.push("/memory")}>查看全部</button>
+          </header>
+          {latestPickup ? (
+            <button className={`${styles.memoryPreview} ${pickupImageUrl ? styles.memoryPreviewWithImage : ""}`} type="button" onClick={() => router.push(sourcesRoute)}>
+              {pickupImageUrl && <img src={pickupImageUrl} alt="这条拾忆所关联的照片" />}
+              <span>
+                <strong>{memoryCollectionTitle(latestPickup.organizedText)}</strong>
+                <small>{pickupPreview(latestPickup.organizedText)}</small>
+                <time dateTime={latestPickup.updatedAt ?? latestPickup.createdAt}>{pickupDate(latestPickup.updatedAt ?? latestPickup.createdAt)} · 由你确认</time>
+              </span>
+            </button>
+          ) : (
+            <button className={styles.memoryEmpty} type="button" onClick={() => router.push(pickupRoute)}>
+              <strong>从一件记得的小事开始</strong>
+              <span>只有你确认的内容，才会留在拾忆里。</span>
+            </button>
+          )}
+          <button className={styles.videoOpportunity} type="button" onClick={() => router.push(companionVideoEntry(memory.id))}>
+            <span>影像机会</span>
+            <small>进入现有流程查看条件</small>
+          </button>
+        </section>
+
+        <button className={styles.composer} type="button" onClick={() => router.push(chatRoute)}>
+          <span>说点想让 {memory.name} 知道的话…</span>
+          <strong>进入</strong>
+        </button>
+        <p id="today-companion-disclosure" className={styles.disclosure}>{disclosure}</p>
+        <p className={styles.safetyNote}>忆见不会替代真实的人际关系，也不会把生成内容当作真人的真实表达。</p>
       </section>
-
-      <section className={styles.recent} aria-labelledby="recent-companion-title">
-        <p>最近一次交流</p>
-        <h2 id="recent-companion-title">上次停留的地方</h2>
-        <span>当前没有可安全展示的只读摘要。进入聊天后会恢复真实记录；这里不会为预览创建会话，也不会用示例内容替代。</span>
-        <button className={styles.sourceLink} type="button" onClick={() => router.push(`/memory/${encodeURIComponent(memory.id)}/sources`)}>查看已确认资料</button>
-      </section>
-
-      <nav className={styles.nextSteps} aria-label="陪伴空间入口">
-        <button className={styles.primaryAction} type="button" onClick={() => router.push(chatRoute)}>
-          <span>陪 TA 聊聊</span><small>进入现有正式聊天；不可用时会明确说明，不会伪造回复</small>
-        </button>
-        <button type="button" onClick={() => router.push(`/memory/${encodeURIComponent(memory.id)}/pickup`)}>
-          <span>看看拾忆</span><small>主动讲述，只有确认后才会成为 TA 可引用的记忆</small>
-        </button>
-        <button type="button" onClick={() => router.push(companionVideoEntry(memory.id))}>
-          <span>查看影像机会</span><small>生成新的影像前，正式入口会核验照片、完整对话与可用影像机会；条件不足时会说明原因</small>
-        </button>
-      </nav>
-
-      <p className={styles.safetyNote}>忆见不会替代身边真实的人际关系。你可以随时离开，也可以把今天的感受告诉信任的人。</p>
     </div>
   );
 }

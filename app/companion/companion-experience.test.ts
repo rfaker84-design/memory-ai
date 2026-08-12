@@ -19,49 +19,54 @@ test("memory-world enters the dedicated companion space and the four-tab shell k
   assert.doesNotMatch(shell, /components\/ui\/BottomTab/);
 });
 
-test("companion space is not an IM transcript and exposes the three honest next steps", () => {
-  assert.match(page, /TA 在这里/);
-  assert.match(page, />陪 TA 聊聊</);
-  assert.match(page, />看看拾忆</);
-  assert.match(page, />查看影像机会</);
-  assert.match(page, /生成新的影像前/);
-  const nextSteps = page.slice(page.indexOf('<nav className={styles.nextSteps}'), page.indexOf('</nav>'));
-  assert.equal((nextSteps.match(/<button\b/g) ?? []).length, 3);
-  assert.match(nextSteps, /router\.push\(chatRoute\)/);
-  assert.match(nextSteps, /router\.push\(`\/memory\/\$\{encodeURIComponent\(memory\.id\)\}\/pickup`\)/);
-  assert.match(nextSteps, /router\.push\(companionVideoEntry\(memory\.id\)\)/);
-  assert.match(nextSteps, /生成新的影像前，正式入口会核验照片、完整对话与可用影像机会/);
-  assert.doesNotMatch(page, /messages\.map|聊天气泡|ChatGPT|contentEditable/);
-  assert.doesNotMatch(page, /<main/);
+test("companion presents one warm Owner portrait scene without status gamification", () => {
+  assert.match(page, /className=\{styles\.heroMedia\}/);
+  assert.match(page, /portraitUrl[\s\S]*?<img src=\{portraitUrl\} alt=""/);
+  assert.match(page, /想对 \{memory\.name\} 说的话/);
+  assert.match(page, /AI 纪念陪伴 · 基于你确认的资料/);
+  assert.match(styles, /\.heroMedia img[\s\S]*?object-fit: cover/);
+  assert.doesNotMatch(page, /相伴多少天|在线|亲密度|礼物|热度|陪伴时长|连续天数|打卡|等级|视频通话|语音通话|送礼物/);
+  assert.doesNotMatch(styles, /stars|portraitHalo|radial-gradient\(circle at 50% 28%/);
 });
 
-test("first and daily visits persist as presentation-only state with an associated AI disclosure", () => {
-  assert.match(page, /companionVisitGreeting\(memory\.name, visitState\)/);
+test("the restrained paper surface keeps formal chat pickup and video-opportunity routes", () => {
+  assert.match(page, /今天想从哪件小事说起？/);
+  assert.match(page, /说点想让 \{memory\.name\} 知道的话/);
+  assert.match(page, /最近拾忆/);
+  assert.match(page, /影像机会/);
+  assert.match(page, /const chatRoute = `\/memory-chat\/\$\{encodeURIComponent\(memory\.id\)\}`/);
+  assert.match(page, /const pickupRoute = `\/memory\/\$\{encodeURIComponent\(memory\.id\)\}\/pickup`/);
+  assert.match(page, /router\.push\(companionVideoEntry\(memory\.id\)\)/);
+  assert.doesNotMatch(page, /quietEntries/);
+  assert.doesNotMatch(page, /messages\.map|聊天气泡|ChatGPT|contentEditable|video-call|voice-call/);
+});
+
+test("recent pickup is an Owner-scoped bounded read with an honest empty state", () => {
+  assert.match(page, /fetchPickupRequestJson\(`\/api\/memories\/\$\{encodeURIComponent\(selected\.id\)\}\/pickups`/);
+  assert.match(page, /Array\.isArray\(pickups\) \? pickups\[0\]/);
+  assert.match(page, /memoryCollectionTitle\(latestPickup\.organizedText\)/);
+  assert.match(page, /由你确认/);
+  assert.match(page, /只有你确认的内容，才会留在拾忆里/);
+  assert.match(page, /loadOwnedMediaUrl\(recent\.photoAssetId, signal\)/);
+  assert.doesNotMatch(page, /method:\s*"(?:POST|PATCH|DELETE)"|\/chat-session/);
+});
+
+test("first and daily visits remain presentation-only and disclose generated content", () => {
+  assert.match(page, /companionVisitGreeting\(memory\.name, visitState\)\.disclosure/);
   assert.match(page, /data-visit=\{visitState\}/);
   assert.match(page, /resolveCompanionVisitState\(readPresentationValue\(visitStorageKey\)\)/);
   assert.match(page, /writePresentationValue\(visitStorageKey, COMPANION_VISIT_MARKER\)/);
-  assert.match(page, /aria-describedby="today-companion-disclosure"/);
   assert.match(page, /id="today-companion-disclosure"/);
-  assert.match(page, /greeting\.disclosure/);
-  assert.match(page, /AI 纪念陪伴/);
+  assert.match(page, /不会把生成内容当作真人的真实表达/);
 });
 
-test("recent interaction stays an honest empty state instead of creating or summarizing a conversation", () => {
-  assert.match(page, /最近一次交流/);
-  assert.match(page, /当前没有可安全展示的只读摘要/);
-  assert.match(page, /不会为预览创建会话/);
-  assert.match(page, /\/memory\/\$\{encodeURIComponent\(memory\.id\)\}\/sources/);
-  assert.match(page, />查看已确认资料</);
-  assert.doesNotMatch(page, /loadConversation|recentCompletedInteraction|\/chat-session/);
-});
-
-test("formal owner and media reads fail closed without creating a parallel backend", () => {
+test("formal Owner and media reads fail closed without a parallel backend", () => {
   assert.match(page, /fetchCompanionHomeMemoriesJson\(fetch, signal\)/);
   assert.match(page, /selectPrimaryCompanion/);
   assert.match(page, /loadOwnedMediaUrl\(selected\.photoAssetId, signal\)/);
   assert.match(page, /response\.status === 401/);
   assert.doesNotMatch(page, /loadCommerceCreditBalance|\/api\/commerce\/credits/);
-  assert.doesNotMatch(page, /\/api\/(payments|first-presence-video)|method:\s*"POST"|method:\s*"PATCH"/);
+  assert.doesNotMatch(page, /\/api\/(payments|first-presence-video)/);
 });
 
 test("presentation storage failure cannot block the Owner-scoped companion page", () => {
@@ -69,17 +74,22 @@ test("presentation storage failure cannot block the Owner-scoped companion page"
   assert.match(page, /function writePresentationValue[\s\S]*?catch \{[\s\S]*?Presentation preferences must never block/);
 });
 
-test("quiet motion degrades for reduced motion and constrained devices", () => {
+test("ambient movement is subtle and fully stops for reduced motion", () => {
   assert.match(page, /<MotionProvider>[\s\S]*<CompanionContent \/>[\s\S]*<\/MotionProvider>/);
   assert.match(page, /useQuietCompanionPresence/);
   assert.match(page, /data-presence=\{presence\}/);
-  assert.match(styles, /data-presence="quiet"/);
-  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(styles, /data-presence="quiet"[\s\S]*?presenceDrift 12s ease-in-out infinite alternate/);
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?animation: none !important/);
+  assert.doesNotMatch(styles, /filter:\s*blur/);
 });
 
-test("mobile safe areas, long names, and supporting copy remain usable on narrow screens", () => {
-  assert.match(styles, /calc\(18px \+ env\(safe-area-inset-top, 0px\)\)/);
-  assert.match(styles, /identityBar > div:nth-child\(2\) \{ min-width: 0; \}/);
-  assert.match(styles, /aiIdentity[\s\S]*?white-space: nowrap/);
-  for (const opacity of ["0.66", "0.64"]) assert.match(styles, new RegExp(`rgba\\([^)]*, ${opacity}\\)`));
+test("mobile safe areas, narrow widths and long Owner content stay usable", () => {
+  assert.match(styles, /env\(safe-area-inset-top, 0px\)/);
+  assert.match(styles, /env\(safe-area-inset-bottom, 0px\)/);
+  assert.match(styles, /@media \(max-width: 374px\)/);
+  assert.match(styles, /\.memoryPreview > span[\s\S]*?min-width: 0/);
+  assert.match(styles, /\.heroCopy h1[\s\S]*?overflow-wrap: anywhere/);
+  assert.match(styles, /\.heroCopy p[\s\S]*?max-width: 100%/);
+  assert.match(styles, /text-overflow: ellipsis/);
+  assert.doesNotMatch(styles, /:has\(/);
 });
