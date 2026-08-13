@@ -237,6 +237,7 @@ export function CompanionMotionBackground({
             data-motion-video={motionVariant}
             data-visible={visibleVariant === motionVariant ? "true" : "false"}
             src={source.url}
+            autoPlay
             muted
             loop
             playsInline

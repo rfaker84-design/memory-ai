@@ -12,8 +12,8 @@ test("owner motion loads the durable pack before ensuring missing slots and neve
   assert.doesNotMatch(component, /home-hero|visitor-demo|initial_preview|encounter-playback|provider/i);
 });
 
-test("owner motion crossfades silent inline loops and reduced motion remains fully static", () => {
-  assert.match(component, /<video[\s\S]*muted[\s\S]*loop[\s\S]*playsInline/);
+test("owner motion crossfades autoplaying silent inline loops and reduced motion remains fully static", () => {
+  assert.match(component, /<video[\s\S]*autoPlay[\s\S]*muted[\s\S]*loop[\s\S]*playsInline/);
   assert.match(component, /data-visible=\{visibleVariant === motionVariant/);
   assert.match(component, /videoNodes\.current\.get\(previous\)\?\.pause\(\)/);
   assert.match(css, /transition: opacity 900ms/);
