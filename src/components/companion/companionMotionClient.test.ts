@@ -95,7 +95,7 @@ test("playback accepts only the existing owner-authorized first-presence route",
     playback: { url: "/api/first-presence-video/playback/signed.token", expiresAt },
   })) as typeof fetch;
   const valid = await authorizeCompanionMotionPlayback(memoryId, jobs.idle, undefined, validRequest);
-  assert.deepEqual(valid, { url: "/api/first-presence-video/playback/signed.token", expiresAt });
+  assert.deepEqual(valid, { url: "/api/first-presence-video/playback/signed.token?rendition=mobile", expiresAt });
   await assert.rejects(
     authorizeCompanionMotionPlayback(memoryId, jobs.idle, undefined, (async () => Response.json({
       playback: { url: "https://provider.example/raw.mp4", expiresAt },

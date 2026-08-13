@@ -51,6 +51,11 @@ test("local video staging is idempotent, private, and signs short playback grant
     await storage.readArtifactRange({ artifactKey: stored.artifactKey, start: 2, end: 5 }),
     { body: Buffer.from("wnlo"), contentType: "video/mp4", totalBytes: 10 },
   );
+  assert.deepEqual(
+    await storage.readArtifactRange({ artifactKey: stored.artifactKey, start: 2, end: 5, rendition: "mobile" }),
+    { body: Buffer.from("wnlo"), contentType: "video/mp4", totalBytes: 10 },
+    "a missing lightweight rendition safely serves the reviewed original",
+  );
   await assert.rejects(
     storage.readArtifactRange({ artifactKey: "../escape.mp4", start: 0, end: 0 }),
     /VIDEO_ARTIFACT_INVALID_KEY/,
@@ -64,6 +69,7 @@ test("local video staging is idempotent, private, and signs short playback grant
   }), true);
   await storage.deleteArtifact({ artifactKey: stored.artifactKey });
   await assert.rejects(storage.readArtifact({ artifactKey: stored.artifactKey }));
+  await assert.rejects(storage.readArtifactRange({ artifactKey: stored.artifactKey, rendition: "mobile" }));
 });
 
 test("multiple workers only process queued or safely recoverable persisted states", async () => {

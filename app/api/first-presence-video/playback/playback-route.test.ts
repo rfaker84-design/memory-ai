@@ -47,7 +47,7 @@ class Query implements VideoArtifactQueryPort {
 }
 
 class Reader implements VideoArtifactReaderPort {
-  readonly calls: Array<{ artifactKey: string; start?: number; end?: number }> = [];
+  readonly calls: Array<{ artifactKey: string; start?: number; end?: number; rendition?: "mobile" }> = [];
   constructor(private readonly body = Buffer.from("0123456789")) {}
 
   async readRange(input: { artifactKey: string; start?: number; end?: number }) {
@@ -66,8 +66,8 @@ class Reader implements VideoArtifactReaderPort {
 const session = (externalUserId = owner) => async () => ({ externalUserId } as AuthSession);
 const issue = (signer: FirstPresencePlaybackSigner, value = artifact(), externalUserId = owner) =>
   signer.issue({ artifact: value, externalUserId }).token;
-const readRequest = (token: string, range?: string) => new NextRequest(
-  `https://memoryai.test/api/first-presence-video/playback/${token}`,
+const readRequest = (token: string, range?: string, rendition?: "mobile") => new NextRequest(
+  `https://memoryai.test/api/first-presence-video/playback/${token}${rendition ? `?rendition=${rendition}` : ""}`,
   { headers: range ? { range } : undefined },
 );
 
@@ -120,6 +120,17 @@ test("approved owner playback supports a single byte range", async () => {
   assert.equal(response.headers.get("content-range"), "bytes 2-5/10");
   assert.equal(response.headers.get("content-length"), "4");
   assert.equal(reader.calls.length, 2);
+});
+
+test("approved owner playback permits only the fixed mobile delivery rendition", async () => {
+  const { handler, signer, reader } = readHandler();
+  const token = issue(signer);
+  const response = await handler.GET(readRequest(token, undefined, "mobile"), { params: Promise.resolve({ token }) });
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "0123456789");
+  assert.equal(reader.calls[0]?.rendition, "mobile");
+  const invalid = await handler.GET(new NextRequest(`https://memoryai.test/api/first-presence-video/playback/${token}?rendition=source`), { params: Promise.resolve({ token }) });
+  assert.equal(invalid.status, 404);
 });
 
 test("expired or tampered playback tokens are uniformly unreadable", async () => {

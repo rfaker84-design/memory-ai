@@ -10,6 +10,7 @@ import { SecureVideoDownloader } from "./first-presence-media-inspection";
 
 const JOB_ID = /^[0-9a-f-]{16,64}$/i;
 const OUTPUT_KEY = /^video-artifacts\/[0-9a-f-]{16,64}\.mp4$/i;
+const MOBILE_RENDITION_KEY = /^video-renditions\/[0-9a-f-]{16,64}\.mobile\.mp4$/i;
 const INPUT_KEY = /^video-inputs\/[0-9a-f-]{16,64}\.dataurl$/i;
 const PRODUCTION_STAGING_CONSTRUCTOR = Symbol("production-staging-artifact-storage");
 
@@ -36,6 +37,13 @@ export type VideoArtifactStoragePort = {
   verifySignedPlayback(input: { artifactKey: string; expiresAt: string; signature: string }): boolean;
 };
 
+export type VideoPlaybackRendition = "mobile";
+
+function mobileRenditionKey(artifactKey: string): string {
+  if (!OUTPUT_KEY.test(artifactKey)) throw new Error("VIDEO_ARTIFACT_INVALID_KEY");
+  return artifactKey.replace(/^video-artifacts\//i, "video-renditions/").replace(/\.mp4$/i, ".mobile.mp4");
+}
+
 export type LocalStagingVideoArtifactStorageOptions = {
   root: string;
   signingSecret: string;
@@ -49,7 +57,7 @@ function assertJobId(jobId: string): void {
 }
 
 function assertKey(key: string): void {
-  if (!OUTPUT_KEY.test(key) && !INPUT_KEY.test(key)) {
+  if (!OUTPUT_KEY.test(key) && !MOBILE_RENDITION_KEY.test(key) && !INPUT_KEY.test(key)) {
     throw new Error("VIDEO_ARTIFACT_INVALID_KEY");
   }
 }
@@ -125,9 +133,10 @@ export class LocalStagingVideoArtifactStorage implements VideoArtifactStoragePor
     return { artifactKey, body, contentType: input.contentType };
   }
 
-  deleteArtifact(input: { artifactKey: string }): Promise<void> {
+  async deleteArtifact(input: { artifactKey: string }): Promise<void> {
     if (!OUTPUT_KEY.test(input.artifactKey)) throw new Error("VIDEO_ARTIFACT_INVALID_KEY");
-    return this.remove(input.artifactKey);
+    await this.remove(input.artifactKey);
+    await this.remove(mobileRenditionKey(input.artifactKey));
   }
 
   async createSignedPlaybackUrl(input: { artifactKey: string; expiresInSeconds: number }): Promise<{ url: string; expiresAt: string }> {
@@ -148,12 +157,14 @@ export class LocalStagingVideoArtifactStorage implements VideoArtifactStoragePor
     return this.read(input.artifactKey);
   }
 
-  async readArtifactRange(input: { artifactKey: string; start?: number; end?: number }): Promise<{
+  async readArtifactRange(input: { artifactKey: string; start?: number; end?: number; rendition?: VideoPlaybackRendition }): Promise<{
     body: Buffer;
     contentType: string;
     totalBytes: number;
   }> {
-    const body = await this.readArtifact({ artifactKey: input.artifactKey });
+    const body = input.rendition === "mobile"
+      ? await this.readMobileRenditionOrOriginal(input.artifactKey)
+      : await this.readArtifact({ artifactKey: input.artifactKey });
     const start = input.start ?? 0;
     const end = input.end ?? body.byteLength - 1;
     if (
@@ -208,6 +219,15 @@ export class LocalStagingVideoArtifactStorage implements VideoArtifactStoragePor
 
   private read(key: string): Promise<Buffer> {
     return readFile(this.pathFor(key));
+  }
+
+  private async readMobileRenditionOrOriginal(artifactKey: string): Promise<Buffer> {
+    try {
+      return await this.read(mobileRenditionKey(artifactKey));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      return this.readArtifact({ artifactKey });
+    }
   }
 
   private async remove(key: string): Promise<void> {

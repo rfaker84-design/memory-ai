@@ -189,7 +189,7 @@ function CompanionContent() {
                   memoryId={memory.id}
                   portraitUrl={portraitUrl}
                   variant="idle"
-                  motionEnabled={presence !== "static"}
+                  motionEnabled={!reducedMotion}
                 />
               )
             : <span className={styles.heroFallback}>{memory.name.slice(0, 1)}</span>}

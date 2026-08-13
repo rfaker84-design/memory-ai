@@ -23,7 +23,7 @@ test("companion presents one warm Owner portrait scene without status gamificati
   assert.match(page, /className=\{styles\.heroMedia\}/);
   assert.match(page, /portraitUrl[\s\S]*?<CompanionMotionBackground/);
   assert.match(page, /variant="idle"/);
-  assert.match(page, /motionEnabled=\{presence !== "static"\}/);
+  assert.match(page, /motionEnabled=\{!reducedMotion\}/);
   assert.match(page, /想对 \{memory\.name\} 说的话/);
   assert.match(page, /AI 纪念陪伴 · 基于你确认的资料/);
   assert.match(styles, /\.heroMotion[\s\S]*?filter: saturate/);

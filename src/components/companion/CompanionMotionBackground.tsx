@@ -4,10 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   authorizeCompanionMotionPlayback,
-  companionMotionPackNeedsEnsure,
   companionMotionPackNeedsPolling,
   CompanionMotionRequestError,
-  ensureCompanionMotionPackOnce,
   loadCompanionMotionPack,
   type CompanionMotionPack,
   type CompanionMotionPlayback,
@@ -76,11 +74,6 @@ export function CompanionMotionBackground({
         let next = await loadCompanionMotionPack(memoryId, controller.signal);
         if (!live) return;
         setPack(next);
-        if (companionMotionPackNeedsEnsure(next)) {
-          next = await ensureCompanionMotionPackOnce(memoryId);
-          if (!live) return;
-          setPack(next);
-        }
         if (companionMotionPackNeedsPolling(next)) schedule();
       } catch (error) {
         // This enhancement never blocks the portrait, Companion, or Chat.
@@ -108,14 +101,15 @@ export function CompanionMotionBackground({
     const controller = new AbortController();
     let live = true;
     const refreshBefore = Date.now() + 60_000;
-    const pending = pack.slots.filter((slot) => (
-      slot.artifactAvailable
-      && (!authorizedJobs.current.has(slot.jobId)
-        || Date.parse(authorizedJobs.current.get(slot.jobId)!.expiresAt) <= refreshBefore)
-    ));
-    if (!pending.length) return;
-    void Promise.all(pending.map(async (slot) => {
-      const jobId = slot.jobId;
+    // Idle is the only startup authorization. The other two videos are loaded
+    // only when their chat state is requested, while idle stays visible.
+    const requestedVariant: CompanionMotionVariant = sources.idle ? variant : "idle";
+    const slot = pack.slots.find((candidate) => candidate.variant === requestedVariant && candidate.artifactAvailable);
+    if (!slot) return;
+    const current = sources[requestedVariant];
+    if (current && Date.parse(current.expiresAt) > refreshBefore) return;
+    const jobId = slot.jobId;
+    void (async () => {
       try {
         const playback = await authorizeCompanionMotionPlayback(memoryId, jobId, controller.signal);
         if (!live) return;
@@ -134,7 +128,7 @@ export function CompanionMotionBackground({
           }, POLL_INTERVAL_MS);
         }
       }
-    }));
+    })();
     return () => {
       live = false;
       controller.abort();
@@ -143,7 +137,7 @@ export function CompanionMotionBackground({
         authorizationRetryTimer.current = null;
       }
     };
-  }, [authorizationEpoch, memoryId, motionEnabled, pack, variant]);
+  }, [authorizationEpoch, memoryId, motionEnabled, pack, sources.idle, sources[variant], variant]);
 
   const available = useMemo(
     () => new Set(Object.keys(sources) as CompanionMotionVariant[]),
@@ -163,7 +157,10 @@ export function CompanionMotionBackground({
     }
     const target = videoNodes.current.get(targetVariant);
     if (!target) return;
-    if (visibleVariantRef.current !== targetVariant && target.readyState > 0) target.currentTime = 0;
+    target.muted = true;
+    target.defaultMuted = true;
+    target.playsInline = true;
+    if (visibleVariantRef.current !== targetVariant && target.readyState > HTMLMediaElement.HAVE_NOTHING) target.currentTime = 0;
     void target.play().catch(() => undefined);
   }, [targetVariant]);
 
@@ -187,6 +184,22 @@ export function CompanionMotionBackground({
         videoNodes.current.get(previous)?.pause();
       }, CROSSFADE_MS);
     }
+  };
+
+  const warm = (next: CompanionMotionVariant) => {
+    if (next !== targetVariant) return;
+    const video = videoNodes.current.get(next);
+    if (!video) return;
+    video.muted = true;
+    video.defaultMuted = true;
+    video.playsInline = true;
+    void video.play().catch(() => undefined);
+  };
+
+  const showAfterFirstMovingFrame = (next: CompanionMotionVariant) => {
+    const video = videoNodes.current.get(next);
+    if (!video || video.currentTime <= 0) return;
+    show(next);
   };
 
   const fail = (failed: CompanionMotionVariant, jobId: string) => {
@@ -215,6 +228,8 @@ export function CompanionMotionBackground({
     <div
       className={`${styles.root}${className ? ` ${className}` : ""}`}
       data-motion-enabled={motionEnabled ? "true" : "false"}
+      data-motion-target={targetVariant ?? "still"}
+      data-motion-visible={visibleVariant ?? "still"}
       aria-hidden="true"
     >
       <img
@@ -241,8 +256,9 @@ export function CompanionMotionBackground({
             muted
             loop
             playsInline
-            preload={motionVariant === targetVariant ? "auto" : "metadata"}
-            onPlaying={() => show(motionVariant)}
+            preload={motionVariant === targetVariant ? "auto" : "none"}
+            onLoadedData={() => warm(motionVariant)}
+            onTimeUpdate={() => showAfterFirstMovingFrame(motionVariant)}
             onError={() => fail(motionVariant, source.jobId)}
           />
         );

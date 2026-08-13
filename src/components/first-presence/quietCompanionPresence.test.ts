@@ -19,7 +19,7 @@ test("companion scene uses the owner-specific motion background and retains the 
   assert.match(scene, /useQuietCompanionPresence/);
   assert.match(scene, /data-presence=\{quietPresence\}/);
   assert.match(scene, /<CompanionMotionBackground/);
-  assert.match(scene, /motionEnabled=\{quietPresence !== "static"\}/);
+  assert.match(scene, /motionEnabled=\{!reducedMotion\}/);
   assert.doesNotMatch(scene, /home-hero|initial_preview|encounter-playback|audioRef|lip/);
   assert.match(css, /data-presence="static"/);
   assert.match(css, /data-presence="static"\] \.portraitMotion/);

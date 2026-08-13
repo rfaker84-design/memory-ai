@@ -201,7 +201,10 @@ export async function authorizeCompanionMotionPlayback(
     || !Number.isFinite(expiresAtMs)
     || expiresAtMs <= Date.now()
   ) throw new CompanionMotionRequestError(502, "COMPANION_MOTION_PLAYBACK_INVALID");
-  return { url: playback.url, expiresAt: new Date(expiresAtMs).toISOString() };
+  // The protected source stays untouched.  The endpoint selects a cached,
+  // smaller 720px delivery rendition when one exists and safely falls back to
+  // the reviewed source while that local cache is being prepared.
+  return { url: `${playback.url}?rendition=mobile`, expiresAt: new Date(expiresAtMs).toISOString() };
 }
 
 export function companionMotionPackReady(pack: CompanionMotionPack): boolean {

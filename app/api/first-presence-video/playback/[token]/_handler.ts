@@ -39,6 +39,14 @@ function unavailable(status = 404): NextResponse {
   return applyAuthNoStore(NextResponse.json({ error: "PLAYBACK_NOT_AVAILABLE" }, { status }));
 }
 
+function requestedRendition(request: NextRequest): "mobile" | null | "invalid" {
+  const entries = [...request.nextUrl.searchParams.entries()];
+  if (entries.length === 0) return null;
+  return entries.length === 1 && entries[0]?.[0] === "rendition" && entries[0][1] === "mobile"
+    ? "mobile"
+    : "invalid";
+}
+
 function responseHeaders(input: { contentLength: number; totalBytes: number; range: { start: number; end: number } | null; contentId: string }) {
   const headers = new Headers({
     "Accept-Ranges": "bytes",
@@ -61,7 +69,8 @@ export function createFirstPresencePlaybackReadHandler(
       try {
         const session = await sessionResolver(request);
         if (!session) return unavailable(401);
-        if ([...request.nextUrl.searchParams.keys()].length > 0) return unavailable();
+        const rendition = requestedRendition(request);
+        if (rendition === "invalid") return unavailable();
         const token = (await params).token;
         const resolved = dependencyFactory();
         const claims = resolved.signer.verify(token);
@@ -80,7 +89,7 @@ export function createFirstPresencePlaybackReadHandler(
 
         // The first byte establishes the authoritative object length before a
         // Range header is accepted. The client never selects an object key.
-        const firstByte = await resolved.reader.readRange({ artifactKey: playable.artifactKey, start: 0, end: 0 });
+        const firstByte = await resolved.reader.readRange({ artifactKey: playable.artifactKey, start: 0, end: 0, ...(rendition ? { rendition } : {}) });
         const range = parseSingleRange(request.headers.get("range"), firstByte.totalBytes);
         if (range === "invalid") {
           return applyAuthNoStore(new NextResponse(null, {
@@ -89,10 +98,10 @@ export function createFirstPresencePlaybackReadHandler(
           }));
         }
         const body = range && (range.start !== 0 || range.end !== 0)
-          ? await resolved.reader.readRange({ artifactKey: playable.artifactKey, ...range })
+          ? await resolved.reader.readRange({ artifactKey: playable.artifactKey, ...range, ...(rendition ? { rendition } : {}) })
           : range
             ? firstByte
-            : await resolved.reader.readRange({ artifactKey: playable.artifactKey });
+            : await resolved.reader.readRange({ artifactKey: playable.artifactKey, ...(rendition ? { rendition } : {}) });
         const selectedRange = range ?? { start: 0, end: body.totalBytes - 1 };
         if (body.totalBytes !== firstByte.totalBytes || body.body.byteLength !== selectedRange.end - selectedRange.start + 1) {
           return unavailable();

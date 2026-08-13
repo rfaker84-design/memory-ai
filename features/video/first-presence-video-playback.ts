@@ -1,13 +1,14 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import type { ApprovedVideoArtifact, VideoArtifactQueryPort } from "./video-artifact-query";
-import type { VideoArtifactStoragePort } from "./video-artifact-storage";
+import type { VideoArtifactStoragePort, VideoPlaybackRendition } from "./video-artifact-storage";
 
 export type VideoArtifactReaderPort = {
   readRange(input: {
     artifactKey: string;
     start?: number;
     end?: number;
+    rendition?: VideoPlaybackRendition;
   }): Promise<{
     body: Buffer;
     contentType: string;
@@ -144,7 +145,7 @@ export class FirstPresencePlaybackSigner {
 export class FirstPresenceVideoArtifactStorageReader implements VideoArtifactReaderPort {
   constructor(private readonly storage: VideoArtifactStoragePort) {}
 
-  readRange(input: { artifactKey: string; start?: number; end?: number }) {
+  readRange(input: { artifactKey: string; start?: number; end?: number; rendition?: VideoPlaybackRendition }) {
     return this.storage.readArtifactRange(input);
   }
 }

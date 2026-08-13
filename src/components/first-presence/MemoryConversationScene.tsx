@@ -459,7 +459,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
               memoryId={memoryId}
               portraitUrl={portraitUrl}
               variant={motionVariant}
-              motionEnabled={quietPresence !== "static"}
+              motionEnabled={!reducedMotion}
             />
           ) : (
             <span className={styles.portraitInitials}>{Array.from(memoryName).slice(0, 2).join("")}</span>

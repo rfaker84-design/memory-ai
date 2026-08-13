@@ -36,6 +36,7 @@
   position: relative;
   min-height: clamp(520px, 67dvh, 720px);
   overflow: hidden;
+  background: #eee4d5;
   color: #fff8ee;
 }
 
@@ -55,7 +56,7 @@
 
 .heroVeil {
   background:
-    linear-gradient(180deg, rgba(18, 12, 8, 0.2) 0%, rgba(22, 14, 9, 0.08) 34%, rgba(20, 13, 8, 0.48) 73%, #1c130e 100%),
+    linear-gradient(180deg, rgba(18, 12, 8, 0.2) 0%, rgba(22, 14, 9, 0.08) 34%, rgba(31, 21, 14, 0.34) 62%, rgba(238, 228, 213, 0.8) 89%, #eee4d5 100%),
     linear-gradient(90deg, rgba(18, 12, 8, 0.42), transparent 62%);
 }
 
@@ -146,7 +147,7 @@
   z-index: 3;
   width: min(100%, 760px);
   min-height: 46dvh;
-  margin: -30px auto 0;
+  margin: -64px auto 0;
   padding: 48px 24px max(34px, calc(env(safe-area-inset-bottom, 0px) + 20px));
   border-radius: 30px 30px 0 0;
   background-color: #eee4d5;
@@ -154,7 +155,7 @@
     repeating-linear-gradient(9deg, rgba(93, 68, 42, 0.018) 0 1px, transparent 1px 4px),
     radial-gradient(circle at 19% 12%, rgba(255, 252, 245, 0.76), transparent 35%),
     linear-gradient(155deg, #f4ece0 0%, #e8dbc8 100%);
-  box-shadow: 0 -16px 52px rgba(15, 9, 5, 0.26);
+  box-shadow: 0 -10px 32px rgba(69, 48, 29, 0.1);
 }
 
 .paper::before {

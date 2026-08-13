@@ -15,7 +15,7 @@
 
 .presence {
   position: relative;
-  min-height: clamp(24rem, 44dvh, 36rem);
+  min-height: clamp(21rem, 38dvh, 31rem);
   overflow: hidden;
   isolation: isolate;
   color: #fff8ed;
@@ -46,7 +46,7 @@
 .sceneVeil {
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(20, 14, 10, 0.28) 0%, rgba(20, 14, 10, 0.03) 34%, rgba(28, 19, 13, 0.18) 66%, rgba(42, 31, 23, 0.54) 86%, #f4ede2 100%),
+    linear-gradient(180deg, rgba(20, 14, 10, 0.28) 0%, rgba(20, 14, 10, 0.03) 31%, rgba(42, 31, 23, 0.26) 59%, rgba(244, 237, 226, 0.82) 87%, #f4ede2 100%),
     linear-gradient(90deg, rgba(20, 14, 10, 0.16), transparent 58%, rgba(20, 14, 10, 0.08));
 }
 
