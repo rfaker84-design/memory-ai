@@ -13,7 +13,12 @@ import type {
   FirstPresenceVideoStatus,
 } from "./first-presence-video-service";
 
-export const COMPANION_MOTION_PACK_VERSION = 1;
+/**
+ * Version 2 uses a private derived 9:16 provider input. Version 1 assets are
+ * retained for existing owners; only a v1 resolution rejection advances a
+ * person to this version, so failed work never turns into automatic retries.
+ */
+export const COMPANION_MOTION_PACK_VERSION = 2;
 export const COMPANION_MOTION_VARIANTS = [
   "idle",
   "attentive",
@@ -49,10 +54,23 @@ export function companionMotionStagingReviewEnabled(
 type SlotRow = {
   id: string;
   motion_variant: CompanionMotionVariant;
+  pack_version: number;
   status: FirstPresenceVideoStatus;
   artifact_key: string | null;
   quality_status: "pending" | "approved" | "rejected";
+  error_code: string | null;
 };
+
+function selectedPackVersion(rows: SlotRow[]): number {
+  if (rows.length === 0) return COMPANION_MOTION_PACK_VERSION;
+  if (rows.some((row) => row.pack_version === COMPANION_MOTION_PACK_VERSION)) {
+    return COMPANION_MOTION_PACK_VERSION;
+  }
+  if (rows.some((row) => row.error_code === "MEDIA_RESOLUTION_INVALID")) {
+    return COMPANION_MOTION_PACK_VERSION;
+  }
+  return rows.reduce((version, row) => Math.max(version, row.pack_version), 1);
+}
 
 function slots(rows: SlotRow[]): CompanionMotionSlot[] {
   return rows.map((row) => ({
@@ -140,7 +158,9 @@ export class CompanionMotionPackService {
         await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
           `memoryai:companion-motion:${entitlement.userId}:${input.memoryId}:${COMPANION_MOTION_PACK_VERSION}`,
         ]);
-        const current = await this.readSlots(client, entitlement.userId, input.memoryId);
+        const allSlots = await this.readSlots(client, entitlement.userId, input.memoryId);
+        const packVersion = selectedPackVersion(allSlots);
+        const current = allSlots.filter((slot) => slot.pack_version === packVersion);
         const present = new Set(current.map((slot) => slot.motion_variant));
         const missing = COMPANION_MOTION_VARIANTS.filter((variant) => !present.has(variant));
         if (missing.length === 0) return slots(current);
@@ -161,9 +181,15 @@ export class CompanionMotionPackService {
         );
         if (!portrait.rows[0]) throw new CompanionMotionPackError("PHOTO_PRECONDITION_REQUIRED");
 
+        const derived = await staging.prepareCompanionMotionInput({
+          storageKey: portrait.rows[0].storage_key,
+        });
         for (const variant of missing) {
           const jobId = randomUUID();
-          await staging.stage({ jobId, storageKey: portrait.rows[0].storage_key });
+          await staging.stage({
+            jobId,
+            imageDataUrl: derived.imageDataUrl,
+          });
           stagedJobIds.push(jobId);
           await client.query(
             `INSERT INTO public.video_generation_jobs (
@@ -174,14 +200,15 @@ export class CompanionMotionPackService {
               jobId,
               entitlement.userId,
               input.memoryId,
-              `companion-motion.v${COMPANION_MOTION_PACK_VERSION}.${variant}`,
-              portrait.rows[0].sha256,
+              `companion-motion.v${packVersion}.${variant}`,
+              derived.inputSha256,
               variant,
-              COMPANION_MOTION_PACK_VERSION,
+              packVersion,
             ],
           );
         }
-        return slots(await this.readSlots(client, entitlement.userId, input.memoryId));
+        return slots((await this.readSlots(client, entitlement.userId, input.memoryId))
+          .filter((slot) => slot.pack_version === packVersion));
       }, {
         preserveError: (error) => error instanceof CompanionMotionPackError,
       });
@@ -194,21 +221,21 @@ export class CompanionMotionPackService {
 
   async list(input: { externalUserId: string; memoryId: string }): Promise<CompanionMotionSlot[]> {
     const result = await queryPostgres<SlotRow>(
-      `SELECT j.id, j.motion_variant, j.status, j.artifact_key, j.quality_status
+      `SELECT j.id, j.motion_variant, j.pack_version, j.status, j.artifact_key, j.quality_status, j.error_code
        FROM public.video_generation_jobs j
        JOIN public.users u ON u.id = j.user_id
        WHERE u.external_id = $1 AND j.memory_id = $2::uuid
-         AND j.use_case = 'companion_micro_motion' AND j.pack_version = $3
-         AND public.memoryai_companion_motion_eligible(j.user_id, j.memory_id, $4)
+         AND j.use_case = 'companion_micro_motion'
+         AND public.memoryai_companion_motion_eligible(j.user_id, j.memory_id, $3)
        ORDER BY j.motion_variant`,
       [
         input.externalUserId,
         input.memoryId,
-        COMPANION_MOTION_PACK_VERSION,
         companionMotionStagingReviewEnabled(this.environment),
       ],
     );
-    return slots(result.rows);
+    const packVersion = selectedPackVersion(result.rows);
+    return slots(result.rows.filter((row) => row.pack_version === packVersion));
   }
 
   async getState(input: { externalUserId: string; memoryId: string }): Promise<CompanionMotionPackState> {
@@ -234,12 +261,12 @@ export class CompanionMotionPackService {
 
   private async readSlots(client: PoolClient, userId: string, memoryId: string): Promise<SlotRow[]> {
     const result = await client.query<SlotRow>(
-      `SELECT id, motion_variant, status, artifact_key, quality_status
+      `SELECT id, motion_variant, pack_version, status, artifact_key, quality_status, error_code
        FROM public.video_generation_jobs
        WHERE user_id = $1 AND memory_id = $2::uuid
-         AND use_case = 'companion_micro_motion' AND pack_version = $3
+         AND use_case = 'companion_micro_motion'
        ORDER BY motion_variant`,
-      [userId, memoryId, COMPANION_MOTION_PACK_VERSION],
+      [userId, memoryId],
     );
     return result.rows;
   }

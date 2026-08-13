@@ -79,7 +79,15 @@ export type OwnerVideoQueuePort = {
  * has not yet reached durable storage.
  */
 export type OwnerVideoInputStagingPort = {
-  stage(input: { jobId: string; storageKey: string }): Promise<void>;
+  stage(input: {
+    jobId: string;
+    storageKey?: string;
+    imageDataUrl?: string;
+  }): Promise<{ inputSha256?: string } | void>;
+  /** Reads an approved source once and derives a private 9:16 provider frame. */
+  prepareCompanionMotionInput(input: {
+    storageKey: string;
+  }): Promise<{ imageDataUrl: string; inputSha256: string }>;
   discard(input: { jobId: string }): Promise<void>;
 };
 

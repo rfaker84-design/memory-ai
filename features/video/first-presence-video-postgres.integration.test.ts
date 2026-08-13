@@ -216,6 +216,7 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
   await verify.connect();
   const failedOwnerPort = new FirstPresenceVideoOwnerPostgresPort(() => ({
     stage: async () => { throw new Error("INPUT_STAGING_INJECTED_FAILURE"); },
+    prepareCompanionMotionInput: async () => { throw new Error("unused"); },
     discard: async () => undefined,
   }));
   const failedOwnerApi = new FirstPresenceVideoOwnerApiService(
@@ -244,6 +245,10 @@ test("Migration 016 isolated PostgreSQL 14 video ledger gate", {
     stage: ({ jobId }) => artifactStorage.stageInput({
       jobId,
       imageDataUrl: "data:image/png;base64,YWJj",
+    }),
+    prepareCompanionMotionInput: async () => ({
+      imageDataUrl: "data:image/png;base64,YWJj",
+      inputSha256: sha("owner-video-derived-frame"),
     }),
     discard: ({ jobId }) => artifactStorage.deleteInput({ jobId }),
   }));

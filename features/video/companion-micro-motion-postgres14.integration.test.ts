@@ -178,9 +178,23 @@ test("Migration 028 PostgreSQL 14 entitlement, review-grant, ownership, concurre
     }
 
     const stagedJobIds = new Set<string>();
+    const stagedProviderInputs = new Map<string, string>();
     const discardedJobIds = new Set<string>();
+    let derivedInputCalls = 0;
     const staging: OwnerVideoInputStagingPort = {
-      async stage(input) { stagedJobIds.add(input.jobId); },
+      async stage(input) {
+        assert.equal(input.storageKey, undefined);
+        assert.match(input.imageDataUrl ?? "", /^data:image\/jpeg;base64,/);
+        stagedJobIds.add(input.jobId);
+        stagedProviderInputs.set(input.jobId, input.imageDataUrl!);
+      },
+      async prepareCompanionMotionInput() {
+        derivedInputCalls += 1;
+        return {
+          imageDataUrl: "data:image/jpeg;base64,Y29tcGFuaW9uLW1vdGlvbi1mcmFtZQ==",
+          inputSha256: digest("companion-motion-derived-frame"),
+        };
+      },
       async discard(input) { discardedJobIds.add(input.jobId); },
     };
 
@@ -286,6 +300,8 @@ test("Migration 028 PostgreSQL 14 entitlement, review-grant, ownership, concurre
       ["attentive", "idle", "reflective"],
     );
     assert.equal(stagedJobIds.size, 3);
+    assert.equal(stagedProviderInputs.size, 3);
+    assert.equal(derivedInputCalls, 1, "one portrait read produces the three v2 provider inputs");
     assert.equal(discardedJobIds.size, 0);
     assert.equal(
       (await target.query(
@@ -293,6 +309,50 @@ test("Migration 028 PostgreSQL 14 entitlement, review-grant, ownership, concurre
         [ownerId, ownerMemory],
       )).rows[0]?.count,
       3,
+    );
+
+    // A v1 output-shape rejection is immutable. It only unlocks a separate
+    // v2 pack that stages three private 9:16 inputs for this same owner/person.
+    await target.query(
+      `UPDATE video_generation_jobs
+       SET pack_version=1,
+           idempotency_key='companion-motion.v1.' || motion_variant,
+           status='rejected', provider_submission_state='accepted',
+           provider_task_id='vidu-resolution-rejected-' || id::text, provider_state='success',
+           quality_status='rejected', entitlement_settlement='released', error_code='MEDIA_RESOLUTION_INVALID'
+       WHERE user_id=$1 AND memory_id=$2 AND use_case='companion_micro_motion' AND pack_version=2`,
+      [ownerId, ownerMemory],
+    );
+    const upgraded = await enabled.ensure({ externalUserId: ownerExternalId, memoryId: ownerMemory });
+    assert.equal(upgraded.length, 3);
+    assert.equal(stagedJobIds.size, 6, "the v2 pack stages three new provider-only inputs exactly once");
+    assert.equal(derivedInputCalls, 2, "the retried v2 pack derives one private source for all three slots");
+    assert.deepEqual(
+      (await target.query<{ pack_version: number; count: number }>(
+        `SELECT pack_version, count(*)::int AS count
+         FROM video_generation_jobs
+         WHERE user_id=$1 AND memory_id=$2 AND use_case='companion_micro_motion'
+         GROUP BY pack_version ORDER BY pack_version`,
+        [ownerId, ownerMemory],
+      )).rows,
+      [{ pack_version: 1, count: 3 }, { pack_version: 2, count: 3 }],
+    );
+    assert.deepEqual(
+      (await target.query<{ input_sha256: string }>(
+        `SELECT input_sha256 FROM video_generation_jobs
+         WHERE user_id=$1 AND memory_id=$2 AND use_case='companion_micro_motion' AND pack_version=2`,
+        [ownerId, ownerMemory],
+      )).rows,
+      Array.from({ length: 3 }, () => ({ input_sha256: digest("companion-motion-derived-frame") })),
+      "every v2 slot references the same private derived source, never the original upload",
+    );
+    assert.deepEqual(
+      (await target.query<{ status: string; error_code: string | null }>(
+        `SELECT status, error_code FROM video_generation_jobs
+         WHERE user_id=$1 AND memory_id=$2 AND use_case='companion_micro_motion' AND pack_version=1`,
+        [ownerId, ownerMemory],
+      )).rows,
+      Array.from({ length: 3 }, () => ({ status: "rejected", error_code: "MEDIA_RESOLUTION_INVALID" })),
     );
 
     const refreshed = await Promise.all([
@@ -303,12 +363,12 @@ test("Migration 028 PostgreSQL 14 entitlement, review-grant, ownership, concurre
     assert.equal(refreshed[0].length, 3);
     assert.equal(refreshed[1].length, 3);
     assert.deepEqual(refreshed[2], { eligible: true, slots: refreshed[1] });
-    assert.equal(stagedJobIds.size, 3, "refresh and replay never restage or create a fourth slot");
+    assert.equal(stagedJobIds.size, 6, "refresh and replay never restage or create a seventh slot");
     assert.equal(
       (await target.query(
         "SELECT count(*)::int AS count FROM video_generation_jobs WHERE use_case='companion_micro_motion'",
       )).rows[0]?.count,
-      3,
+      6,
     );
 
     for (const denied of [
@@ -326,7 +386,7 @@ test("Migration 028 PostgreSQL 14 entitlement, review-grant, ownership, concurre
       (await target.query(
         "SELECT count(*)::int AS count FROM video_generation_jobs WHERE use_case='companion_micro_motion'",
       )).rows[0]?.count,
-      3,
+      6,
     );
 
     await target.query(
@@ -346,7 +406,7 @@ test("Migration 028 PostgreSQL 14 entitlement, review-grant, ownership, concurre
       (await target.query(
         "SELECT count(*)::int AS count FROM video_generation_jobs WHERE use_case='companion_micro_motion'",
       )).rows[0]?.count,
-      3,
+      6,
     );
 
     await closePostgresPool();

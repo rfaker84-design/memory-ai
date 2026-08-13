@@ -1,4 +1,5 @@
 import { createMediaStorage } from "../../src/server/storage";
+import { deriveCompanionMotionInput } from "./companion-motion-input";
 import { getVideoArtifactRuntimeConfiguration } from "./video-artifact-runtime";
 
 import type { OwnerVideoInputStagingPort } from "./first-presence-video-owner-api";
@@ -85,16 +86,33 @@ class FirstPresenceVideoOwnerInputStaging implements OwnerVideoInputStagingPort 
     private readonly artifacts: VideoArtifactStoragePort = createVideoArtifactStorageFromEnvironment(),
   ) {}
 
-  async stage(input: { jobId: string; storageKey: string }): Promise<void> {
-    const source = await this.media.createSignedDownloadUrl(input.storageKey, 60);
+  async stage(input: {
+    jobId: string;
+    storageKey?: string;
+    imageDataUrl?: string;
+  }): Promise<{ inputSha256?: string }> {
+    if (!input.imageDataUrl && !input.storageKey) throw new Error("VIDEO_INPUT_SOURCE_UNAVAILABLE");
+    const imageDataUrl = input.imageDataUrl ?? await this.loadOriginalInput(input.storageKey!);
     await this.artifacts.stageInput({
       jobId: input.jobId,
-      imageDataUrl: await loadVideoInputDataUrl(source),
+      imageDataUrl,
     });
+    return {};
+  }
+
+  async prepareCompanionMotionInput(input: {
+    storageKey: string;
+  }): Promise<{ imageDataUrl: string; inputSha256: string }> {
+    return deriveCompanionMotionInput(await this.loadOriginalInput(input.storageKey));
   }
 
   discard(input: { jobId: string }): Promise<void> {
     return this.artifacts.deleteInput(input);
+  }
+
+  private async loadOriginalInput(storageKey: string): Promise<string> {
+    const source = await this.media.createSignedDownloadUrl(storageKey, 60);
+    return loadVideoInputDataUrl(source);
   }
 }
 
