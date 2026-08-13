@@ -171,7 +171,7 @@ export class CreationRecoveryRequestError extends Error {
     readonly status: number,
     readonly code: string,
   ) {
-    super(code);
+    super(code === "PHOTO_REPLACEMENT_REQUIRED" ? "请更换更清晰照片" : code);
     this.name = "CreationRecoveryRequestError";
   }
 }

@@ -13,6 +13,7 @@ export interface StoredMediaObject {
 
 export interface MediaStorage {
   put(input: StoreMediaInput): Promise<StoredMediaObject>;
+  read(key: string): Promise<Buffer>;
   delete(key: string): Promise<void>;
   createSignedDownloadUrl(key: string, expiresInSeconds: number): Promise<string>;
 }

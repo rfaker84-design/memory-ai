@@ -4,4 +4,5 @@ export * from "./media-repository";
 export * from "./datasource";
 export * from "./errors";
 export * from "./file-validation";
+export * from "./photo-quality-preflight";
 export * from "./media-postgres-datasource";

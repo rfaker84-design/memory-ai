@@ -117,6 +117,10 @@ export class LocalMediaStorage implements MediaStorage {
     return { key: input.key, etag: input.sha256 };
   }
 
+  async read(key: string): Promise<Buffer> {
+    return readFile(this.pathForKey(key));
+  }
+
   async delete(key: string): Promise<void> {
     try {
       await unlink(this.pathForKey(key));

@@ -25,3 +25,14 @@ export async function DELETE(req: NextRequest, context: Context) {
     return mediaJson({ asset: safeMediaAsset(await mediaService().delete(id, userId)), cleanup: "scheduled" });
   } catch (error) { return mediaError(error); }
 }
+
+export async function POST(req: NextRequest, context: Context) {
+  const userId = await authenticate(req);
+  if (!userId) return mediaJson({ error: "UNAUTHORIZED" }, { status: 401 });
+  const originError = requireMediaMutationOrigin(req);
+  if (originError) return originError;
+  try {
+    const { id } = await context.params;
+    return mediaJson({ asset: safeMediaAsset(await mediaService().recheckPortraitQuality(id, userId)) });
+  } catch (error) { return mediaError(error); }
+}

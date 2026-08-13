@@ -13,7 +13,7 @@ interface TencentCosStorageOptions {
   region: string;
 }
 
-type TencentCosClient = Pick<COS, "putObject" | "deleteObject" | "getObjectUrl">;
+type TencentCosClient = Pick<COS, "putObject" | "deleteObject" | "getObject" | "getObjectUrl">;
 
 export class TencentCosStorage implements MediaStorage {
   private readonly client: TencentCosClient;
@@ -41,6 +41,20 @@ export class TencentCosStorage implements MediaStorage {
     });
 
     return { key: input.key, etag: result.ETag };
+  }
+
+  async read(key: string): Promise<Buffer> {
+    return new Promise<Buffer>((resolve, reject) => {
+      this.client.getObject({
+        Bucket: this.options.bucket,
+        Region: this.options.region,
+        Key: key,
+      }, (error, data) => {
+        if (error) return reject(error);
+        if (!Buffer.isBuffer(data.Body)) return reject(new Error("STORAGE_INVALID_READ"));
+        return resolve(data.Body);
+      });
+    });
   }
 
   async delete(key: string): Promise<void> {
