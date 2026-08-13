@@ -29,5 +29,6 @@ test("companion scene uses the owner-specific motion background and retains the 
   assert.match(presence, /connection\?\.saveData === true/);
   assert.match(presence, /connection\?\.effectiveType === "2g"/);
   assert.match(presence, /document\.visibilityState !== "visible"/);
+  assert.doesNotMatch(presence, /longTaskObserved|PerformanceObserver/);
   assert.doesNotMatch(presence, /getThermalState|thermalState/);
 });

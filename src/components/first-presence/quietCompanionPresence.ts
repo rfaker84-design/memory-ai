@@ -28,13 +28,15 @@ type NavigatorWithSignals = Navigator & {
 /**
  * Browser thermal sensors are not standardized. This hook therefore uses the
  * safe signals browsers can expose (reduced motion, battery, low-end hardware,
- * constrained network, background visibility and long tasks). A host that
+ * constrained network and background visibility). A single first-load long
+ * task is not a device capability signal: treating it as one permanently
+ * disabled an approved owner motion pack before its video could render. A host
+ * that
  * later exposes a thermal signal can add it to constrainedPerformance without
  * changing this visual contract.
  */
 export function useQuietCompanionPresence(input: { reducedMotion: boolean; replying: boolean }): QuietCompanionState {
   const [lowBattery, setLowBattery] = useState(false);
-  const [longTaskObserved, setLongTaskObserved] = useState(false);
   const [backgrounded, setBackgrounded] = useState(false);
   const constrainedDevice = useMemo(() => {
     if (typeof navigator === "undefined") return false;
@@ -76,23 +78,10 @@ export function useQuietCompanionPresence(input: { reducedMotion: boolean; reply
     };
   }, []);
 
-  useEffect(() => {
-    if (typeof PerformanceObserver === "undefined") return;
-    try {
-      const observer = new PerformanceObserver((entries) => {
-        if (entries.getEntries().some((entry) => entry.duration >= 200)) setLongTaskObserved(true);
-      });
-      observer.observe({ type: "longtask", buffered: true });
-      return () => observer.disconnect();
-    } catch {
-      return;
-    }
-  }, []);
-
   return resolveQuietCompanionState({
     reducedMotion: input.reducedMotion,
     lowBattery,
-    constrainedPerformance: constrainedDevice || constrainedNetwork || backgrounded || longTaskObserved,
+    constrainedPerformance: constrainedDevice || constrainedNetwork || backgrounded,
     replying: input.replying,
   });
 }
