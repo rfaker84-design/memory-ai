@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   CompanionMotionPackError,
   CompanionMotionPackService,
+  companionMotionStagingReviewEnabled,
   createFirstPresenceVideoOwnerInputStaging,
 } from "@/features/video";
 import {
@@ -20,8 +21,9 @@ import {
 
 type Context = { params: Promise<{ id: string }> };
 type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
-type PackService = Pick<CompanionMotionPackService, "ensure" | "getState">;
+type PackService = Pick<CompanionMotionPackService, "ensure" | "ensureIdleVisualReview" | "getState">;
 type CapabilityGuard = () => void;
+type StagingReviewGuard = () => boolean;
 
 const json = (body: Record<string, unknown>, init?: ResponseInit) =>
   applyAuthNoStore(NextResponse.json(body, init));
@@ -31,7 +33,7 @@ const service = (): PackService =>
 function failure(error: unknown) {
   if (error instanceof CompanionMotionPackError) {
     const status = error.code === "MEMORY_NOT_FOUND" ? 404
-      : error.code === "ACTIVE_ENTITLEMENT_REQUIRED" ? 403
+      : error.code === "ACTIVE_ENTITLEMENT_REQUIRED" || error.code === "STAGING_REVIEW_ONLY" ? 403
         : error.code === "PHOTO_PRECONDITION_REQUIRED" ? 409 : 503;
     return json({ error: error.code }, { status });
   }
@@ -52,6 +54,7 @@ export function createCompanionMotionHandler(
   serviceFactory: () => PackService = service,
   sessionResolver: SessionResolver = verifyRequestSession,
   capabilityGuard: CapabilityGuard = () => assertProductCapabilityEnabled("video_generation"),
+  stagingReviewGuard: StagingReviewGuard = () => companionMotionStagingReviewEnabled(),
 ) {
   return {
     GET: async (request: NextRequest, { params }: Context) => {
@@ -70,11 +73,21 @@ export function createCompanionMotionHandler(
         requireAllowedOrigin(request);
         capabilityGuard();
         const body = await request.json().catch(() => null);
-        if (typeof body !== "object" || body === null || Array.isArray(body) || Object.keys(body).length !== 0) {
+        if (typeof body !== "object" || body === null || Array.isArray(body)) {
           return json({ error: "INVALID_COMPANION_MOTION_REQUEST" }, { status: 400 });
         }
         const { id: memoryId } = await params;
-        const slots = await serviceFactory().ensure({ externalUserId: session.externalUserId, memoryId });
+        const reviewIdle = Object.keys(body).length === 1
+          && (body as Record<string, unknown>).review === "idle-visual";
+        if (Object.keys(body).length !== 0 && !reviewIdle) {
+          return json({ error: "INVALID_COMPANION_MOTION_REQUEST" }, { status: 400 });
+        }
+        if (reviewIdle && !stagingReviewGuard()) {
+          return json({ error: "INVALID_COMPANION_MOTION_REQUEST" }, { status: 400 });
+        }
+        const slots = reviewIdle
+          ? await serviceFactory().ensureIdleVisualReview({ externalUserId: session.externalUserId, memoryId })
+          : await serviceFactory().ensure({ externalUserId: session.externalUserId, memoryId });
         return json({ eligible: true, slots }, { status: 202 });
       } catch (error) { return failure(error); }
     },

@@ -50,14 +50,15 @@
 .heroMedia { overflow: hidden; background: #2c2119; }
 
 .heroMotion {
-  transform: scale(1.045);
-  filter: saturate(0.82) sepia(0.08) brightness(0.78);
+  /* The approved motion itself is the room: no second scenic backdrop or
+     artificial frame is layered behind it. */
+  filter: saturate(0.92) sepia(0.035) brightness(0.86);
 }
 
 .heroVeil {
   background:
-    linear-gradient(180deg, rgba(18, 12, 8, 0.2) 0%, rgba(22, 14, 9, 0.08) 34%, rgba(31, 21, 14, 0.34) 62%, rgba(238, 228, 213, 0.8) 89%, #eee4d5 100%),
-    linear-gradient(90deg, rgba(18, 12, 8, 0.42), transparent 62%);
+    linear-gradient(180deg, rgba(18, 12, 8, 0.23) 0%, rgba(22, 14, 9, 0.035) 38%, rgba(69, 50, 32, 0.16) 61%, rgba(238, 228, 213, 0.64) 84%, #eee4d5 100%),
+    linear-gradient(90deg, rgba(18, 12, 8, 0.25), transparent 66%);
 }
 
 .heroFallback {

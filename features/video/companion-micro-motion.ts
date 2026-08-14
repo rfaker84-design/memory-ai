@@ -19,6 +19,13 @@ import type {
  * person to this version, so failed work never turns into automatic retries.
  */
 export const COMPANION_MOTION_PACK_VERSION = 2;
+/**
+ * A single, staging-only visual-review replacement for the v2 idle clip.  It
+ * intentionally does not advance the paid-pack version: attentive and
+ * reflective keep their approved v2 assets and a review cannot fan out into a
+ * second three-video purchase.
+ */
+export const COMPANION_MOTION_IDLE_VISUAL_REVIEW_VERSION = 3;
 export const COMPANION_MOTION_VARIANTS = [
   "idle",
   "attentive",
@@ -38,7 +45,7 @@ export type CompanionMotionPackState = {
 };
 
 export class CompanionMotionPackError extends Error {
-  constructor(readonly code: "MEMORY_NOT_FOUND" | "ACTIVE_ENTITLEMENT_REQUIRED" | "PHOTO_PRECONDITION_REQUIRED" | "INPUT_STAGING_UNAVAILABLE") {
+  constructor(readonly code: "MEMORY_NOT_FOUND" | "ACTIVE_ENTITLEMENT_REQUIRED" | "PHOTO_PRECONDITION_REQUIRED" | "INPUT_STAGING_UNAVAILABLE" | "STAGING_REVIEW_ONLY") {
     super(code);
   }
 }
@@ -81,6 +88,25 @@ function slots(rows: SlotRow[]): CompanionMotionSlot[] {
       && row.quality_status === "approved"
       && Boolean(row.artifact_key),
   }));
+}
+
+/**
+ * A later one-off idle review must replace only idle after it is approved.
+ * While it is queued or rejected, keep the existing approved v2 idle clip
+ * visible instead of making the person appear static or dropping the other
+ * two variants from the owner pack.
+ */
+function presentationSlots(rows: SlotRow[]): CompanionMotionSlot[] {
+  return COMPANION_MOTION_VARIANTS.flatMap((variant) => {
+    const candidates = rows
+      .filter((row) => row.motion_variant === variant)
+      .sort((left, right) => right.pack_version - left.pack_version);
+    const approved = candidates.find((row) => (
+      row.status === "succeeded" && row.quality_status === "approved" && Boolean(row.artifact_key)
+    ));
+    const selected = approved ?? candidates[0];
+    return selected ? slots([selected]) : [];
+  });
 }
 
 async function eligibleOwner(
@@ -219,6 +245,77 @@ export class CompanionMotionPackService {
     }
   }
 
+  /**
+   * A bounded, reviewer-authorized Staging sample. It creates exactly one
+   * replacement idle job for the same owner and person, never creates
+   * attentive/reflective jobs, and is unavailable outside the explicit
+   * Staging review environment.
+   */
+  async ensureIdleVisualReview(input: { externalUserId: string; memoryId: string }): Promise<CompanionMotionSlot[]> {
+    if (!companionMotionStagingReviewEnabled(this.environment)) {
+      throw new CompanionMotionPackError("STAGING_REVIEW_ONLY");
+    }
+    const stagedJobIds: string[] = [];
+    const staging = this.createInputStaging();
+    try {
+      return await withPostgresTransaction(async (client) => {
+        const entitlement = await eligibleOwner(client, input.externalUserId, input.memoryId, true);
+        if (!entitlement) throw new CompanionMotionPackError("ACTIVE_ENTITLEMENT_REQUIRED");
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
+          `memoryai:companion-motion-idle-review:${entitlement.userId}:${input.memoryId}:${COMPANION_MOTION_IDLE_VISUAL_REVIEW_VERSION}`,
+        ]);
+        const allSlots = await this.readSlots(client, entitlement.userId, input.memoryId);
+        const existing = allSlots.find((slot) => (
+          slot.pack_version === COMPANION_MOTION_IDLE_VISUAL_REVIEW_VERSION
+          && slot.motion_variant === "idle"
+        ));
+        if (existing) return presentationSlots(allSlots);
+
+        const portrait = await client.query<{ sha256: string; storage_key: string }>(
+          `SELECT sha256, storage_key
+           FROM public.media_assets
+           WHERE user_id = $1 AND memory_id = $2::uuid
+             AND media_type = 'image' AND status = 'uploaded'
+             AND deleted_at IS NULL AND storage_key IS NOT NULL AND sha256 IS NOT NULL
+             AND (
+               metadata ->> 'qualityPreflightStatus' = 'passed'
+               OR metadata #>> '{qualityPreflight,status}' = 'passed'
+               OR metadata #>> '{quality_preflight,status}' = 'passed'
+             )
+           ORDER BY created_at DESC, id DESC LIMIT 1 FOR KEY SHARE`,
+          [entitlement.userId, input.memoryId],
+        );
+        if (!portrait.rows[0]) throw new CompanionMotionPackError("PHOTO_PRECONDITION_REQUIRED");
+
+        const derived = await staging.prepareCompanionMotionInput({ storageKey: portrait.rows[0].storage_key });
+        const jobId = randomUUID();
+        await staging.stage({ jobId, imageDataUrl: derived.imageDataUrl });
+        stagedJobIds.push(jobId);
+        await client.query(
+          `INSERT INTO public.video_generation_jobs (
+             id, user_id, memory_id, idempotency_key, input_sha256,
+             use_case, motion_variant, pack_version
+           ) VALUES ($1, $2, $3::uuid, $4, $5, 'companion_micro_motion', 'idle', $6)`,
+          [
+            jobId,
+            entitlement.userId,
+            input.memoryId,
+            `companion-motion.idle-review.v${COMPANION_MOTION_IDLE_VISUAL_REVIEW_VERSION}`,
+            derived.inputSha256,
+            COMPANION_MOTION_IDLE_VISUAL_REVIEW_VERSION,
+          ],
+        );
+        return presentationSlots(await this.readSlots(client, entitlement.userId, input.memoryId));
+      }, {
+        preserveError: (error) => error instanceof CompanionMotionPackError,
+      });
+    } catch (error) {
+      await Promise.all(stagedJobIds.map((jobId) => staging.discard({ jobId }).catch(() => undefined)));
+      if (error instanceof CompanionMotionPackError) throw error;
+      throw new CompanionMotionPackError("INPUT_STAGING_UNAVAILABLE");
+    }
+  }
+
   async list(input: { externalUserId: string; memoryId: string }): Promise<CompanionMotionSlot[]> {
     const result = await queryPostgres<SlotRow>(
       `SELECT j.id, j.motion_variant, j.pack_version, j.status, j.artifact_key, j.quality_status, j.error_code
@@ -234,8 +331,7 @@ export class CompanionMotionPackService {
         companionMotionStagingReviewEnabled(this.environment),
       ],
     );
-    const packVersion = selectedPackVersion(result.rows);
-    return slots(result.rows.filter((row) => row.pack_version === packVersion));
+    return presentationSlots(result.rows);
   }
 
   async getState(input: { externalUserId: string; memoryId: string }): Promise<CompanionMotionPackState> {

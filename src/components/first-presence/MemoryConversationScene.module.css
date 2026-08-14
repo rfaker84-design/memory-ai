@@ -31,23 +31,21 @@
 
 .portraitFrame {
   overflow: hidden;
-  background:
-    radial-gradient(circle at 50% 36%, rgba(206, 169, 119, 0.18), transparent 42%),
-    linear-gradient(150deg, #4b392c, #211913 72%);
+  background: #35291f;
 }
 
 .portraitMotion {
-  filter: saturate(0.82) sepia(0.07) contrast(0.96) brightness(0.8);
-  transform: scale(1.045);
-  transform-origin: 52% 38%;
-  will-change: transform, filter;
+  /* The portrait video owns the entire living scene.  The warm paper transition
+     is applied only by the shared veil below, never by a competing backdrop. */
+  filter: saturate(0.92) sepia(0.035) contrast(0.98) brightness(0.87);
+  will-change: filter;
 }
 
 .sceneVeil {
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(20, 14, 10, 0.28) 0%, rgba(20, 14, 10, 0.03) 31%, rgba(42, 31, 23, 0.26) 59%, rgba(244, 237, 226, 0.82) 87%, #f4ede2 100%),
-    linear-gradient(90deg, rgba(20, 14, 10, 0.16), transparent 58%, rgba(20, 14, 10, 0.08));
+    linear-gradient(180deg, rgba(20, 14, 10, 0.22) 0%, rgba(20, 14, 10, 0.025) 37%, rgba(70, 52, 36, 0.12) 61%, rgba(244, 237, 226, 0.68) 85%, #f4ede2 100%),
+    linear-gradient(90deg, rgba(20, 14, 10, 0.11), transparent 64%, rgba(20, 14, 10, 0.04));
 }
 
 .portraitInitials {
@@ -72,7 +70,7 @@
 
 .presence[data-presence="static"] .portraitMotion {
   animation: none;
-  transform: scale(1.045);
+  transform: none;
 }
 
 .brand,

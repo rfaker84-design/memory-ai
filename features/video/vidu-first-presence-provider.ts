@@ -3,6 +3,7 @@ type FetchLike = typeof fetch;
 export const VIDU_CN_API_BASE_URL = "https://api.vidu.cn";
 export const VIDU_FIRST_PRESENCE_MODEL = "viduq2-pro-fast";
 export const VIDU_FIRST_PRESENCE_DURATION_SECONDS = 8;
+export const VIDU_COMPANION_MOTION_IDLE_DURATION_SECONDS = 10;
 export const VIDU_FIRST_PRESENCE_RESOLUTION = "1080p";
 
 export const VIDU_FIRST_PRESENCE_PROMPT =
@@ -26,7 +27,7 @@ export const VIDU_COMPANION_MOTION_NEGATIVE_PROMPT =
 
 export const VIDU_COMPANION_MOTION_PROMPTS = Object.freeze({
   idle:
-    "Static camera, vertical 9:16 realistic companion portrait. Preserve the exact identity, age, facial features, hairstyle, clothing, environment, lighting, and framing from the source photo. The person remains quietly present in the original place with only gentle breathing, natural blinking, and an extremely subtle eye movement. Closed mouth, no speaking, no lip movement, no hand gesture, no camera movement. Warm natural life-documentary feeling. The first and final posture should be nearly identical for a soft loop.",
+    "Ten-second static-camera, vertical 9:16 realistic companion portrait. Preserve the exact identity, age, facial features, hairstyle, clothing, environment, lighting, and framing from the source photo. The person is quietly present in the original place and remains almost completely still for most of the clip. Use one or two natural blinks only, extremely gentle breathing, a barely perceptible eye movement, and at most one tiny relaxed head or shoulder adjustment. Do not nod, turn, perform, or repeatedly smile. Closed mouth, no speaking, no lip movement, no hand gesture, no camera movement. Warm restrained life-documentary feeling. The first and final posture should be nearly identical for a soft loop.",
   attentive:
     "Static camera, vertical 9:16 realistic companion portrait. Preserve the exact identity, age, facial features, hairstyle, clothing, environment, lighting, and framing from the source photo. The person appears to listen quietly, with gentle breathing, natural blinking, an extremely slight eye adjustment, and a tiny relaxed head-posture change. Closed mouth, no speaking, no lip movement, no nodding performance, no hand gesture, no camera movement. Warm restrained life-documentary feeling. The first and final posture should be nearly identical for a soft loop.",
   reflective:
@@ -63,6 +64,7 @@ export type ViduFirstPresenceSubmitInput = {
   imageSha256: string;
   idempotencyKey: string;
   motionVariant?: keyof typeof VIDU_COMPANION_MOTION_PROMPTS;
+  companionMotionPackVersion?: number;
 };
 
 function requireRawViduApiKey(environment: Record<string, string | undefined>): string {
@@ -177,7 +179,9 @@ export class ViduFirstPresenceProvider {
         is_rec: false,
         bgm: false,
         audio: false,
-        duration: VIDU_FIRST_PRESENCE_DURATION_SECONDS,
+        duration: input.motionVariant === "idle" && input.companionMotionPackVersion === 3
+          ? VIDU_COMPANION_MOTION_IDLE_DURATION_SECONDS
+          : VIDU_FIRST_PRESENCE_DURATION_SECONDS,
         resolution: VIDU_FIRST_PRESENCE_RESOLUTION,
         movement_amplitude: "small",
         off_peak: false,

@@ -331,6 +331,7 @@ export class FirstPresenceVideoService {
         imageSha256: job.inputSha256,
         idempotencyKey: job.id,
         motionVariant: job.motionVariant ?? undefined,
+        companionMotionPackVersion: job.useCase === "companion_micro_motion" ? job.packVersion : undefined,
       });
     } catch (error) {
       if (error instanceof ViduFirstPresenceNetworkError) {

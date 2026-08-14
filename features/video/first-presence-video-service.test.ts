@@ -24,6 +24,7 @@ import {
   VIDU_FIRST_PRESENCE_NEGATIVE_PROMPT,
   VIDU_FIRST_PRESENCE_PROMPT,
   VIDU_FIRST_PRESENCE_RESOLUTION,
+  VIDU_COMPANION_MOTION_IDLE_DURATION_SECONDS,
   VIDU_COMPANION_MOTION_NEGATIVE_PROMPT,
   VIDU_COMPANION_MOTION_PROMPTS,
   companionMotionStagingReviewEnabled,
@@ -411,16 +412,22 @@ test("Vidu companion variants keep identity and freeze silent micro-motion promp
     }) as typeof fetch,
   });
   for (const motionVariant of ["idle", "attentive", "reflective"] as const) {
-    await provider.submit({ imageDataUrl: image, imageSha256: sha, idempotencyKey: `motion-${motionVariant}`, motionVariant });
+    await provider.submit({
+      imageDataUrl: image,
+      imageSha256: sha,
+      idempotencyKey: `motion-${motionVariant}`,
+      motionVariant,
+      companionMotionPackVersion: motionVariant === "idle" ? 3 : 2,
+    });
   }
   assert.deepEqual(requests.map((request) => request.prompt), [
     VIDU_COMPANION_MOTION_PROMPTS.idle,
     VIDU_COMPANION_MOTION_PROMPTS.attentive,
     VIDU_COMPANION_MOTION_PROMPTS.reflective,
   ]);
-  for (const request of requests) {
+  for (const [index, request] of requests.entries()) {
     assert.equal(request.negative_prompt, VIDU_COMPANION_MOTION_NEGATIVE_PROMPT);
-    assert.equal(request.duration, 8);
+    assert.equal(request.duration, index === 0 ? VIDU_COMPANION_MOTION_IDLE_DURATION_SECONDS : 8);
     assert.equal(request.audio, false);
     assert.equal(request.bgm, false);
     assert.equal(request.movement_amplitude, "small");
