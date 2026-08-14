@@ -17,6 +17,35 @@ import styles from "./CompanionMotionBackground.module.css";
 type PlaybackSource = { jobId: string } & CompanionMotionPlayback;
 type PlaybackSources = Partial<Record<CompanionMotionVariant, PlaybackSource>>;
 
+type PlaybackAttempt = {
+  requested: boolean;
+  status: number | null;
+  error: string | null;
+};
+
+type VideoObservation = {
+  exists: boolean;
+  src: boolean;
+  readyState: number | null;
+  networkState: number | null;
+  paused: boolean | null;
+  currentTime: number | null;
+  duration: number | null;
+  error: string | null;
+  play: "not-attempted" | "resolved" | "rejected";
+  playError: string | null;
+  opacity: string | null;
+  display: string | null;
+  visibility: string | null;
+};
+
+type MotionDebugState = {
+  attempts: Partial<Record<CompanionMotionVariant, PlaybackAttempt>>;
+  videos: Partial<Record<CompanionMotionVariant, VideoObservation>>;
+  lastEvent: string | null;
+  copied: boolean;
+};
+
 type Props = {
   memoryId: string;
   portraitUrl: string;
@@ -28,6 +57,17 @@ type Props = {
 const POLL_INTERVAL_MS = 6_000;
 const MAX_POLL_ATTEMPTS = 100;
 const CROSSFADE_MS = 900;
+const STAGING_DEBUG_HOST = "app.staging.yijianmemory.cn";
+const EMPTY_DEBUG_STATE: MotionDebugState = {
+  attempts: {},
+  videos: {},
+  lastEvent: null,
+  copied: false,
+};
+
+function debugError(error: unknown): string {
+  return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+}
 
 export function CompanionMotionBackground({
   memoryId,
@@ -36,6 +76,9 @@ export function CompanionMotionBackground({
   motionEnabled,
   className,
 }: Props) {
+  const [debugEnabled, setDebugEnabled] = useState(false);
+  const debugEnabledRef = useRef(false);
+  const [debugState, setDebugState] = useState<MotionDebugState>(EMPTY_DEBUG_STATE);
   const [pack, setPack] = useState<CompanionMotionPack | null>(null);
   const [sources, setSources] = useState<PlaybackSources>({});
   const [visibleVariant, setVisibleVariant] = useState<CompanionMotionVariant | null>(null);
@@ -49,6 +92,82 @@ export function CompanionMotionBackground({
   const visibleVariantRef = useRef<CompanionMotionVariant | null>(null);
 
   useEffect(() => {
+    const enabled = window.location.hostname === STAGING_DEBUG_HOST
+      && new URLSearchParams(window.location.search).get("motionDebug") === "1";
+    debugEnabledRef.current = enabled;
+    setDebugEnabled(enabled);
+    if (enabled) setDebugState(EMPTY_DEBUG_STATE);
+  }, []);
+
+  const observeVideo = (motionVariant: CompanionMotionVariant, event: string) => {
+    if (!debugEnabledRef.current) return;
+    const video = videoNodes.current.get(motionVariant);
+    const style = video ? window.getComputedStyle(video) : null;
+    const mediaError = video?.error;
+    setDebugState((current) => ({
+      ...current,
+      lastEvent: `${motionVariant}:${event}`,
+      videos: {
+        ...current.videos,
+        [motionVariant]: {
+          exists: Boolean(video),
+          src: Boolean(video?.currentSrc || video?.getAttribute("src")),
+          readyState: video?.readyState ?? null,
+          networkState: video?.networkState ?? null,
+          paused: video?.paused ?? null,
+          currentTime: video ? Number(video.currentTime.toFixed(3)) : null,
+          duration: video && Number.isFinite(video.duration) ? Number(video.duration.toFixed(3)) : null,
+          error: mediaError ? `${mediaError.code}:${mediaError.message}` : null,
+          play: current.videos[motionVariant]?.play ?? "not-attempted",
+          playError: current.videos[motionVariant]?.playError ?? null,
+          opacity: style?.opacity ?? null,
+          display: style?.display ?? null,
+          visibility: style?.visibility ?? null,
+        },
+      },
+    }));
+  };
+
+  const recordPlay = (motionVariant: CompanionMotionVariant, result: "resolved" | "rejected", error: string | null) => {
+    if (!debugEnabledRef.current) return;
+    setDebugState((current) => ({
+      ...current,
+      videos: {
+        ...current.videos,
+        [motionVariant]: {
+          ...(current.videos[motionVariant] ?? {
+            exists: Boolean(videoNodes.current.get(motionVariant)),
+            src: Boolean(videoNodes.current.get(motionVariant)?.currentSrc),
+            readyState: null,
+            networkState: null,
+            paused: null,
+            currentTime: null,
+            duration: null,
+            error: null,
+            opacity: null,
+            display: null,
+            visibility: null,
+          }),
+          play: result,
+          playError: error,
+        },
+      },
+    }));
+  };
+
+  const startPlayback = (motionVariant: CompanionMotionVariant) => {
+    const video = videoNodes.current.get(motionVariant);
+    if (!video) return;
+    video.muted = true;
+    video.defaultMuted = true;
+    video.playsInline = true;
+    void video.play().then(
+      () => recordPlay(motionVariant, "resolved", null),
+      (error: unknown) => recordPlay(motionVariant, "rejected", debugError(error)),
+    );
+  };
+
+  useEffect(() => {
     if (crossfadeTimer.current !== null) window.clearTimeout(crossfadeTimer.current);
     if (authorizationRetryTimer.current !== null) window.clearTimeout(authorizationRetryTimer.current);
     crossfadeTimer.current = null;
@@ -57,6 +176,7 @@ export function CompanionMotionBackground({
     authorizationFailures.current.clear();
     authorizedJobs.current.clear();
     visibleVariantRef.current = null;
+    if (debugEnabledRef.current) setDebugState(EMPTY_DEBUG_STATE);
     setPack(null);
     setSources({});
     setVisibleVariant(null);
@@ -111,14 +231,39 @@ export function CompanionMotionBackground({
     const jobId = slot.jobId;
     void (async () => {
       try {
+        if (debugEnabledRef.current) {
+          setDebugState((current) => ({
+            ...current,
+            attempts: { ...current.attempts, [slot.variant]: { requested: true, status: null, error: null } },
+          }));
+        }
         const playback = await authorizeCompanionMotionPlayback(memoryId, jobId, controller.signal);
         if (!live) return;
+        if (debugEnabledRef.current) {
+          setDebugState((current) => ({
+            ...current,
+            attempts: { ...current.attempts, [slot.variant]: { requested: true, status: 200, error: null } },
+          }));
+        }
         authorizedJobs.current.set(jobId, playback);
         authorizationFailures.current.delete(jobId);
         setSources((current) => ({ ...current, [slot.variant]: { jobId, ...playback } }));
-      } catch {
+      } catch (error) {
         // A failed authorization leaves the owner photo visible.
         if (!live) return;
+        if (debugEnabledRef.current) {
+          setDebugState((current) => ({
+            ...current,
+            attempts: {
+              ...current.attempts,
+              [slot.variant]: {
+                requested: true,
+                status: error instanceof CompanionMotionRequestError ? error.status : null,
+                error: debugError(error),
+              },
+            },
+          }));
+        }
         const failures = (authorizationFailures.current.get(jobId) ?? 0) + 1;
         authorizationFailures.current.set(jobId, failures);
         if (failures <= 3) {
@@ -157,11 +302,8 @@ export function CompanionMotionBackground({
     }
     const target = videoNodes.current.get(targetVariant);
     if (!target) return;
-    target.muted = true;
-    target.defaultMuted = true;
-    target.playsInline = true;
     if (visibleVariantRef.current !== targetVariant && target.readyState > HTMLMediaElement.HAVE_NOTHING) target.currentTime = 0;
-    void target.play().catch(() => undefined);
+    startPlayback(targetVariant);
   }, [targetVariant]);
 
   useEffect(() => () => {
@@ -190,10 +332,7 @@ export function CompanionMotionBackground({
     if (next !== targetVariant) return;
     const video = videoNodes.current.get(next);
     if (!video) return;
-    video.muted = true;
-    video.defaultMuted = true;
-    video.playsInline = true;
-    void video.play().catch(() => undefined);
+    startPlayback(next);
   };
 
   const showAfterFirstMovingFrame = (next: CompanionMotionVariant) => {
@@ -221,6 +360,51 @@ export function CompanionMotionBackground({
         () => setAuthorizationEpoch((current) => current + 1),
         POLL_INTERVAL_MS,
       );
+    }
+  };
+
+  const copyDebugResult = async () => {
+    const slotLines = ["idle", "attentive", "reflective"].map((candidate) => {
+      const motionVariant = candidate as CompanionMotionVariant;
+      const slot = pack?.slots.find((entry) => entry.variant === motionVariant);
+      const request = debugState.attempts[motionVariant];
+      const video = debugState.videos[motionVariant];
+      return [
+        motionVariant,
+        `approved=${slot?.artifactAvailable === true}`,
+        `status=${slot?.status ?? "missing"}`,
+        `playbackRequested=${request?.requested === true}`,
+        `playbackHttp=${request?.status ?? "n/a"}`,
+        `playbackError=${request?.error ?? "none"}`,
+        `videoExists=${video?.exists ?? false}`,
+        `src=${video?.src ?? false}`,
+        `readyState=${video?.readyState ?? "n/a"}`,
+        `networkState=${video?.networkState ?? "n/a"}`,
+        `paused=${video?.paused ?? "n/a"}`,
+        `currentTime=${video?.currentTime ?? "n/a"}`,
+        `duration=${video?.duration ?? "n/a"}`,
+        `videoError=${video?.error ?? "none"}`,
+        `play=${video?.play ?? "not-attempted"}`,
+        `playError=${video?.playError ?? "none"}`,
+        `opacity=${video?.opacity ?? "n/a"}`,
+        `display=${video?.display ?? "n/a"}`,
+        `visibility=${video?.visibility ?? "n/a"}`,
+      ].join(" ");
+    });
+    const payload = [
+      `memoryId=${memoryId}`,
+      `eligible=${pack?.eligible ?? false}`,
+      `target=${targetVariant ?? "still"}`,
+      `visible=${visibleVariant ?? "still"}`,
+      `staticFallback=${visibleVariant === null}`,
+      `lastEvent=${debugState.lastEvent ?? "none"}`,
+      ...slotLines,
+    ].join("\n");
+    try {
+      await navigator.clipboard.writeText(payload);
+      setDebugState((current) => ({ ...current, copied: true }));
+    } catch {
+      setDebugState((current) => ({ ...current, copied: false }));
     }
   };
 
@@ -257,12 +441,49 @@ export function CompanionMotionBackground({
             loop
             playsInline
             preload={motionVariant === targetVariant ? "auto" : "none"}
-            onLoadedData={() => warm(motionVariant)}
-            onTimeUpdate={() => showAfterFirstMovingFrame(motionVariant)}
-            onError={() => fail(motionVariant, source.jobId)}
+            onLoadStart={() => observeVideo(motionVariant, "loadstart")}
+            onLoadedMetadata={() => observeVideo(motionVariant, "loadedmetadata")}
+            onLoadedData={() => { observeVideo(motionVariant, "loadeddata"); warm(motionVariant); }}
+            onCanPlay={() => observeVideo(motionVariant, "canplay")}
+            onPlaying={() => observeVideo(motionVariant, "playing")}
+            onWaiting={() => observeVideo(motionVariant, "waiting")}
+            onStalled={() => observeVideo(motionVariant, "stalled")}
+            onPause={() => observeVideo(motionVariant, "pause")}
+            onTimeUpdate={() => { observeVideo(motionVariant, "timeupdate"); showAfterFirstMovingFrame(motionVariant); }}
+            onError={() => { observeVideo(motionVariant, "error"); fail(motionVariant, source.jobId); }}
           />
         );
       })}
+      {debugEnabled && (
+        <aside className={styles.debugPanel} aria-label="微动态诊断">
+          <strong>微动态诊断 · Staging</strong>
+          <dl>
+            <div><dt>memory</dt><dd>{memoryId}</dd></div>
+            <div><dt>approved pack</dt><dd>{pack?.eligible ? "found" : "not found"}</dd></div>
+            <div><dt>target / visible</dt><dd>{targetVariant ?? "still"} / {visibleVariant ?? "still"}</dd></div>
+            <div><dt>static fallback</dt><dd>{visibleVariant === null ? "shown" : "hidden"}</dd></div>
+            <div><dt>last media event</dt><dd>{debugState.lastEvent ?? "none"}</dd></div>
+          </dl>
+          {(["idle", "attentive", "reflective"] as CompanionMotionVariant[]).map((motionVariant) => {
+            const slot = pack?.slots.find((entry) => entry.variant === motionVariant);
+            const request = debugState.attempts[motionVariant];
+            const video = debugState.videos[motionVariant];
+            return (
+              <section key={motionVariant} className={styles.debugVariant}>
+                <strong>{motionVariant}</strong>
+                <span>artifact: {slot?.artifactAvailable === true ? "approved" : "missing"} · {slot?.status ?? "no-slot"}</span>
+                <span>playback: {request?.requested ? `requested ${request.status ?? "pending"}` : "not requested"}{request?.error ? ` · ${request.error}` : ""}</span>
+                <span>video: {video?.exists ? "present" : "absent"} · src {video?.src ? "set" : "none"}</span>
+                <span>ready {video?.readyState ?? "n/a"} · network {video?.networkState ?? "n/a"} · paused {String(video?.paused ?? "n/a")}</span>
+                <span>time {video?.currentTime ?? "n/a"} / {video?.duration ?? "n/a"} · play {video?.play ?? "not-attempted"}</span>
+                <span>error {video?.error ?? video?.playError ?? "none"}</span>
+                <span>style opacity {video?.opacity ?? "n/a"} · {video?.display ?? "n/a"} · {video?.visibility ?? "n/a"}</span>
+              </section>
+            );
+          })}
+          <button type="button" onClick={() => void copyDebugResult()}>{debugState.copied ? "已复制" : "复制诊断结果"}</button>
+        </aside>
+      )}
     </div>
   );
 }

@@ -16,11 +16,24 @@ test("owner motion loads idle first, warms state changes before crossfading, and
   assert.match(component, /<video[\s\S]*autoPlay[\s\S]*muted[\s\S]*loop[\s\S]*playsInline/);
   assert.match(component, /const requestedVariant: CompanionMotionVariant = sources\.idle \? variant : "idle"/);
   assert.match(component, /preload=\{motionVariant === targetVariant \? "auto" : "none"\}/);
-  assert.match(component, /onLoadedData=\{\(\) => warm\(motionVariant\)\}/);
-  assert.match(component, /onTimeUpdate=\{\(\) => showAfterFirstMovingFrame\(motionVariant\)\}/);
+  assert.match(component, /onLoadedData=\{\(\) => \{[\s\S]*warm\(motionVariant\);[\s\S]*\}\}/);
+  assert.match(component, /onTimeUpdate=\{\(\) => \{[\s\S]*showAfterFirstMovingFrame\(motionVariant\);[\s\S]*\}\}/);
   assert.match(component, /data-visible=\{visibleVariant === motionVariant/);
   assert.match(component, /videoNodes\.current\.get\(previous\)\?\.pause\(\)/);
   assert.match(css, /transition: opacity 900ms/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*display: none !important/);
   assert.match(component, /motionEnabled && Object\.entries\(sources\)/);
+});
+
+test("Staging-only debug panel observes the existing media chain without generating or changing production playback", () => {
+  assert.match(component, /const STAGING_DEBUG_HOST = "app\.staging\.yijianmemory\.cn"/);
+  assert.match(component, /window\.location\.hostname === STAGING_DEBUG_HOST/);
+  assert.match(component, /get\("motionDebug"\) === "1"/);
+  assert.match(component, /data-motion-video=\{motionVariant\}/);
+  assert.match(component, /readyState: video\?\.readyState/);
+  assert.match(component, /networkState: video\?\.networkState/);
+  assert.match(component, /currentTime: video \? Number\(video\.currentTime\.toFixed\(3\)\)/);
+  assert.match(component, /navigator\.clipboard\.writeText\(payload\)/);
+  assert.doesNotMatch(component, /ensureCompanionMotionPackOnce|ensureCompanionMotionPack\(memoryId/);
+  assert.match(css, /\.debugPanel/);
 });
