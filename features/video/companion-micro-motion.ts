@@ -271,3 +271,63 @@ export class CompanionMotionPackService {
     return result.rows;
   }
 }
+
+/**
+ * Bridges a settled current-Commerce paid package to the existing durable
+ * companion-motion pack.  Commerce is account-scoped today, so every exact
+ * non-deleted memory belonging to that paid owner is considered independently;
+ * only memories with a passed portrait preflight are enqueued.  `ensure` keeps
+ * the final per-memory/variant idempotency guarantee.
+ */
+export class PaidCompanionMotionLifecycle {
+  constructor(private readonly packService: CompanionMotionPackService) {}
+
+  async enqueueForPaidOrder(input: { orderNo: string }): Promise<void> {
+    const targets = await queryPostgres<{
+      external_user_id: string;
+      memory_id: string;
+    }>(
+      `SELECT u.external_id AS external_user_id, m.id AS memory_id
+       FROM public.commerce_orders o
+       JOIN public.users u ON u.id = o.user_id
+       JOIN public.commerce_credit_lots l
+         ON l.user_id = o.user_id
+        AND l.source_kind = 'paid_package'
+        AND l.source_key = o.id::text
+       JOIN public.memories m ON m.user_id = o.user_id
+       WHERE o.order_no = $1
+         AND o.status = 'paid'
+         AND o.paid_at IS NOT NULL
+         AND o.provider_transaction_id IS NOT NULL
+         AND o.refunded_at IS NULL
+         AND l.active = true
+         AND l.save_allowed = true
+         AND l.expires_at IS NULL
+         AND m.deleted_at IS NULL
+         AND EXISTS (
+           SELECT 1
+           FROM public.media_assets a
+           WHERE a.user_id = m.user_id
+             AND a.memory_id = m.id
+             AND a.media_type = 'image'
+             AND a.status = 'uploaded'
+             AND a.deleted_at IS NULL
+             AND a.storage_key IS NOT NULL
+             AND a.sha256 IS NOT NULL
+             AND (
+               a.metadata ->> 'qualityPreflightStatus' = 'passed'
+               OR a.metadata #>> '{qualityPreflight,status}' = 'passed'
+               OR a.metadata #>> '{quality_preflight,status}' = 'passed'
+             )
+         )
+       ORDER BY m.created_at ASC, m.id ASC`,
+      [input.orderNo],
+    );
+    for (const target of targets.rows) {
+      await this.packService.ensure({
+        externalUserId: target.external_user_id,
+        memoryId: target.memory_id,
+      });
+    }
+  }
+}

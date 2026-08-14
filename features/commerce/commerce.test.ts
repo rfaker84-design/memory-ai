@@ -589,7 +589,7 @@ class TestLedger implements CommerceDataSource {
   }
 }
 
-function fixture() {
+function fixture(lifecycle?: { enqueueForPaidOrder(input: { orderNo: string }): Promise<void> }) {
   const dataSource = new TestLedger();
   const user = `phone:${"a".repeat(64)}`;
   dataSource.register(
@@ -599,9 +599,46 @@ function fixture() {
   return {
     dataSource,
     user,
-    service: new CommerceService(new CommerceRepository(dataSource)),
+    service: new CommerceService(new CommerceRepository(dataSource), lifecycle),
   };
 }
+
+test("a paid Commerce settlement enqueues durable companion motion once and retries the lifecycle on a duplicate payment", async () => {
+  const calls: string[] = [];
+  const { service, user } = fixture({
+    async enqueueForPaidOrder({ orderNo }) { calls.push(orderNo); },
+  });
+  const order = await service.createOrder({
+    externalUserId: user,
+    requestKey: "motion-lifecycle-order-0001",
+    productId: "memory_video_49",
+    platform: "web",
+    adapter: new TestCommercePaymentAdapter({ NODE_ENV: "test", COMMERCE_TEST_MODE: "true" }),
+  });
+  const event = paymentEvent(order.order, "motion-lifecycle-event-0001");
+  await service.applyPaymentEvent("test", event);
+  await service.applyPaymentEvent("test", event);
+  assert.deepEqual(calls, [order.order.orderNo, order.order.orderNo]);
+});
+
+test("refund and failed payment events never enqueue companion motion", async () => {
+  const calls: string[] = [];
+  const { service, user } = fixture({
+    async enqueueForPaidOrder({ orderNo }) { calls.push(orderNo); },
+  });
+  const order = await service.createOrder({
+    externalUserId: user,
+    requestKey: "motion-lifecycle-failed-order-0001",
+    productId: "memory_video_49",
+    platform: "web",
+    adapter: new TestCommercePaymentAdapter({ NODE_ENV: "test", COMMERCE_TEST_MODE: "true" }),
+  });
+  await service.applyPaymentEvent("test", {
+    ...paymentEvent(order.order, "motion-lifecycle-failed-event-0001"),
+    status: "failed",
+  });
+  assert.deepEqual(calls, []);
+});
 
 function paymentEvent(
   order: CommerceOrder,

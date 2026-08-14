@@ -15,6 +15,16 @@ import type {
 } from "./types";
 import { getCommerceProduct } from "./catalog";
 
+/**
+ * A paid Commerce package may make one or more of its owner's existing
+ * portraits eligible for the companion-motion pack.  This is deliberately a
+ * server-side lifecycle hook: rendering Companion or Chat must never enqueue
+ * paid work.
+ */
+export type PaidCompanionMotionLifecycle = {
+  enqueueForPaidOrder(input: { orderNo: string }): Promise<void>;
+};
+
 const KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
 const CODE_PATTERN = /^[A-HJ-NP-Z2-9]{10}$/;
 const GENERATION_KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
@@ -35,7 +45,10 @@ function text(value: string, field: string, maxLength: number): string {
 }
 
 export class CommerceService {
-  constructor(private readonly repository: CommerceRepository) {}
+  constructor(
+    private readonly repository: CommerceRepository,
+    private readonly companionMotionLifecycle?: PaidCompanionMotionLifecycle,
+  ) {}
 
   async createOrder(input: {
     externalUserId: string;
@@ -71,11 +84,41 @@ export class CommerceService {
     return this.repository.listOrders(text(externalUserId, "userId", 255));
   }
 
-  applyPaymentEvent(
+  async applyPaymentEvent(
     rail: "test" | "storekit_iap",
     event: CommercePaymentEvent,
   ) {
-    return this.repository.applyPaymentEvent(rail, event);
+    const settlement = await this.repository.applyPaymentEvent(rail, event);
+    // A provider can retry the same accepted payment after its first response
+    // was lost. Re-running the lifecycle on that duplicate is safe and is the
+    // recovery path for a transient input-staging failure. Refunds never run
+    // this hook and do not delete historical artifacts.
+    if (
+      event.kind === "payment"
+      && event.status === "succeeded"
+      && (settlement.outcome === "paid" || settlement.outcome === "duplicate")
+    ) {
+      const lifecycle = this.companionMotionLifecycle
+        ?? await this.createRuntimeCompanionMotionLifecycle();
+      await lifecycle?.enqueueForPaidOrder({
+        orderNo: settlement.orderNo,
+      });
+    }
+    return settlement;
+  }
+
+  private async createRuntimeCompanionMotionLifecycle(): Promise<PaidCompanionMotionLifecycle | undefined> {
+    // Local/test fixtures intentionally inject an explicit port. The real
+    // production settlement path is self-contained so a new payment adapter
+    // cannot accidentally omit the companion-motion lifecycle.
+    if (process.env.NODE_ENV !== "production") return undefined;
+    const [motion, runtime] = await Promise.all([
+      import("../video/companion-micro-motion"),
+      import("../video/first-presence-video-runtime"),
+    ]);
+    return new motion.PaidCompanionMotionLifecycle(
+      new motion.CompanionMotionPackService(runtime.createFirstPresenceVideoOwnerInputStaging),
+    );
   }
 
   requestRefund(input: {

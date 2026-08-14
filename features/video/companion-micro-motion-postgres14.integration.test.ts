@@ -201,7 +201,7 @@ test("Migration 028 PostgreSQL 14 entitlement, review-grant, ownership, concurre
     process.env.DATABASE_URL = targetUrl;
     process.env.DATABASE_SSL = "false";
     process.env.DATABASE_POOL_MAX = "32";
-    const [{ CompanionMotionPackError, CompanionMotionPackService }, database] = await Promise.all([
+    const [{ CompanionMotionPackError, CompanionMotionPackService, PaidCompanionMotionLifecycle }, database] = await Promise.all([
       import("./companion-micro-motion"),
       import("../../src/server/database"),
     ]);
@@ -273,6 +273,20 @@ test("Migration 028 PostgreSQL 14 entitlement, review-grant, ownership, concurre
       externalUserId: otherExternalId,
       memoryId: otherMemory,
     }), { eligible: true, slots: [] }, "a current paid package remains eligible even after its video credits are consumed");
+    const paidLifecycle = new PaidCompanionMotionLifecycle(disabled);
+    await Promise.all(Array.from({ length: 8 }, () => paidLifecycle.enqueueForPaidOrder({
+      orderNo: "YC20260812000000ABCDEF123456",
+    })));
+    assert.equal(
+      (await target.query(
+        "SELECT count(*)::int AS count FROM video_generation_jobs WHERE user_id=$1 AND memory_id=$2 AND use_case='companion_micro_motion'",
+        [otherId, otherMemory],
+      )).rows[0]?.count,
+      3,
+      "the settled Commerce order enqueues one exact three-slot pack and its replay creates nothing else",
+    );
+    assert.equal(stagedJobIds.size, 3);
+    assert.equal(derivedInputCalls, 1);
     await target.query(
       "UPDATE commerce_orders SET status='refunded',refunded_at=NOW() WHERE id=$1",
       [paidOrderId],
@@ -299,9 +313,9 @@ test("Migration 028 PostgreSQL 14 entitlement, review-grant, ownership, concurre
       [...new Set(concurrent.flatMap((pack) => pack.map((slot) => slot.variant)))].sort(),
       ["attentive", "idle", "reflective"],
     );
-    assert.equal(stagedJobIds.size, 3);
-    assert.equal(stagedProviderInputs.size, 3);
-    assert.equal(derivedInputCalls, 1, "one portrait read produces the three v2 provider inputs");
+    assert.equal(stagedJobIds.size, 6);
+    assert.equal(stagedProviderInputs.size, 6);
+    assert.equal(derivedInputCalls, 2, "one portrait read produces the three v2 provider inputs");
     assert.equal(discardedJobIds.size, 0);
     assert.equal(
       (await target.query(
@@ -325,8 +339,8 @@ test("Migration 028 PostgreSQL 14 entitlement, review-grant, ownership, concurre
     );
     const upgraded = await enabled.ensure({ externalUserId: ownerExternalId, memoryId: ownerMemory });
     assert.equal(upgraded.length, 3);
-    assert.equal(stagedJobIds.size, 6, "the v2 pack stages three new provider-only inputs exactly once");
-    assert.equal(derivedInputCalls, 2, "the retried v2 pack derives one private source for all three slots");
+    assert.equal(stagedJobIds.size, 9, "the v2 pack stages three new provider-only inputs exactly once");
+    assert.equal(derivedInputCalls, 3, "the retried v2 pack derives one private source for all three slots");
     assert.deepEqual(
       (await target.query<{ pack_version: number; count: number }>(
         `SELECT pack_version, count(*)::int AS count
@@ -363,12 +377,12 @@ test("Migration 028 PostgreSQL 14 entitlement, review-grant, ownership, concurre
     assert.equal(refreshed[0].length, 3);
     assert.equal(refreshed[1].length, 3);
     assert.deepEqual(refreshed[2], { eligible: true, slots: refreshed[1] });
-    assert.equal(stagedJobIds.size, 6, "refresh and replay never restage or create a seventh slot");
+    assert.equal(stagedJobIds.size, 9, "refresh and replay never restage or create a seventh slot");
     assert.equal(
       (await target.query(
         "SELECT count(*)::int AS count FROM video_generation_jobs WHERE use_case='companion_micro_motion'",
       )).rows[0]?.count,
-      6,
+      9,
     );
 
     for (const denied of [
@@ -386,7 +400,7 @@ test("Migration 028 PostgreSQL 14 entitlement, review-grant, ownership, concurre
       (await target.query(
         "SELECT count(*)::int AS count FROM video_generation_jobs WHERE use_case='companion_micro_motion'",
       )).rows[0]?.count,
-      6,
+      9,
     );
 
     await target.query(
@@ -406,7 +420,7 @@ test("Migration 028 PostgreSQL 14 entitlement, review-grant, ownership, concurre
       (await target.query(
         "SELECT count(*)::int AS count FROM video_generation_jobs WHERE use_case='companion_micro_motion'",
       )).rows[0]?.count,
-      6,
+      9,
     );
 
     await closePostgresPool();
