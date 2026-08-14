@@ -206,6 +206,11 @@ function companionMotionProviderTimedOut(
   ) {
     return false;
   }
+  // An operator can reconcile exactly one accepted Provider task that was
+  // marked failed only because the local worker was unavailable for longer
+  // than the hard timeout.  That route never submits again; it receives one
+  // poll attempt before ordinary timeout handling resumes.
+  if (job.providerState === "reconciled_accepted_timeout") return false;
   const createdAtMs = Date.parse(job.createdAt);
   return Number.isFinite(createdAtMs)
     && nowMs - createdAtMs >= COMPANION_MOTION_PROVIDER_HARD_TIMEOUT_MS;

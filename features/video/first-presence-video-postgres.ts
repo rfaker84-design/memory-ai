@@ -250,9 +250,11 @@ export class FirstPresenceVideoPostgresRepository
   }
 
   /**
-   * The only path that may move a submission_uncertain job again. It writes a
-   * durable reconciliation decision before changing the job, and release uses
-   * the same transaction as the Migration 014 entitlement settlement.
+   * The only path that may move a submission_uncertain job again.  It also
+   * admits the narrowly-defined accepted companion-motion timeout: Vidu has
+   * already accepted the exact persisted task and a worker outage caused the
+   * local 30-minute clock to terminate it before its first poll.  Both paths
+   * write a durable reconciliation decision before changing the job.
    */
   async reconcileUncertainSubmission(input: {
     id: string;
@@ -271,6 +273,10 @@ export class FirstPresenceVideoPostgresRepository
       const row = locked.rows[0];
       if (!row) throw new Error("FIRST_PRESENCE_VIDEO_JOB_NOT_FOUND");
       const current = job(row);
+      const acceptedCompanionTimeout = current.status === "failed"
+        && current.useCase === "companion_micro_motion"
+        && current.errorCode === "COMPANION_MOTION_PROVIDER_TIMEOUT"
+        && current.providerTaskId !== null;
       const existing = await client.query<{
         action: "attach_provider_task" | "release_unresolved";
         provider_task_id: string | null;
@@ -299,8 +305,11 @@ export class FirstPresenceVideoPostgresRepository
         }
         return current;
       }
-      if (current.status !== "submission_uncertain") {
+      if (current.status !== "submission_uncertain" && !acceptedCompanionTimeout) {
         throw new Error("FIRST_PRESENCE_VIDEO_NOT_UNCERTAIN");
+      }
+      if (acceptedCompanionTimeout && input.action !== "ATTACH_PROVIDER_TASK") {
+        throw new Error("FIRST_PRESENCE_RECONCILIATION_PROVIDER_TASK_CONFLICT");
       }
 
       await client.query(
@@ -310,17 +319,22 @@ export class FirstPresenceVideoPostgresRepository
         [input.id, input.requestKey, action, input.operatorAccount, providerTaskId, input.reason],
       );
       if (input.action === "ATTACH_PROVIDER_TASK") {
+        const previousStatus = acceptedCompanionTimeout ? "failed" : "submission_uncertain";
+        const previousError = acceptedCompanionTimeout ? "COMPANION_MOTION_PROVIDER_TIMEOUT" : null;
         const attached = await client.query<JobRow>(
           `UPDATE public.video_generation_jobs j
            SET status = 'submitted', provider_submission_state = 'accepted',
-             provider_task_id = $2, provider_state = 'reconciled_attached', error_code = NULL
-           WHERE j.id = $1 AND j.status = 'submission_uncertain'
+             provider_task_id = $2,
+             provider_state = CASE WHEN $3::text = 'failed' THEN 'reconciled_accepted_timeout' ELSE 'reconciled_attached' END,
+             error_code = NULL, entitlement_settlement = 'reserved'
+           WHERE j.id = $1 AND j.status = $3
+             AND ($4::text IS NULL OR j.error_code = $4)
            RETURNING j.id, (SELECT external_id FROM public.users WHERE id = j.user_id) AS external_user_id,
              j.memory_id, j.idempotency_key, j.status, j.provider, j.provider_task_id,
              j.provider_state, j.input_sha256, j.actual_credits, j.artifact_key,
               j.quality_payload, j.error_code, j.created_at, j.updated_at,
               j.use_case, j.motion_variant, j.pack_version`,
-          [input.id, providerTaskId],
+          [input.id, providerTaskId, previousStatus, previousError],
         );
         if (!attached.rows[0]) throw new Error("FIRST_PRESENCE_RECONCILIATION_STATE_LOST");
         return job(attached.rows[0]);

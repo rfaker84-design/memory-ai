@@ -739,6 +739,52 @@ test("micro-motion submitted or running jobs hard-timeout from durable created_a
   assert.equal(polls, 0);
 });
 
+test("an accepted companion timeout reconciled by an operator gets one poll without another submit", async () => {
+  let submits = 0;
+  let polls = 0;
+  const reconciled = serviceWith({
+    provider: {
+      submit: async () => {
+        submits += 1;
+        return { taskId: "must-not-submit", providerState: "created", credits: 1 };
+      },
+      poll: async () => {
+        polls += 1;
+        return {
+          state: "succeeded",
+          providerState: "success",
+          credits: 52,
+          outputUrl: "https://example.test/existing-provider-result.mp4",
+        };
+      },
+    },
+    companionEntitlements: { assertActive: async () => undefined },
+  });
+  const queued = await reconciled.repository.createQueued({
+    externalUserId: owner,
+    memoryId,
+    idempotencyKey: "companion-motion.idle-review.v3",
+    imageDataUrl: image,
+    imageSha256: sha,
+    useCase: "companion_micro_motion",
+    motionVariant: "idle",
+    packVersion: 3,
+  });
+  reconciled.repository.jobs.set(queued.id, {
+    ...queued,
+    status: "submitted",
+    providerTaskId: "existing-accepted-task",
+    providerState: "reconciled_accepted_timeout",
+    errorCode: null,
+    createdAt: new Date(Date.now() - COMPANION_MOTION_PROVIDER_HARD_TIMEOUT_MS - 1_000).toISOString(),
+  });
+
+  const result = await reconciled.service.recover(queued.id);
+  assert.equal(result.status, "manual_review_required");
+  assert.equal(polls, 1);
+  assert.equal(submits, 0, "recovery may only poll the persisted Provider task");
+});
+
 test("micro-motion quality payload persists the frozen motion-specific manual checklist", async () => {
   const micro = serviceWith({
     companionEntitlements: { assertActive: async () => undefined },
