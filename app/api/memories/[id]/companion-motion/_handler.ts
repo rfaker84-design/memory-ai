@@ -21,7 +21,7 @@ import {
 
 type Context = { params: Promise<{ id: string }> };
 type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
-type PackService = Pick<CompanionMotionPackService, "ensure" | "ensureIdleVisualReview" | "ensureAttentiveVisualReview" | "ensureAttentiveStillVisualReview" | "getState">;
+type PackService = Pick<CompanionMotionPackService, "ensure" | "ensureIdleVisualReview" | "ensureAttentiveVisualReview" | "ensureAttentiveStillVisualReview" | "ensureAcknowledgementVisualReview" | "getState">;
 type CapabilityGuard = () => void;
 type StagingReviewGuard = () => boolean;
 
@@ -81,10 +81,11 @@ export function createCompanionMotionHandler(
         const reviewIdle = review === "idle-visual";
         const reviewAttentive = review === "attentive-visual";
         const reviewAttentiveStill = review === "attentive-still-visual";
-        if (Object.keys(body).length !== 0 && !reviewIdle && !reviewAttentive && !reviewAttentiveStill) {
+        const reviewAcknowledgement = review === "acknowledgement-visual";
+        if (Object.keys(body).length !== 0 && !reviewIdle && !reviewAttentive && !reviewAttentiveStill && !reviewAcknowledgement) {
           return json({ error: "INVALID_COMPANION_MOTION_REQUEST" }, { status: 400 });
         }
-        if ((reviewIdle || reviewAttentive || reviewAttentiveStill) && !stagingReviewGuard()) {
+        if ((reviewIdle || reviewAttentive || reviewAttentiveStill || reviewAcknowledgement) && !stagingReviewGuard()) {
           return json({ error: "INVALID_COMPANION_MOTION_REQUEST" }, { status: 400 });
         }
         const slots = reviewIdle
@@ -93,7 +94,9 @@ export function createCompanionMotionHandler(
             ? await serviceFactory().ensureAttentiveVisualReview({ externalUserId: session.externalUserId, memoryId })
             : reviewAttentiveStill
               ? await serviceFactory().ensureAttentiveStillVisualReview({ externalUserId: session.externalUserId, memoryId })
-            : await serviceFactory().ensure({ externalUserId: session.externalUserId, memoryId });
+              : reviewAcknowledgement
+                ? await serviceFactory().ensureAcknowledgementVisualReview({ externalUserId: session.externalUserId, memoryId })
+              : await serviceFactory().ensure({ externalUserId: session.externalUserId, memoryId });
         return json({ eligible: true, slots }, { status: 202 });
       } catch (error) { return failure(error); }
     },

@@ -12,7 +12,7 @@ export type ApprovedVideoArtifact = {
   playbackExpiresAt: string;
   presentation: "initial_preview" | "additional_generation";
   saveAllowed: boolean;
-  motionVariant?: "idle" | "attentive" | "reflective";
+  motionVariant?: "idle" | "attentive" | "reflective" | "acknowledgement";
 };
 
 export type VideoArtifactQueryPort = {
@@ -42,7 +42,7 @@ type ApprovedArtifactRow = {
   purpose: "first_preview" | "new_video" | "photo_remedy" | "referral_experience" | "occasion_experience" | null;
   save_allowed: boolean;
   use_case: "first_presence" | "companion_micro_motion";
-  motion_variant: "idle" | "attentive" | "reflective" | null;
+  motion_variant: "idle" | "attentive" | "reflective" | "acknowledgement" | null;
 };
 
 /**
@@ -79,7 +79,7 @@ export class FirstPresenceVideoArtifactQueryPort implements VideoArtifactQueryPo
             (j.use_case = 'first_presence' AND r.id IS NOT NULL AND l.id IS NOT NULL)
             OR (
               j.use_case = 'companion_micro_motion'
-              AND j.motion_variant IN ('idle', 'attentive', 'reflective')
+              AND j.motion_variant IN ('idle', 'attentive', 'reflective', 'acknowledgement')
               AND public.memoryai_companion_motion_eligible(j.user_id, j.memory_id, $4)
             )
           )

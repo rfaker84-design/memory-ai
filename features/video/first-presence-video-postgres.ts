@@ -37,7 +37,7 @@ type JobRow = {
   created_at: Date | string;
   updated_at: Date | string;
   use_case: "first_presence" | "companion_micro_motion";
-  motion_variant: "idle" | "attentive" | "reflective" | null;
+  motion_variant: "idle" | "attentive" | "reflective" | "acknowledgement" | null;
   pack_version: number;
 };
 

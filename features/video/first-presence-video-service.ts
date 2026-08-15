@@ -22,7 +22,7 @@ export type FirstPresenceVideoStatus =
   | "submission_uncertain";
 
 export type VideoGenerationUseCase = "first_presence" | "companion_micro_motion";
-export type CompanionMotionVariant = "idle" | "attentive" | "reflective";
+export type CompanionMotionVariant = "idle" | "attentive" | "reflective" | "acknowledgement";
 
 export type FirstPresenceManualReview = {
   reviewerAccount: string;

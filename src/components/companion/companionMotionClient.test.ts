@@ -56,6 +56,11 @@ test("companion motion DTO is strict, distinct by variant, and needs all three a
     eligible: true,
     slots: [{ variant: "idle", status: "running", jobId: jobs.idle, artifactAvailable: true }],
   }), null);
+  const acknowledgement = normalizeCompanionMotionPack({
+    eligible: true,
+    slots: [{ variant: "acknowledgement", status: "manual_review_required", jobId: jobs.idle, artifactAvailable: false }],
+  });
+  assert.ok(acknowledgement, "the additive one-shot slot is readable without making a legacy three-slot pack incomplete");
 });
 
 test("GET and POST use only the owner-scoped companion pack endpoint and empty POST body", async () => {

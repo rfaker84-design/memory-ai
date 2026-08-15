@@ -38,10 +38,17 @@ export const COMPANION_MOTION_ATTENTIVE_VISUAL_REVIEW_VERSION = 5;
  * new native Provider task without mutating or retrying the previous work.
  */
 export const COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_VERSION = 6;
+/**
+ * A staging-only reviewer sample for the one-shot acknowledgement surface.
+ * It is intentionally a distinct slot/version and does not alter the three
+ * looped presentation slots or attach acknowledgement to the chat state yet.
+ */
+export const COMPANION_MOTION_ACKNOWLEDGEMENT_VISUAL_REVIEW_VERSION = 7;
 export const COMPANION_MOTION_VARIANTS = [
   "idle",
   "attentive",
   "reflective",
+  "acknowledgement",
 ] as const satisfies readonly CompanionMotionVariant[];
 
 export type CompanionMotionSlot = {
@@ -291,6 +298,18 @@ export class CompanionMotionPackService {
     });
   }
 
+  /**
+   * One reviewer-authorized, one-shot acknowledgement sample. It creates only
+   * this exact durable slot and never asks for reflective work.
+   */
+  async ensureAcknowledgementVisualReview(input: { externalUserId: string; memoryId: string }): Promise<CompanionMotionSlot[]> {
+    return this.ensureSingleVisualReview(input, {
+      variant: "acknowledgement",
+      packVersion: COMPANION_MOTION_ACKNOWLEDGEMENT_VISUAL_REVIEW_VERSION,
+      reviewKey: "acknowledgement-review",
+    });
+  }
+
   async list(input: { externalUserId: string; memoryId: string }): Promise<CompanionMotionSlot[]> {
     const result = await queryPostgres<SlotRow>(
       `SELECT j.id, j.motion_variant, j.pack_version, j.status, j.artifact_key, j.quality_status, j.error_code
@@ -345,9 +364,9 @@ export class CompanionMotionPackService {
   private async ensureSingleVisualReview(
     input: { externalUserId: string; memoryId: string },
     sample: {
-      variant: "idle" | "attentive";
+      variant: "idle" | "attentive" | "acknowledgement";
       packVersion: number;
-      reviewKey: "idle-review" | "attentive-sustained-review" | "attentive-still-review";
+      reviewKey: "idle-review" | "attentive-sustained-review" | "attentive-still-review" | "acknowledgement-review";
     },
   ): Promise<CompanionMotionSlot[]> {
     if (!companionMotionStagingReviewEnabled(this.environment)) {

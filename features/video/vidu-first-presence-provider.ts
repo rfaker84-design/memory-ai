@@ -5,6 +5,8 @@ export const VIDU_FIRST_PRESENCE_MODEL = "viduq2-pro-fast";
 export const VIDU_FIRST_PRESENCE_DURATION_SECONDS = 8;
 export const VIDU_COMPANION_MOTION_IDLE_DURATION_SECONDS = 10;
 export const VIDU_COMPANION_MOTION_ATTENTIVE_VISUAL_REVIEW_DURATION_SECONDS = 10;
+/** The shortest duration already supported by this verified Vidu path. */
+export const VIDU_COMPANION_MOTION_ACKNOWLEDGEMENT_DURATION_SECONDS = 8;
 export const VIDU_FIRST_PRESENCE_RESOLUTION = "1080p";
 
 export const VIDU_FIRST_PRESENCE_PROMPT =
@@ -30,6 +32,10 @@ export const VIDU_COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_NEGATIVE_PROMPT
   VIDU_COMPANION_MOTION_NEGATIVE_PROMPT +
   ", smiling, grin, facial response, nodding, head tilt, head turn, shoulder movement, neck movement, acknowledgement gesture";
 
+export const VIDU_COMPANION_MOTION_ACKNOWLEDGEMENT_VISUAL_REVIEW_NEGATIVE_PROMPT =
+  VIDU_COMPANION_MOTION_NEGATIVE_PROMPT +
+  ", sustained smile, repeated smile, nodding, repeated response, second response, head turn, head tilt, shoulder movement, neck movement, performance";
+
 export const VIDU_COMPANION_MOTION_PROMPTS = Object.freeze({
   idle:
     "Ten-second static-camera, vertical 9:16 realistic companion portrait. Preserve the exact identity, age, facial features, hairstyle, clothing, environment, lighting, and framing from the source photo. The person is quietly present in the original place and remains almost completely still for most of the clip. Use one or two natural blinks only, extremely gentle breathing, a barely perceptible eye movement, and at most one tiny relaxed head or shoulder adjustment. Do not nod, turn, perform, or repeatedly smile. Closed mouth, no speaking, no lip movement, no hand gesture, no camera movement. Warm restrained life-documentary feeling. The first and final posture should be nearly identical for a soft loop.",
@@ -37,6 +43,8 @@ export const VIDU_COMPANION_MOTION_PROMPTS = Object.freeze({
     "Ten-second static-camera, vertical 9:16 realistic companion portrait. Preserve the exact identity, age, facial features, hairstyle, clothing, environment, lighting, and framing from the source photo. Use the approved quiet idle portrait as the visual baseline: for almost the entire clip, the person simply stays naturally and calmly attentive, nearly motionless. This is a sustained listening state, not a listening action. Allow only one or two natural blinks, extremely gentle breathing, a tiny focused eye change, and at most one barely perceptible relaxed head or shoulder-neck settling. No active nodding, no repeated smile, no visible response gesture, no noticeable turn, no performance. Closed mouth, no speaking, no lip movement, no hand gesture, no camera movement. Warm restrained life-documentary feeling. The first and final posture should be nearly identical for a soft loop.",
   reflective:
     "Static camera, vertical 9:16 realistic companion portrait. Preserve the exact identity, age, facial features, hairstyle, clothing, environment, lighting, and framing from the source photo. The person holds a quiet reflective pause with gentle breathing, natural blinking, a very small gaze change, and an extremely subtle posture adjustment. Closed mouth, no speaking, no lip movement, no dramatic emotion, no hand gesture, no camera movement. Warm restrained life-documentary feeling. The first and final posture should be nearly identical for a soft loop.",
+  acknowledgement:
+    "Eight-second static-camera, vertical 9:16 realistic companion portrait. Preserve the exact identity, age, facial features, hairstyle, clothing, environment, lighting, and framing from the source photo. This is one neutral acknowledgement after a message, not a looping state and not a performed reaction. Remain stable for most of the clip. At most once, make a very small, slow focused eye response or an almost imperceptible head acknowledgement. A very brief softening of expression is optional, never required. Do not smile continuously, do not nod, do not combine multiple reactions, and do not turn. After the single subtle response, return to the original calm stable posture. Closed mouth, no speaking, no lip movement, no hand gesture, no camera movement. Warm restrained life-documentary feeling.",
 } as const);
 
 /** A strict, one-off passive-listening contract for the v6 Staging review. */
@@ -173,13 +181,19 @@ export class ViduFirstPresenceProvider {
   ): Promise<ViduFirstPresenceSubmission> {
     const attentiveStillReview = input.motionVariant === "attentive"
       && input.companionMotionPackVersion === 6;
+    const acknowledgementReview = input.motionVariant === "acknowledgement"
+      && input.companionMotionPackVersion === 7;
     const prompt = attentiveStillReview
       ? VIDU_COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_PROMPT
+      : acknowledgementReview
+        ? VIDU_COMPANION_MOTION_PROMPTS.acknowledgement
       : input.motionVariant
       ? VIDU_COMPANION_MOTION_PROMPTS[input.motionVariant]
       : VIDU_FIRST_PRESENCE_PROMPT;
     const negativePrompt = attentiveStillReview
       ? VIDU_COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_NEGATIVE_PROMPT
+      : acknowledgementReview
+        ? VIDU_COMPANION_MOTION_ACKNOWLEDGEMENT_VISUAL_REVIEW_NEGATIVE_PROMPT
       : input.motionVariant
       ? VIDU_COMPANION_MOTION_NEGATIVE_PROMPT
       : VIDU_FIRST_PRESENCE_NEGATIVE_PROMPT;
@@ -194,7 +208,9 @@ export class ViduFirstPresenceProvider {
         is_rec: false,
         bgm: false,
         audio: false,
-        duration: (
+        duration: acknowledgementReview
+          ? VIDU_COMPANION_MOTION_ACKNOWLEDGEMENT_DURATION_SECONDS
+          : (
            (input.motionVariant === "idle" && input.companionMotionPackVersion === 3)
            || (input.motionVariant === "attentive" && (
              input.companionMotionPackVersion === 5 || input.companionMotionPackVersion === 6

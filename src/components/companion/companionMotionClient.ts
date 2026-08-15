@@ -1,4 +1,6 @@
-export const COMPANION_MOTION_VARIANTS = ["idle", "attentive", "reflective"] as const;
+export const COMPANION_MOTION_VARIANTS = ["idle", "attentive", "reflective", "acknowledgement"] as const;
+/** Existing loops remain the only player states until acknowledgement wiring is explicitly approved. */
+export const COMPANION_MOTION_LOOP_VARIANTS = ["idle", "attentive", "reflective"] as const;
 
 export type CompanionMotionVariant = (typeof COMPANION_MOTION_VARIANTS)[number];
 
@@ -208,7 +210,7 @@ export async function authorizeCompanionMotionPlayback(
 }
 
 export function companionMotionPackReady(pack: CompanionMotionPack): boolean {
-  return COMPANION_MOTION_VARIANTS.every((variant) => pack.slots.some((slot) => (
+  return COMPANION_MOTION_LOOP_VARIANTS.every((variant) => pack.slots.some((slot) => (
     slot.variant === variant && slot.artifactAvailable
   )));
 }
@@ -216,7 +218,10 @@ export function companionMotionPackReady(pack: CompanionMotionPack): boolean {
 export function companionMotionPackNeedsEnsure(pack: CompanionMotionPack): boolean {
   if (!pack.eligible) return false;
   const variants = new Set(pack.slots.map((slot) => slot.variant));
-  return COMPANION_MOTION_VARIANTS.some((variant) => !variants.has(variant));
+  // Acknowledgement was added after the initial three-slot pack. A legacy
+  // person can keep using the approved loop trio while Commerce lifecycle
+  // fills acknowledgement only for a later eligible package event.
+  return COMPANION_MOTION_LOOP_VARIANTS.some((variant) => !variants.has(variant));
 }
 
 export function companionMotionPackNeedsPolling(pack: CompanionMotionPack): boolean {
