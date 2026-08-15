@@ -210,7 +210,10 @@ function companionMotionProviderTimedOut(
   // marked failed only because the local worker was unavailable for longer
   // than the hard timeout.  That route never submits again; it receives one
   // poll attempt before ordinary timeout handling resumes.
-  if (job.providerState === "reconciled_accepted_timeout") return false;
+  if (
+    job.providerState === "reconciled_accepted_timeout"
+    || job.providerState === "reconciled_media_duration_reinspection"
+  ) return false;
   const createdAtMs = Date.parse(job.createdAt);
   return Number.isFinite(createdAtMs)
     && nowMs - createdAtMs >= COMPANION_MOTION_PROVIDER_HARD_TIMEOUT_MS;
@@ -497,6 +500,7 @@ export class FirstPresenceVideoService {
     try {
       quality = evaluateFirstPresenceQuality({
         media: await this.mediaInspector.inspect(artifact),
+        useCase: job.useCase,
       });
       if (
         job.useCase === "companion_micro_motion"

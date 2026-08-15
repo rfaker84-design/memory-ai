@@ -602,6 +602,20 @@ test("idempotent submission and lost response recovery protection never submit o
   assert.equal(uncertain.entitlements.releases, 0);
 });
 
+test("companion motion alone accepts the Provider's normal 10.125-second 24fps tail", () => {
+  const media = validProbe("evidence");
+  media.durationSeconds = 10.125;
+  assert.equal(evaluateFirstPresenceQuality({ media }).status, "reject", "first-presence remains 8s ±0.5s");
+  assert.equal(
+    evaluateFirstPresenceQuality({ media, useCase: "companion_micro_motion" }).status,
+    "manual_review_required",
+  );
+  media.durationSeconds = 5.999;
+  assert.equal(evaluateFirstPresenceQuality({ media, useCase: "companion_micro_motion" }).status, "reject");
+  media.durationSeconds = 10.501;
+  assert.equal(evaluateFirstPresenceQuality({ media, useCase: "companion_micro_motion" }).status, "reject");
+});
+
 test("Staging review eligibility is default-off and can never activate in Production", () => {
   assert.equal(companionMotionStagingReviewEnabled({}), false);
   assert.equal(companionMotionStagingReviewEnabled({
