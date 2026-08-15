@@ -9,6 +9,7 @@ import {
 } from "@/features/video";
 import { getVideoInternalAccessConfiguration } from "@/src/server/security/video-internal-access";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
+import { STAGING_APP_ORIGIN } from "@/src/server/runtime/staging-contract";
 
 type Context = { params: Promise<{ jobId: string }> };
 
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest, { params }: Context) {
     const artifact = await new FirstPresenceVideoReviewPreviewQuery().findPendingForReview({ jobId });
     if (!artifact) return unavailable();
     const browserSession = signer.issue({ jobId, scope: "session" });
-    const response = applyAuthNoStore(NextResponse.redirect(new URL(`/internal/video-reviews/${encodeURIComponent(jobId)}`, request.url)));
+    const response = applyAuthNoStore(NextResponse.redirect(new URL(`/internal/video-reviews/${encodeURIComponent(jobId)}`, STAGING_APP_ORIGIN)));
     response.headers.set("Referrer-Policy", "no-referrer");
     response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
     response.cookies.set({
