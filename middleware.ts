@@ -15,7 +15,7 @@ import {
 
 const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const CORS_ALLOWED_METHODS = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
-const CORS_ALLOWED_HEADERS = "Content-Type, Authorization, Idempotency-Key, X-MemoryAI-Staging-Access";
+const CORS_ALLOWED_HEADERS = "Content-Type, Authorization, Idempotency-Key, X-MemoryAI-Staging-Access, X-Video-Review-Access-Token, X-Video-Reviewer-Account";
 const STAGING_ACCESS_HEADER = "x-memoryai-staging-access";
 const REQUEST_ID_HEADER = "x-request-id";
 
@@ -85,6 +85,8 @@ const FORMAL_DYNAMIC_API_PATHS = [
   /^\/api\/memories\/[^/]+\/pickup-photo-sources$/,
   /^\/api\/media\/[^/]+$/,
   /^\/api\/first-presence-video\/playback\/[^/]+$/,
+  /^\/api\/internal\/video-reviews\/[^/]+\/preview$/,
+  /^\/api\/internal\/video-reviews\/preview\/[^/]+$/,
   /^\/api\/video-shares\/[^/]+$/,
   /^\/api\/video-shares\/[^/]+\/playback$/,
 ];
@@ -148,7 +150,12 @@ function stagingAccessFailure(status: 403 | 503, allowedOrigin?: string): NextRe
 
 function requiresStagingAccessToken(request: NextRequest): boolean {
   if (!isStagingRuntime()) return false;
-  return !(request.method === "GET" && request.nextUrl.pathname === "/api/media/local");
+  // This is a self-authenticating, 60-second reviewer-preview bearer URL. A
+  // native video element cannot attach the staging access header to range
+  // reads, so the route verifies its signed, exact-job token again in the
+  // handler before touching storage. All other API requests retain the gate.
+  const reviewerPreview = /^\/api\/internal\/video-reviews\/preview\/[^/]+$/.test(request.nextUrl.pathname);
+  return !(["GET", "HEAD"].includes(request.method) && (request.nextUrl.pathname === "/api/media/local" || reviewerPreview));
 }
 
 export function middleware(request: NextRequest) {

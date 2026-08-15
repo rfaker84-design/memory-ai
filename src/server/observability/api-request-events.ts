@@ -8,6 +8,8 @@ type ApiRequestEvent = {
 };
 
 const DYNAMIC_ROUTES: Array<[RegExp, string]> = [
+  [/^\/api\/internal\/video-reviews\/[^/]+\/preview$/, "/api/internal/video-reviews/:jobId/preview"],
+  [/^\/api\/internal\/video-reviews\/preview\/[^/]+$/, "/api/internal/video-reviews/preview/:token"],
   [/^\/api\/memories\/[^/]+\/video-shares\/[^/]+\/download$/, "/api/memories/:memoryId/video-shares/:publicId/download"],
   [/^\/api\/memories\/[^/]+\/video-shares\/[^/]+$/, "/api/memories/:memoryId/video-shares/:publicId"],
   [/^\/api\/memories\/[^/]+\/video-shares$/, "/api/memories/:memoryId/video-shares"],

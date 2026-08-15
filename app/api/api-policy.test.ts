@@ -108,6 +108,8 @@ test("middleware enforces the formal API allowlist before route execution", asyn
   assert.equal(isFormalApiPath("/api/memories/00000000-0000-4000-8000-000000000001/pickups/00000000-0000-4000-8000-000000000002"), true);
   assert.equal(isFormalApiPath("/api/memories/00000000-0000-4000-8000-000000000001/pickup-photo-sources"), true);
   assert.equal(isFormalApiPath("/api/first-presence-video/playback/signed-token"), true);
+  assert.equal(isFormalApiPath("/api/internal/video-reviews/00000000-0000-4000-8000-000000000002/preview"), true);
+  assert.equal(isFormalApiPath("/api/internal/video-reviews/preview/signed-token"), true);
   assert.equal(isFormalApiPath("/api/video-shares/00000000-0000-4000-8000-000000000002"), true);
   assert.equal(isFormalApiPath("/api/video-shares/00000000-0000-4000-8000-000000000002/playback"), true);
   assert.equal(isFormalApiPath("/api/media/00000000-0000-4000-8000-000000000001"), true);
@@ -130,6 +132,10 @@ test("middleware enforces the formal API allowlist before route execution", asyn
     "/api/memories/id/video-shares/share/download/extra",
     "/api/first-presence-video/playback/",
     "/api/first-presence-video/playback/token/extra",
+    "/api/internal/video-reviews/id/preview/extra",
+    "/api/internal/video-reviews/id/preview-suffix",
+    "/api/internal/video-reviews/preview/",
+    "/api/internal/video-reviews/preview/token/extra",
     "/api/video-shares/id/playback/extra",
     "/api/media/",
     "/api/media//",
@@ -168,7 +174,7 @@ test("video reconciliation is an explicitly audited formal internal route", () =
 
 test("every tracked non-formal Route Handler is a route-level 410", async () => {
   const routes = trackedRoutes();
-  assert.equal(routes.length, 139, "the audit must enumerate the complete tracked API surface");
+  assert.equal(routes.length, 141, "the audit must enumerate the complete tracked API surface");
 
   for (const { file, pathname } of routes) {
     const formal = isFormalApiPath(pathname);
