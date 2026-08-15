@@ -4,8 +4,14 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 
 export const REVIEWER_BROWSER_SESSION_COOKIE = "__Host-memoryai-video-review";
-export const REVIEWER_BROWSER_BOOTSTRAP_TTL_SECONDS = 5 * 60;
 export const REVIEWER_BROWSER_SESSION_TTL_SECONDS = 8 * 60 * 60;
+/**
+ * This grants access only to an exact, still-pending review page. It is not a
+ * media token: the page re-checks review state and mints its 60-second media
+ * tokens separately. Matching the browser session avoids reviewers receiving
+ * a stale link before they can open the stable page.
+ */
+export const REVIEWER_BROWSER_BOOTSTRAP_TTL_SECONDS = REVIEWER_BROWSER_SESSION_TTL_SECONDS;
 
 type Scope = "bootstrap" | "session";
 
