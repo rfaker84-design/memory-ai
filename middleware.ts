@@ -86,6 +86,8 @@ const FORMAL_DYNAMIC_API_PATHS = [
   /^\/api\/media\/[^/]+$/,
   /^\/api\/first-presence-video\/playback\/[^/]+$/,
   /^\/api\/internal\/video-reviews\/[^/]+\/preview$/,
+  /^\/api\/internal\/video-reviews\/[^/]+\/browser-session$/,
+  /^\/api\/internal\/video-reviews\/[^/]+\/browser-playback$/,
   /^\/api\/internal\/video-reviews\/preview\/[^/]+$/,
   /^\/api\/video-shares\/[^/]+$/,
   /^\/api\/video-shares\/[^/]+\/playback$/,
@@ -155,7 +157,14 @@ function requiresStagingAccessToken(request: NextRequest): boolean {
   // reads, so the route verifies its signed, exact-job token again in the
   // handler before touching storage. All other API requests retain the gate.
   const reviewerPreview = /^\/api\/internal\/video-reviews\/preview\/[^/]+$/.test(request.nextUrl.pathname);
-  return !(["GET", "HEAD"].includes(request.method) && (request.nextUrl.pathname === "/api/media/local" || reviewerPreview));
+  const reviewerBrowserPlayback = /^\/api\/internal\/video-reviews\/[^/]+\/browser-playback$/.test(request.nextUrl.pathname);
+  return !(["GET", "HEAD"].includes(request.method) && (
+    request.nextUrl.pathname === "/api/media/local"
+    || reviewerPreview
+    // Browser review playback has an exact-job HttpOnly reviewer session and
+    // re-checks the pending artifact before it can mint a 60-second media URL.
+    || reviewerBrowserPlayback
+  ));
 }
 
 export function middleware(request: NextRequest) {

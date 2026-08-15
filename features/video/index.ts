@@ -13,6 +13,7 @@ export * from "./video-artifact-runtime";
 export * from "./tencent-cos-video-artifact-storage";
 export * from "./video-artifact-query";
 export * from "./first-presence-review-preview";
+export * from "./reviewer-browser-preview";
 export * from "./first-presence-video-worker";
 export * from "./ai-content-marking";
 export * from "./video-share-links";

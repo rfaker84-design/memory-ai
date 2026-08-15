@@ -4,10 +4,14 @@ import test from "node:test";
 import { NextRequest } from "next/server";
 
 import {
+  FirstPresenceReviewerBrowserSessionSigner,
   FirstPresenceReviewPreviewSigner,
+  REVIEWER_BROWSER_SESSION_COOKIE,
   type PendingVideoReviewArtifact,
   type VideoArtifactReaderPort,
 } from "@/features/video";
+import { createVideoReviewBrowserPlaybackHandler } from "./[jobId]/browser-playback/_handler";
+import { createVideoReviewBrowserSessionHandler } from "./[jobId]/browser-session/_handler";
 import { createVideoReviewPreviewAuthorizationHandler } from "./[jobId]/preview/_handler";
 import { createVideoReviewPreviewReadHandler } from "./preview/[token]/_handler";
 
@@ -103,4 +107,42 @@ test("reviewer preview requires the existing reviewer credential and becomes una
   const stream = createVideoReviewPreviewReadHandler(() => ({ artifacts: query, reader, signer }));
   const unavailableAfterReview = await stream.GET(new NextRequest(`https://memoryai.test/api/internal/video-reviews/preview/${token}`), tokenContext(token));
   assert.equal(unavailableAfterReview.status, 404);
+});
+
+test("a reviewer-only browser session stays exact-job scoped while media tokens refresh inside the page", async () => {
+  const browserSigner = new FirstPresenceReviewerBrowserSessionSigner(REVIEW_TOKEN);
+  const mediaSigner = new FirstPresenceReviewPreviewSigner(REVIEW_TOKEN);
+  const query = { findPendingForReview: async ({ jobId }: { jobId: string }) => jobId === JOB_ID ? artifact : null };
+  const issuer = createVideoReviewBrowserSessionHandler(
+    () => ({ artifacts: query, signer: browserSigner }),
+    (jobId, token) => `/internal/video-reviews/${jobId}/access?session=${token}`,
+    () => true,
+  );
+  const issued = await issuer.GET(new NextRequest(`https://memoryai.test/api/internal/video-reviews/${JOB_ID}/browser-session`, {
+    headers: reviewerHeaders(),
+  }), context());
+  assert.equal(issued.status, 200);
+  const body = await issued.json() as { page: { url: string } };
+  const bootstrap = body.page.url.split("session=").at(-1)!;
+  assert.ok(browserSigner.verify({ token: bootstrap, scope: "bootstrap", jobId: JOB_ID }));
+  assert.equal(browserSigner.verify({ token: bootstrap, scope: "session", jobId: JOB_ID }), null);
+
+  const session = browserSigner.issue({ jobId: JOB_ID, scope: "session" }).token;
+  const playback = createVideoReviewBrowserPlaybackHandler(
+    () => ({ artifacts: query, browserSigner, mediaSigner }),
+    (token) => `/api/internal/video-reviews/preview/${token}`,
+    () => true,
+  );
+  const response = await playback.GET(new NextRequest(`https://memoryai.test/api/internal/video-reviews/${JOB_ID}/browser-playback`, {
+    headers: { cookie: `${REVIEWER_BROWSER_SESSION_COOKIE}=${session}` },
+  }), context());
+  assert.equal(response.status, 200);
+  const result = await response.json() as { playback: { url: string } };
+  assert.match(result.playback.url, /^\/api\/internal\/video-reviews\/preview\//);
+  assert.doesNotMatch(result.playback.url, /video-artifacts|\.mp4/);
+
+  const foreign = await playback.GET(new NextRequest("https://memoryai.test/api/internal/video-reviews/00000000-0000-4000-8000-000000000002/browser-playback", {
+    headers: { cookie: `${REVIEWER_BROWSER_SESSION_COOKIE}=${session}` },
+  }), context("00000000-0000-4000-8000-000000000002"));
+  assert.equal(foreign.status, 404);
 });
