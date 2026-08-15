@@ -32,6 +32,12 @@ export const COMPANION_MOTION_IDLE_VISUAL_REVIEW_VERSION = 3;
  * never fan out into another idle or reflective submission.
  */
 export const COMPANION_MOTION_ATTENTIVE_VISUAL_REVIEW_VERSION = 5;
+/**
+ * A single, stricter staging-only attentive replacement. It is intentionally
+ * distinct from the rejected v5 visual so the operator can create exactly one
+ * new native Provider task without mutating or retrying the previous work.
+ */
+export const COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_VERSION = 6;
 export const COMPANION_MOTION_VARIANTS = [
   "idle",
   "attentive",
@@ -273,6 +279,18 @@ export class CompanionMotionPackService {
     });
   }
 
+  /**
+   * One reviewer-authorized, passive-listening replacement for v5. This must
+   * never fan out into acknowledgement or reflective work.
+   */
+  async ensureAttentiveStillVisualReview(input: { externalUserId: string; memoryId: string }): Promise<CompanionMotionSlot[]> {
+    return this.ensureSingleVisualReview(input, {
+      variant: "attentive",
+      packVersion: COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_VERSION,
+      reviewKey: "attentive-still-review",
+    });
+  }
+
   async list(input: { externalUserId: string; memoryId: string }): Promise<CompanionMotionSlot[]> {
     const result = await queryPostgres<SlotRow>(
       `SELECT j.id, j.motion_variant, j.pack_version, j.status, j.artifact_key, j.quality_status, j.error_code
@@ -326,7 +344,11 @@ export class CompanionMotionPackService {
 
   private async ensureSingleVisualReview(
     input: { externalUserId: string; memoryId: string },
-    sample: { variant: "idle" | "attentive"; packVersion: number; reviewKey: "idle-review" | "attentive-sustained-review" },
+    sample: {
+      variant: "idle" | "attentive";
+      packVersion: number;
+      reviewKey: "idle-review" | "attentive-sustained-review" | "attentive-still-review";
+    },
   ): Promise<CompanionMotionSlot[]> {
     if (!companionMotionStagingReviewEnabled(this.environment)) {
       throw new CompanionMotionPackError("STAGING_REVIEW_ONLY");

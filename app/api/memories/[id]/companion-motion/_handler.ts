@@ -21,7 +21,7 @@ import {
 
 type Context = { params: Promise<{ id: string }> };
 type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
-type PackService = Pick<CompanionMotionPackService, "ensure" | "ensureIdleVisualReview" | "ensureAttentiveVisualReview" | "getState">;
+type PackService = Pick<CompanionMotionPackService, "ensure" | "ensureIdleVisualReview" | "ensureAttentiveVisualReview" | "ensureAttentiveStillVisualReview" | "getState">;
 type CapabilityGuard = () => void;
 type StagingReviewGuard = () => boolean;
 
@@ -80,16 +80,19 @@ export function createCompanionMotionHandler(
         const review = Object.keys(body).length === 1 ? (body as Record<string, unknown>).review : null;
         const reviewIdle = review === "idle-visual";
         const reviewAttentive = review === "attentive-visual";
-        if (Object.keys(body).length !== 0 && !reviewIdle && !reviewAttentive) {
+        const reviewAttentiveStill = review === "attentive-still-visual";
+        if (Object.keys(body).length !== 0 && !reviewIdle && !reviewAttentive && !reviewAttentiveStill) {
           return json({ error: "INVALID_COMPANION_MOTION_REQUEST" }, { status: 400 });
         }
-        if ((reviewIdle || reviewAttentive) && !stagingReviewGuard()) {
+        if ((reviewIdle || reviewAttentive || reviewAttentiveStill) && !stagingReviewGuard()) {
           return json({ error: "INVALID_COMPANION_MOTION_REQUEST" }, { status: 400 });
         }
         const slots = reviewIdle
           ? await serviceFactory().ensureIdleVisualReview({ externalUserId: session.externalUserId, memoryId })
           : reviewAttentive
             ? await serviceFactory().ensureAttentiveVisualReview({ externalUserId: session.externalUserId, memoryId })
+            : reviewAttentiveStill
+              ? await serviceFactory().ensureAttentiveStillVisualReview({ externalUserId: session.externalUserId, memoryId })
             : await serviceFactory().ensure({ externalUserId: session.externalUserId, memoryId });
         return json({ eligible: true, slots }, { status: 202 });
       } catch (error) { return failure(error); }

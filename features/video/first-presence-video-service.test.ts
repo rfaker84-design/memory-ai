@@ -25,6 +25,8 @@ import {
   VIDU_FIRST_PRESENCE_PROMPT,
   VIDU_FIRST_PRESENCE_RESOLUTION,
   VIDU_COMPANION_MOTION_ATTENTIVE_VISUAL_REVIEW_DURATION_SECONDS,
+  VIDU_COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_NEGATIVE_PROMPT,
+  VIDU_COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_PROMPT,
   VIDU_COMPANION_MOTION_IDLE_DURATION_SECONDS,
   VIDU_COMPANION_MOTION_NEGATIVE_PROMPT,
   VIDU_COMPANION_MOTION_PROMPTS,
@@ -418,20 +420,26 @@ test("Vidu companion variants keep identity and freeze silent micro-motion promp
       imageSha256: sha,
       idempotencyKey: `motion-${motionVariant}-${requests.length}`,
       motionVariant,
-      companionMotionPackVersion: requests.length === 3 ? 5 : motionVariant === "idle" ? 3 : 2,
+      companionMotionPackVersion: requests.length === 3 ? 6 : motionVariant === "idle" ? 3 : 2,
     });
   }
   assert.deepEqual(requests.map((request) => request.prompt), [
     VIDU_COMPANION_MOTION_PROMPTS.idle,
     VIDU_COMPANION_MOTION_PROMPTS.attentive,
     VIDU_COMPANION_MOTION_PROMPTS.reflective,
-    VIDU_COMPANION_MOTION_PROMPTS.attentive,
+    VIDU_COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_PROMPT,
   ]);
-  assert.match(String(requests[3].prompt), /sustained listening state/i);
-  assert.match(String(requests[3].prompt), /No active nodding/i);
-  assert.match(String(requests[3].prompt), /No repeated smile/i);
+  assert.match(String(requests[3].prompt), /sustained passive listening state/i);
+  assert.match(String(requests[3].prompt), /No smile/i);
+  assert.match(String(requests[3].prompt), /no nod/i);
+  assert.match(String(requests[3].prompt), /no shoulder or neck adjustment/i);
   for (const [index, request] of requests.entries()) {
-    assert.equal(request.negative_prompt, VIDU_COMPANION_MOTION_NEGATIVE_PROMPT);
+    assert.equal(
+      request.negative_prompt,
+      index === 3
+        ? VIDU_COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_NEGATIVE_PROMPT
+        : VIDU_COMPANION_MOTION_NEGATIVE_PROMPT,
+    );
     assert.equal(
       request.duration,
       index === 0

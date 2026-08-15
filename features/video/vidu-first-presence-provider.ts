@@ -26,6 +26,10 @@ export const VIDU_COMPANION_MOTION_NEGATIVE_PROMPT =
   "leaving frame, identity change, age change, face change, hairstyle change, clothing change, background change, new person, new object, " +
   "camera movement, zoom, pan, tilt, cut, flicker, fantasy effect, resurrection effect, subtitles, watermark, audio";
 
+export const VIDU_COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_NEGATIVE_PROMPT =
+  VIDU_COMPANION_MOTION_NEGATIVE_PROMPT +
+  ", smiling, grin, facial response, nodding, head tilt, head turn, shoulder movement, neck movement, acknowledgement gesture";
+
 export const VIDU_COMPANION_MOTION_PROMPTS = Object.freeze({
   idle:
     "Ten-second static-camera, vertical 9:16 realistic companion portrait. Preserve the exact identity, age, facial features, hairstyle, clothing, environment, lighting, and framing from the source photo. The person is quietly present in the original place and remains almost completely still for most of the clip. Use one or two natural blinks only, extremely gentle breathing, a barely perceptible eye movement, and at most one tiny relaxed head or shoulder adjustment. Do not nod, turn, perform, or repeatedly smile. Closed mouth, no speaking, no lip movement, no hand gesture, no camera movement. Warm restrained life-documentary feeling. The first and final posture should be nearly identical for a soft loop.",
@@ -34,6 +38,10 @@ export const VIDU_COMPANION_MOTION_PROMPTS = Object.freeze({
   reflective:
     "Static camera, vertical 9:16 realistic companion portrait. Preserve the exact identity, age, facial features, hairstyle, clothing, environment, lighting, and framing from the source photo. The person holds a quiet reflective pause with gentle breathing, natural blinking, a very small gaze change, and an extremely subtle posture adjustment. Closed mouth, no speaking, no lip movement, no dramatic emotion, no hand gesture, no camera movement. Warm restrained life-documentary feeling. The first and final posture should be nearly identical for a soft loop.",
 } as const);
+
+/** A strict, one-off passive-listening contract for the v6 Staging review. */
+export const VIDU_COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_PROMPT =
+  "Ten-second static-camera, vertical 9:16 realistic companion portrait. Preserve the exact identity, age, facial features, hairstyle, clothing, environment, lighting, and framing from the source photo. This is a sustained passive listening state, not an acknowledgement or performed listening action. For about ninety percent of the clip, remain naturally still with a stable, soft, attentive expression. Allow only one or two slow natural blinks, extremely gentle breathing, and at most one very small, slow eye shift. No smile, no expression change, no nod, no head tilt, no head turn, no shoulder or neck adjustment, and no response gesture. Closed mouth throughout: no speaking and no lip movement. No hand gesture and no camera movement. Warm restrained life-documentary feeling. The first and final posture must be nearly identical for a soft loop.";
 
 export type ViduFirstPresenceSubmission = {
   taskId: string;
@@ -163,10 +171,16 @@ export class ViduFirstPresenceProvider {
   async submit(
     input: ViduFirstPresenceSubmitInput
   ): Promise<ViduFirstPresenceSubmission> {
-    const prompt = input.motionVariant
+    const attentiveStillReview = input.motionVariant === "attentive"
+      && input.companionMotionPackVersion === 6;
+    const prompt = attentiveStillReview
+      ? VIDU_COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_PROMPT
+      : input.motionVariant
       ? VIDU_COMPANION_MOTION_PROMPTS[input.motionVariant]
       : VIDU_FIRST_PRESENCE_PROMPT;
-    const negativePrompt = input.motionVariant
+    const negativePrompt = attentiveStillReview
+      ? VIDU_COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_NEGATIVE_PROMPT
+      : input.motionVariant
       ? VIDU_COMPANION_MOTION_NEGATIVE_PROMPT
       : VIDU_FIRST_PRESENCE_NEGATIVE_PROMPT;
     const data = await this.requestJson(`${this.baseUrl}/ent/v2/img2video`, {
@@ -181,8 +195,10 @@ export class ViduFirstPresenceProvider {
         bgm: false,
         audio: false,
         duration: (
-          (input.motionVariant === "idle" && input.companionMotionPackVersion === 3)
-          || (input.motionVariant === "attentive" && input.companionMotionPackVersion === 5)
+           (input.motionVariant === "idle" && input.companionMotionPackVersion === 3)
+           || (input.motionVariant === "attentive" && (
+             input.companionMotionPackVersion === 5 || input.companionMotionPackVersion === 6
+           ))
         ) ? input.motionVariant === "attentive"
           ? VIDU_COMPANION_MOTION_ATTENTIVE_VISUAL_REVIEW_DURATION_SECONDS
           : VIDU_COMPANION_MOTION_IDLE_DURATION_SECONDS
