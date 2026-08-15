@@ -21,7 +21,7 @@ import {
 
 type Context = { params: Promise<{ id: string }> };
 type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
-type PackService = Pick<CompanionMotionPackService, "ensure" | "ensureIdleVisualReview" | "getState">;
+type PackService = Pick<CompanionMotionPackService, "ensure" | "ensureIdleVisualReview" | "ensureAttentiveVisualReview" | "getState">;
 type CapabilityGuard = () => void;
 type StagingReviewGuard = () => boolean;
 
@@ -77,17 +77,20 @@ export function createCompanionMotionHandler(
           return json({ error: "INVALID_COMPANION_MOTION_REQUEST" }, { status: 400 });
         }
         const { id: memoryId } = await params;
-        const reviewIdle = Object.keys(body).length === 1
-          && (body as Record<string, unknown>).review === "idle-visual";
-        if (Object.keys(body).length !== 0 && !reviewIdle) {
+        const review = Object.keys(body).length === 1 ? (body as Record<string, unknown>).review : null;
+        const reviewIdle = review === "idle-visual";
+        const reviewAttentive = review === "attentive-visual";
+        if (Object.keys(body).length !== 0 && !reviewIdle && !reviewAttentive) {
           return json({ error: "INVALID_COMPANION_MOTION_REQUEST" }, { status: 400 });
         }
-        if (reviewIdle && !stagingReviewGuard()) {
+        if ((reviewIdle || reviewAttentive) && !stagingReviewGuard()) {
           return json({ error: "INVALID_COMPANION_MOTION_REQUEST" }, { status: 400 });
         }
         const slots = reviewIdle
           ? await serviceFactory().ensureIdleVisualReview({ externalUserId: session.externalUserId, memoryId })
-          : await serviceFactory().ensure({ externalUserId: session.externalUserId, memoryId });
+          : reviewAttentive
+            ? await serviceFactory().ensureAttentiveVisualReview({ externalUserId: session.externalUserId, memoryId })
+            : await serviceFactory().ensure({ externalUserId: session.externalUserId, memoryId });
         return json({ eligible: true, slots }, { status: 202 });
       } catch (error) { return failure(error); }
     },

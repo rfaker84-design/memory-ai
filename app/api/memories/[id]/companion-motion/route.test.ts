@@ -24,6 +24,7 @@ test("owner GET reports eligibility without generating and POST creates determin
       }));
     },
     ensureIdleVisualReview: async () => [],
+    ensureAttentiveVisualReview: async () => [],
   });
   const handler = createCompanionMotionHandler(service, session, () => undefined);
   const context = { params: Promise.resolve({ id: memoryId }) };
@@ -42,7 +43,7 @@ test("owner GET reports eligibility without generating and POST creates determin
 });
 
 test("companion motion route is authenticated and rejects request shape", async () => {
-  const service = () => ({ getState: async () => ({ eligible: false, slots: [] }), ensure: async () => [], ensureIdleVisualReview: async () => [] });
+  const service = () => ({ getState: async () => ({ eligible: false, slots: [] }), ensure: async () => [], ensureIdleVisualReview: async () => [], ensureAttentiveVisualReview: async () => [] });
   const context = { params: Promise.resolve({ id: memoryId }) };
   const anonymous = createCompanionMotionHandler(service, async () => null);
   assert.equal((await anonymous.GET(new NextRequest("https://memory.test/"), context)).status, 401);
@@ -62,6 +63,7 @@ test("the one-off idle visual review stays a session-owned Staging-only request"
       reviewCalls += 1;
       return [{ jobId: "00000000-0000-4000-8000-000000000011", variant: "idle" as const, status: "queued" as const, artifactAvailable: false }];
     },
+    ensureAttentiveVisualReview: async () => [],
   });
   const handler = createCompanionMotionHandler(service, session, () => undefined, () => true);
   const response = await handler.POST(new NextRequest("https://memory.test/", {
@@ -71,4 +73,28 @@ test("the one-off idle visual review stays a session-owned Staging-only request"
   }), { params: Promise.resolve({ id: memoryId }) });
   assert.equal(response.status, 202);
   assert.equal(reviewCalls, 1);
+});
+
+test("the next visual review creates only one session-owned attentive sample", async () => {
+  let attentiveCalls = 0;
+  let packCalls = 0;
+  const service = () => ({
+    getState: async () => ({ eligible: true, slots: [] }),
+    ensure: async () => { packCalls += 1; return []; },
+    ensureIdleVisualReview: async () => [],
+    ensureAttentiveVisualReview: async () => {
+      attentiveCalls += 1;
+      return [{ jobId: "00000000-0000-4000-8000-000000000012", variant: "attentive" as const, status: "queued" as const, artifactAvailable: false }];
+    },
+  });
+  const handler = createCompanionMotionHandler(service, session, () => undefined, () => true);
+  const response = await handler.POST(new NextRequest("https://memory.test/", {
+    method: "POST",
+    headers: { origin: "https://memory.test", "content-type": "application/json" },
+    body: '{"review":"attentive-visual"}',
+  }), { params: Promise.resolve({ id: memoryId }) });
+  assert.equal(response.status, 202);
+  assert.equal(attentiveCalls, 1);
+  assert.equal(packCalls, 0);
+  assert.deepEqual((await response.json()).slots.map((slot: { variant: string }) => slot.variant), ["attentive"]);
 });

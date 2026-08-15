@@ -411,23 +411,24 @@ test("Vidu companion variants keep identity and freeze silent micro-motion promp
       return Response.json({ task_id: `task-${requests.length}`, state: "created", credits: 44 });
     }) as typeof fetch,
   });
-  for (const motionVariant of ["idle", "attentive", "reflective"] as const) {
+  for (const motionVariant of ["idle", "attentive", "reflective", "attentive"] as const) {
     await provider.submit({
       imageDataUrl: image,
       imageSha256: sha,
-      idempotencyKey: `motion-${motionVariant}`,
+      idempotencyKey: `motion-${motionVariant}-${requests.length}`,
       motionVariant,
-      companionMotionPackVersion: motionVariant === "idle" ? 3 : 2,
+      companionMotionPackVersion: requests.length === 3 ? 4 : motionVariant === "idle" ? 3 : 2,
     });
   }
   assert.deepEqual(requests.map((request) => request.prompt), [
     VIDU_COMPANION_MOTION_PROMPTS.idle,
     VIDU_COMPANION_MOTION_PROMPTS.attentive,
     VIDU_COMPANION_MOTION_PROMPTS.reflective,
+    VIDU_COMPANION_MOTION_PROMPTS.attentive,
   ]);
   for (const [index, request] of requests.entries()) {
     assert.equal(request.negative_prompt, VIDU_COMPANION_MOTION_NEGATIVE_PROMPT);
-    assert.equal(request.duration, index === 0 ? VIDU_COMPANION_MOTION_IDLE_DURATION_SECONDS : 8);
+    assert.equal(request.duration, index === 0 || index === 3 ? VIDU_COMPANION_MOTION_IDLE_DURATION_SECONDS : 8);
     assert.equal(request.audio, false);
     assert.equal(request.bgm, false);
     assert.equal(request.movement_amplitude, "small");
