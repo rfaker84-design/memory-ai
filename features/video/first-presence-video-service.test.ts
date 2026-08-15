@@ -24,6 +24,7 @@ import {
   VIDU_FIRST_PRESENCE_NEGATIVE_PROMPT,
   VIDU_FIRST_PRESENCE_PROMPT,
   VIDU_FIRST_PRESENCE_RESOLUTION,
+  VIDU_COMPANION_MOTION_ATTENTIVE_VISUAL_REVIEW_DURATION_SECONDS,
   VIDU_COMPANION_MOTION_IDLE_DURATION_SECONDS,
   VIDU_COMPANION_MOTION_NEGATIVE_PROMPT,
   VIDU_COMPANION_MOTION_PROMPTS,
@@ -417,7 +418,7 @@ test("Vidu companion variants keep identity and freeze silent micro-motion promp
       imageSha256: sha,
       idempotencyKey: `motion-${motionVariant}-${requests.length}`,
       motionVariant,
-      companionMotionPackVersion: requests.length === 3 ? 4 : motionVariant === "idle" ? 3 : 2,
+      companionMotionPackVersion: requests.length === 3 ? 5 : motionVariant === "idle" ? 3 : 2,
     });
   }
   assert.deepEqual(requests.map((request) => request.prompt), [
@@ -426,9 +427,19 @@ test("Vidu companion variants keep identity and freeze silent micro-motion promp
     VIDU_COMPANION_MOTION_PROMPTS.reflective,
     VIDU_COMPANION_MOTION_PROMPTS.attentive,
   ]);
+  assert.match(String(requests[3].prompt), /sustained listening state/i);
+  assert.match(String(requests[3].prompt), /No active nodding/i);
+  assert.match(String(requests[3].prompt), /No repeated smile/i);
   for (const [index, request] of requests.entries()) {
     assert.equal(request.negative_prompt, VIDU_COMPANION_MOTION_NEGATIVE_PROMPT);
-    assert.equal(request.duration, index === 0 || index === 3 ? VIDU_COMPANION_MOTION_IDLE_DURATION_SECONDS : 8);
+    assert.equal(
+      request.duration,
+      index === 0
+        ? VIDU_COMPANION_MOTION_IDLE_DURATION_SECONDS
+        : index === 3
+          ? VIDU_COMPANION_MOTION_ATTENTIVE_VISUAL_REVIEW_DURATION_SECONDS
+          : 8,
+    );
     assert.equal(request.audio, false);
     assert.equal(request.bgm, false);
     assert.equal(request.movement_amplitude, "small");

@@ -31,7 +31,7 @@ export const COMPANION_MOTION_IDLE_VISUAL_REVIEW_VERSION = 3;
  * staging-only attentive sample advances only the attentive slot, so it can
  * never fan out into another idle or reflective submission.
  */
-export const COMPANION_MOTION_ATTENTIVE_VISUAL_REVIEW_VERSION = 4;
+export const COMPANION_MOTION_ATTENTIVE_VISUAL_REVIEW_VERSION = 5;
 export const COMPANION_MOTION_VARIANTS = [
   "idle",
   "attentive",
@@ -261,14 +261,15 @@ export class CompanionMotionPackService {
   }
 
   /**
-   * The only next visual sample: one attentive job for this exact person.
-   * It is deliberately not a pack request and cannot create reflective work.
+   * A reviewer-authorized sustained-listening replacement for the rejected
+   * v4 attentive sample. It is deliberately not a pack request and cannot
+   * create idle, acknowledgement, or reflective work.
    */
   async ensureAttentiveVisualReview(input: { externalUserId: string; memoryId: string }): Promise<CompanionMotionSlot[]> {
     return this.ensureSingleVisualReview(input, {
       variant: "attentive",
       packVersion: COMPANION_MOTION_ATTENTIVE_VISUAL_REVIEW_VERSION,
-      reviewKey: "attentive-review",
+      reviewKey: "attentive-sustained-review",
     });
   }
 
@@ -325,7 +326,7 @@ export class CompanionMotionPackService {
 
   private async ensureSingleVisualReview(
     input: { externalUserId: string; memoryId: string },
-    sample: { variant: "idle" | "attentive"; packVersion: number; reviewKey: "idle-review" | "attentive-review" },
+    sample: { variant: "idle" | "attentive"; packVersion: number; reviewKey: "idle-review" | "attentive-sustained-review" },
   ): Promise<CompanionMotionSlot[]> {
     if (!companionMotionStagingReviewEnabled(this.environment)) {
       throw new CompanionMotionPackError("STAGING_REVIEW_ONLY");
