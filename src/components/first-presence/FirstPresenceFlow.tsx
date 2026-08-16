@@ -21,6 +21,7 @@ import { recordTrustConsent, TrustConsentRequestError } from "../trust/trustCons
 import { AccountProfileRequestError, saveAdultBirthDate } from "../trust/accountProfileClient";
 import {
   clearCreationRecovery,
+  markCreationChatHandoff,
   fetchCreationJson,
   readCreationRecovery,
   recoverPendingCreation,
@@ -451,6 +452,7 @@ export function FirstPresenceFlow({
     });
     if (conversationNavigationCommitted.current) return;
     conversationNavigationCommitted.current = true;
+    markCreationChatHandoff(memoryId);
     router.replace(`/memory-chat/${encodeURIComponent(memoryId)}`);
   }, [photoFile, router]);
 

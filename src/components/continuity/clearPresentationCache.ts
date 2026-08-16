@@ -5,6 +5,7 @@ const LOCAL_PRESENTATION_KEYS = new Set([
   "memoryai.companion.daily-greeting",
   "memoryai.companion.position",
 ]);
+const LOCAL_PRESENTATION_PREFIXES = ["memoryai.companion.primary:"];
 const SESSION_PRESENTATION_KEYS = new Set(["memoryai:static-brand-launch-seen"]);
 const SESSION_PRESENTATION_PREFIXES = ["memoryai.pickup-hint:"];
 
@@ -21,7 +22,9 @@ function removeMatching(storage: ClearableStorage, matches: (key: string) => boo
  */
 export function clearPresentationCache(local: ClearableStorage, session: ClearableStorage): number {
   const legacyLocal = (key: string) => key.startsWith("yj_") || key.startsWith("yijian_");
-  return removeMatching(local, (key) => LOCAL_PRESENTATION_KEYS.has(key) || legacyLocal(key))
+  return removeMatching(local, (key) => LOCAL_PRESENTATION_KEYS.has(key)
+    || LOCAL_PRESENTATION_PREFIXES.some((prefix) => key.startsWith(prefix))
+    || legacyLocal(key))
     + removeMatching(session, (key) => SESSION_PRESENTATION_KEYS.has(key)
       || SESSION_PRESENTATION_PREFIXES.some((prefix) => key.startsWith(prefix)));
 }

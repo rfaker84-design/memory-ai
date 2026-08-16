@@ -64,7 +64,10 @@ test("first and daily visits remain presentation-only and disclose generated con
 
 test("formal Owner and media reads fail closed without a parallel backend", () => {
   assert.match(page, /fetchCompanionHomeMemoriesJson\(fetch, signal\)/);
-  assert.match(page, /selectPrimaryCompanion/);
+  assert.match(page, /resolveCompanionPrimaryPreference/);
+  assert.match(page, /memories\.length > 1 && selection\?\.needsExplicitChoice/);
+  assert.match(page, /router\.replace\("\/memory-world"\)/);
+  assert.doesNotMatch(page, /selected\s*=\s*memories\[0\]/);
   assert.match(page, /loadOwnedMediaUrl\(selected\.photoAssetId, signal\)/);
   assert.match(page, /response\.status === 401/);
   assert.doesNotMatch(page, /loadCommerceCreditBalance|\/api\/commerce\/credits/);

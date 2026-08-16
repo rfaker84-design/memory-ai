@@ -9,13 +9,14 @@ import { MotionProvider } from "../../src/motion";
 import {
   COMPANION_DAILY_GREETING_KEY,
   COMPANION_POSITION_KEY,
-  COMPANION_PRIMARY_KEY,
+  clearCompanionPrimaryPreference,
   companionDay,
   dailyCompanionGreeting,
   dailyGreetingMarker,
   isDailyCompanionGreetingDue,
+  persistCompanionPrimaryPreference,
   restoreCompanionPosition,
-  selectPrimaryCompanion,
+  resolveCompanionPrimaryPreference,
   serializeCompanionPosition,
 } from "../../src/components/companion/companionHomeState";
 import { CompanionHomeRequestError, fetchCompanionHomeMemoriesJson } from "../../src/components/companion/companionHomeRequest";
@@ -24,6 +25,7 @@ import styles from "./page.module.css";
 
 type MemoryWorldItem = {
   id: string;
+  userId?: string | null;
   name: string;
   relationship?: string | null;
   lifeStory?: string | null;
@@ -37,6 +39,7 @@ function MemoryWorldContent() {
   const router = useRouter();
   const [state, setState] = useState<MemoryWorldState>("loading");
   const [memories, setMemories] = useState<MemoryWorldItem[]>([]);
+  const [ownerId, setOwnerId] = useState<string | null>(null);
   const [primaryId, setPrimaryId] = useState<string | null>(null);
   const [primarySelectorOpen, setPrimarySelectorOpen] = useState(false);
   const [dailyGreetingVisible, setDailyGreetingVisible] = useState(false);
@@ -56,6 +59,7 @@ function MemoryWorldContent() {
       if (signal?.aborted) return;
       if (response.status === 401) {
         setMemories([]);
+        setOwnerId(null);
         setPrimaryId(null);
         setPrimaryPortraitUrl(null);
         setDailyGreetingVisible(false);
@@ -63,10 +67,18 @@ function MemoryWorldContent() {
         return;
       }
       if (!response.ok) throw new Error(typeof data === "object" && data !== null && typeof (data as Record<string, unknown>).error === "string" ? (data as Record<string, string>).error : "load failed");
-      const list = Array.isArray(data) ? data : [];
-      const primary = selectPrimaryCompanion(list, window.localStorage.getItem(COMPANION_PRIMARY_KEY));
+      const list = Array.isArray(data) ? data as MemoryWorldItem[] : [];
+      const nextOwnerId = typeof list[0]?.userId === "string" && list[0].userId.trim()
+        ? list[0].userId
+        : null;
+      const selection = nextOwnerId
+        ? resolveCompanionPrimaryPreference(list, nextOwnerId, window.localStorage)
+        : null;
+      const primary = selection?.memory ?? null;
       setMemories(list);
+      setOwnerId(nextOwnerId);
       setPrimaryId(primary?.id ?? null);
+      setPrimarySelectorOpen(Boolean(selection?.needsExplicitChoice));
       if (primary) {
         const day = companionDay();
         const due = isDailyCompanionGreetingDue(
@@ -84,7 +96,7 @@ function MemoryWorldContent() {
     }
   }, []);
 
-  const primary = selectPrimaryCompanion(memories, primaryId);
+  const primary = primaryId ? memories.find((memory) => memory.id === primaryId) ?? null : null;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -99,14 +111,15 @@ function MemoryWorldContent() {
   }, [primary?.id, primary?.photoAssetId, primary?.photoUrl]);
 
   const choosePrimary = (memory: MemoryWorldItem) => {
+    if (!ownerId) return;
     setPrimaryId(memory.id);
-    window.localStorage.setItem(COMPANION_PRIMARY_KEY, memory.id);
+    persistCompanionPrimaryPreference(window.localStorage, ownerId, memory.id);
     setDailyGreetingVisible(false);
     setPrimarySelectorOpen(false);
   };
 
   const enterCompanion = (memory: MemoryWorldItem) => {
-    window.localStorage.setItem(COMPANION_PRIMARY_KEY, memory.id);
+    if (ownerId) persistCompanionPrimaryPreference(window.localStorage, ownerId, memory.id);
     router.push("/companion");
   };
 
@@ -140,9 +153,7 @@ function MemoryWorldContent() {
         return;
       }
       setMemories((current) => current.filter((item) => item.id !== memory.id));
-      if (window.localStorage.getItem(COMPANION_PRIMARY_KEY) === memory.id) {
-        window.localStorage.removeItem(COMPANION_PRIMARY_KEY);
-      }
+      if (ownerId) clearCompanionPrimaryPreference(window.localStorage, ownerId, memory.id);
       if (primaryId === memory.id) {
         setPrimaryId(null);
         setDailyGreetingVisible(false);
@@ -273,9 +284,9 @@ function MemoryWorldContent() {
                 </div>
               </section>
             )}
-            {primary && memories.length > 1 && primarySelectorOpen && <MemoryBottomSheet open title="切换主 TA" description="选择后，相伴首页会以这位 TA 为主。" footer={<MemoryButton variant="secondary" onClick={() => setPrimarySelectorOpen(false)}>取消</MemoryButton>}>
+            {memories.length > 1 && primarySelectorOpen && <MemoryBottomSheet open title="切换主 TA" description="选择后，相伴首页会以这位 TA 为主。" footer={<MemoryButton variant="secondary" onClick={() => setPrimarySelectorOpen(false)}>取消</MemoryButton>}>
               <div style={{ display: "grid", gap: MemorySpacing.sm }}>
-                {memories.map((memory) => <button key={`primary-${memory.id}`} type="button" onClick={() => choosePrimary(memory)} aria-pressed={primary.id === memory.id} style={{ minHeight: 44, borderRadius: MemoryRadius.full, border: `1px solid ${primary.id === memory.id ? SurfaceToken.accent.gold : SurfaceToken.border.subtle}`, background: "transparent", color: primary.id === memory.id ? SurfaceToken.accent.gold : SurfaceToken.content.secondary, padding: "0 14px", cursor: "pointer", textAlign: "left" }}>{primary.id === memory.id ? `${memory.name} · 当前主 TA` : `设 ${memory.name} 为主 TA`}</button>)}
+                {memories.map((memory) => <button key={`primary-${memory.id}`} type="button" onClick={() => choosePrimary(memory)} aria-pressed={primary?.id === memory.id} style={{ minHeight: 44, borderRadius: MemoryRadius.full, border: `1px solid ${primary?.id === memory.id ? SurfaceToken.accent.gold : SurfaceToken.border.subtle}`, background: "transparent", color: primary?.id === memory.id ? SurfaceToken.accent.gold : SurfaceToken.content.secondary, padding: "0 14px", cursor: "pointer", textAlign: "left" }}>{primary?.id === memory.id ? `${memory.name} · 当前主 TA` : `设 ${memory.name} 为主 TA`}</button>)}
               </div>
             </MemoryBottomSheet>}
             <section className={styles.management} aria-labelledby="memory-world-management">

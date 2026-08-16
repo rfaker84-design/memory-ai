@@ -14,11 +14,12 @@ function storage(...keys: string[]) {
 }
 
 test("presentation cache clearing removes only display keys and preserves safe recovery records", () => {
-  const local = storage("memoryai.companion.primary", "memoryai.companion.daily-greeting", "memoryai.companion.position", "yj_emo_state", "memoryai:create-memory:draft:v1", "memoryai:create-recovery:v1", "unrelated-key");
+  const local = storage("memoryai.companion.primary", "memoryai.companion.primary:owner-a", "memoryai.companion.daily-greeting", "memoryai.companion.position", "yj_emo_state", "memoryai:create-memory:draft:v1", "memoryai:create-recovery:v1", "unrelated-key");
   const session = storage("memoryai:static-brand-launch-seen", "memoryai.pickup-hint:session-1", "memoryai:create-recovery:v1");
 
-  assert.equal(clearPresentationCache(local, session), 6);
+  assert.equal(clearPresentationCache(local, session), 7);
   assert.equal(local.values.has("memoryai.companion.primary"), false);
+  assert.equal(local.values.has("memoryai.companion.primary:owner-a"), false);
   assert.equal(local.values.has("yj_emo_state"), false);
   assert.equal(session.values.has("memoryai:static-brand-launch-seen"), false);
   assert.equal(session.values.has("memoryai.pickup-hint:session-1"), false);

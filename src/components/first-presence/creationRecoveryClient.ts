@@ -3,6 +3,7 @@ import { isMemoryCreationIdempotencyKey } from "../../../features/memory/memory-
 import { createMemoryRequestHeaders } from "../create-memory/createMemoryLogic";
 
 export const CREATION_RECOVERY_STORAGE_KEY = "memoryai:create-recovery:v1";
+const CREATION_CHAT_HANDOFF_STORAGE_KEY = "memoryai:create-chat-handoff:v1";
 const CREATION_REQUEST_TIMEOUT_MS = 20_000;
 
 export type CreationRecoveryPhase =
@@ -104,6 +105,40 @@ export function clearCreationRecovery(
   try {
     storage.removeItem(CREATION_RECOVERY_STORAGE_KEY);
     return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A successful creation can immediately hand off to chat. This is deliberately
+ * separate from recovery: it is a one-navigation, tab-local marker which lets
+ * the chat page avoid treating that handoff as an explicit primary-person
+ * selection after the recovery record has been safely cleared.
+ */
+export function markCreationChatHandoff(
+  memoryId: string,
+  storage: RecoveryStorage | null = defaultStorage(),
+): boolean {
+  if (!storage || !memoryIdPattern.test(memoryId)) return false;
+  try {
+    storage.setItem(CREATION_CHAT_HANDOFF_STORAGE_KEY, memoryId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Consume the marker even when the route is no longer its original target. */
+export function consumeCreationChatHandoff(
+  memoryId: string,
+  storage: RecoveryStorage | null = defaultStorage(),
+): boolean {
+  if (!storage) return false;
+  try {
+    const storedMemoryId = storage.getItem(CREATION_CHAT_HANDOFF_STORAGE_KEY);
+    storage.removeItem(CREATION_CHAT_HANDOFF_STORAGE_KEY);
+    return storedMemoryId === memoryId && memoryIdPattern.test(memoryId);
   } catch {
     return false;
   }

@@ -31,7 +31,7 @@ test("formal creation and person selection use the existing product routes", () 
   assert.match(home, /if \(homeState\?\.authenticated\) \{[\s\S]*?router\.push\("\/create-memory"\)/);
   assert.match(home, /setLoginIntent\("create"\)[\s\S]*?setStage\("login"\)/);
   assert.match(home, /if \(loginIntent === "create"\) \{[\s\S]*?router\.replace\("\/create-memory"\)/);
-  assert.match(home, /window\.localStorage\.setItem\(COMPANION_PRIMARY_KEY, personId\)/);
+  assert.match(home, /persistCompanionPrimaryPreference\(window\.localStorage, homeState\.ownerId, personId\)/);
   assert.match(home, /router\.push\("\/companion"\)/);
   assert.doesNotMatch(home, /FirstPresenceFlow initialStage="create"/);
   assert.match(home, /FirstPresenceFlow initialStage="preview-create"/);

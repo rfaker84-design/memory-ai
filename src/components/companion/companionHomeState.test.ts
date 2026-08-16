@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  companionPrimaryStorageKey,
   companionDay,
+  clearCompanionPrimaryPreference,
   dailyCompanionGreeting,
   dailyGreetingMarker,
   isDailyCompanionGreetingDue,
+  persistCompanionPrimaryPreference,
+  resolveCompanionPrimaryPreference,
   restoreCompanionPosition,
   selectPrimaryCompanion,
   serializeCompanionPosition,
@@ -13,10 +17,52 @@ import {
 
 const memories = [{ id: "first" }, { id: "second" }];
 
-test("companion home restores an owned preferred TA and safely falls back", () => {
+function storage(initial: Record<string, string> = {}) {
+  const values = new Map(Object.entries(initial));
+  return {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
+    removeItem: (key: string) => { values.delete(key); },
+    values,
+  };
+}
+
+test("companion home restores only an owned preferred TA and never falls back to a multi-memory array order", () => {
   assert.equal(selectPrimaryCompanion(memories, "second")?.id, "second");
-  assert.equal(selectPrimaryCompanion(memories, "missing")?.id, "first");
+  assert.equal(selectPrimaryCompanion(memories, "missing"), null);
+  assert.equal(selectPrimaryCompanion([{ id: "only" }], null)?.id, "only");
   assert.equal(selectPrimaryCompanion([], "first"), null);
+});
+
+test("primary preference is owner-scoped and a valid legacy value migrates only for its current owner", () => {
+  const local = storage({ "memoryai.companion.primary": "second" });
+  const result = resolveCompanionPrimaryPreference(memories, "owner-a", local);
+  assert.equal(result.memory?.id, "second");
+  assert.equal(result.source, "legacy-migrated");
+  assert.equal(local.values.get(companionPrimaryStorageKey("owner-a")), "second");
+  assert.equal(local.values.has("memoryai.companion.primary"), false);
+  assert.equal(resolveCompanionPrimaryPreference(memories, "owner-b", local).memory, null);
+});
+
+test("a missing or invalid multi-memory preference requests an explicit choice instead of pinning the newest list entry", () => {
+  const local = storage({ "memoryai.companion.primary": "foreign-memory" });
+  const result = resolveCompanionPrimaryPreference(memories, "owner-a", local);
+  assert.equal(result.memory, null);
+  assert.equal(result.needsExplicitChoice, true);
+  assert.equal(result.source, "selection-required");
+  assert.equal(local.values.has("memoryai.companion.primary"), false);
+  assert.equal(local.values.has(companionPrimaryStorageKey("owner-a")), false);
+});
+
+test("a one-person owner is selected safely and explicit choices can later be cleared without touching another owner", () => {
+  const local = storage();
+  const only = resolveCompanionPrimaryPreference([{ id: "only" }], "owner-a", local);
+  assert.equal(only.memory?.id, "only");
+  assert.equal(local.values.get(companionPrimaryStorageKey("owner-a")), "only");
+  persistCompanionPrimaryPreference(local, "owner-b", "other");
+  clearCompanionPrimaryPreference(local, "owner-a", "only");
+  assert.equal(local.values.has(companionPrimaryStorageKey("owner-a")), false);
+  assert.equal(local.values.get(companionPrimaryStorageKey("owner-b")), "other");
 });
 
 test("daily companion greeting is shown once per day and selected TA", () => {

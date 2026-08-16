@@ -91,7 +91,7 @@ test("formal creation leaves React memory state for the stable owned chat URL", 
   assert.match(chatPage, /<MotionProvider>/);
   assert.match(mediaRecoveryGate, /MemoryConversationScene/);
   assert.doesNotMatch(chatPage, /completedConversationRounds/);
-  assert.doesNotMatch(chatPage, /preferredAddress|catchPhrases|sharedMemory|userId/);
+  assert.doesNotMatch(chatPage, /preferredAddress|catchPhrases|sharedMemory/);
   assert.match(conversation, /restoreConversationWithFirstGreeting/);
   assert.match(
     conversation,
@@ -109,7 +109,7 @@ test("formal creation uploads current selected media before the one stable chat 
   assert.match(flow, /await uploadCurrentCreationMedia\(/);
   assert.match(flow, /await completeCreatedMemory\(payload\.id, idempotencyKey\.current\)/);
   const completion = flow.slice(flow.indexOf("const completeCreatedMemory"), flow.indexOf("const continueRecoveredCreation"));
-  assert.match(completion, /await uploadCurrentCreationMedia\([\s\S]*?router\.replace\(`\/memory-chat\//);
+  assert.match(completion, /await uploadCurrentCreationMedia\([\s\S]*?markCreationChatHandoff\(memoryId\)[\s\S]*?router\.replace\(`\/memory-chat\//);
   assert.match(flow, /creationOperationInFlight\.current/);
   assert.match(recoveryClient, /uploadPayload\.asset\.status !== "uploaded"/);
   assert.match(recoveryClient, /clearCreationRecovery\(storage\)/);
@@ -131,7 +131,8 @@ test("handoff failures never enter a local conversation or local greeting", () =
   assert.match(formalCreate, /setStage\("network-failed"\)/);
   assert.doesNotMatch(formalCreate, /previewGreeting/);
   assert.match(mediaRecoveryGate, /if \(!record \|\| record\.memoryId !== memory\.id\)[\s\S]*?setPhase\("error"\)/);
-  assert.match(chatPage, /requiresMediaRecovery: readCreationRecovery\(\)\?\.memoryId === memory\.id/);
+  assert.match(chatPage, /const requiresMediaRecovery = readCreationRecovery\(\)\?\.memoryId === memory\.id/);
+  assert.match(chatPage, /const creationChatHandoff = consumeCreationChatHandoff\(memory\.id\)/);
   assert.match(conversationAdapter, /fetchConversationJson\(`\/api\/memories\/\$\{encodeURIComponent\(memoryId\)\}\/first-greeting`/);
   assert.match(conversationAdapter, /CHAT_REQUEST_TIMEOUT/);
 });

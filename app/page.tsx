@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { GuestExperience, type HomePerson } from "../components/world/GuestExperience";
 import { fetchAuthRequestJson } from "../src/components/auth/authRequestClient";
 import { fetchCompanionHomeMemoriesJson } from "../src/components/companion/companionHomeRequest";
-import { COMPANION_PRIMARY_KEY } from "../src/components/companion/companionHomeState";
+import { persistCompanionPrimaryPreference } from "../src/components/companion/companionHomeState";
 import { FirstPresenceFlow } from "../src/components/first-presence/FirstPresenceFlow";
 import StaticBrandLaunch from "../src/components/launch/StaticBrandLaunch";
 import { claimBrandLaunch } from "../src/components/launch/staticBrandLaunchPolicy";
@@ -41,10 +41,11 @@ type SessionPayload = { authenticated?: unknown };
 type OwnerMemory = {
   id?: unknown;
   name?: unknown;
+  userId?: unknown;
   photoUrl?: unknown;
   photoAssetId?: unknown;
 };
-type HomeState = { authenticated: boolean; people: HomePerson[] };
+type HomeState = { authenticated: boolean; ownerId: string | null; people: HomePerson[] };
 
 function asOptionalString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
@@ -57,14 +58,15 @@ async function loadHomeState(signal?: AbortSignal): Promise<HomeState> {
   }, fetch, signal);
   const payload = body as SessionPayload;
   if (!response.ok || payload.authenticated !== true) {
-    return { authenticated: false, people: [] };
+    return { authenticated: false, ownerId: null, people: [] };
   }
 
   try {
     const { response: memoriesResponse, body: memoriesBody } = await fetchCompanionHomeMemoriesJson(fetch, signal);
     if (!memoriesResponse.ok || !Array.isArray(memoriesBody)) {
-      return { authenticated: true, people: [] };
+      return { authenticated: true, ownerId: null, people: [] };
     }
+    const ownerId = asOptionalString((memoriesBody[0] as OwnerMemory | undefined)?.userId);
     const people = await Promise.all(memoriesBody.slice(0, 3).map(async (item: unknown): Promise<HomePerson | null> => {
       const memory = item as OwnerMemory;
       const id = asOptionalString(memory.id);
@@ -77,10 +79,10 @@ async function loadHomeState(signal?: AbortSignal): Promise<HomeState> {
         : photoUrl;
       return { id, name, image };
     }));
-    return { authenticated: true, people: people.filter((person): person is HomePerson => person !== null) };
+    return { authenticated: true, ownerId, people: people.filter((person): person is HomePerson => person !== null) };
   } catch {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    return { authenticated: true, people: [] };
+    return { authenticated: true, ownerId: null, people: [] };
   }
 }
 
@@ -104,7 +106,7 @@ export default function HomePage() {
         if (!controller.signal.aborted) setHomeState(nextState);
       })
       .catch(() => {
-        if (!controller.signal.aborted) setHomeState({ authenticated: false, people: [] });
+        if (!controller.signal.aborted) setHomeState({ authenticated: false, ownerId: null, people: [] });
       });
 
     return () => controller.abort();
@@ -137,19 +139,17 @@ export default function HomePage() {
       return;
     }
     setStage("checking");
-    const nextState = await loadHomeState().catch(() => ({ authenticated: true, people: [] }));
+    const nextState = await loadHomeState().catch(() => ({ authenticated: true, ownerId: null, people: [] }));
     setHomeState(nextState);
     setStage("home");
   }, [loginIntent, router]);
 
   const openCompanion = useCallback((personId: string) => {
-    try {
-      window.localStorage.setItem(COMPANION_PRIMARY_KEY, personId);
-    } catch {
-      // This is only a presentation preference; Companion revalidates ownership.
+    if (homeState?.ownerId) {
+      persistCompanionPrimaryPreference(window.localStorage, homeState.ownerId, personId);
     }
     router.push("/companion");
-  }, [router]);
+  }, [homeState?.ownerId, router]);
 
   const returnHome = useCallback(() => {
     setLoginIntent("login");

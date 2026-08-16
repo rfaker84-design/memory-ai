@@ -4,8 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
-  COMPANION_PRIMARY_KEY,
-  selectPrimaryCompanion,
+  resolveCompanionPrimaryPreference,
 } from "@/src/components/companion/companionHomeState";
 import {
   COMPANION_VISIT_MARKER,
@@ -31,6 +30,7 @@ import styles from "./page.module.css";
 
 type CompanionMemory = {
   id: string;
+  userId?: string | null;
   name: string;
   relationship?: string | null;
   photoUrl?: string | null;
@@ -97,18 +97,24 @@ function CompanionContent() {
       }
       if (!response.ok) throw new Error("COMPANION_LIST_UNAVAILABLE");
       const memories = Array.isArray(body) ? body as CompanionMemory[] : [];
-      const selected = selectPrimaryCompanion(
-        memories,
-        readPresentationValue(COMPANION_PRIMARY_KEY),
-      );
+      const ownerId = typeof memories[0]?.userId === "string" && memories[0].userId.trim()
+        ? memories[0].userId
+        : null;
+      const selection = ownerId
+        ? resolveCompanionPrimaryPreference(memories, ownerId, window.localStorage)
+        : null;
+      const selected = selection?.memory ?? null;
       if (!selected) {
-        setState("empty");
+        if (memories.length > 1 && selection?.needsExplicitChoice) {
+          // Reuse the existing memory-world picker. Array order must never
+          // silently become a multi-person Owner's primary preference.
+          router.replace("/memory-world");
+          return;
+        }
+        setState(memories.length === 0 ? "empty" : "error");
         return;
       }
 
-      // Local storage remains presentation-only: selection happens only after
-      // the server has returned this Owner's current memories.
-      writePresentationValue(COMPANION_PRIMARY_KEY, selected.id);
       const visitStorageKey = companionVisitStorageKey(selected.id);
       const nextVisitState = resolveCompanionVisitState(readPresentationValue(visitStorageKey));
       setVisitState(nextVisitState);
@@ -148,7 +154,7 @@ function CompanionContent() {
       if (signal?.aborted) return;
       setState(error instanceof CompanionHomeRequestError ? "timeout" : "error");
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     const controller = new AbortController();

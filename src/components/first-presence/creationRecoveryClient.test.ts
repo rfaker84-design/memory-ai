@@ -3,10 +3,12 @@ import test from "node:test";
 
 import {
   clearCreationRecovery,
+  consumeCreationChatHandoff,
   fetchCreationJson,
   fetchCreationRequest,
   CreationRecoveryRequestError,
   mediaPhase,
+  markCreationChatHandoff,
   phaseForRemainingMedia,
   readCreationRecovery,
   readTransientCreationMedia,
@@ -74,6 +76,18 @@ test("temporary recovery storage contains only key, memory id, and phase", () =>
   ]) {
     assert.equal(raw.includes(forbidden), false);
   }
+});
+
+test("a successful creation handoff is tab-local, one-use, and never changes recovery data", () => {
+  const current = storage();
+  assert.equal(markCreationChatHandoff(MEMORY_ID, current), true);
+  assert.equal(readCreationRecovery(current), null);
+  assert.equal(consumeCreationChatHandoff(MEMORY_ID, current), true);
+  assert.equal(consumeCreationChatHandoff(MEMORY_ID, current), false);
+
+  assert.equal(markCreationChatHandoff(MEMORY_ID, current), true);
+  assert.equal(consumeCreationChatHandoff("33333333-3333-4333-8333-333333333333", current), false);
+  assert.equal(consumeCreationChatHandoff(MEMORY_ID, current), false);
 });
 
 test("creation timeout remains uncertain and exposes no automatic retry path", async () => {
