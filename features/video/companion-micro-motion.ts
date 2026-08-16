@@ -44,6 +44,11 @@ export const COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_VERSION = 6;
  * looped presentation slots or attach acknowledgement to the chat state yet.
  */
 export const COMPANION_MOTION_ACKNOWLEDGEMENT_VISUAL_REVIEW_VERSION = 7;
+/**
+ * A reviewer-authorized reflective sample. It is a single replacement for
+ * the prior looped reflective asset and cannot fan out into any other slot.
+ */
+export const COMPANION_MOTION_REFLECTIVE_VISUAL_REVIEW_VERSION = 8;
 export const COMPANION_MOTION_VARIANTS = [
   "idle",
   "attentive",
@@ -310,6 +315,18 @@ export class CompanionMotionPackService {
     });
   }
 
+  /**
+   * A reviewer-authorized quiet reflective pause. This is not a new pack and
+   * cannot submit idle, attentive, or acknowledgement work.
+   */
+  async ensureReflectiveVisualReview(input: { externalUserId: string; memoryId: string }): Promise<CompanionMotionSlot[]> {
+    return this.ensureSingleVisualReview(input, {
+      variant: "reflective",
+      packVersion: COMPANION_MOTION_REFLECTIVE_VISUAL_REVIEW_VERSION,
+      reviewKey: "reflective-quiet-review",
+    });
+  }
+
   async list(input: { externalUserId: string; memoryId: string }): Promise<CompanionMotionSlot[]> {
     const result = await queryPostgres<SlotRow>(
       `SELECT j.id, j.motion_variant, j.pack_version, j.status, j.artifact_key, j.quality_status, j.error_code
@@ -364,9 +381,9 @@ export class CompanionMotionPackService {
   private async ensureSingleVisualReview(
     input: { externalUserId: string; memoryId: string },
     sample: {
-      variant: "idle" | "attentive" | "acknowledgement";
+      variant: "idle" | "attentive" | "reflective" | "acknowledgement";
       packVersion: number;
-      reviewKey: "idle-review" | "attentive-sustained-review" | "attentive-still-review" | "acknowledgement-review";
+      reviewKey: "idle-review" | "attentive-sustained-review" | "attentive-still-review" | "acknowledgement-review" | "reflective-quiet-review";
     },
   ): Promise<CompanionMotionSlot[]> {
     if (!companionMotionStagingReviewEnabled(this.environment)) {

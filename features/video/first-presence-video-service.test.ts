@@ -29,6 +29,9 @@ import {
   VIDU_COMPANION_MOTION_ATTENTIVE_VISUAL_REVIEW_DURATION_SECONDS,
   VIDU_COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_NEGATIVE_PROMPT,
   VIDU_COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_PROMPT,
+  VIDU_COMPANION_MOTION_REFLECTIVE_VISUAL_REVIEW_DURATION_SECONDS,
+  VIDU_COMPANION_MOTION_REFLECTIVE_VISUAL_REVIEW_NEGATIVE_PROMPT,
+  VIDU_COMPANION_MOTION_REFLECTIVE_VISUAL_REVIEW_PROMPT,
   VIDU_COMPANION_MOTION_IDLE_DURATION_SECONDS,
   VIDU_COMPANION_MOTION_NEGATIVE_PROMPT,
   VIDU_COMPANION_MOTION_PROMPTS,
@@ -416,13 +419,21 @@ test("Vidu companion variants keep identity and freeze silent micro-motion promp
       return Response.json({ task_id: `task-${requests.length}`, state: "created", credits: 44 });
     }) as typeof fetch,
   });
-  for (const motionVariant of ["idle", "attentive", "reflective", "attentive", "acknowledgement"] as const) {
+  const samples = [
+    { variant: "idle", version: 3 },
+    { variant: "attentive", version: 2 },
+    { variant: "reflective", version: 2 },
+    { variant: "attentive", version: 6 },
+    { variant: "acknowledgement", version: 7 },
+    { variant: "reflective", version: 8 },
+  ] as const;
+  for (const sample of samples) {
     await provider.submit({
       imageDataUrl: image,
       imageSha256: sha,
-      idempotencyKey: `motion-${motionVariant}-${requests.length}`,
-      motionVariant,
-      companionMotionPackVersion: requests.length === 3 ? 6 : motionVariant === "acknowledgement" ? 7 : motionVariant === "idle" ? 3 : 2,
+      idempotencyKey: `motion-${sample.variant}-${sample.version}`,
+      motionVariant: sample.variant,
+      companionMotionPackVersion: sample.version,
     });
   }
   assert.deepEqual(requests.map((request) => request.prompt), [
@@ -431,6 +442,7 @@ test("Vidu companion variants keep identity and freeze silent micro-motion promp
     VIDU_COMPANION_MOTION_PROMPTS.reflective,
     VIDU_COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_PROMPT,
     VIDU_COMPANION_MOTION_PROMPTS.acknowledgement,
+    VIDU_COMPANION_MOTION_REFLECTIVE_VISUAL_REVIEW_PROMPT,
   ]);
   assert.match(String(requests[3].prompt), /sustained passive listening state/i);
   assert.match(String(requests[3].prompt), /No smile/i);
@@ -443,7 +455,9 @@ test("Vidu companion variants keep identity and freeze silent micro-motion promp
         ? VIDU_COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_NEGATIVE_PROMPT
         : index === 4
           ? VIDU_COMPANION_MOTION_ACKNOWLEDGEMENT_VISUAL_REVIEW_NEGATIVE_PROMPT
-        : VIDU_COMPANION_MOTION_NEGATIVE_PROMPT,
+          : index === 5
+            ? VIDU_COMPANION_MOTION_REFLECTIVE_VISUAL_REVIEW_NEGATIVE_PROMPT
+            : VIDU_COMPANION_MOTION_NEGATIVE_PROMPT,
     );
     assert.equal(
       request.duration,
@@ -453,7 +467,9 @@ test("Vidu companion variants keep identity and freeze silent micro-motion promp
           ? VIDU_COMPANION_MOTION_ATTENTIVE_VISUAL_REVIEW_DURATION_SECONDS
           : index === 4
             ? VIDU_COMPANION_MOTION_ACKNOWLEDGEMENT_DURATION_SECONDS
-          : 8,
+            : index === 5
+              ? VIDU_COMPANION_MOTION_REFLECTIVE_VISUAL_REVIEW_DURATION_SECONDS
+              : 8,
     );
     assert.equal(request.audio, false);
     assert.equal(request.bgm, false);
@@ -462,6 +478,9 @@ test("Vidu companion variants keep identity and freeze silent micro-motion promp
   assert.match(String(requests[4].prompt), /one neutral acknowledgement/i);
   assert.match(String(requests[4].prompt), /not a looping state/i);
   assert.match(String(requests[4].prompt), /Do not smile continuously/i);
+  assert.match(String(requests[5].prompt), /quiet reflective pause/i);
+  assert.match(String(requests[5].prompt), /brief, slight downward glance/i);
+  assert.match(String(requests[5].prompt), /Do not nod, smile, frown/i);
 });
 
 test("secure downloader rejects client supplied unsafe URLs, private redirects, and oversized files", async () => {

@@ -27,6 +27,7 @@ test("owner GET reports eligibility without generating and POST creates determin
     ensureAttentiveVisualReview: async () => [],
     ensureAttentiveStillVisualReview: async () => [],
     ensureAcknowledgementVisualReview: async () => [],
+    ensureReflectiveVisualReview: async () => [],
   });
   const handler = createCompanionMotionHandler(service, session, () => undefined);
   const context = { params: Promise.resolve({ id: memoryId }) };
@@ -45,7 +46,7 @@ test("owner GET reports eligibility without generating and POST creates determin
 });
 
 test("companion motion route is authenticated and rejects request shape", async () => {
-  const service = () => ({ getState: async () => ({ eligible: false, slots: [] }), ensure: async () => [], ensureIdleVisualReview: async () => [], ensureAttentiveVisualReview: async () => [], ensureAttentiveStillVisualReview: async () => [], ensureAcknowledgementVisualReview: async () => [] });
+  const service = () => ({ getState: async () => ({ eligible: false, slots: [] }), ensure: async () => [], ensureIdleVisualReview: async () => [], ensureAttentiveVisualReview: async () => [], ensureAttentiveStillVisualReview: async () => [], ensureAcknowledgementVisualReview: async () => [], ensureReflectiveVisualReview: async () => [] });
   const context = { params: Promise.resolve({ id: memoryId }) };
   const anonymous = createCompanionMotionHandler(service, async () => null);
   assert.equal((await anonymous.GET(new NextRequest("https://memory.test/"), context)).status, 401);
@@ -68,6 +69,7 @@ test("the one-off idle visual review stays a session-owned Staging-only request"
     ensureAttentiveVisualReview: async () => [],
     ensureAttentiveStillVisualReview: async () => [],
     ensureAcknowledgementVisualReview: async () => [],
+    ensureReflectiveVisualReview: async () => [],
   });
   const handler = createCompanionMotionHandler(service, session, () => undefined, () => true);
   const response = await handler.POST(new NextRequest("https://memory.test/", {
@@ -92,6 +94,7 @@ test("the next visual review creates only one session-owned attentive sample", a
     },
     ensureAttentiveStillVisualReview: async () => [],
     ensureAcknowledgementVisualReview: async () => [],
+    ensureReflectiveVisualReview: async () => [],
   });
   const handler = createCompanionMotionHandler(service, session, () => undefined, () => true);
   const response = await handler.POST(new NextRequest("https://memory.test/", {
@@ -118,6 +121,7 @@ test("the strict attentive review is bounded to one session-owned passive-listen
       return [{ jobId: "00000000-0000-4000-8000-000000000013", variant: "attentive" as const, status: "queued" as const, artifactAvailable: false }];
     },
     ensureAcknowledgementVisualReview: async () => [],
+    ensureReflectiveVisualReview: async () => [],
   });
   const handler = createCompanionMotionHandler(service, session, () => undefined, () => true);
   const response = await handler.POST(new NextRequest("https://memory.test/", {
@@ -144,6 +148,7 @@ test("the one-shot acknowledgement review creates only its session-owned acknowl
       acknowledgementCalls += 1;
       return [{ jobId: "00000000-0000-4000-8000-000000000014", variant: "acknowledgement" as const, status: "queued" as const, artifactAvailable: false }];
     },
+    ensureReflectiveVisualReview: async () => [],
   });
   const handler = createCompanionMotionHandler(service, session, () => undefined, () => true);
   const response = await handler.POST(new NextRequest("https://memory.test/", {
@@ -155,4 +160,31 @@ test("the one-shot acknowledgement review creates only its session-owned acknowl
   assert.equal(acknowledgementCalls, 1);
   assert.equal(packCalls, 0);
   assert.deepEqual((await response.json()).slots.map((slot: { variant: string }) => slot.variant), ["acknowledgement"]);
+});
+
+test("the quiet reflective review creates only its session-owned reflective sample", async () => {
+  let reflectiveCalls = 0;
+  let packCalls = 0;
+  const service = () => ({
+    getState: async () => ({ eligible: true, slots: [] }),
+    ensure: async () => { packCalls += 1; return []; },
+    ensureIdleVisualReview: async () => [],
+    ensureAttentiveVisualReview: async () => [],
+    ensureAttentiveStillVisualReview: async () => [],
+    ensureAcknowledgementVisualReview: async () => [],
+    ensureReflectiveVisualReview: async () => {
+      reflectiveCalls += 1;
+      return [{ jobId: "00000000-0000-4000-8000-000000000015", variant: "reflective" as const, status: "queued" as const, artifactAvailable: false }];
+    },
+  });
+  const handler = createCompanionMotionHandler(service, session, () => undefined, () => true);
+  const response = await handler.POST(new NextRequest("https://memory.test/", {
+    method: "POST",
+    headers: { origin: "https://memory.test", "content-type": "application/json" },
+    body: '{"review":"reflective-visual"}',
+  }), { params: Promise.resolve({ id: memoryId }) });
+  assert.equal(response.status, 202);
+  assert.equal(reflectiveCalls, 1);
+  assert.equal(packCalls, 0);
+  assert.deepEqual((await response.json()).slots.map((slot: { variant: string }) => slot.variant), ["reflective"]);
 });
