@@ -118,14 +118,15 @@ test("playback accepts only the existing owner-authorized first-presence route",
   );
 });
 
-test("chat maps typing and send to attentive, generation to reflective, then idle", () => {
+test("chat maps typing to attentive, in-flight requests to reflective, then idle", () => {
   assert.equal(resolveConversationMotionVariant({ phase: "ready", draft: "", hasPendingMessage: false }), "idle");
   assert.equal(resolveConversationMotionVariant({ phase: "ready", draft: "一件小事", hasPendingMessage: false }), "attentive");
-  assert.equal(resolveConversationMotionVariant({ phase: "sending", draft: "", hasPendingMessage: true }), "attentive");
+  assert.equal(resolveConversationMotionVariant({ phase: "sending", draft: "", hasPendingMessage: true }), "reflective");
   assert.equal(resolveConversationMotionVariant({ phase: "replying", draft: "", hasPendingMessage: true }), "reflective");
   assert.equal(resolveConversationMotionVariant({ phase: "ready", draft: "", hasPendingMessage: true }), "reflective");
   assert.equal(resolveConversationMotionVariant({ phase: "recovering", draft: "", hasPendingMessage: true }), "reflective");
   assert.equal(resolveConversationMotionVariant({ phase: "greeting", draft: "", hasPendingMessage: false }), "reflective");
+  assert.equal(resolveConversationMotionVariant({ phase: "error", draft: "", hasPendingMessage: true }), "idle");
 });
 
 test("a missing active variant falls back to idle, then to the static portrait", () => {

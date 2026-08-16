@@ -122,6 +122,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   const replyPulseTimer = useRef<number | null>(null);
   const notificationEligibilityCheckedRef = useRef(false);
   const [replyPulse, setReplyPulse] = useState(false);
+  const [acknowledgementActive, setAcknowledgementActive] = useState(false);
   const titleId = useId();
 
   const restore = useCallback(async (signal?: AbortSignal) => {
@@ -290,6 +291,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     setNotice("");
     setFailureRequestId(null);
     setPhase("sending");
+    if (!reducedMotion) setAcknowledgementActive(true);
     const replyingTimer = window.setTimeout(() => setPhase("replying"), reducedMotion ? 0 : 360);
 
     try {
@@ -301,6 +303,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
         setNotice("今天的免费陪伴次数快用完了。你仍可以慢慢说；危机支持不受这个限制。");
       }
     } catch (error) {
+      setAcknowledgementActive(false);
       inFlightRef.current = false;
       setFailureRequestId(supportRequestId(error));
       setNotice(`${readableFailure(error)} 已保留原文，但不会自动重发。`);
@@ -437,11 +440,15 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   };
 
   const isBusy = phase === "loading" || phase === "greeting" || phase === "sending" || phase === "replying" || phase === "recovering";
-  const motionVariant = resolveConversationMotionVariant({
+  const baseMotionVariant = resolveConversationMotionVariant({
     phase,
     draft,
     hasPendingMessage: Boolean(pendingMessage),
   });
+  const motionVariant = acknowledgementActive ? "acknowledgement" : baseMotionVariant;
+  const preloadMotionVariant = acknowledgementActive
+    ? "reflective"
+    : draft.trim() ? "acknowledgement" : null;
   const quietPresence = useQuietCompanionPresence({
     reducedMotion: reducedMotion || assistanceOfferVisible,
     replying: motionVariant !== "idle" || replyPulse,
@@ -459,6 +466,9 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
               memoryId={memoryId}
               portraitUrl={portraitUrl}
               variant={motionVariant}
+              preloadVariant={preloadMotionVariant}
+              onAcknowledgementComplete={() => setAcknowledgementActive(false)}
+              onAcknowledgementUnavailable={() => setAcknowledgementActive(false)}
               motionEnabled={!reducedMotion}
             />
           ) : (

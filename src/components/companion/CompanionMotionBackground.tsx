@@ -50,6 +50,9 @@ type Props = {
   memoryId: string;
   portraitUrl: string;
   variant: CompanionMotionVariant;
+  preloadVariant?: CompanionMotionVariant | null;
+  onAcknowledgementComplete?: () => void;
+  onAcknowledgementUnavailable?: () => void;
   motionEnabled: boolean;
   className?: string;
 };
@@ -73,6 +76,9 @@ export function CompanionMotionBackground({
   memoryId,
   portraitUrl,
   variant,
+  preloadVariant = null,
+  onAcknowledgementComplete,
+  onAcknowledgementUnavailable,
   motionEnabled,
   className,
 }: Props) {
@@ -82,6 +88,7 @@ export function CompanionMotionBackground({
   const [pack, setPack] = useState<CompanionMotionPack | null>(null);
   const [sources, setSources] = useState<PlaybackSources>({});
   const [visibleVariant, setVisibleVariant] = useState<CompanionMotionVariant | null>(null);
+  const [playbackFailed, setPlaybackFailed] = useState(false);
   const pollAttempts = useRef(0);
   const authorizationFailures = useRef(new Map<string, number>());
   const [authorizationEpoch, setAuthorizationEpoch] = useState(0);
@@ -90,6 +97,22 @@ export function CompanionMotionBackground({
   const crossfadeTimer = useRef<number | null>(null);
   const authorizationRetryTimer = useRef<number | null>(null);
   const visibleVariantRef = useRef<CompanionMotionVariant | null>(null);
+  const acknowledgementUnavailable = useRef(false);
+  const acknowledgementCallbacks = useRef({ onAcknowledgementComplete, onAcknowledgementUnavailable });
+
+  useEffect(() => {
+    acknowledgementCallbacks.current = { onAcknowledgementComplete, onAcknowledgementUnavailable };
+  }, [onAcknowledgementComplete, onAcknowledgementUnavailable]);
+
+  useEffect(() => {
+    if (variant !== "acknowledgement") acknowledgementUnavailable.current = false;
+  }, [variant]);
+
+  const settleUnavailableAcknowledgement = () => {
+    if (variant !== "acknowledgement" || acknowledgementUnavailable.current) return;
+    acknowledgementUnavailable.current = true;
+    acknowledgementCallbacks.current.onAcknowledgementUnavailable?.();
+  };
 
   useEffect(() => {
     const enabled = window.location.hostname === STAGING_DEBUG_HOST
@@ -155,6 +178,35 @@ export function CompanionMotionBackground({
     }));
   };
 
+  const fail = (failed: CompanionMotionVariant, jobId: string) => {
+    authorizedJobs.current.delete(jobId);
+    setSources((current) => {
+      const next = { ...current };
+      delete next[failed];
+      return next;
+    });
+    if (visibleVariantRef.current === failed) {
+      visibleVariantRef.current = null;
+      setVisibleVariant(null);
+    }
+    if (failed === "acknowledgement") {
+      settleUnavailableAcknowledgement();
+    } else {
+      // A failed loop never blocks the conversation; remain on the owned still
+      // until a freshly authorized source proves it can actually play.
+      setPlaybackFailed(true);
+    }
+    const failures = (authorizationFailures.current.get(jobId) ?? 0) + 1;
+    authorizationFailures.current.set(jobId, failures);
+    if (failures <= 3) {
+      if (authorizationRetryTimer.current !== null) window.clearTimeout(authorizationRetryTimer.current);
+      authorizationRetryTimer.current = window.setTimeout(
+        () => setAuthorizationEpoch((current) => current + 1),
+        POLL_INTERVAL_MS,
+      );
+    }
+  };
+
   const startPlayback = (motionVariant: CompanionMotionVariant) => {
     const video = videoNodes.current.get(motionVariant);
     if (!video) return;
@@ -163,7 +215,11 @@ export function CompanionMotionBackground({
     video.playsInline = true;
     void video.play().then(
       () => recordPlay(motionVariant, "resolved", null),
-      (error: unknown) => recordPlay(motionVariant, "rejected", debugError(error)),
+      (error: unknown) => {
+        recordPlay(motionVariant, "rejected", debugError(error));
+        const source = sources[motionVariant];
+        if (source) fail(motionVariant, source.jobId);
+      },
     );
   };
 
@@ -180,6 +236,7 @@ export function CompanionMotionBackground({
     setPack(null);
     setSources({});
     setVisibleVariant(null);
+    setPlaybackFailed(false);
     const controller = new AbortController();
     let pollTimer: number | null = null;
     let live = true;
@@ -221,15 +278,20 @@ export function CompanionMotionBackground({
     const controller = new AbortController();
     let live = true;
     const refreshBefore = Date.now() + 60_000;
-    // Idle is the only startup authorization. The other two videos are loaded
-    // only when their chat state is requested, while idle stays visible.
-    const requestedVariant: CompanionMotionVariant = sources.idle ? variant : "idle";
-    const slot = pack.slots.find((candidate) => candidate.variant === requestedVariant && candidate.artifactAvailable);
-    if (!slot) return;
-    const current = sources[requestedVariant];
-    if (current && Date.parse(current.expiresAt) > refreshBefore) return;
-    const jobId = slot.jobId;
-    void (async () => {
+    // The first visible frame always comes from idle. Later states are warmed
+    // only as the conversation makes them relevant, never on every keystroke.
+    const requestedVariants = sources.idle
+      ? [...new Set([variant, preloadVariant].filter((candidate): candidate is CompanionMotionVariant => Boolean(candidate)))]
+      : ["idle" as const];
+    const authorize = async (requestedVariant: CompanionMotionVariant) => {
+      const slot = pack.slots.find((candidate) => candidate.variant === requestedVariant && candidate.artifactAvailable);
+      if (!slot) {
+        if (requestedVariant === "acknowledgement") settleUnavailableAcknowledgement();
+        return;
+      }
+      const current = sources[requestedVariant];
+      if (current && Date.parse(current.expiresAt) > refreshBefore) return;
+      const jobId = slot.jobId;
       try {
         if (debugEnabledRef.current) {
           setDebugState((current) => ({
@@ -248,9 +310,10 @@ export function CompanionMotionBackground({
         authorizedJobs.current.set(jobId, playback);
         authorizationFailures.current.delete(jobId);
         setSources((current) => ({ ...current, [slot.variant]: { jobId, ...playback } }));
+        setPlaybackFailed(false);
       } catch (error) {
-        // A failed authorization leaves the owner photo visible.
         if (!live) return;
+        if (requestedVariant === "acknowledgement") settleUnavailableAcknowledgement();
         if (debugEnabledRef.current) {
           setDebugState((current) => ({
             ...current,
@@ -273,7 +336,8 @@ export function CompanionMotionBackground({
           }, POLL_INTERVAL_MS);
         }
       }
-    })();
+    };
+    for (const requestedVariant of requestedVariants) void authorize(requestedVariant);
     return () => {
       live = false;
       controller.abort();
@@ -282,13 +346,14 @@ export function CompanionMotionBackground({
         authorizationRetryTimer.current = null;
       }
     };
-  }, [authorizationEpoch, memoryId, motionEnabled, pack, sources.idle, sources[variant], variant]);
+  }, [authorizationEpoch, memoryId, motionEnabled, pack, preloadVariant, sources, variant]);
 
   const available = useMemo(
     () => new Set(Object.keys(sources) as CompanionMotionVariant[]),
     [sources],
   );
   const targetVariant = motionEnabled
+    && !playbackFailed
     ? resolvePlayableMotionVariant(variant, available)
     : null;
 
@@ -341,30 +406,8 @@ export function CompanionMotionBackground({
     show(next);
   };
 
-  const fail = (failed: CompanionMotionVariant, jobId: string) => {
-    authorizedJobs.current.delete(jobId);
-    setSources((current) => {
-      const next = { ...current };
-      delete next[failed];
-      return next;
-    });
-    if (visibleVariantRef.current === failed) {
-      visibleVariantRef.current = null;
-      setVisibleVariant(null);
-    }
-    const failures = (authorizationFailures.current.get(jobId) ?? 0) + 1;
-    authorizationFailures.current.set(jobId, failures);
-    if (failures <= 3) {
-      if (authorizationRetryTimer.current !== null) window.clearTimeout(authorizationRetryTimer.current);
-      authorizationRetryTimer.current = window.setTimeout(
-        () => setAuthorizationEpoch((current) => current + 1),
-        POLL_INTERVAL_MS,
-      );
-    }
-  };
-
   const copyDebugResult = async () => {
-    const slotLines = ["idle", "attentive", "reflective"].map((candidate) => {
+    const slotLines = ["idle", "attentive", "acknowledgement", "reflective"].map((candidate) => {
       const motionVariant = candidate as CompanionMotionVariant;
       const slot = pack?.slots.find((entry) => entry.variant === motionVariant);
       const request = debugState.attempts[motionVariant];
@@ -436,19 +479,26 @@ export function CompanionMotionBackground({
             data-motion-video={motionVariant}
             data-visible={visibleVariant === motionVariant ? "true" : "false"}
             src={source.url}
-            autoPlay
+            autoPlay={motionVariant !== "acknowledgement" && motionVariant === targetVariant}
             muted
-            loop
+            loop={motionVariant !== "acknowledgement"}
             playsInline
             preload={motionVariant === targetVariant ? "auto" : "none"}
             onLoadStart={() => observeVideo(motionVariant, "loadstart")}
             onLoadedMetadata={() => observeVideo(motionVariant, "loadedmetadata")}
             onLoadedData={() => { observeVideo(motionVariant, "loadeddata"); warm(motionVariant); }}
             onCanPlay={() => observeVideo(motionVariant, "canplay")}
-            onPlaying={() => observeVideo(motionVariant, "playing")}
+            onPlaying={() => {
+              setPlaybackFailed(false);
+              observeVideo(motionVariant, "playing");
+            }}
             onWaiting={() => observeVideo(motionVariant, "waiting")}
             onStalled={() => observeVideo(motionVariant, "stalled")}
             onPause={() => observeVideo(motionVariant, "pause")}
+            onEnded={() => {
+              observeVideo(motionVariant, "ended");
+              if (motionVariant === "acknowledgement") acknowledgementCallbacks.current.onAcknowledgementComplete?.();
+            }}
             onTimeUpdate={() => { observeVideo(motionVariant, "timeupdate"); showAfterFirstMovingFrame(motionVariant); }}
             onError={() => { observeVideo(motionVariant, "error"); fail(motionVariant, source.jobId); }}
           />
@@ -464,7 +514,7 @@ export function CompanionMotionBackground({
             <div><dt>static fallback</dt><dd>{visibleVariant === null ? "shown" : "hidden"}</dd></div>
             <div><dt>last media event</dt><dd>{debugState.lastEvent ?? "none"}</dd></div>
           </dl>
-          {(["idle", "attentive", "reflective"] as CompanionMotionVariant[]).map((motionVariant) => {
+          {(["idle", "attentive", "acknowledgement", "reflective"] as CompanionMotionVariant[]).map((motionVariant) => {
             const slot = pack?.slots.find((entry) => entry.variant === motionVariant);
             const request = debugState.attempts[motionVariant];
             const video = debugState.videos[motionVariant];

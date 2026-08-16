@@ -14,7 +14,7 @@ export function resolveConversationMotionVariant(input: {
   draft: string;
   hasPendingMessage: boolean;
 }): CompanionMotionVariant {
-  if (input.phase === "sending") return "attentive";
+  if (input.phase === "error") return "idle";
   if (
     input.phase === "greeting"
     || input.phase === "replying"

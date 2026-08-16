@@ -14,7 +14,8 @@ test("owner motion reads the durable pack without generating and never blocks it
 
 test("owner motion loads idle first, warms state changes before crossfading, and reduced motion remains fully static", () => {
   assert.match(component, /<video[\s\S]*autoPlay[\s\S]*muted[\s\S]*loop[\s\S]*playsInline/);
-  assert.match(component, /const requestedVariant: CompanionMotionVariant = sources\.idle \? variant : "idle"/);
+  assert.match(component, /const requestedVariants = sources\.idle/);
+  assert.match(component, /new Set\(\[variant, preloadVariant\]/);
   assert.match(component, /preload=\{motionVariant === targetVariant \? "auto" : "none"\}/);
   assert.match(component, /onLoadedData=\{\(\) => \{[\s\S]*warm\(motionVariant\);[\s\S]*\}\}/);
   assert.match(component, /onTimeUpdate=\{\(\) => \{[\s\S]*showAfterFirstMovingFrame\(motionVariant\);[\s\S]*\}\}/);
@@ -23,6 +24,16 @@ test("owner motion loads idle first, warms state changes before crossfading, and
   assert.match(css, /transition: opacity 900ms/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*display: none !important/);
   assert.match(component, /motionEnabled && Object\.entries\(sources\)/);
+});
+
+test("acknowledgement is prepared before use, never loops, and settles once without blocking the chat", () => {
+  assert.match(component, /onAcknowledgementComplete\?: \(\) => void/);
+  assert.match(component, /onAcknowledgementUnavailable\?: \(\) => void/);
+  assert.match(component, /autoPlay=\{motionVariant !== "acknowledgement" && motionVariant === targetVariant\}/);
+  assert.match(component, /loop=\{motionVariant !== "acknowledgement"\}/);
+  assert.match(component, /onEnded=\{\(\) => \{[\s\S]*motionVariant === "acknowledgement"[\s\S]*onAcknowledgementComplete/);
+  assert.match(component, /if \(requestedVariant === "acknowledgement"\) settleUnavailableAcknowledgement\(\)/);
+  assert.match(component, /recordPlay\(motionVariant, "rejected"[\s\S]*fail\(motionVariant, source\.jobId\)/);
 });
 
 test("Staging-only debug panel observes the existing media chain without generating or changing production playback", () => {

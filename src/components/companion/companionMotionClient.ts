@@ -1,5 +1,5 @@
 export const COMPANION_MOTION_VARIANTS = ["idle", "attentive", "reflective", "acknowledgement"] as const;
-/** Existing loops remain the only player states until acknowledgement wiring is explicitly approved. */
+/** Acknowledgement is a one-shot player state; the other motion states are loops. */
 export const COMPANION_MOTION_LOOP_VARIANTS = ["idle", "attentive", "reflective"] as const;
 
 export type CompanionMotionVariant = (typeof COMPANION_MOTION_VARIANTS)[number];
