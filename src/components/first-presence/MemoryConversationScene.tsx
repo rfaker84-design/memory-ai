@@ -123,6 +123,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   const notificationEligibilityCheckedRef = useRef(false);
   const [replyPulse, setReplyPulse] = useState(false);
   const [acknowledgementActive, setAcknowledgementActive] = useState(false);
+  const [acknowledgementEnded, setAcknowledgementEnded] = useState(false);
   const titleId = useId();
 
   const restore = useCallback(async (signal?: AbortSignal) => {
@@ -291,6 +292,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     setNotice("");
     setFailureRequestId(null);
     setPhase("sending");
+    setAcknowledgementEnded(reducedMotion);
     if (!reducedMotion) setAcknowledgementActive(true);
     const replyingTimer = window.setTimeout(() => setPhase("replying"), reducedMotion ? 0 : 360);
 
@@ -304,6 +306,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
       }
     } catch (error) {
       setAcknowledgementActive(false);
+      setAcknowledgementEnded(true);
       inFlightRef.current = false;
       setFailureRequestId(supportRequestId(error));
       setNotice(`${readableFailure(error)} 已保留原文，但不会自动重发。`);
@@ -467,8 +470,17 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
               portraitUrl={portraitUrl}
               variant={motionVariant}
               preloadVariant={preloadMotionVariant}
-              onAcknowledgementComplete={() => setAcknowledgementActive(false)}
-              onAcknowledgementUnavailable={() => setAcknowledgementActive(false)}
+              onAcknowledgementComplete={() => {
+                setAcknowledgementEnded(true);
+                setAcknowledgementActive(false);
+              }}
+              onAcknowledgementUnavailable={() => {
+                setAcknowledgementEnded(true);
+                setAcknowledgementActive(false);
+              }}
+              debugConversationState={motionVariant}
+              debugAiRequestPending={phase === "sending" || phase === "replying" || phase === "recovering" || Boolean(pendingMessage)}
+              debugAcknowledgementEnded={acknowledgementEnded}
               motionEnabled={!reducedMotion}
             />
           ) : (

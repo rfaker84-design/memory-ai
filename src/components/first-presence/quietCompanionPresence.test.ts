@@ -36,10 +36,14 @@ test("companion scene uses the owner-specific motion background and retains the 
 test("chat keeps acknowledgement one-shot while the request continues independently", () => {
   const scene = readFileSync(new URL("./MemoryConversationScene.tsx", import.meta.url), "utf8");
   assert.match(scene, /const \[acknowledgementActive, setAcknowledgementActive\] = useState\(false\)/);
+  assert.match(scene, /const \[acknowledgementEnded, setAcknowledgementEnded\] = useState\(false\)/);
   assert.match(scene, /setPhase\("sending"\);[\s\S]*setAcknowledgementActive\(true\)/);
-  assert.match(scene, /onAcknowledgementComplete=\{\(\) => setAcknowledgementActive\(false\)\}/);
-  assert.match(scene, /onAcknowledgementUnavailable=\{\(\) => setAcknowledgementActive\(false\)\}/);
+  assert.match(scene, /onAcknowledgementComplete=\{\(\) => \{[\s\S]*setAcknowledgementEnded\(true\)[\s\S]*setAcknowledgementActive\(false\)/);
+  assert.match(scene, /onAcknowledgementUnavailable=\{\(\) => \{[\s\S]*setAcknowledgementEnded\(true\)[\s\S]*setAcknowledgementActive\(false\)/);
   assert.match(scene, /const motionVariant = acknowledgementActive \? "acknowledgement" : baseMotionVariant/);
   assert.match(scene, /acknowledgementActive[\s\S]*\? "reflective"/);
+  assert.match(scene, /debugConversationState=\{motionVariant\}/);
+  assert.match(scene, /debugAiRequestPending=\{phase === "sending" \|\| phase === "replying" \|\| phase === "recovering" \|\| Boolean\(pendingMessage\)\}/);
+  assert.match(scene, /debugAcknowledgementEnded=\{acknowledgementEnded\}/);
   assert.match(scene, /catch \(error\) \{[\s\S]*setAcknowledgementActive\(false\)/);
 });
