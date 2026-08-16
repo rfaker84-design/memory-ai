@@ -14,13 +14,9 @@ test("owner motion reads the durable pack without generating and never blocks it
 
 test("owner motion loads idle first, warms state changes before crossfading, and reduced motion remains fully static", () => {
   assert.match(component, /<video[\s\S]*autoPlay[\s\S]*muted[\s\S]*loop[\s\S]*playsInline/);
-  assert.match(component, /const requestedVariants = idleAuthorized/);
+  assert.match(component, /const requestedVariants = sources\.idle/);
   assert.match(component, /new Set\(\[variant, preloadVariant\]/);
-  assert.match(component, /const idleAuthorized = Boolean\(sources\.idle\)/);
-  assert.match(component, /requestedVariants = idleAuthorized/);
-  assert.match(component, /sourcesRef\.current\[requestedVariant\]/);
-  assert.match(component, /\[authorizationEpoch, idleAuthorized, memoryId, motionEnabled, pack, preloadVariant, variant\]/);
-  assert.match(component, /preload=\{motionVariant === targetVariant \|\| motionVariant === preloadVariant \? "auto" : "metadata"\}/);
+  assert.match(component, /preload=\{motionVariant === targetVariant \? "auto" : "none"\}/);
   assert.match(component, /onLoadedData=\{\(\) => \{[\s\S]*warm\(motionVariant\);[\s\S]*\}\}/);
   assert.match(component, /onTimeUpdate=\{\(\) => \{[\s\S]*showAfterFirstMovingFrame\(motionVariant\);[\s\S]*\}\}/);
   assert.match(component, /data-visible=\{visibleVariant === motionVariant/);
@@ -35,7 +31,6 @@ test("acknowledgement is prepared before use, never loops, and settles once with
   assert.match(component, /onAcknowledgementUnavailable\?: \(\) => void/);
   assert.match(component, /autoPlay=\{motionVariant !== "acknowledgement" && motionVariant === targetVariant\}/);
   assert.match(component, /loop=\{motionVariant !== "acknowledgement"\}/);
-  assert.match(component, /acknowledgementEndedSource\.current !== source\.jobId/);
   assert.match(component, /onEnded=\{\(\) => \{[\s\S]*motionVariant === "acknowledgement"[\s\S]*onAcknowledgementComplete/);
   assert.match(component, /if \(requestedVariant === "acknowledgement"\) settleUnavailableAcknowledgement\(\)/);
   assert.match(component, /recordPlay\(motionVariant, "rejected"[\s\S]*fail\(motionVariant, source\.jobId\)/);
@@ -49,12 +44,6 @@ test("Staging-only debug panel observes the existing media chain without generat
   assert.match(component, /readyState: video\?\.readyState/);
   assert.match(component, /networkState: video\?\.networkState/);
   assert.match(component, /currentTime: video \? Number\(video\.currentTime\.toFixed\(3\)\)/);
-  assert.match(component, /conversation state/);
-  assert.match(component, /AI request pending/);
-  assert.match(component, /acknowledgement ended/);
-  assert.match(component, /visible job \/ approved artifact/);
-  assert.match(component, /job \/ approved artifact: \{slot\?\.jobId/);
-  assert.match(component, /visible source changes/);
   assert.match(component, /navigator\.clipboard\.writeText\(payload\)/);
   assert.doesNotMatch(component, /ensureCompanionMotionPackOnce|ensureCompanionMotionPack\(memoryId/);
   assert.match(css, /\.debugPanel/);

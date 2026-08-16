@@ -43,8 +43,6 @@ type MotionDebugState = {
   attempts: Partial<Record<CompanionMotionVariant, PlaybackAttempt>>;
   videos: Partial<Record<CompanionMotionVariant, VideoObservation>>;
   lastEvent: string | null;
-  visibleSource: string | null;
-  visibleSourceChanges: number;
   copied: boolean;
 };
 
@@ -55,9 +53,6 @@ type Props = {
   preloadVariant?: CompanionMotionVariant | null;
   onAcknowledgementComplete?: () => void;
   onAcknowledgementUnavailable?: () => void;
-  debugConversationState?: CompanionMotionVariant;
-  debugAiRequestPending?: boolean;
-  debugAcknowledgementEnded?: boolean;
   motionEnabled: boolean;
   className?: string;
 };
@@ -70,8 +65,6 @@ const EMPTY_DEBUG_STATE: MotionDebugState = {
   attempts: {},
   videos: {},
   lastEvent: null,
-  visibleSource: null,
-  visibleSourceChanges: 0,
   copied: false,
 };
 
@@ -86,9 +79,6 @@ export function CompanionMotionBackground({
   preloadVariant = null,
   onAcknowledgementComplete,
   onAcknowledgementUnavailable,
-  debugConversationState,
-  debugAiRequestPending = false,
-  debugAcknowledgementEnded = false,
   motionEnabled,
   className,
 }: Props) {
@@ -97,7 +87,6 @@ export function CompanionMotionBackground({
   const [debugState, setDebugState] = useState<MotionDebugState>(EMPTY_DEBUG_STATE);
   const [pack, setPack] = useState<CompanionMotionPack | null>(null);
   const [sources, setSources] = useState<PlaybackSources>({});
-  const sourcesRef = useRef<PlaybackSources>({});
   const [visibleVariant, setVisibleVariant] = useState<CompanionMotionVariant | null>(null);
   const [playbackFailed, setPlaybackFailed] = useState(false);
   const pollAttempts = useRef(0);
@@ -109,23 +98,14 @@ export function CompanionMotionBackground({
   const authorizationRetryTimer = useRef<number | null>(null);
   const visibleVariantRef = useRef<CompanionMotionVariant | null>(null);
   const acknowledgementUnavailable = useRef(false);
-  const acknowledgementEndedSource = useRef<string | null>(null);
-  const previousVisibleSource = useRef<string | null>(null);
   const acknowledgementCallbacks = useRef({ onAcknowledgementComplete, onAcknowledgementUnavailable });
-
-  useEffect(() => {
-    sourcesRef.current = sources;
-  }, [sources]);
 
   useEffect(() => {
     acknowledgementCallbacks.current = { onAcknowledgementComplete, onAcknowledgementUnavailable };
   }, [onAcknowledgementComplete, onAcknowledgementUnavailable]);
 
   useEffect(() => {
-    if (variant !== "acknowledgement") {
-      acknowledgementUnavailable.current = false;
-      acknowledgementEndedSource.current = null;
-    }
+    if (variant !== "acknowledgement") acknowledgementUnavailable.current = false;
   }, [variant]);
 
   const settleUnavailableAcknowledgement = () => {
@@ -251,9 +231,7 @@ export function CompanionMotionBackground({
     pollAttempts.current = 0;
     authorizationFailures.current.clear();
     authorizedJobs.current.clear();
-    sourcesRef.current = {};
     visibleVariantRef.current = null;
-    previousVisibleSource.current = null;
     if (debugEnabledRef.current) setDebugState(EMPTY_DEBUG_STATE);
     setPack(null);
     setSources({});
@@ -295,18 +273,14 @@ export function CompanionMotionBackground({
     };
   }, [memoryId]);
 
-  const idleAuthorized = Boolean(sources.idle);
-
   useEffect(() => {
     if (!pack || !motionEnabled) return;
     const controller = new AbortController();
     let live = true;
     const refreshBefore = Date.now() + 60_000;
-    // The first visible frame always comes from idle. Once it is ready, state
-    // changes only authorize the active and immediately-next variants. Keeping
-    // this effect independent of every source update prevents one successful
-    // authorization from aborting another in-flight state warmup.
-    const requestedVariants = idleAuthorized
+    // The first visible frame always comes from idle. Later states are warmed
+    // only as the conversation makes them relevant, never on every keystroke.
+    const requestedVariants = sources.idle
       ? [...new Set([variant, preloadVariant].filter((candidate): candidate is CompanionMotionVariant => Boolean(candidate)))]
       : ["idle" as const];
     const authorize = async (requestedVariant: CompanionMotionVariant) => {
@@ -315,7 +289,7 @@ export function CompanionMotionBackground({
         if (requestedVariant === "acknowledgement") settleUnavailableAcknowledgement();
         return;
       }
-      const current = sourcesRef.current[requestedVariant];
+      const current = sources[requestedVariant];
       if (current && Date.parse(current.expiresAt) > refreshBefore) return;
       const jobId = slot.jobId;
       try {
@@ -335,13 +309,7 @@ export function CompanionMotionBackground({
         }
         authorizedJobs.current.set(jobId, playback);
         authorizationFailures.current.delete(jobId);
-        setSources((current) => {
-          const existing = current[slot.variant];
-          if (existing?.jobId === jobId && existing.url === playback.url && existing.expiresAt === playback.expiresAt) {
-            return current;
-          }
-          return { ...current, [slot.variant]: { jobId, ...playback } };
-        });
+        setSources((current) => ({ ...current, [slot.variant]: { jobId, ...playback } }));
         setPlaybackFailed(false);
       } catch (error) {
         if (!live) return;
@@ -378,7 +346,7 @@ export function CompanionMotionBackground({
         authorizationRetryTimer.current = null;
       }
     };
-  }, [authorizationEpoch, idleAuthorized, memoryId, motionEnabled, pack, preloadVariant, variant]);
+  }, [authorizationEpoch, memoryId, motionEnabled, pack, preloadVariant, sources, variant]);
 
   const available = useMemo(
     () => new Set(Object.keys(sources) as CompanionMotionVariant[]),
@@ -401,7 +369,7 @@ export function CompanionMotionBackground({
     if (!target) return;
     if (visibleVariantRef.current !== targetVariant && target.readyState > HTMLMediaElement.HAVE_NOTHING) target.currentTime = 0;
     startPlayback(targetVariant);
-  }, [sources, targetVariant]);
+  }, [targetVariant]);
 
   useEffect(() => () => {
     if (crossfadeTimer.current !== null) window.clearTimeout(crossfadeTimer.current);
@@ -438,21 +406,6 @@ export function CompanionMotionBackground({
     show(next);
   };
 
-  const visibleSource = visibleVariant ? sources[visibleVariant]?.url ?? null : null;
-  const visibleJobId = visibleVariant ? sources[visibleVariant]?.jobId ?? null : null;
-
-  useEffect(() => {
-    if (!debugEnabled) return;
-    const previous = previousVisibleSource.current;
-    if (previous === visibleSource) return;
-    previousVisibleSource.current = visibleSource;
-    setDebugState((current) => ({
-      ...current,
-      visibleSource,
-      visibleSourceChanges: current.visibleSourceChanges + 1,
-    }));
-  }, [debugEnabled, visibleSource]);
-
   const copyDebugResult = async () => {
     const slotLines = ["idle", "attentive", "acknowledgement", "reflective"].map((candidate) => {
       const motionVariant = candidate as CompanionMotionVariant;
@@ -484,13 +437,8 @@ export function CompanionMotionBackground({
     const payload = [
       `memoryId=${memoryId}`,
       `eligible=${pack?.eligible ?? false}`,
-      `conversationState=${debugConversationState ?? variant}`,
-      `aiRequestPending=${debugAiRequestPending}`,
-      `acknowledgementEnded=${debugAcknowledgementEnded}`,
       `target=${targetVariant ?? "still"}`,
       `visible=${visibleVariant ?? "still"}`,
-      `visibleJobId=${visibleJobId ?? "none"}`,
-      `visibleSourceChanged=${debugState.visibleSourceChanges}`,
       `staticFallback=${visibleVariant === null}`,
       `lastEvent=${debugState.lastEvent ?? "none"}`,
       ...slotLines,
@@ -535,7 +483,7 @@ export function CompanionMotionBackground({
             muted
             loop={motionVariant !== "acknowledgement"}
             playsInline
-            preload={motionVariant === targetVariant || motionVariant === preloadVariant ? "auto" : "metadata"}
+            preload={motionVariant === targetVariant ? "auto" : "none"}
             onLoadStart={() => observeVideo(motionVariant, "loadstart")}
             onLoadedMetadata={() => observeVideo(motionVariant, "loadedmetadata")}
             onLoadedData={() => { observeVideo(motionVariant, "loadeddata"); warm(motionVariant); }}
@@ -549,10 +497,7 @@ export function CompanionMotionBackground({
             onPause={() => observeVideo(motionVariant, "pause")}
             onEnded={() => {
               observeVideo(motionVariant, "ended");
-              if (motionVariant === "acknowledgement" && acknowledgementEndedSource.current !== source.jobId) {
-                acknowledgementEndedSource.current = source.jobId;
-                acknowledgementCallbacks.current.onAcknowledgementComplete?.();
-              }
+              if (motionVariant === "acknowledgement") acknowledgementCallbacks.current.onAcknowledgementComplete?.();
             }}
             onTimeUpdate={() => { observeVideo(motionVariant, "timeupdate"); showAfterFirstMovingFrame(motionVariant); }}
             onError={() => { observeVideo(motionVariant, "error"); fail(motionVariant, source.jobId); }}
@@ -565,12 +510,7 @@ export function CompanionMotionBackground({
           <dl>
             <div><dt>memory</dt><dd>{memoryId}</dd></div>
             <div><dt>approved pack</dt><dd>{pack?.eligible ? "found" : "not found"}</dd></div>
-            <div><dt>conversation state</dt><dd>{debugConversationState ?? variant}</dd></div>
-            <div><dt>AI request pending</dt><dd>{String(debugAiRequestPending)}</dd></div>
-            <div><dt>acknowledgement ended</dt><dd>{String(debugAcknowledgementEnded)}</dd></div>
             <div><dt>target / visible</dt><dd>{targetVariant ?? "still"} / {visibleVariant ?? "still"}</dd></div>
-            <div><dt>visible job / approved artifact</dt><dd>{visibleJobId ?? "none"}</dd></div>
-            <div><dt>visible source changes</dt><dd>{debugState.visibleSourceChanges}</dd></div>
             <div><dt>static fallback</dt><dd>{visibleVariant === null ? "shown" : "hidden"}</dd></div>
             <div><dt>last media event</dt><dd>{debugState.lastEvent ?? "none"}</dd></div>
           </dl>
@@ -581,7 +521,7 @@ export function CompanionMotionBackground({
             return (
               <section key={motionVariant} className={styles.debugVariant}>
                 <strong>{motionVariant}</strong>
-                <span>job / approved artifact: {slot?.jobId ?? "none"} · {slot?.artifactAvailable === true ? "approved" : "missing"} · {slot?.status ?? "no-slot"}</span>
+                <span>artifact: {slot?.artifactAvailable === true ? "approved" : "missing"} · {slot?.status ?? "no-slot"}</span>
                 <span>playback: {request?.requested ? `requested ${request.status ?? "pending"}` : "not requested"}{request?.error ? ` · ${request.error}` : ""}</span>
                 <span>video: {video?.exists ? "present" : "absent"} · src {video?.src ? "set" : "none"}</span>
                 <span>ready {video?.readyState ?? "n/a"} · network {video?.networkState ?? "n/a"} · paused {String(video?.paused ?? "n/a")}</span>
