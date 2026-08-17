@@ -218,13 +218,18 @@ export function CompanionMotionBackground({
       delete next[failed];
       return next;
     });
-    if (visibleVariantRef.current === failed) {
+    if (failed === "attentive" && visibleVariantRef.current === failed && sources.idle) {
+      // Attentive is an optional enhancement over the approved idle loop. Its
+      // failure must return to idle, never expose the static portrait.
+      visibleVariantRef.current = "idle";
+      setVisibleVariant("idle");
+    } else if (visibleVariantRef.current === failed) {
       visibleVariantRef.current = null;
       setVisibleVariant(null);
     }
     if (failed === "acknowledgement") {
       settleUnavailableAcknowledgement();
-    } else {
+    } else if (failed !== "attentive") {
       // A failed loop never blocks the conversation; remain on the owned still
       // until a freshly authorized source proves it can actually play.
       setPlaybackFailed(true);

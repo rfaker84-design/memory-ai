@@ -24,6 +24,8 @@ test("owner motion loads idle first, warms state changes before crossfading, and
   assert.match(css, /transition: opacity 900ms/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*display: none !important/);
   assert.match(component, /motionEnabled && Object\.entries\(sources\)/);
+  assert.match(component, /failed === "attentive" && visibleVariantRef\.current === failed && sources\.idle/);
+  assert.match(component, /visibleVariantRef\.current = "idle"[\s\S]*setVisibleVariant\("idle"\)/);
 });
 
 test("acknowledgement is prepared before use, never loops, and settles once without blocking the chat", () => {

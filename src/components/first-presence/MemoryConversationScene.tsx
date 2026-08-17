@@ -458,7 +458,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
               className={styles.portraitMotion}
               memoryId={memoryId}
               portraitUrl={portraitUrl}
-              variant="idle"
+              variant={draft.trim() ? "attentive" : "idle"}
               motionEnabled={!reducedMotion}
             />
           ) : (
