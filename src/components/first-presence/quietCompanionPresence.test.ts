@@ -33,13 +33,9 @@ test("companion scene uses the owner-specific motion background and retains the 
   assert.doesNotMatch(presence, /getThermalState|thermalState/);
 });
 
-test("chat keeps acknowledgement one-shot while the request continues independently", () => {
+test("chat keeps the approved idle loop independent from request lifecycle states", () => {
   const scene = readFileSync(new URL("./MemoryConversationScene.tsx", import.meta.url), "utf8");
-  assert.match(scene, /const \[acknowledgementActive, setAcknowledgementActive\] = useState\(false\)/);
-  assert.match(scene, /setPhase\("sending"\);[\s\S]*setAcknowledgementActive\(true\)/);
-  assert.match(scene, /onAcknowledgementComplete=\{\(\) => setAcknowledgementActive\(false\)\}/);
-  assert.match(scene, /onAcknowledgementUnavailable=\{\(\) => setAcknowledgementActive\(false\)\}/);
-  assert.match(scene, /const motionVariant = acknowledgementActive \? "acknowledgement" : baseMotionVariant/);
-  assert.match(scene, /acknowledgementActive[\s\S]*\? "reflective"/);
-  assert.match(scene, /catch \(error\) \{[\s\S]*setAcknowledgementActive\(false\)/);
+  assert.match(scene, /<CompanionMotionBackground[\s\S]*variant="idle"[\s\S]*motionEnabled=\{!reducedMotion\}/);
+  assert.match(scene, /const conversationPresenceVariant = resolveConversationMotionVariant/);
+  assert.doesNotMatch(scene, /acknowledgementActive|preloadMotionVariant|onAcknowledgementComplete|onAcknowledgementUnavailable/);
 });
