@@ -6,8 +6,11 @@
   position: relative;
   z-index: 1;
   width: 100%;
-  min-height: 100dvh;
-  overflow-x: hidden;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: clamp(10rem, 40dvh, 28rem) minmax(0, 1fr);
+  overflow: hidden;
   color: var(--ink);
   background: var(--paper);
   font-family: var(--font-noto-serif-sc), "Songti SC", "STSong", serif;
@@ -15,7 +18,8 @@
 
 .presence {
   position: relative;
-  min-height: clamp(21rem, 38dvh, 31rem);
+  min-height: 0;
+  height: 100%;
   overflow: hidden;
   isolation: isolate;
   color: #fff8ed;
@@ -120,9 +124,12 @@
 .conversation {
   position: relative;
   width: min(100%, 46rem);
-  min-height: 56dvh;
-  margin: -1px auto 0;
-  padding: 2rem clamp(1.25rem, 5vw, 2.5rem) max(2.25rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  margin: 0 auto;
+  overflow: hidden;
   color: var(--ink);
   background-color: var(--paper);
   background-image:
@@ -133,13 +140,23 @@
 
 .conversation::before {
   position: absolute;
-  top: -3.8rem;
+  z-index: 1;
+  top: 0;
   right: 0;
   left: 0;
-  height: 4rem;
+  height: 2.6rem;
   pointer-events: none;
   content: "";
-  background: linear-gradient(180deg, rgba(244, 237, 226, 0), rgba(244, 237, 226, 0.88) 72%, #f4ede2 100%);
+  background: linear-gradient(180deg, rgba(244, 237, 226, 0.92), rgba(244, 237, 226, 0));
+}
+
+.messageScroller {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1.5rem clamp(1.25rem, 5vw, 2.5rem) 1.25rem;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
 }
 
 .status,
@@ -327,14 +344,13 @@
 .recoveryActions { margin: 0.7rem 0; }
 
 .composer {
-  position: sticky;
+  position: relative;
   z-index: 4;
-  bottom: calc(var(--nav-height, 64px) + env(safe-area-inset-bottom, 0px) + 0.25rem);
   display: grid;
   gap: 0.35rem;
-  margin: 1.2rem -0.15rem 0;
-  padding: 0.7rem 0.15rem 0.35rem;
-  background: linear-gradient(180deg, rgba(244, 237, 226, 0), #f4ede2 24%);
+  margin: 0;
+  padding: 0.7rem clamp(1.25rem, 5vw, 2.5rem) max(0.6rem, env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(180deg, rgba(244, 237, 226, 0.72), #f4ede2 28%);
 }
 
 .composer > div {
@@ -422,7 +438,6 @@
   .scene { background: #ded1bf; }
   .presence,
   .conversation { width: min(100%, 46rem); margin-inline: auto; }
-  .presence { min-height: min(50rem, 54dvh); }
   .conversation { box-shadow: 0 0 3.5rem rgba(75, 52, 29, 0.12); }
 }
 

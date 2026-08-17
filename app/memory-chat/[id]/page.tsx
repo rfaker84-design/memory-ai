@@ -121,7 +121,7 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
   );
 
   return (
-    <main className={styles.page}>
+    <main className={`${styles.page} ${state.requiresMediaRecovery ? "" : styles.chatPage}`}>
       <MotionProvider>
         {state.requiresMediaRecovery ? (
           <CreationMediaRecoveryGate

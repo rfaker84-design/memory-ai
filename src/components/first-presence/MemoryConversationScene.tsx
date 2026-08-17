@@ -113,6 +113,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   const portraitUrl = initialPortraitUrl;
   const [controlsVisible, setControlsVisible] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const messageScrollRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const correctionTriggerRef = useRef<HTMLButtonElement | null>(null);
   const correctionCloseRef = useRef<HTMLButtonElement | null>(null);
@@ -200,7 +201,12 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   }, [activeSessionId, messages]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "end" });
+    const messageScroller = messageScrollRef.current;
+    if (!messageScroller) return;
+    messageScroller.scrollTo({
+      top: messageScroller.scrollHeight,
+      behavior: reducedMotion ? "auto" : "smooth",
+    });
   }, [messages, pendingMessage, phase, reducedMotion]);
 
   useEffect(() => {
@@ -475,6 +481,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
       </section>
 
       <div className={styles.conversation}>
+        <div className={styles.messageScroller} ref={messageScrollRef}>
         {notificationPrompt === "available" && (
           <aside className={styles.notificationPrompt} aria-label="问候通知选择">
             <p>如果你愿意，可以在这里开启忆见的问候提醒。锁屏提醒只会显示“忆见里有一份新的问候。”，不会显示 TA 姓名或内容。</p>
@@ -651,6 +658,8 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
             )}
           </aside>
         )}
+
+        </div>
 
         {controlsVisible && (
           <form className={styles.composer} onSubmit={(event) => void submit(event)}>

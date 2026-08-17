@@ -7,6 +7,12 @@
   color: #3f3328;
 }
 
+.chatPage {
+  height: calc(100dvh - var(--nav-height, 64px) - env(safe-area-inset-bottom, 0px) - 12px);
+  min-height: 0;
+  overflow: hidden;
+}
+
 .loading {
   display: grid;
   place-items: center;
