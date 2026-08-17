@@ -9,7 +9,7 @@
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-rows: clamp(13.5rem, 46dvh, 32rem) minmax(0, 1fr);
+  grid-template-rows: clamp(15rem, 50dvh, 36rem) minmax(0, 1fr);
   overflow: hidden;
   color: var(--ink);
   background: var(--paper);
@@ -39,33 +39,33 @@
 }
 
 .portraitMotion {
-  /* While motion is available, the center remains the only complete person.
-     The component's optional side layers sample only the video's outer edges. */
+  /* Chat uses one full-bleed motion surface. Its portrait-safe focal point
+     keeps the upper body in frame without introducing a second person layer. */
   filter: saturate(0.92) sepia(0.035) contrast(0.98) brightness(0.87);
   will-change: filter;
 }
 
 .portraitMotion [data-motion-still] {
   object-fit: cover;
-  object-position: center 38%;
+  object-position: center 29%;
 }
 
 .portraitMotion [data-motion-video] {
-  object-fit: contain;
-  object-position: center 42%;
-  transform: scale(1.08);
+  object-fit: cover;
+  object-position: center 29%;
 }
 
 .portraitMotion[data-motion-visible="idle"] [data-motion-still],
-.portraitMotion[data-motion-visible="attentive"] [data-motion-still] {
+.portraitMotion[data-motion-visible="attentive"] [data-motion-still],
+.portraitMotion[data-motion-visible="acknowledgement"] [data-motion-still],
+.portraitMotion[data-motion-visible="reflective"] [data-motion-still] {
   opacity: 0;
 }
 
 .sceneVeil {
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(20, 14, 10, 0.2) 0%, rgba(20, 14, 10, 0.02) 34%, transparent 55%, rgba(244, 237, 226, 0) 85%, rgba(244, 237, 226, 0.58) 93%, #f4ede2 100%),
-    linear-gradient(90deg, rgba(20, 14, 10, 0.11), transparent 64%, rgba(20, 14, 10, 0.04));
+    linear-gradient(180deg, rgba(20, 14, 10, 0.12) 0%, transparent 28%, transparent 88%, rgba(244, 237, 226, 0.52) 95%, #f4ede2 100%);
 }
 
 .portraitInitials {
@@ -453,7 +453,7 @@
 
 @media (min-width: 761px) {
   .scene {
-    grid-template-rows: clamp(18rem, 52dvh, 42rem) minmax(0, 1fr);
+    grid-template-rows: clamp(22rem, 56dvh, 46rem) minmax(0, 1fr);
     background: #ded1bf;
   }
   .presence,

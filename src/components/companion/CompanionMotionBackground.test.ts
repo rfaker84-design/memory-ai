@@ -23,7 +23,8 @@ test("owner motion loads idle first, warms state changes before crossfading, and
   assert.match(component, /videoNodes\.current\.get\(previous\)\?\.pause\(\)/);
   assert.match(css, /transition: opacity 900ms/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*display: none !important/);
-  assert.match(component, /motionEnabled && Object\.entries\(sources\)/);
+  assert.match(component, /const renderedSources: Array<\[CompanionMotionVariant, PlaybackSource\]> = \[\]/);
+  assert.match(component, /motionEnabled && renderedSources\.map/);
   assert.match(component, /failed === "attentive" && visibleVariantRef\.current === failed && sources\.idle/);
   assert.match(component, /visibleVariantRef\.current = "idle"[\s\S]*setVisibleVariant\("idle"\)/);
 });

@@ -67,7 +67,7 @@ type Props = {
   onAcknowledgementComplete?: () => void;
   onAcknowledgementUnavailable?: () => void;
   motionEnabled: boolean;
-  edgeExtension?: boolean;
+  singleVideo?: boolean;
   selectionDebug?: CompanionMotionSelectionDebug | null;
   className?: string;
 };
@@ -107,7 +107,7 @@ export function CompanionMotionBackground({
   onAcknowledgementComplete,
   onAcknowledgementUnavailable,
   motionEnabled,
-  edgeExtension = false,
+  singleVideo = false,
   selectionDebug = null,
   className,
 }: Props) {
@@ -505,7 +505,15 @@ export function CompanionMotionBackground({
     }
   };
 
-  const visibleEdgeSource = edgeExtension && visibleVariant ? sources[visibleVariant] : null;
+  const renderedSources: Array<[CompanionMotionVariant, PlaybackSource]> = [];
+  if (singleVideo) {
+    if (targetVariant && sources[targetVariant]) renderedSources.push([targetVariant, sources[targetVariant]]);
+  } else {
+    for (const candidate of Object.keys(sources) as CompanionMotionVariant[]) {
+      const source = sources[candidate];
+      if (source) renderedSources.push([candidate, source]);
+    }
+  }
 
   return (
     <div
@@ -521,17 +529,7 @@ export function CompanionMotionBackground({
         src={portraitUrl}
         alt=""
       />
-      {visibleEdgeSource && visibleVariant && (
-        <div className={styles.edgeExtension} data-visible="true">
-          <span className={styles.edgeLeft}>
-            <video className={styles.edgeVideo} src={visibleEdgeSource.url} autoPlay muted loop playsInline preload="metadata" />
-          </span>
-          <span className={styles.edgeRight}>
-            <video className={styles.edgeVideo} src={visibleEdgeSource.url} autoPlay muted loop playsInline preload="metadata" />
-          </span>
-        </div>
-      )}
-      {motionEnabled && Object.entries(sources).map(([key, source]) => {
+      {motionEnabled && renderedSources.map(([key, source]) => {
         const motionVariant = key as CompanionMotionVariant;
         if (!source) return null;
         return (
