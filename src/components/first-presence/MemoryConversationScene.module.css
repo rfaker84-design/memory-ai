@@ -59,7 +59,9 @@
 .portraitMotion[data-motion-visible="attentive"] [data-motion-still],
 .portraitMotion[data-motion-visible="acknowledgement"] [data-motion-still],
 .portraitMotion[data-motion-visible="reflective"] [data-motion-still] {
-  opacity: 0;
+  /* A moving source is the sole composited person layer. Keep the still
+     portrait available only as the non-playing fallback, not beneath video. */
+  display: none;
 }
 
 .sceneVeil {

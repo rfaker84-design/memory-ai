@@ -30,6 +30,8 @@ test("formal chat matches the restrained living-scene and warm-ivory composition
   assert.match(sceneStyles, /grid-template-rows: clamp\(15rem, 50dvh, 36rem\) minmax\(0, 1fr\)/);
   assert.match(sceneStyles, /\.portraitMotion \[data-motion-still\] \{[\s\S]*?object-fit: cover/);
   assert.match(sceneStyles, /\.portraitMotion \[data-motion-video\] \{[\s\S]*?object-fit: cover[\s\S]*?object-position: center 29%/);
+  assert.match(sceneStyles, /\.portraitMotion\[data-motion-visible="idle"\] \[data-motion-still\],[\s\S]*?display: none;/);
+  assert.doesNotMatch(sceneStyles, /\.portraitMotion\[data-motion-visible="idle"\][\s\S]*?opacity: 0;/);
   assert.match(scene, /singleVideo/);
   assert.doesNotMatch(scene, /edgeExtension/);
   assert.doesNotMatch(motionStyles, /edgeExtension|edgeLeft|edgeRight|mask-image/);
