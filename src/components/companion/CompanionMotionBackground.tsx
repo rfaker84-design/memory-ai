@@ -46,6 +46,19 @@ type MotionDebugState = {
   copied: boolean;
 };
 
+export type CompanionMotionSelectionDebug = {
+  ownerId: string | null;
+  selectedMemoryId: string | null;
+  resolverSource: string | null;
+  scopedKey: string | null;
+  scopedValueBefore: string | null;
+  legacyValueBefore: string | null;
+  scopedValueAfter: string | null;
+  legacyValueAfter: string | null;
+  decisionSteps: readonly string[];
+  memories: readonly { id: string; name: string; createdAt: string | null }[];
+};
+
 type Props = {
   memoryId: string;
   portraitUrl: string;
@@ -54,6 +67,7 @@ type Props = {
   onAcknowledgementComplete?: () => void;
   onAcknowledgementUnavailable?: () => void;
   motionEnabled: boolean;
+  selectionDebug?: CompanionMotionSelectionDebug | null;
   className?: string;
 };
 
@@ -61,6 +75,7 @@ const POLL_INTERVAL_MS = 6_000;
 const MAX_POLL_ATTEMPTS = 100;
 const CROSSFADE_MS = 900;
 const STAGING_DEBUG_HOST = "app.staging.yijianmemory.cn";
+const PUBLIC_BUILD_SHA = process.env.NEXT_PUBLIC_MEMORYAI_BUILD_SHA?.trim() || null;
 const EMPTY_DEBUG_STATE: MotionDebugState = {
   attempts: {},
   videos: {},
@@ -72,6 +87,17 @@ function debugError(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 }
 
+function readNextBuildId(): string | null {
+  if (typeof document === "undefined") return null;
+  // App Router writes its current build token immediately before <html>.
+  // This is an advisory browser-side observation, not a substitute for the
+  // explicitly injected release SHA above.
+  const node = document.documentElement.previousSibling;
+  if (node?.nodeType !== Node.COMMENT_NODE) return null;
+  const candidate = node.textContent?.trim() ?? "";
+  return /^[A-Za-z0-9_-]{8,120}$/u.test(candidate) ? candidate : null;
+}
+
 export function CompanionMotionBackground({
   memoryId,
   portraitUrl,
@@ -80,11 +106,13 @@ export function CompanionMotionBackground({
   onAcknowledgementComplete,
   onAcknowledgementUnavailable,
   motionEnabled,
+  selectionDebug = null,
   className,
 }: Props) {
   const [debugEnabled, setDebugEnabled] = useState(false);
   const debugEnabledRef = useRef(false);
   const [debugState, setDebugState] = useState<MotionDebugState>(EMPTY_DEBUG_STATE);
+  const [nextBuildId, setNextBuildId] = useState<string | null>(null);
   const [pack, setPack] = useState<CompanionMotionPack | null>(null);
   const [sources, setSources] = useState<PlaybackSources>({});
   const [visibleVariant, setVisibleVariant] = useState<CompanionMotionVariant | null>(null);
@@ -121,6 +149,11 @@ export function CompanionMotionBackground({
     setDebugEnabled(enabled);
     if (enabled) setDebugState(EMPTY_DEBUG_STATE);
   }, []);
+
+  useEffect(() => {
+    if (!debugEnabled) return;
+    setNextBuildId(readNextBuildId());
+  }, [debugEnabled]);
 
   const observeVideo = (motionVariant: CompanionMotionVariant, event: string) => {
     if (!debugEnabledRef.current) return;
@@ -435,12 +468,26 @@ export function CompanionMotionBackground({
       ].join(" ");
     });
     const payload = [
+      `frontendReleaseSha=${PUBLIC_BUILD_SHA ?? "unavailable"}`,
+      `nextBuildId=${nextBuildId ?? "unavailable"}`,
       `memoryId=${memoryId}`,
       `eligible=${pack?.eligible ?? false}`,
       `target=${targetVariant ?? "still"}`,
       `visible=${visibleVariant ?? "still"}`,
       `staticFallback=${visibleVariant === null}`,
       `lastEvent=${debugState.lastEvent ?? "none"}`,
+      ...(selectionDebug ? [
+        `ownerId=${selectionDebug.ownerId ?? "unavailable"}`,
+        `selectedMemoryId=${selectionDebug.selectedMemoryId ?? "none"}`,
+        `resolverSource=${selectionDebug.resolverSource ?? "unavailable"}`,
+        `scopedKey=${selectionDebug.scopedKey ?? "unavailable"}`,
+        `scopedValueBefore=${selectionDebug.scopedValueBefore ?? "missing"}`,
+        `legacyValueBefore=${selectionDebug.legacyValueBefore ?? "missing"}`,
+        `scopedValueAfter=${selectionDebug.scopedValueAfter ?? "missing"}`,
+        `legacyValueAfter=${selectionDebug.legacyValueAfter ?? "missing"}`,
+        ...selectionDebug.decisionSteps.map((step, index) => `selectionStep${index + 1}=${step}`),
+        ...selectionDebug.memories.map((entry, index) => `apiMemory${index + 1}=${entry.id} | ${entry.name} | ${entry.createdAt ?? "unavailable"}`),
+      ] : ["selectionDebug=not-supplied"]),
       ...slotLines,
     ].join("\n");
     try {
@@ -508,12 +555,31 @@ export function CompanionMotionBackground({
         <aside className={styles.debugPanel} aria-label="微动态诊断">
           <strong>微动态诊断 · Staging</strong>
           <dl>
+            <div><dt>frontend release SHA</dt><dd>{PUBLIC_BUILD_SHA ?? "unavailable"}</dd></div>
+            <div><dt>browser HTML Next build id</dt><dd>{nextBuildId ?? "unavailable"}</dd></div>
             <div><dt>memory</dt><dd>{memoryId}</dd></div>
             <div><dt>approved pack</dt><dd>{pack?.eligible ? "found" : "not found"}</dd></div>
             <div><dt>target / visible</dt><dd>{targetVariant ?? "still"} / {visibleVariant ?? "still"}</dd></div>
             <div><dt>static fallback</dt><dd>{visibleVariant === null ? "shown" : "hidden"}</dd></div>
             <div><dt>last media event</dt><dd>{debugState.lastEvent ?? "none"}</dd></div>
           </dl>
+          {selectionDebug && (
+            <section className={styles.debugVariant}>
+              <strong>selected-memory decision (read-only)</strong>
+              <span>owner: {selectionDebug.ownerId ?? "unavailable"}</span>
+              <span>selected memory: {selectionDebug.selectedMemoryId ?? "none"}</span>
+              <span>resolver source: {selectionDebug.resolverSource ?? "unavailable"}</span>
+              <span>scoped key: {selectionDebug.scopedKey ?? "unavailable"}</span>
+              <span>scoped value before / after: {selectionDebug.scopedValueBefore ?? "missing"} / {selectionDebug.scopedValueAfter ?? "missing"}</span>
+              <span>legacy value before / after: {selectionDebug.legacyValueBefore ?? "missing"} / {selectionDebug.legacyValueAfter ?? "missing"}</span>
+              <span>scoped values retain only a memory id; their original writer is not persisted.</span>
+              {selectionDebug.decisionSteps.map((step, index) => <span key={`${index}:${step}`}>step {index + 1}: {step}</span>)}
+              <strong>/api/memories returned order</strong>
+              {selectionDebug.memories.map((entry, index) => (
+                <span key={entry.id}>{index + 1}. {entry.id} | {entry.name} | {entry.createdAt ?? "unavailable"}</span>
+              ))}
+            </section>
+          )}
           {(["idle", "attentive", "acknowledgement", "reflective"] as CompanionMotionVariant[]).map((motionVariant) => {
             const slot = pack?.slots.find((entry) => entry.variant === motionVariant);
             const request = debugState.attempts[motionVariant];

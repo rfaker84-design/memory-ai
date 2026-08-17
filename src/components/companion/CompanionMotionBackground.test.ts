@@ -45,6 +45,12 @@ test("Staging-only debug panel observes the existing media chain without generat
   assert.match(component, /networkState: video\?\.networkState/);
   assert.match(component, /currentTime: video \? Number\(video\.currentTime\.toFixed\(3\)\)/);
   assert.match(component, /navigator\.clipboard\.writeText\(payload\)/);
+  assert.match(component, /NEXT_PUBLIC_MEMORYAI_BUILD_SHA/);
+  assert.match(component, /document\.documentElement\.previousSibling/);
+  assert.match(component, /selectionDebug\?: CompanionMotionSelectionDebug \| null/);
+  assert.match(component, /selected-memory decision \(read-only\)/);
+  assert.match(component, /selectionDebug\.memories\.map/);
+  assert.doesNotMatch(component, /localStorage\.(?:setItem|removeItem)/);
   assert.doesNotMatch(component, /ensureCompanionMotionPackOnce|ensureCompanionMotionPack\(memoryId/);
   assert.match(css, /\.debugPanel/);
 });

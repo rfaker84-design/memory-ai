@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
+  COMPANION_PRIMARY_KEY,
+  companionPrimaryStorageKey,
   resolveCompanionPrimaryPreference,
 } from "@/src/components/companion/companionHomeState";
 import {
@@ -19,7 +21,10 @@ import {
   CompanionHomeRequestError,
   fetchCompanionHomeMemoriesJson,
 } from "@/src/components/companion/companionHomeRequest";
-import { CompanionMotionBackground } from "@/src/components/companion/CompanionMotionBackground";
+import {
+  CompanionMotionBackground,
+  type CompanionMotionSelectionDebug,
+} from "@/src/components/companion/CompanionMotionBackground";
 import { useQuietCompanionPresence } from "@/src/components/first-presence/quietCompanionPresence";
 import { loadOwnedMediaUrl } from "@/src/components/memory/ownedMemoryClient";
 import { memoryCollectionTitle } from "@/src/components/memory/memoryCollectionState";
@@ -35,6 +40,7 @@ type CompanionMemory = {
   relationship?: string | null;
   photoUrl?: string | null;
   photoAssetId?: string | null;
+  createdAt?: string | null;
 };
 
 type CompanionState = "loading" | "unauthenticated" | "empty" | "ready" | "error" | "timeout";
@@ -75,6 +81,11 @@ function writePresentationValue(key: string, value: string): void {
   }
 }
 
+function stagingMotionDebugRequested(): boolean {
+  return window.location.hostname === "app.staging.yijianmemory.cn"
+    && new URLSearchParams(window.location.search).get("motionDebug") === "1";
+}
+
 function CompanionContent() {
   const router = useRouter();
   const reducedMotion = useReducedMotion();
@@ -85,9 +96,12 @@ function CompanionContent() {
   const [latestPickup, setLatestPickup] = useState<CompanionPickup | null>(null);
   const [pickupImageUrl, setPickupImageUrl] = useState<string | null>(null);
   const [visitState, setVisitState] = useState<CompanionVisitState>("first_visit");
+  const [motionDebugSelection, setMotionDebugSelection] = useState<CompanionMotionSelectionDebug | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setState("loading");
+    const debugRequested = stagingMotionDebugRequested();
+    if (debugRequested) setMotionDebugSelection(null);
     try {
       const { response, body } = await fetchCompanionHomeMemoriesJson(fetch, signal);
       if (signal?.aborted) return;
@@ -100,10 +114,46 @@ function CompanionContent() {
       const ownerId = typeof memories[0]?.userId === "string" && memories[0].userId.trim()
         ? memories[0].userId
         : null;
+      const scopedKey = ownerId ? companionPrimaryStorageKey(ownerId) : null;
+      // These are diagnostic reads only. The existing resolver below remains
+      // the sole selection implementation and may perform its normal legacy
+      // migration/single-person persistence independently of this panel.
+      const scopedValueBefore = debugRequested && scopedKey ? readPresentationValue(scopedKey) : null;
+      const legacyValueBefore = debugRequested ? readPresentationValue(COMPANION_PRIMARY_KEY) : null;
       const selection = ownerId
         ? resolveCompanionPrimaryPreference(memories, ownerId, window.localStorage)
         : null;
       const selected = selection?.memory ?? null;
+      if (debugRequested) {
+        const scopedValueAfter = scopedKey ? readPresentationValue(scopedKey) : null;
+        const legacyValueAfter = readPresentationValue(COMPANION_PRIMARY_KEY);
+        const result = selected
+          ? `final selection: ${selected.id}`
+          : selection?.needsExplicitChoice
+            ? "final selection: none; existing person picker will open"
+            : "final selection: none";
+        setMotionDebugSelection({
+          ownerId,
+          selectedMemoryId: selected?.id ?? null,
+          resolverSource: selection?.source ?? null,
+          scopedKey,
+          scopedValueBefore,
+          legacyValueBefore,
+          scopedValueAfter,
+          legacyValueAfter,
+          decisionSteps: [
+            `API returned ${memories.length} owner-scoped memories in the displayed order.`,
+            `owner inferred from the first API item: ${ownerId ?? "unavailable"}.`,
+            `resolver result: ${selection?.source ?? "unavailable"}.`,
+            result,
+          ],
+          memories: memories.map((entry) => ({
+            id: entry.id,
+            name: entry.name,
+            createdAt: entry.createdAt ?? null,
+          })),
+        });
+      }
       if (!selected) {
         if (memories.length > 1 && selection?.needsExplicitChoice) {
           // Reuse the existing memory-world picker. Array order must never
@@ -196,6 +246,7 @@ function CompanionContent() {
                   portraitUrl={portraitUrl}
                   variant="idle"
                   motionEnabled={!reducedMotion}
+                  selectionDebug={motionDebugSelection}
                 />
               )
             : <span className={styles.heroFallback}>{memory.name.slice(0, 1)}</span>}

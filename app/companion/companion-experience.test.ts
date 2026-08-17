@@ -79,6 +79,17 @@ test("presentation storage failure cannot block the Owner-scoped companion page"
   assert.match(page, /function writePresentationValue[\s\S]*?catch \{[\s\S]*?Presentation preferences must never block/);
 });
 
+test("Staging motion debug receives one read-only selected-memory decision snapshot", () => {
+  assert.match(page, /function stagingMotionDebugRequested/);
+  assert.match(page, /companionPrimaryStorageKey\(ownerId\)/);
+  assert.match(page, /readPresentationValue\(scopedKey\)/);
+  assert.match(page, /readPresentationValue\(COMPANION_PRIMARY_KEY\)/);
+  assert.match(page, /resolverSource: selection\?\.source/);
+  assert.match(page, /createdAt: entry\.createdAt \?\? null/);
+  assert.match(page, /selectionDebug=\{motionDebugSelection\}/);
+  assert.doesNotMatch(page, /setMotionDebugSelection[\s\S]*?localStorage\.(?:setItem|removeItem)/);
+});
+
 test("ambient movement is subtle and fully stops for reduced motion", () => {
   assert.match(page, /<MotionProvider>[\s\S]*<CompanionContent \/>[\s\S]*<\/MotionProvider>/);
   assert.match(page, /useQuietCompanionPresence/);
