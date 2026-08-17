@@ -35,7 +35,7 @@ test("companion scene uses the owner-specific motion background and retains the 
 
 test("chat keeps the approved idle loop independent from request lifecycle states", () => {
   const scene = readFileSync(new URL("./MemoryConversationScene.tsx", import.meta.url), "utf8");
-  assert.match(scene, /<CompanionMotionBackground[\s\S]*variant="idle"[\s\S]*motionEnabled=\{!reducedMotion\}/);
+  assert.match(scene, /<CompanionMotionBackground[\s\S]*variant=\{draft\.trim\(\) \? "attentive" : "idle"\}[\s\S]*motionEnabled=\{!reducedMotion\}/);
   assert.match(scene, /const conversationPresenceVariant = resolveConversationMotionVariant/);
   assert.doesNotMatch(scene, /acknowledgementActive|preloadMotionVariant|onAcknowledgementComplete|onAcknowledgementUnavailable/);
 });
