@@ -33,6 +33,10 @@ export const VIDU_COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_NEGATIVE_PROMPT
   VIDU_COMPANION_MOTION_NEGATIVE_PROMPT +
   ", smiling, grin, facial response, nodding, head tilt, head turn, shoulder movement, neck movement, acknowledgement gesture";
 
+export const VIDU_COMPANION_MOTION_ATTENTIVE_FOCUS_VISUAL_REVIEW_NEGATIVE_PROMPT =
+  VIDU_COMPANION_MOTION_NEGATIVE_PROMPT +
+  ", smiling, grin, nodding, acknowledgement gesture, repeated movement, obvious head turn, large head movement, large posture change, performance";
+
 export const VIDU_COMPANION_MOTION_ACKNOWLEDGEMENT_VISUAL_REVIEW_NEGATIVE_PROMPT =
   VIDU_COMPANION_MOTION_NEGATIVE_PROMPT +
   ", sustained smile, repeated smile, nodding, repeated response, second response, head turn, head tilt, shoulder movement, neck movement, performance";
@@ -55,6 +59,10 @@ export const VIDU_COMPANION_MOTION_PROMPTS = Object.freeze({
 /** A strict, one-off passive-listening contract for the v6 Staging review. */
 export const VIDU_COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_PROMPT =
   "Ten-second static-camera, vertical 9:16 realistic companion portrait. Preserve the exact identity, age, facial features, hairstyle, clothing, environment, lighting, and framing from the source photo. This is a sustained passive listening state, not an acknowledgement or performed listening action. For about ninety percent of the clip, remain naturally still with a stable, soft, attentive expression. Allow only one or two slow natural blinks, extremely gentle breathing, and at most one very small, slow eye shift. No smile, no expression change, no nod, no head tilt, no head turn, no shoulder or neck adjustment, and no response gesture. Closed mouth throughout: no speaking and no lip movement. No hand gesture and no camera movement. Warm restrained life-documentary feeling. The first and final posture must be nearly identical for a soft loop.";
+
+/** A one-time, restrained shift into attentive listening for the v9 reviewer sample. */
+export const VIDU_COMPANION_MOTION_ATTENTIVE_FOCUS_VISUAL_REVIEW_PROMPT =
+  "Ten-second static-camera, vertical 9:16 realistic companion portrait. Preserve the exact identity, age, facial features, hairstyle, clothing, environment, lighting, and framing from the source photo. Begin in the same natural, relaxed presence as the approved quiet idle portrait. During the first three seconds, make one slow, subtle transition into gentle focused listening: let the gaze naturally settle a little more toward the user or camera, allow at most one barely perceptible head-orientation adjustment, and a minimal upper-body gathering or slight forward lean. The expression softly becomes attentive and listening, never smiling. After this single adjustment, hold the new calm attentive posture steadily; for the remainder allow only one or two natural blinks and extremely gentle breathing. This is not a nod, acknowledgement, performed action, or continuous movement. Closed mouth throughout: no speaking and no lip movement. No hand gesture, no obvious turn, and no camera movement. Warm restrained life-documentary feeling.";
 
 export const VIDU_COMPANION_MOTION_REFLECTIVE_VISUAL_REVIEW_PROMPT =
   "Ten-second static-camera, vertical 9:16 realistic companion portrait. Preserve the exact identity, age, facial features, hairstyle, clothing, environment, lighting, and framing from the source photo. This is a quiet reflective pause after listening, not a performed thinking action. For almost the entire clip, remain naturally still with a soft, neutral expression. Allow only gentle breathing, one or two natural blinks, and at most one very slow, very small gaze drift. A brief, slight downward glance may occur once and then naturally return. At most once, allow a barely perceptible relaxed head-posture adjustment. Do not nod, smile, frown, furrow the brow, rest the chin, make an exaggerated downward look, turn, or perform. Closed mouth throughout: no speaking and no lip movement. No hand gesture and no camera movement. Warm restrained life-documentary feeling. The first and final posture must be nearly identical for a soft loop.";
@@ -189,11 +197,15 @@ export class ViduFirstPresenceProvider {
   ): Promise<ViduFirstPresenceSubmission> {
     const attentiveStillReview = input.motionVariant === "attentive"
       && input.companionMotionPackVersion === 6;
+    const attentiveFocusReview = input.motionVariant === "attentive"
+      && input.companionMotionPackVersion === 9;
     const acknowledgementReview = input.motionVariant === "acknowledgement"
       && input.companionMotionPackVersion === 7;
     const reflectiveReview = input.motionVariant === "reflective"
       && input.companionMotionPackVersion === 8;
-    const prompt = attentiveStillReview
+    const prompt = attentiveFocusReview
+      ? VIDU_COMPANION_MOTION_ATTENTIVE_FOCUS_VISUAL_REVIEW_PROMPT
+      : attentiveStillReview
       ? VIDU_COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_PROMPT
       : acknowledgementReview
         ? VIDU_COMPANION_MOTION_PROMPTS.acknowledgement
@@ -202,7 +214,9 @@ export class ViduFirstPresenceProvider {
           : input.motionVariant
             ? VIDU_COMPANION_MOTION_PROMPTS[input.motionVariant]
             : VIDU_FIRST_PRESENCE_PROMPT;
-    const negativePrompt = attentiveStillReview
+    const negativePrompt = attentiveFocusReview
+      ? VIDU_COMPANION_MOTION_ATTENTIVE_FOCUS_VISUAL_REVIEW_NEGATIVE_PROMPT
+      : attentiveStillReview
       ? VIDU_COMPANION_MOTION_ATTENTIVE_STILL_VISUAL_REVIEW_NEGATIVE_PROMPT
       : acknowledgementReview
         ? VIDU_COMPANION_MOTION_ACKNOWLEDGEMENT_VISUAL_REVIEW_NEGATIVE_PROMPT
@@ -229,7 +243,7 @@ export class ViduFirstPresenceProvider {
           : (
            (input.motionVariant === "idle" && input.companionMotionPackVersion === 3)
            || (input.motionVariant === "attentive" && (
-             input.companionMotionPackVersion === 5 || input.companionMotionPackVersion === 6
+             input.companionMotionPackVersion === 5 || input.companionMotionPackVersion === 6 || input.companionMotionPackVersion === 9
            ))
         ) ? input.motionVariant === "attentive"
           ? VIDU_COMPANION_MOTION_ATTENTIVE_VISUAL_REVIEW_DURATION_SECONDS

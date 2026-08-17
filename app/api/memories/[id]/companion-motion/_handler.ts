@@ -21,7 +21,7 @@ import {
 
 type Context = { params: Promise<{ id: string }> };
 type SessionResolver = (request: NextRequest) => Promise<AuthSession | null>;
-type PackService = Pick<CompanionMotionPackService, "ensure" | "ensureIdleVisualReview" | "ensureAttentiveVisualReview" | "ensureAttentiveStillVisualReview" | "ensureAcknowledgementVisualReview" | "ensureReflectiveVisualReview" | "getState">;
+type PackService = Pick<CompanionMotionPackService, "ensure" | "ensureIdleVisualReview" | "ensureAttentiveVisualReview" | "ensureAttentiveStillVisualReview" | "ensureAttentiveFocusVisualReview" | "ensureAcknowledgementVisualReview" | "ensureReflectiveVisualReview" | "getState">;
 type CapabilityGuard = () => void;
 type StagingReviewGuard = () => boolean;
 
@@ -81,12 +81,13 @@ export function createCompanionMotionHandler(
         const reviewIdle = review === "idle-visual";
         const reviewAttentive = review === "attentive-visual";
         const reviewAttentiveStill = review === "attentive-still-visual";
+        const reviewAttentiveFocus = review === "attentive-focus-visual";
         const reviewAcknowledgement = review === "acknowledgement-visual";
         const reviewReflective = review === "reflective-visual";
-        if (Object.keys(body).length !== 0 && !reviewIdle && !reviewAttentive && !reviewAttentiveStill && !reviewAcknowledgement && !reviewReflective) {
+        if (Object.keys(body).length !== 0 && !reviewIdle && !reviewAttentive && !reviewAttentiveStill && !reviewAttentiveFocus && !reviewAcknowledgement && !reviewReflective) {
           return json({ error: "INVALID_COMPANION_MOTION_REQUEST" }, { status: 400 });
         }
-        if ((reviewIdle || reviewAttentive || reviewAttentiveStill || reviewAcknowledgement || reviewReflective) && !stagingReviewGuard()) {
+        if ((reviewIdle || reviewAttentive || reviewAttentiveStill || reviewAttentiveFocus || reviewAcknowledgement || reviewReflective) && !stagingReviewGuard()) {
           return json({ error: "INVALID_COMPANION_MOTION_REQUEST" }, { status: 400 });
         }
         const slots = reviewIdle
@@ -95,6 +96,8 @@ export function createCompanionMotionHandler(
             ? await serviceFactory().ensureAttentiveVisualReview({ externalUserId: session.externalUserId, memoryId })
             : reviewAttentiveStill
               ? await serviceFactory().ensureAttentiveStillVisualReview({ externalUserId: session.externalUserId, memoryId })
+              : reviewAttentiveFocus
+                ? await serviceFactory().ensureAttentiveFocusVisualReview({ externalUserId: session.externalUserId, memoryId })
               : reviewAcknowledgement
                 ? await serviceFactory().ensureAcknowledgementVisualReview({ externalUserId: session.externalUserId, memoryId })
                 : reviewReflective

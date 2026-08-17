@@ -49,6 +49,12 @@ export const COMPANION_MOTION_ACKNOWLEDGEMENT_VISUAL_REVIEW_VERSION = 7;
  * the prior looped reflective asset and cannot fan out into any other slot.
  */
 export const COMPANION_MOTION_REFLECTIVE_VISUAL_REVIEW_VERSION = 8;
+/**
+ * A one-off Staging reviewer sample that makes the transition from relaxed
+ * presence to attentive listening perceptible without replacing the approved
+ * v6 asset. It remains a separate, manual-review-only slot.
+ */
+export const COMPANION_MOTION_ATTENTIVE_FOCUS_VISUAL_REVIEW_VERSION = 9;
 export const COMPANION_MOTION_VARIANTS = [
   "idle",
   "attentive",
@@ -304,6 +310,18 @@ export class CompanionMotionPackService {
   }
 
   /**
+   * One reviewer-authorized attentive sample with a single, restrained focus
+   * adjustment. This never mutates v6 or creates any other motion variant.
+   */
+  async ensureAttentiveFocusVisualReview(input: { externalUserId: string; memoryId: string }): Promise<CompanionMotionSlot[]> {
+    return this.ensureSingleVisualReview(input, {
+      variant: "attentive",
+      packVersion: COMPANION_MOTION_ATTENTIVE_FOCUS_VISUAL_REVIEW_VERSION,
+      reviewKey: "attentive-focus-review",
+    });
+  }
+
+  /**
    * One reviewer-authorized, one-shot acknowledgement sample. It creates only
    * this exact durable slot and never asks for reflective work.
    */
@@ -383,7 +401,7 @@ export class CompanionMotionPackService {
     sample: {
       variant: "idle" | "attentive" | "reflective" | "acknowledgement";
       packVersion: number;
-      reviewKey: "idle-review" | "attentive-sustained-review" | "attentive-still-review" | "acknowledgement-review" | "reflective-quiet-review";
+      reviewKey: "idle-review" | "attentive-sustained-review" | "attentive-still-review" | "attentive-focus-review" | "acknowledgement-review" | "reflective-quiet-review";
     },
   ): Promise<CompanionMotionSlot[]> {
     if (!companionMotionStagingReviewEnabled(this.environment)) {
