@@ -10,6 +10,7 @@ import { recordTrustConsent } from "../trust/trustConsentClient";
 import { AccountProfileRequestError, saveAdultBirthDate } from "../trust/accountProfileClient";
 import {
   CreationRecoveryRequestError,
+  clearCreationRecovery,
   fetchCreationJson,
   recoverCreatedMemory,
   uploadCurrentCreationMedia,
@@ -80,6 +81,15 @@ export function CreateMemoryExperience() {
     setStatus("success");
   };
 
+  const exitCreateFlow = () => {
+    if (submitting.current) return;
+    clear();
+    clearCreationRecovery();
+    setCreationUncertain(false);
+    setError("");
+    router.replace("/");
+  };
+
   const create = async () => {
     if (submitting.current) return;
     const validationError = validateStage(1, draft, birthDate);
@@ -133,11 +143,18 @@ export function CreateMemoryExperience() {
         name: typeof body.name === "string" ? body.name : draft.name,
       });
     } catch (cause) {
+      const memoryLimitReached = cause instanceof Error && cause.message === "MEMORY_LIMIT_REACHED";
       setAwakening(false);
       setStatus("recoverable-error");
-      setCreationUncertain(
-        recoveryWritten || (cause instanceof CreationRecoveryRequestError && cause.code === "CREATION_REQUEST_TIMEOUT"),
-      );
+      if (memoryLimitReached) {
+        clear();
+        clearCreationRecovery();
+        setCreationUncertain(false);
+      } else {
+        setCreationUncertain(
+          recoveryWritten || (cause instanceof CreationRecoveryRequestError && cause.code === "CREATION_REQUEST_TIMEOUT"),
+        );
+      }
       setError(
         cause instanceof AccountProfileRequestError
           ? "首发服务仅面向年满 18 周岁的用户。"
@@ -196,7 +213,7 @@ export function CreateMemoryExperience() {
         type="button"
         className={styles.backButton}
         aria-label={stage === 0 ? "返回上一页" : "返回第一步"}
-        onClick={() => stage === 0 ? router.back() : setStage(0)}
+        onClick={() => stage === 0 ? exitCreateFlow() : setStage(0)}
       >
         <span aria-hidden="true">‹</span>
       </button>

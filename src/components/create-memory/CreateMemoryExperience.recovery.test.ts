@@ -16,3 +16,15 @@ test("creation UI preserves an uncertain create through the formal recovery path
   assert.doesNotMatch(source, /fetch\("\/api\/memories"/);
   assert.doesNotMatch(source, /fetch\("\/api\/media\/upload"/);
 });
+
+test("a known memory limit is terminal, while unknown creation outcomes remain recoverable", () => {
+  assert.match(source, /const memoryLimitReached = cause instanceof Error && cause\.message === "MEMORY_LIMIT_REACHED"/);
+  assert.match(source, /if \(memoryLimitReached\) \{[\s\S]{0,240}?clear\(\);[\s\S]{0,240}?clearCreationRecovery\(\);[\s\S]{0,240}?setCreationUncertain\(false\);/);
+  assert.match(source, /else \{[\s\S]{0,320}?CreationRecoveryRequestError && cause\.code === "CREATION_REQUEST_TIMEOUT"/);
+});
+
+test("an explicit exit discards local creation state before returning to the home route", () => {
+  assert.match(source, /const exitCreateFlow = \(\) => \{[\s\S]{0,240}?clear\(\);[\s\S]{0,240}?clearCreationRecovery\(\);[\s\S]{0,240}?router\.replace\("\/"\);/);
+  assert.match(source, /onClick=\{\(\) => stage === 0 \? exitCreateFlow\(\) : setStage\(0\)\}/);
+  assert.doesNotMatch(source, /stage === 0 \? router\.back\(\) : setStage\(0\)/);
+});
