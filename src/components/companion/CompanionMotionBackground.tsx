@@ -67,6 +67,7 @@ type Props = {
   onAcknowledgementComplete?: () => void;
   onAcknowledgementUnavailable?: () => void;
   motionEnabled: boolean;
+  edgeExtension?: boolean;
   selectionDebug?: CompanionMotionSelectionDebug | null;
   className?: string;
 };
@@ -106,6 +107,7 @@ export function CompanionMotionBackground({
   onAcknowledgementComplete,
   onAcknowledgementUnavailable,
   motionEnabled,
+  edgeExtension = false,
   selectionDebug = null,
   className,
 }: Props) {
@@ -503,6 +505,8 @@ export function CompanionMotionBackground({
     }
   };
 
+  const visibleEdgeSource = edgeExtension && visibleVariant ? sources[visibleVariant] : null;
+
   return (
     <div
       className={`${styles.root}${className ? ` ${className}` : ""}`}
@@ -517,6 +521,16 @@ export function CompanionMotionBackground({
         src={portraitUrl}
         alt=""
       />
+      {visibleEdgeSource && visibleVariant && (
+        <div className={styles.edgeExtension} data-visible="true">
+          <span className={styles.edgeLeft}>
+            <video className={styles.edgeVideo} src={visibleEdgeSource.url} autoPlay muted loop playsInline preload="metadata" />
+          </span>
+          <span className={styles.edgeRight}>
+            <video className={styles.edgeVideo} src={visibleEdgeSource.url} autoPlay muted loop playsInline preload="metadata" />
+          </span>
+        </div>
+      )}
       {motionEnabled && Object.entries(sources).map(([key, source]) => {
         const motionVariant = key as CompanionMotionVariant;
         if (!source) return null;

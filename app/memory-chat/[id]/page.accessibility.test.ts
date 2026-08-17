@@ -30,6 +30,9 @@ test("formal chat matches the restrained living-scene and warm-ivory composition
   assert.match(sceneStyles, /grid-template-rows: clamp\(13\.5rem, 46dvh, 32rem\) minmax\(0, 1fr\)/);
   assert.match(sceneStyles, /\.portraitMotion \[data-motion-still\] \{[\s\S]*?object-fit: cover/);
   assert.match(sceneStyles, /\.portraitMotion \[data-motion-video\] \{[\s\S]*?object-fit: contain/);
+  assert.match(scene, /edgeExtension/);
+  assert.match(motionStyles, /\.edgeLeft \{[\s\S]*?mask-image: linear-gradient/);
+  assert.match(motionStyles, /\.edgeRight \{[\s\S]*?mask-image: linear-gradient/);
   assert.match(sceneStyles, /rgba\(244, 237, 226, 0\) 85%, rgba\(244, 237, 226, 0\.58\) 93%, #f4ede2 100%/);
   assert.match(sceneStyles, /background-color: var\(--paper\)/);
   assert.match(sceneStyles, /\.assistantMessage[\s\S]*?justify-self: start/);
