@@ -9,7 +9,7 @@
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-rows: clamp(10rem, 40dvh, 28rem) minmax(0, 1fr);
+  grid-template-rows: clamp(13.5rem, 46dvh, 32rem) minmax(0, 1fr);
   overflow: hidden;
   color: var(--ink);
   background: var(--paper);
@@ -39,16 +39,29 @@
 }
 
 .portraitMotion {
-  /* The portrait video owns the entire living scene.  The warm paper transition
-     is applied only by the shared veil below, never by a competing backdrop. */
+  /* The still and motion layers deliberately use the same approved portrait
+     source. The still fills the landscape scene; the moving 9:16 portrait is
+     kept whole above it instead of being enlarged into a face-only crop. */
   filter: saturate(0.92) sepia(0.035) contrast(0.98) brightness(0.87);
   will-change: filter;
+}
+
+.portraitMotion [data-motion-still] {
+  object-fit: cover;
+  object-position: center 38%;
+  transform: scale(1.08);
+  filter: blur(12px) saturate(0.86) brightness(0.78);
+}
+
+.portraitMotion [data-motion-video] {
+  object-fit: contain;
+  object-position: center 42%;
 }
 
 .sceneVeil {
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(20, 14, 10, 0.22) 0%, rgba(20, 14, 10, 0.025) 37%, rgba(70, 52, 36, 0.12) 61%, rgba(244, 237, 226, 0.68) 85%, #f4ede2 100%),
+    linear-gradient(180deg, rgba(20, 14, 10, 0.2) 0%, rgba(20, 14, 10, 0.02) 34%, transparent 55%, rgba(244, 237, 226, 0) 85%, rgba(244, 237, 226, 0.58) 93%, #f4ede2 100%),
     linear-gradient(90deg, rgba(20, 14, 10, 0.11), transparent 64%, rgba(20, 14, 10, 0.04));
 }
 
@@ -421,8 +434,8 @@
 }
 
 @keyframes sceneBreath {
-  from { transform: scale(1.045) translate3d(-0.3%, 0, 0); }
-  to { transform: scale(1.075) translate3d(0.45%, -0.35%, 0); }
+  from { transform: scale(1.005) translate3d(-0.15%, 0, 0); }
+  to { transform: scale(1.015) translate3d(0.2%, -0.15%, 0); }
 }
 
 .reduced *,
@@ -435,7 +448,10 @@
 }
 
 @media (min-width: 761px) {
-  .scene { background: #ded1bf; }
+  .scene {
+    grid-template-rows: clamp(18rem, 52dvh, 42rem) minmax(0, 1fr);
+    background: #ded1bf;
+  }
   .presence,
   .conversation { width: min(100%, 46rem); margin-inline: auto; }
   .conversation { box-shadow: 0 0 3.5rem rgba(75, 52, 29, 0.12); }
@@ -459,5 +475,5 @@
     transition-duration: 1ms !important;
   }
 
-  .portraitMotion { animation: none !important; transform: scale(1.045) !important; }
+  .portraitMotion { animation: none !important; transform: scale(1.012) !important; }
 }

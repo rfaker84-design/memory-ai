@@ -27,7 +27,10 @@ test("formal chat matches the restrained living-scene and warm-ivory composition
   assert.match(scene, /AI生成 · 基于你确认的记忆/);
   assert.match(scene, /stageChatPickupDraft\(\{/);
   assert.match(scene, /声音输入暂未开放/);
-  assert.match(sceneStyles, /grid-template-rows: clamp\(10rem, 40dvh, 28rem\) minmax\(0, 1fr\)/);
+  assert.match(sceneStyles, /grid-template-rows: clamp\(13\.5rem, 46dvh, 32rem\) minmax\(0, 1fr\)/);
+  assert.match(sceneStyles, /\.portraitMotion \[data-motion-still\] \{[\s\S]*?object-fit: cover/);
+  assert.match(sceneStyles, /\.portraitMotion \[data-motion-video\] \{[\s\S]*?object-fit: contain/);
+  assert.match(sceneStyles, /rgba\(244, 237, 226, 0\) 85%, rgba\(244, 237, 226, 0\.58\) 93%, #f4ede2 100%/);
   assert.match(sceneStyles, /background-color: var\(--paper\)/);
   assert.match(sceneStyles, /\.assistantMessage[\s\S]*?justify-self: start/);
   assert.match(sceneStyles, /\.userMessage,[\s\S]*?justify-self: end/);
@@ -45,7 +48,7 @@ test("formal chat keeps the living scene fixed while only its message region scr
   assert.match(scene, /messageScroller\.scrollTo\(/);
   assert.doesNotMatch(scene, /scrollIntoView\(/);
   assert.match(scene, /className=\{styles\.messageScroller\} ref=\{messageScrollRef\}/);
-  assert.match(sceneStyles, /grid-template-rows: clamp\(10rem, 40dvh, 28rem\) minmax\(0, 1fr\)/);
+  assert.match(sceneStyles, /grid-template-rows: clamp\(13\.5rem, 46dvh, 32rem\) minmax\(0, 1fr\)/);
   assert.match(sceneStyles, /\.messageScroller \{[\s\S]*?overflow-y: auto;[\s\S]*?overscroll-behavior: contain;/);
   assert.match(sceneStyles, /\.conversation \{[\s\S]*?grid-template-rows: minmax\(0, 1fr\) auto;[\s\S]*?overflow: hidden;/);
 });
