@@ -28,6 +28,7 @@
     "test:chat-session-atomicity": "tsx --test features/chat/chat-session-atomicity.integration.test.ts features/chat/memory-chat-turn-postgres-datasource.test.ts app/api/memories/chat-session-route.test.ts && node --test database/tests/015-chat-default-session-atomicity.test.cjs",
     "test:media": "tsx --test scripts/ops/test-media-storage.ts src/server/storage/tencent-cos-storage.test.ts src/server/storage/local-media-storage.test.ts app/api/media/local-media-upload.integration.test.ts",
     "package:standalone-rc": "node scripts/ops/package-standalone-rc.cjs",
+    "package:video-worker": "node scripts/ops/package-video-worker.cjs",
     "generate:production-candidate-evidence": "node scripts/ops/generate-production-candidate-evidence.cjs",
     "test:standalone-layout": "node --test scripts/ops/standalone-runtime-layout.test.cjs scripts/ops/generate-production-candidate-evidence.test.cjs scripts/ops/production-candidate-workflow.test.cjs",
     "test:standalone-media": "node scripts/ops/test-standalone-media-runtime.cjs",
