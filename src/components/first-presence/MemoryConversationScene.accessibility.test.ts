@@ -19,3 +19,10 @@ test("reply correction uses the bounded JSON transport for its owner-only read a
   assert.doesNotMatch(scene, /const currentResponse = await fetch\(/);
   assert.doesNotMatch(scene, /const updateResponse = await fetch\(/);
 });
+
+test("chat presence uses only the approved idle loop", () => {
+  assert.match(scene, /variant="idle"/);
+  assert.doesNotMatch(scene, /resolveConversationMotionVariant/);
+  assert.doesNotMatch(scene, /draft\.trim\(\) \? "attentive"/);
+  assert.doesNotMatch(scene, /replyPulse/);
+});

@@ -5,7 +5,6 @@ import Link from "next/link";
 
 import { MemoryButton } from "../memory-ui";
 import { CompanionMotionBackground } from "../companion/CompanionMotionBackground";
-import { resolveConversationMotionVariant } from "../companion/companionMotionState";
 import { recordBusinessView } from "../business-metrics/businessMetricsClient";
 import { CommerceVideoCreditsEntry } from "./CommerceVideoCreditsEntry";
 import { stageChatPickupDraft } from "../memory/pickupDraftHandoff";
@@ -16,7 +15,6 @@ import {
   hasPersistedFirstGreeting,
 } from "../memory/conversationExperience";
 import { useReducedMotion } from "../../motion";
-import { useQuietCompanionPresence } from "./quietCompanionPresence";
 import { assistanceExplanation, hasExplicitAssistanceRequest } from "@/features/understanding-assistance/understanding-assistance";
 import {
   hasPersistedPendingConversationMessage,
@@ -120,9 +118,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   const inFlightRef = useRef(false);
   const retryCandidateRef = useRef<PendingMessage | null>(null);
   const greetingViewedRef = useRef(false);
-  const replyPulseTimer = useRef<number | null>(null);
   const notificationEligibilityCheckedRef = useRef(false);
-  const [replyPulse, setReplyPulse] = useState(false);
   const titleId = useId();
 
   const restore = useCallback(async (signal?: AbortSignal) => {
@@ -259,15 +255,6 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     );
     return () => window.clearTimeout(timer);
   }, [controlsVisible, messages, reducedMotion]);
-
-  useEffect(() => {
-    const lastMessage = messages.at(-1);
-    if (lastMessage?.role !== "assistant" || reducedMotion) return;
-    setReplyPulse(true);
-    if (replyPulseTimer.current) window.clearTimeout(replyPulseTimer.current);
-    replyPulseTimer.current = window.setTimeout(() => setReplyPulse(false), 900);
-    return () => { if (replyPulseTimer.current) window.clearTimeout(replyPulseTimer.current); };
-  }, [messages, reducedMotion]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -443,28 +430,19 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   };
 
   const isBusy = phase === "loading" || phase === "greeting" || phase === "sending" || phase === "replying" || phase === "recovering";
-  const conversationPresenceVariant = resolveConversationMotionVariant({
-    phase,
-    draft,
-    hasPendingMessage: Boolean(pendingMessage),
-  });
-  const quietPresence = useQuietCompanionPresence({
-    reducedMotion: reducedMotion || assistanceOfferVisible,
-    replying: conversationPresenceVariant !== "idle" || replyPulse,
-  });
   const completedRounds = completedConversationRounds(messages, activeSessionId);
   const status = phase === "sending" ? "正在送出这句话…" : phase === "replying" ? "忆见正在整理回复…" : phase === "greeting" ? "忆见正在生成第一句回复…" : phase === "recovering" ? "正在找回刚才的对话…" : "";
 
   return (
     <section className={`${styles.scene} ${reducedMotion ? styles.reduced : ""}`} aria-labelledby={titleId}>
-      <section className={styles.presence} data-presence={quietPresence} aria-label={`${memoryName} 的生活场景`}>
+      <section className={styles.presence} data-presence="quiet" aria-label={`${memoryName} 的生活场景`}>
         <div className={styles.portraitFrame} role="img" aria-label={portraitUrl ? `${memoryName} 的照片` : `${memoryName} 的文字形象`}>
           {portraitUrl ? (
             <CompanionMotionBackground
               className={styles.portraitMotion}
               memoryId={memoryId}
               portraitUrl={portraitUrl}
-              variant={draft.trim() ? "attentive" : "idle"}
+              variant="idle"
               motionEnabled={!reducedMotion}
               singleVideo
             />
