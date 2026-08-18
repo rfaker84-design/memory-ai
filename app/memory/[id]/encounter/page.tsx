@@ -103,7 +103,7 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
     leaveTimer.current = window.setTimeout(continueToChat, 720);
   };
 
-  if (state.status === "loading") return <main><p role="status" aria-live="polite">正在准备这次遇见…</p></main>;
+  if (state.status === "loading") return <main><p role="status" aria-live="polite">正在加载</p></main>;
   if (state.status === "unauthenticated") return <main><p role="alert">请先登录，再打开属于你的遇见页面。当前没有读取、创建或播放任何内容。</p><Link href="/login">前往登录</Link></main>;
   if (state.status === "timeout") return <main><p role="alert">读取等待过久，尚未创建或修改任何内容。</p><button type="button" style={{ minHeight: 44 }} onClick={() => void load()}>重新读取</button><button type="button" style={{ minHeight: 44 }} onClick={continueToChat}>直接进入相伴</button></main>;
   if (state.status === "error") return <main><p role="alert">暂时无法打开遇见页面。</p><button type="button" style={{ minHeight: 44 }} onClick={() => void load()}>重新读取</button><button type="button" style={{ minHeight: 44 }} onClick={continueToChat}>直接进入相伴</button></main>;

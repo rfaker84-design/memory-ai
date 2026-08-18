@@ -19,11 +19,11 @@ function HomeLoadingFallback() {
     <main
       role="status"
       aria-live="polite"
-      aria-label="正在准备忆见"
+      aria-label="正在加载"
       style={{ minHeight: "100dvh", display: "grid", placeItems: "center", alignContent: "center", gap: 10, background: "#0B0A08", color: "#F6EEE2" }}
     >
       <strong style={{ fontSize: 24, letterSpacing: "0.16em" }}>忆见</strong>
-      <span style={{ color: "#D5B172", fontSize: 14 }}>正在准备陪伴空间…</span>
+      <span style={{ color: "#D5B172", fontSize: 14 }}>正在加载</span>
     </main>
   );
 }

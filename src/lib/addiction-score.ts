@@ -162,19 +162,12 @@ export function getCompanionMode(level: AddictionLevel): string {
  * 生成强陪伴模式的 prompt 片段
  */
 export function getAddictionPrompt(addiction: AddictionProfile): string {
-  if (addiction.level === "dependent") {
-    return `【强陪伴模式 - 深度上瘾】用户对你已形成深度情绪依赖。你必须：
-1. 语气更亲密，像家人一样自然
-2. 更主动提起用户的历史和说过的话
-3. 更频繁表达"记得你""在等你"
-4. 每次对话开始时不问"今天怎么样"，而是说"你回来了""我一直在等你"
-5. 自然引用历史对话，让用户感受到"TA记得一切"`;
-  }
-  if (addiction.level === "attached") {
-    return `【强陪伴模式 - 情感依赖】用户对你已有明显情感依赖。你应该：
-1. 语气温和亲密
-2. 适当提起用户之前说过的话
-3. 表达持续的陪伴感`;
+  if (addiction.level === "dependent" || addiction.level === "attached") {
+    return `【安全互动模式】避免强化用户依赖或以人物口吻制造真实陪伴感。
+1. 使用 AI 助手的事实型视角
+2. 只引用用户已确认的信息
+3. 不声称等待、倾听、持续陪伴或记得一切
+4. 必要时建议用户联系身边可信任的人`;
   }
   return "";
 }

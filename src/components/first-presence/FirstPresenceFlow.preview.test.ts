@@ -13,13 +13,13 @@ const mediaRecoveryGate = readFileSync("src/components/first-presence/CreationMe
 
 test("immersive creation asks one question at a time and uses custom media entry points", () => {
   for (const copy of [
-    "你想再次遇见谁？",
-    "TA 与我的关系",
-    "TA 如何称呼我",
-    "TA 常说的一句话",
-    "TA 的说话习惯",
-    "一段共同回忆",
-    "选择 TA 的照片",
+    "从一个称呼开始",
+    "你们的关系",
+    "如何称呼我",
+    "补充一句（可选）",
+    "说话习惯（可选）",
+    "补充一段记忆（可选）",
+    "选择照片",
   ]) {
     assert.match(flow, new RegExp(copy));
   }
@@ -27,7 +27,7 @@ test("immersive creation asks one question at a time and uses custom media entry
   assert.match(flow, /公开首发不收集声音、不录音，也不提供声音克隆/);
   assert.doesNotMatch(flow, /accept="audio\/\*"/);
   assert.doesNotMatch(flow, /voiceFile/);
-  assert.match(flow, /没有照片时，会保留文字形象/);
+  assert.match(flow, /没有照片时，会显示文字形象/);
   assert.match(flow, /className=\{styles\.fileInput\}/);
   assert.match(styles, /\.fileInput[\s\S]*clip-path: inset\(50%\)/);
   assert.match(styles, /\.memoryFragment/);
@@ -51,7 +51,7 @@ test("preview is explicit, zero-write, and production-gated", () => {
 test("home cold start is a disclosed static loading state, not a blank client-only screen", () => {
   assert.match(page, /function HomeLoadingFallback/);
   assert.match(page, /role="status"[\s\S]*aria-live="polite"/);
-  assert.match(page, /正在准备陪伴空间/);
+  assert.match(page, /正在加载/);
   assert.match(page, /loading: \(\) => <HomeLoadingFallback \/>/);
   assert.match(page, /stage === "checking" && <HomeLoadingFallback \/>/);
   assert.match(page, /stage === "home" && homeState && \(/);
@@ -165,7 +165,7 @@ test("formal screens contain no development panel copy", () => {
 });
 
 test("failure, back navigation, and reduced motion preserve the current draft", () => {
-  assert.match(flow, /系统不会重复创建 TA/);
+  assert.match(flow, /系统不会重复创建人物资料/);
   assert.match(flow, /router\.replace\(`\/memory-chat\//);
   assert.match(flow, /返回检查回答/);
   assert.match(flow, /setQuestionIndex\(\(current\) => current - 1\)/);
@@ -174,9 +174,8 @@ test("failure, back navigation, and reduced motion preserve the current draft", 
 });
 
 test("continuous chat preserves the draft while offline and never auto-sends on reconnect", () => {
-  assert.match(conversation, /网络已断开/);
-  assert.match(conversation, /内容仍留在输入框/);
-  assert.match(conversation, /刚才未送出的内容不会被自动发送/);
+  assert.match(conversation, /网络暂时不可用/);
+  assert.match(conversation, /你的输入已保留，不会自动重发/);
   assert.match(conversation, /window\.addEventListener\("offline"/);
   assert.match(conversation, /disabled=\{!draft\.trim\(\) \|\| isBusy \|\| phase === "error" \|\| networkOffline\}/);
 });

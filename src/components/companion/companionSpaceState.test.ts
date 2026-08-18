@@ -17,12 +17,11 @@ test("first and returning companion visits use distinct, transparent presentatio
 
   const first = companionVisitGreeting("妈妈", "first_visit");
   const daily = companionVisitGreeting("妈妈", "daily_visit");
-  assert.equal(first.title, "欢迎回来");
-  assert.equal(daily.title, "今天过得怎么样？");
+  assert.equal(first.title, "相伴");
+  assert.equal(daily.title, "相伴");
   assert.notEqual(first.message, daily.message);
-  assert.match(first.disclosure, /AI 生成内容/);
-  assert.match(first.disclosure, /基于用户确认资料/);
-  assert.match(first.disclosure, /不代表 TA 的真实历史留言或表达/);
+  assert.match(first.disclosure, /AI生成/);
+  assert.match(first.disclosure, /基于你确认的信息/);
   const completeCopy = [...Object.values(first), ...Object.values(daily)].join(" ");
   assert.doesNotMatch(completeCopy, /我在等你|永远陪着你|来陪我|很快见面|到我这里来|真实意识|复活/);
 });
