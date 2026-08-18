@@ -13,10 +13,12 @@
 
 .guestHero {
   position: relative;
-  min-height: max(54svh, 430px);
+  display: grid;
+  grid-template-rows: auto auto minmax(270px, 1fr);
+  min-height: 0;
   overflow: hidden;
   isolation: isolate;
-  background: #e5d7c5;
+  background: #f5efe6;
 }
 
 .guestHeroImage,
@@ -28,23 +30,28 @@
 }
 
 .guestHeroImage {
-  z-index: -2;
+  position: relative;
+  inset: auto;
+  grid-row: 3;
+  z-index: 0;
+  height: min(72vw, 360px);
   object-fit: cover;
-  object-position: 48% 35%;
+  object-position: 62% center;
   animation: guestSceneIn 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .guestHeroVeil {
-  z-index: -1;
+  display: none;
   pointer-events: none;
-  background:
-    linear-gradient(90deg, rgba(250, 247, 241, 0.92) 0%, rgba(250, 247, 241, 0.78) 40%, rgba(250, 247, 241, 0.16) 72%, rgba(250, 247, 241, 0.02) 100%),
-    linear-gradient(180deg, rgba(250, 247, 241, 0.2), rgba(250, 247, 241, 0) 52%, rgba(245, 239, 230, 0.58));
 }
 
 .guestHeader {
+  grid-row: 1;
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   min-height: 70px;
   padding: max(20px, calc(env(safe-area-inset-top) + 12px)) 24px 0;
 }
@@ -57,9 +64,31 @@
   letter-spacing: 0.14em;
 }
 
+.guestPrivacyLink {
+  color: rgba(48, 39, 31, 0.68);
+  font-size: 13px;
+  letter-spacing: 0.07em;
+  text-decoration: none;
+}
+
+.guestPrivacyLink span {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 18px;
+  line-height: 0;
+  vertical-align: -1px;
+}
+
+.guestPrivacyLink:focus-visible {
+  outline: 2px solid #6f5138;
+  outline-offset: 4px;
+}
+
 .guestHeroCopy {
-  position: absolute;
-  inset: auto 24px 44px;
+  grid-row: 2;
+  position: relative;
+  z-index: 1;
+  padding: 52px 24px 42px;
   animation: guestCopyIn 720ms 80ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
@@ -72,16 +101,16 @@
 
 .guestHeroCopy h1 {
   max-width: 7em;
-  font-size: clamp(42px, 12vw, 68px);
+  font-size: clamp(40px, 11vw, 56px);
   line-height: 1.12;
   letter-spacing: 0.035em;
 }
 
 .guestHeroCopy p {
-  margin: 20px 0 0;
+  margin: 22px 0 0;
   color: rgba(62, 51, 41, 0.72);
-  font-size: 15px;
-  line-height: 1.75;
+  font-size: 14px;
+  line-height: 1.9;
   letter-spacing: 0.025em;
 }
 
@@ -100,6 +129,21 @@
   text-align: center;
 }
 
+.guestMemoryMark {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  margin-bottom: 28px;
+  border: 1px solid rgba(154, 113, 76, 0.54);
+  border-radius: 50%;
+  color: rgba(142, 101, 65, 0.78);
+  font-family: "Songti SC", "STSong", serif;
+  font-size: 29px;
+  font-weight: 400;
+  line-height: 1;
+}
+
 .guestInvitation h2 {
   font-size: clamp(28px, 8vw, 38px);
   line-height: 1.3;
@@ -107,7 +151,7 @@
 }
 
 .guestInvitation p {
-  margin: 12px 0 30px;
+  margin: 14px 0 32px;
   color: var(--guest-muted);
   font-size: 14px;
   letter-spacing: 0.04em;
@@ -120,7 +164,7 @@
   border-radius: 999px;
   color: #fffaf3;
   background: var(--guest-button);
-  box-shadow: 0 9px 20px rgba(109, 79, 49, 0.12);
+  box-shadow: none;
   font: 500 16px/1 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   letter-spacing: 0.09em;
   cursor: pointer;
@@ -130,6 +174,23 @@
 .guestPrimaryAction:hover { background: #b99270; }
 .guestPrimaryAction:active { transform: scale(0.97); }
 .guestPrimaryAction:focus-visible { outline: 2px solid #6f5138; outline-offset: 4px; }
+
+.guestPrimaryAction span {
+  display: inline-block;
+  margin-left: 28%;
+  font-size: 23px;
+  font-weight: 300;
+  line-height: 0;
+  vertical-align: -2px;
+}
+
+.guestPrivacyNote {
+  margin-top: 34px;
+  color: rgba(93, 81, 69, 0.48);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.035em;
+}
 
 @keyframes guestSceneIn {
   from { opacity: 0.82; transform: scale(1.012); }
@@ -753,11 +814,23 @@
 
 @media (min-width: 760px) {
   .guestHero {
-    min-height: min(64svh, 760px);
+    display: block;
+    min-height: clamp(560px, 58vw, 760px);
   }
 
   .guestHeroImage {
-    object-position: 58% 42%;
+    position: absolute;
+    inset: 0;
+    grid-row: auto;
+    z-index: -2;
+    height: 100%;
+    object-position: center;
+  }
+
+  .guestHeroVeil {
+    display: block;
+    z-index: -1;
+    background: linear-gradient(90deg, rgba(250, 247, 241, 0.76) 0%, rgba(250, 247, 241, 0.48) 31%, rgba(250, 247, 241, 0.04) 57%, rgba(250, 247, 241, 0) 100%);
   }
 
   .guestHeader {
@@ -765,20 +838,32 @@
   }
 
   .guestHeroCopy {
-    inset-inline: clamp(10vw, 16vw, 18vw) auto;
-    bottom: clamp(74px, 12vh, 132px);
+    position: absolute;
+    inset: auto auto clamp(106px, 16vh, 170px) clamp(8vw, 9vw, 154px);
+    width: min(32vw, 430px);
+    padding: 0;
   }
 
   .guestHeroCopy h1 {
-    font-size: clamp(58px, 5.6vw, 88px);
+    font-size: clamp(60px, 5.6vw, 84px);
   }
 
   .guestHeroCopy p {
+    margin-top: 28px;
     font-size: 17px;
+    line-height: 1.9;
   }
 
   .guestInvitation {
-    min-height: 44svh;
+    min-height: clamp(500px, 48vw, 620px);
+  }
+
+  .guestInvitation h2 {
+    font-size: 32px;
+  }
+
+  .guestInvitation p {
+    font-size: 15px;
   }
 
   .experience { padding-inline: 40px; }

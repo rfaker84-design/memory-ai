@@ -62,26 +62,29 @@ function PublicGuestExperience({ onStart }: Pick<GuestExperienceProps, "onStart"
       <section className={styles.guestHero} aria-labelledby="guest-entry-title">
         <img
           className={styles.guestHeroImage}
-          src="/splash/owner-confirmed-warm-presence.png"
-          alt="日光里的家庭记忆场景"
+          src="/guest-experience/family-frame-hero-v2.png"
+          alt="窗边木桌上的家庭合照相框"
           decoding="async"
           fetchPriority="high"
         />
         <span className={styles.guestHeroVeil} aria-hidden="true" />
         <header className={styles.guestHeader}>
           <span className={styles.guestWordmark}>忆见</span>
+          <a className={styles.guestPrivacyLink} href="/privacy">隐私安全 <span aria-hidden="true">›</span></a>
         </header>
         <div className={styles.guestHeroCopy}>
           <h1 id="guest-entry-title">想起一个人。</h1>
-          <p>那些一直放在心底的人，<br />或许，可以再遇见一次。</p>
+          <p>那些来不及好好告别的人，<br />那些一直放在心底的人，<br />现在，或许可以再次遇见。</p>
         </div>
       </section>
 
       <section className={styles.guestInvitation} aria-labelledby="guest-invitation-title">
         <div className={styles.guestInvitationInner}>
+          <span className={styles.guestMemoryMark} aria-hidden="true">♡</span>
           <h2 id="guest-invitation-title">体验一次遇见</h2>
-          <p>从一个人开始。</p>
-          <button className={styles.guestPrimaryAction} type="button" onClick={onStart}>想起一个人</button>
+          <p>只需一点点信息，看看 TA 会如何出现</p>
+          <button className={styles.guestPrimaryAction} type="button" onClick={onStart}>想起一个人 <span aria-hidden="true">›</span></button>
+          <small className={styles.guestPrivacyNote}>🔒 登录后，隐私仅你可见</small>
         </div>
       </section>
     </main>
