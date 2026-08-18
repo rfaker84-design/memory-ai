@@ -384,7 +384,7 @@ function Tagline({ phase }: { phase: number }) {
         fontSize: "clamp(12px,3vw,14px)", color: "rgba(255,210,166,0.45)",
         letterSpacing: "0.14em", margin: 0,
       }}>
-        让思念，被温柔记住
+        忆一人，见一生。
       </p>
     </motion.div>
   );

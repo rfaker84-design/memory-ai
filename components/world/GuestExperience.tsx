@@ -70,11 +70,10 @@ function PublicGuestExperience({ onStart }: Pick<GuestExperienceProps, "onStart"
         <span className={styles.guestHeroVeil} aria-hidden="true" />
         <header className={styles.guestHeader}>
           <span className={styles.guestWordmark}>忆见</span>
-          <a className={styles.guestPrivacyLink} href="/privacy">隐私安全 <span aria-hidden="true">›</span></a>
         </header>
         <div className={styles.guestHeroCopy}>
-          <h1 id="guest-entry-title">想起一个人。</h1>
-          <p>那些来不及好好告别的人，<br />那些一直放在心底的人，<br />现在，或许可以再次遇见。</p>
+          <h1 id="guest-entry-title">从一张照片开始。</h1>
+          <p>一张照片，一个称呼。</p>
         </div>
       </section>
 
@@ -82,9 +81,7 @@ function PublicGuestExperience({ onStart }: Pick<GuestExperienceProps, "onStart"
         <div className={styles.guestInvitationInner}>
           <span className={styles.guestMemoryMark} aria-hidden="true">♡</span>
           <h2 id="guest-invitation-title">体验一次遇见</h2>
-          <p>只需一点点信息，看看 TA 会如何出现</p>
-          <button className={styles.guestPrimaryAction} type="button" onClick={onStart}>想起一个人 <span aria-hidden="true">›</span></button>
-          <small className={styles.guestPrivacyNote}>🔒 登录后，隐私仅你可见</small>
+          <button className={styles.guestPrimaryAction} type="button" onClick={onStart}>开始 <span aria-hidden="true">›</span></button>
         </div>
       </section>
     </main>

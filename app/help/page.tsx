@@ -33,7 +33,7 @@ export default function HelpPage() {
           <h2 className="text-xl font-semibold">首次影像与聊天</h2>
           <ul className="mt-3 list-disc space-y-2 pl-5 leading-7 text-[#d8bfaa]">
             <li>首次影像可能需要排队和人工审核；在审核通过前不会提供播放或下载。</li>
-            <li>AI 回复只能参考你已确认的资料。它不应声称复活、意识、正在看见你，或要求你把它当作唯一依靠。</li>
+            <li>AI 回复只能参考你已确认的资料。它不会声称真实意识、现实存在或能够看见你，也不会要求你把它当作唯一依靠。</li>
             <li>不要在聊天中提供身份证号、银行卡号、密码、验证码或支付密码。</li>
           </ul>
         </section>

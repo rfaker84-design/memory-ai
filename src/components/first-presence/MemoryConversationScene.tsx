@@ -64,12 +64,12 @@ function createMessageIdempotencyKey() {
 }
 
 function readableFailure(error: unknown) {
-  if (error instanceof ConversationRequestError && error.status === 401) return "登录状态已失效。为了保护这段对话，请重新完成登录。";
+  if (error instanceof ConversationRequestError && error.status === 401) return "登录已失效。请重新登录。";
   if (error instanceof ConversationRequestError && error.status === 404) return "暂时找不到这段记忆，请回到首页重新进入。";
   if (error instanceof ConversationRequestError && error.status === 429 && error.message === "FREE_CHAT_DAILY_LIMIT_REACHED") return "今天的免费对话已用完；你可以明天再来。安全陪伴始终可用。";
-  if (error instanceof ConversationRequestError && error.status === 503) return "此刻还没有收到回应。你刚才的话仍留在这里。";
+  if (error instanceof ConversationRequestError && error.status === 503) return "这次没有生成回复。";
   if (error instanceof ConversationRequestError && error.status === 408) return "请求等待过久。先找回刚才的对话，再由你决定是否重试。";
-  return "连接暂时中断。先找回这段对话，再决定是否重试。";
+  return "网络暂时不可用。你的输入已保留，不会自动重发。";
 }
 
 function pickupHintViewKey(value: string): string {
@@ -160,11 +160,11 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     if (typeof window === "undefined") return;
     const disconnected = () => {
       setNetworkOffline(true);
-      setNotice("网络已断开。你可以继续阅读这段对话；恢复连接后再由你决定是否发送。");
+      setNotice("网络暂时不可用。你的输入已保留，不会自动重发。");
     };
     const reconnected = () => {
       setNetworkOffline(false);
-      setNotice("网络已恢复。刚才未送出的内容不会被自动发送。");
+      setNotice("网络已恢复。你的输入不会自动重发。");
     };
     if (!navigator.onLine) disconnected();
     window.addEventListener("offline", disconnected);
@@ -268,7 +268,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     }
     if (networkOffline || (typeof navigator !== "undefined" && !navigator.onLine)) {
       setNetworkOffline(true);
-      setNotice("当前离线，内容仍留在输入框；恢复连接后请由你决定是否发送。");
+      setNotice("网络暂时不可用。你的输入已保留，不会自动重发。");
       return;
     }
 
@@ -291,7 +291,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
       setPendingMessage(null);
       setPhase("ready");
       if (admission.freeChatWarning) {
-        setNotice("今天的免费陪伴次数快用完了。你仍可以慢慢说；危机支持不受这个限制。");
+        setNotice("今天的免费对话次数快用完了。危机支持不受这个限制。");
       }
     } catch (error) {
       inFlightRef.current = false;
@@ -431,7 +431,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
 
   const isBusy = phase === "loading" || phase === "greeting" || phase === "sending" || phase === "replying" || phase === "recovering";
   const completedRounds = completedConversationRounds(messages, activeSessionId);
-  const status = phase === "sending" ? "正在送出这句话…" : phase === "replying" ? "忆见正在整理回复…" : phase === "greeting" ? "忆见正在生成第一句回复…" : phase === "recovering" ? "正在找回刚才的对话…" : "";
+  const status = phase === "sending" ? "正在发送" : phase === "replying" || phase === "greeting" ? "正在生成" : phase === "recovering" ? "正在加载" : "";
 
   return (
     <section className={`${styles.scene} ${reducedMotion ? styles.reduced : ""}`} aria-labelledby={titleId}>
@@ -656,7 +656,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
                     event.currentTarget.form?.requestSubmit();
                   }
                 }}
-                placeholder="说一件此刻想让 TA 知道的事…"
+                placeholder="说点什么…"
                 disabled={isBusy || phase === "error"}
                 rows={1}
               />

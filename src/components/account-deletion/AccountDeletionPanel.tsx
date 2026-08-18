@@ -123,7 +123,7 @@ export function AccountDeletionPanel() {
     <h1>账户注销进度</h1>
     <p>状态：{progress.status}{progress.legalHold ? "（存在法定保全范围，相关资料不会用于产品功能）" : ""}</p>
     <ul>
-      <li>在线 TA、聊天、照片、声音和视频：不晚于 {format(progress.contentDeleteAfter)} 删除。</li>
+      <li>人物资料、聊天、照片、声音和视频：不晚于 {format(progress.contentDeleteAfter)} 删除。</li>
       <li>COS 原件、派生文件与 Provider 副本：不晚于 {format(progress.providerDeleteAfter)} 删除并留存删除回执。</li>
       <li>不可逐用户改写的备份：自然轮转，最长至 {format(progress.backupExpireAfter)}；恢复时会重新应用删除墓碑。</li>
       <li>订单、退款、发票、投诉和法定记录：与内容资料隔离，只保留最低必要字段。</li>
@@ -138,7 +138,7 @@ export function AccountDeletionPanel() {
     <h1>注销账户</h1>
     <p>这是不可逆的账户操作。确认后，所有登录 Session、设备访问和旧 Cookie 会立即失效。</p>
     <ul>
-      <li>TA、聊天、照片、声音和视频会停止使用，并在 7 天内从在线系统删除。</li>
+      <li>人物资料、聊天、照片、声音和视频会停止使用，并在 7 天内从系统删除。</li>
       <li>COS、缩略图、生成视频与 Provider 副本会在 30 天内删除并记录回执。</li>
       <li>账号注销完成后，剩余付费、邀请和节日影像额度及奖励机会会全部清零，且无法恢复。</li>
       <li>支付、退款、发票、投诉和法定审计记录不会与内容资料混存。</li>

@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import ShareVideoClient from "./ShareVideoClient";
 
 export const metadata: Metadata = {
-  title: "纪念影像分享 | 忆见",
+  title: "影像分享 | 忆见",
   robots: { index: false, follow: false, nocache: true },
 };
 

@@ -31,17 +31,17 @@ export function companionVisitGreeting(
   if (visit === "first_visit") {
     return {
       label: "第一次来到相伴",
-      title: "欢迎回来",
-      message: `先不用急着说什么。你可以在这里看看 ${displayName}，再决定今天想做什么。`,
-      disclosure: "AI 生成内容 · 基于用户确认资料 · 不代表 TA 的真实历史留言或表达",
+      title: "相伴",
+      message: `可以查看 ${displayName} 的已确认资料，或进入聊天。`,
+      disclosure: "AI生成 · 基于你确认的信息",
     };
   }
 
   return {
     label: "今天",
-    title: "今天过得怎么样？",
-    message: `如果愿意，可以从一件小事说起，也可以只是看看 ${displayName} 的已确认拾忆。`,
-    disclosure: "AI 生成内容 · 基于用户确认资料 · 不代表 TA 的真实历史留言或表达",
+    title: "相伴",
+    message: `可以从一件小事开始，或查看 ${displayName} 的已确认拾忆。`,
+    disclosure: "AI生成 · 基于你确认的信息",
   };
 }
 

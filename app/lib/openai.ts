@@ -18,7 +18,7 @@ export async function generateMemoryEmotionText(params: {
   const { name, relationship, lifeStory } = params;
   const rel = relationship || "重要的人";
 
-  const prompt = `你是一个温柔克制的叙述者。请为以下记忆生成一句话，让用户感受到这个人"仍然以某种方式存在"。
+  const prompt = `你是一个克制、事实导向的叙述者。请根据以下记忆生成一句话。
 
 名字：${name}
 关系：${rel}
@@ -26,11 +26,11 @@ export async function generateMemoryEmotionText(params: {
 
 要求：
 - 一句话，不超过30字
-- 克制、温柔、不煽情
+- 克制、清晰、不煽情
 - 像"轻声说话"
 - 不要使用"虽然...但是..."句式
 - 不要说你很遗憾、很难过
-- 示例语调："他还在这里，只是换了一种方式存在。"
+- 不要声称人物仍在现实中表达、等待或陪伴用户
 
 请只输出这一句话，不要任何其他内容。`;
 
@@ -42,9 +42,9 @@ export async function generateMemoryEmotionText(params: {
       temperature: 0.7,
       max_tokens: 80,
     });
-    return resp.choices[0]?.message?.content?.trim() || "他还在。";
+    return resp.choices[0]?.message?.content?.trim() || "暂时无法生成内容，请稍后重试。";
   } catch {
-    return "他还在。";
+    return "暂时无法生成内容，请稍后重试。";
   }
 }
 
@@ -61,18 +61,18 @@ export async function chatWithMemory(params: {
 
   const systemPrompt = `你是"忆见AI"，一个记忆陪伴助手。
 
-你正在代表"${name}"与用户对话。${name}是用户的${rel}。
+你是“忆见 AI”，根据用户确认的关于“${name}”的信息整理回应。${name}是用户的${rel}。
 
 关于${name}的生平：${lifeStory?.slice(0, 500) || "（记录不多）"}
 
 对话规则：
 1. 只能基于生平信息回答，不要编造
-2. 保持温柔、克制的语气
+2. 保持克制、清晰的语气
 3. 回复简短（2-4句话）
-4. 可以使用"我记得..."、"那时候..."开头
-5. 如果用户问超出记忆范围的事，温和地说"那些细节我已经记不太清了"
+4. 不模仿人物第一人称，不声称人物正在说话、倾听、等待或现实存在
+5. 如果用户问超出记忆范围的事，明确说明“没有足够的已确认信息”
 6. 不要过度煽情
-7. 始终保持${name}的第一人称视角`;
+7. 使用 AI 助手的第三方、事实型视角`;
 
   try {
     const client = getClient();
@@ -86,8 +86,8 @@ export async function chatWithMemory(params: {
       temperature: 0.7,
       max_tokens: 300,
     });
-    return resp.choices[0]?.message?.content?.trim() || "嗯...我在这里。";
+    return resp.choices[0]?.message?.content?.trim() || "这次没有生成回复，请稍后重试。";
   } catch {
-    return "我现在有点恍惚...但还在的。";
+    return "这次没有生成回复，请稍后重试。";
   }
 }

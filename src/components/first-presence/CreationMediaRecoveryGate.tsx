@@ -179,7 +179,7 @@ export function CreationMediaRecoveryGate({
             router.replace("/login");
             return;
           }
-          setNotice("暂时无法确认刚才保存的人物资料。系统不会重新创建 TA。");
+          setNotice("暂时无法确认刚才保存的人物资料。系统不会重复创建人物资料。");
           setPhase("error");
           return;
         }

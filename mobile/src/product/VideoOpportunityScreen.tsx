@@ -57,7 +57,7 @@ function jobCopy(job: FirstPresenceVideoSafeDto | null, saveAllowed: boolean) {
   if (!job) return "机会状态会由服务端继续确认；当前不会在设备上伪造影像。";
   if (job.artifactAvailable && saveAllowed) return "影像已由服务端确认，可保存能力会在正式播放页开放后提供。";
   if (job.artifactAvailable) return "影像预览已由服务端确认；这一次预览不能保存。";
-  if (job.manualReviewRequired) return "影像正在等待服务端确认，暂不显示本地成功状态。";
+  if (job.manualReviewRequired) return "影像待检查。";
   if (job.status === "failed" || job.status === "rejected") return "这次影像暂未准备好，可以稍后回到这里查看。";
   return "影像机会已登记，等待服务端完成后会更新在这里。";
 }

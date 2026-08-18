@@ -148,7 +148,7 @@ export function isDailyCompanionGreetingDue(
  */
 export function dailyCompanionGreeting(name: string): string {
   const displayName = name.trim() || "这位 TA";
-  return `今日 AI 纪念问候 · 基于已确认资料：想和 ${displayName} 的纪念资料慢慢说一件事吗？`;
+  return "AI生成 · 基于你确认的信息：可以从一件小事开始。";
 }
 
 /**

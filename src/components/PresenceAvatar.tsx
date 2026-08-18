@@ -196,7 +196,7 @@ export default function PresenceAvatar({
         className="text-[9px] tracking-[0.12em] mt-0.5"
         style={{ color: v.glowColor + "0.8)", margin: 0 }}
       >
-        {speaking ? "● 正在说话" : listening ? "○ 倾听中" : "在线"}
+        {speaking ? "● 正在生成" : listening ? "○ 正在加载" : "安静播放"}
       </motion.p>
     </div>
   );

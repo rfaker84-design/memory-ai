@@ -188,7 +188,7 @@ function PreviewConversation({
           <article className={styles.previewUser}><p>以后我还可以继续和你说这些吗？</p></article>
           <article className={styles.previewAssistant}>
             <MemoryAvatar image={portraitUrl} initials={name} alt={`${name} 的照片`} presence="online" size={38} />
-            <p>可以。慢慢说，不用着急。</p>
+            <p>可以从一件具体的事开始。</p>
           </article>
         </>
       )}
@@ -507,7 +507,7 @@ export function FirstPresenceFlow({
       }
       router.replace(`/memory-chat/${encodeURIComponent(result.memory.id)}`);
     } catch {
-      setError("刚才的素材还没有得到服务端保存确认。系统不会重复创建 TA，也不会进入对话；请稍后由你再次确认。");
+      setError("刚才的素材还没有得到服务端保存确认。系统不会重复创建人物资料；请稍后再次确认。");
       setStage("network-failed");
     } finally {
       creationOperationInFlight.current = false;
@@ -585,7 +585,7 @@ export function FirstPresenceFlow({
       if (cause instanceof AccountProfileRequestError) {
         setError(cause.code === "ADULT_ELIGIBILITY_REQUIRED"
           ? "忆见首发仅向年满 18 周岁的用户提供服务。"
-          : "出生日期尚未得到服务器确认；尚未创建 TA 或上传素材。请检查后明确重试。");
+          : "出生日期尚未得到服务器确认；尚未创建人物资料或上传素材。请检查后重试。");
         setQuestionIndex(7);
         setStage("questions");
       } else if (cause instanceof TrustConsentRequestError) {
@@ -593,7 +593,7 @@ export function FirstPresenceFlow({
         setQuestionIndex(8);
         setStage("questions");
       } else {
-        setError("刚才的素材还没有得到服务端保存确认。系统不会重复创建 TA，也不会进入对话；请稍后由你再次确认。");
+        setError("刚才的素材还没有得到服务端保存确认。系统不会重复创建人物资料；请稍后再次确认。");
         setStage("network-failed");
       }
     } finally {
@@ -649,64 +649,64 @@ export function FirstPresenceFlow({
       case 0:
         return {
           kicker: "身份",
-          title: "你想再次遇见谁？",
-          description: "先写下 TA 的名字。你随时可以返回修改。",
-          control: <SceneField label="TA 的名字" value={name} onChange={(value) => reviseText(setName, value)} />,
+          title: "从一个称呼开始",
+          description: "填写一个称呼；你随时可以返回修改。",
+          control: <SceneField label="怎么称呼" value={name} onChange={(value) => reviseText(setName, value)} />,
         };
       case 1:
         return {
           kicker: "身份",
-          title: `${displayName}，与你是什么关系？`,
-          description: "只写你确认真实的关系。这里不会替你补全没有说过的身份。",
-          control: <SceneField label="TA 与我的关系" value={relationship} onChange={(value) => reviseText(setRelationship, value)} />,
+          title: "你们的关系",
+          description: "只填写你确认的信息。",
+          control: <SceneField label="你们的关系" value={relationship} onChange={(value) => reviseText(setRelationship, value)} />,
         };
       case 2:
         return {
           kicker: "你们之间",
-          title: `${displayName}平时如何称呼你？`,
-          description: "例如“小雨”“闺女”，或只属于你们之间的称呼。",
-          control: <SceneField label="TA 如何称呼我" value={preferredAddress} onChange={(value) => reviseText(setPreferredAddress, value)} />,
+          title: "平时如何称呼你？",
+          description: "例如“小雨”“闺女”。",
+          control: <SceneField label="如何称呼我" value={preferredAddress} onChange={(value) => reviseText(setPreferredAddress, value)} />,
         };
       case 3:
         return {
           kicker: "一句熟悉的话",
-          title: `${displayName}最常说哪句话？`,
-          description: "写下真实说过的话。它会让第一句问候更接近你熟悉的语气。",
-          control: <SceneField multiline label="TA 常说的一句话" value={catchPhrases} onChange={(value) => reviseText(setCatchPhrases, value)} />,
+          title: "补充一句（可选）",
+          description: "填写你确认的信息。",
+          control: <SceneField multiline label="补充一句（可选）" value={catchPhrases} onChange={(value) => reviseText(setCatchPhrases, value)} />,
         };
       case 4:
         return {
           kicker: "说话的样子",
-          title: `${displayName}说话时，有什么习惯？`,
-          description: "比如语速、语气、常用停顿。不要写你不确定的性格或经历。",
-          control: <SceneField multiline label="TA 的说话习惯" value={speechStyle} onChange={(value) => reviseText(setSpeechStyle, value)} />,
+          title: "说话习惯（可选）",
+          description: "例如语速、语气、常用停顿。",
+          control: <SceneField multiline label="说话习惯（可选）" value={speechStyle} onChange={(value) => reviseText(setSpeechStyle, value)} />,
         };
       case 5:
         return {
           kicker: "共同回忆",
-          title: "哪一段记忆，你想先告诉 TA？",
-          description: "写下一件你确认真实发生过的事。它会留在第一句问候和今后的对话里。",
+          title: "补充一段记忆（可选）",
+          description: "填写一件你确认真实发生过的事。",
           control: <SceneField multiline label="一段共同回忆" value={sharedMemory} onChange={(value) => reviseText(setSharedMemory, value)} />,
         };
       case 6:
         return {
           kicker: "一张照片",
-          title: `让${displayName}先被看见。`,
-          description: "照片只用于人物出现、第一句问候和聊天头像。没有照片时，会保留文字形象。",
-          control: <label className={styles.mediaChoice}><strong>{photoFile ? "重新选择照片" : "选择一张照片"}</strong><span>{photoFile?.name || "JPG、PNG 等，最大 20MB；可以稍后再上传"}</span><input className={styles.fileInput} aria-label="选择 TA 的照片" type="file" accept="image/*" onChange={chooseMedia} /></label>,
+          title: "放上一张照片",
+          description: "照片仅用于生成内容与头像。",
+          control: <label className={styles.mediaChoice}><strong>{photoFile ? "更换照片" : "选择照片"}</strong><span>{photoFile?.name || "JPG、PNG 等，最大 20MB；可以稍后再上传"}</span><input className={styles.fileInput} aria-label="选择照片" type="file" accept="image/*" onChange={chooseMedia} /></label>,
         };
       default:
         return {
           kicker: "最后一次确认",
-          title: `这些真实资料，可以交给忆见吗？`,
-          description: "忆见会根据这些资料生成 AI 内容，但不会把它当作现实中的 TA 或医疗建议。",
+          title: "确认资料",
+          description: "AI 会基于这些资料生成内容。",
           control: (
             <div className={styles.consentBlock}>
               <SceneField type="date" label="你的出生日期" value={birthDate} onChange={(value) => { noteDraftRevision(); setBirthDate(value); }} />
               <p>照片只在正式创建后上传，并绑定你拥有的同一 TA。公开首发不收集声音、不录音，也不提供声音克隆。请阅读 <a href="/privacy">隐私政策</a>、<a href="/terms">用户协议</a> 与 <a href="/authorization">AI 内容和素材说明</a>。数据删除入口位于 <a href="/report">投诉与删除</a>。</p>
               <label className={styles.trustCheck}>
                 <input type="checkbox" checked={trustAccepted} onChange={(event) => { noteDraftRevision(); setTrustAccepted(event.currentTarget.checked); }} />
-                <span>我已年满 18 周岁，理解 AI 身份与资料处理方式；我确认有权使用所提交的照片和资料，如资料涉及其他可识别个人，我已依法完成必要告知并取得相应授权。</span>
+                <span>我确认有权使用这张照片，并了解生成内容由 AI 合成。</span>
               </label>
             </div>
           ),
@@ -787,11 +787,11 @@ export function FirstPresenceFlow({
               {stage === "login-phone" && (
                 <form className={styles.copyBlock} onSubmit={(event) => { event.preventDefault(); void sendCode(); }} noValidate>
                   <p className={styles.kicker}>短信登录</p>
-                  <h1 id={titleId}>先确认，是你。</h1>
-                  <p id="flow-description">验证成功后，你会继续留在这片记忆空间。</p>
+                  <h1 id={titleId}>登录忆见</h1>
+                  <p id="flow-description">使用手机号和验证码继续。</p>
                   <MemoryInput label="手机号" type="tel" inputMode="numeric" autoComplete="tel" value={phone} onChange={(event: ChangeEvent<HTMLInputElement>) => setPhone(event.currentTarget.value)} autoFocus error={error || undefined} />
-                  <label className={styles.loginAgreement}><input type="checkbox" checked={loginAgreementAccepted} onChange={(event) => { setError(""); setLoginAgreementAccepted(event.currentTarget.checked); }} /><span>我已阅读并同意 <a href="/terms">《用户协议》</a> 与 <a href="/privacy">《隐私政策》</a>；可查看 <a href="/help">帮助与安全说明</a>。</span></label>
-                  <div className={styles.actions}><button className={styles.backButton} type="button" onClick={leaveFlow}>返回</button><MemoryButton type="submit" loading={busy} disabled={!loginAgreementAccepted}>发送验证码</MemoryButton></div>
+                  <label className={styles.loginAgreement}><input type="checkbox" checked={loginAgreementAccepted} onChange={(event) => { setError(""); setLoginAgreementAccepted(event.currentTarget.checked); }} /><span>登录即表示你已阅读并同意<a href="/terms">《用户协议》</a>和<a href="/privacy">《隐私政策》</a></span></label>
+                  <div className={styles.actions}><button className={styles.backButton} type="button" onClick={leaveFlow}>返回</button><MemoryButton type="submit" loading={busy} disabled={!loginAgreementAccepted}>继续</MemoryButton></div>
                 </form>
               )}
 
@@ -799,7 +799,7 @@ export function FirstPresenceFlow({
                 <form className={styles.copyBlock} onSubmit={(event) => { event.preventDefault(); void verifyCode(); }} noValidate>
                   <p className={styles.kicker}>验证短信</p>
                   <h1 id={titleId}>输入 6 位验证码。</h1>
-                  <p id="flow-description">确认是你以后，再继续写下关于 TA 的记忆。</p>
+                  <p id="flow-description">验证后继续。</p>
                   <MemoryInput label="短信验证码" type="text" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(event: ChangeEvent<HTMLInputElement>) => setCode(event.currentTarget.value)} autoFocus error={error || undefined} />
                   <div className={styles.actions}><button className={styles.backButton} type="button" onClick={() => setStage("login-phone")}>更换号码</button><MemoryButton type="submit" loading={busy} disabled={!loginAgreementAccepted}>验证并继续</MemoryButton></div>
                 </form>
@@ -824,7 +824,7 @@ export function FirstPresenceFlow({
                   {authState === "checking" && !previewMode && <p className={styles.inlineStatus} role="status">正在确认登录状态，你写下的内容仍会留在这里。</p>}
                   <div className={styles.actions}>
                     <button className={styles.backButton} type="button" onClick={goBack}>返回</button>
-                    <MemoryButton type="submit">{questionIndex === QUESTION_COUNT - 1 ? "确认资料并创建 TA" : "继续"}</MemoryButton>
+                    <MemoryButton type="submit">{questionIndex === QUESTION_COUNT - 1 ? "完成" : "下一步"}</MemoryButton>
                   </div>
                 </form>
               )}
@@ -863,7 +863,7 @@ export function FirstPresenceFlow({
                 <div className={styles.copyBlock} role="status" aria-live="polite">
                   <p className={styles.kicker}>记忆正在靠近</p>
                   <h1 id={titleId}>你确认的资料，正在汇到一个画面。</h1>
-                  <p id="flow-description">再等一会儿，让这些熟悉的片段慢慢聚在一起。</p>
+                  <p id="flow-description">正在处理你确认的信息。</p>
                   <div className={styles.waitingPulse} aria-hidden="true"><i /><i /><i /></div>
                 </div>
               )}
@@ -872,7 +872,7 @@ export function FirstPresenceFlow({
                 <div className={`${styles.copyBlock} ${styles.revealCopy}`}>
                   <p className={styles.kicker}>人物出现</p>
                   <h1 id={titleId}>{displayName}，先被你看见。</h1>
-                  <p id="flow-description">{portraitUrl ? "你选择的照片，已经从轮廓里慢慢显现。" : "没有照片时，这里会安静地保留文字形象。"}</p>
+                  <p id="flow-description">{portraitUrl ? "你选择的照片已准备好。" : "没有照片时，会显示文字形象。"}</p>
                   <div className={styles.revealActions}><MemoryButton onClick={() => setStage("preview-greeting")}>听听 TA 的第一句话</MemoryButton></div>
                 </div>
               )}
@@ -890,7 +890,7 @@ export function FirstPresenceFlow({
               {stage === "preview-chat-one" && (
                 <div className={styles.copyBlock}>
                   <p className={styles.kicker}>再说一会儿</p>
-                  <h1 id={titleId}>慢慢说，我在听。</h1>
+                  <h1 id={titleId}>从一件事开始。</h1>
                   <PreviewConversation name={displayName} portraitUrl={portraitUrl} catchPhrase={catchPhrases} speechStyle={speechStyle} sharedMemory={sharedMemory} rounds={1} />
                   <div className={styles.actions}><MemoryButton onClick={leaveFlow}>再说一句</MemoryButton></div>
                 </div>

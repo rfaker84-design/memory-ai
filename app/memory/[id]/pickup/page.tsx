@@ -195,7 +195,7 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
     {startsFromPhoto && <section className={styles.photoSource} aria-labelledby="pickup-photo-source-heading">
       <h2 id="pickup-photo-source-heading">从一张照片说起</h2>
       <p role="note">只展示你为当前 TA 已上传的照片。选择一张后，只会在你确认保存时记录为来源；页面不会读取相册、麦克风或录音。</p>
-      {photoSources.length === 0 ? <p role="status">还没有可选的已上传照片。你可以先从一件小事说起，也可在创建 TA 时再添加照片。</p> : <fieldset>
+      {photoSources.length === 0 ? <p role="status">还没有可选的已上传照片。你可以先从一件小事说起，也可在创建人物资料时再添加照片。</p> : <fieldset>
         <legend>选择一张照片作为来源</legend>
         <div className={styles.photoGrid}>
           {photoSources.map((photo) => <TouchButton className={`${styles.photoChoice} ${selectedPhotoAssetId === photo.id ? styles.photoChoiceSelected : ""}`} key={photo.id} type="button" aria-pressed={selectedPhotoAssetId === photo.id} onClick={() => setSelectedPhotoAssetId(photo.id)}>

@@ -33,7 +33,7 @@ const EMOTION_GLOW: Record<string, string> = {
 };
 
 const PHASE_LABELS: Record<string, string> = {
-  idle: "在线", connecting: "连接中...", thinking: "思考中...", speaking: "正在说话", done: "在线",
+  idle: "安静播放", connecting: "连接中…", thinking: "正在生成", speaking: "正在生成", done: "安静播放",
 };
 
 export default function RealtimeAvatar({

@@ -255,7 +255,7 @@ function CompanionContent() {
 
         <header className={styles.heroHeader}>
           <strong>忆见</strong>
-          <span>AI 纪念陪伴 · 基于你确认的资料</span>
+          <span>AI生成 · 基于你确认的信息</span>
         </header>
 
         <div className={styles.heroCopy}>

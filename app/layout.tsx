@@ -5,7 +5,7 @@ import { RootDocument } from "./root-document";
 
 export const metadata: Metadata = {
   title: "忆见",
-  description: "让思念，被温柔记录",
+  description: "AI生成 · 基于你确认的信息",
   manifest: "/manifest.json",
   icons: { icon: "/icon-192.png", apple: "/icon-512.png" },
   appleWebApp: { capable: true, statusBarStyle: "default", title: "忆见" },

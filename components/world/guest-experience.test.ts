@@ -13,20 +13,14 @@ const publicExperience = experience.slice(
 test("the public route follows the approved family-frame encounter invitation", () => {
   for (const copy of [
     "忆见",
-    "隐私安全",
-    "想起一个人。",
-    "那些来不及好好告别的人，",
-    "那些一直放在心底的人，",
-    "现在，或许可以再次遇见。",
+    "从一张照片开始。",
+    "一张照片，一个称呼。",
     "体验一次遇见",
-    "只需一点点信息，看看 TA 会如何出现",
-    "登录后，隐私仅你可见",
   ]) {
     assert.match(publicExperience, new RegExp(copy));
   }
   assert.match(publicExperience, /family-frame-hero-v2\.png/);
-  assert.match(publicExperience, /href="\/privacy"/);
-  assert.match(publicExperience, /onClick=\{onStart\}>想起一个人/);
+  assert.match(publicExperience, /onClick=\{onStart\}>开始/);
   assert.doesNotMatch(publicExperience, /<video|体验 TA|创建 TA|数字生命|AI 视频|AI 对话|AI 声音/);
 });
 

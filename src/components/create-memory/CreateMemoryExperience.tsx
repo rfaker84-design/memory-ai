@@ -199,8 +199,8 @@ export function CreateMemoryExperience() {
           </figure>
         </div>
         <div className={styles.wakeCopy}>
-          <p>正在整理关于 TA 的记忆……</p>
-          <p>正在唤醒一段珍贵的回忆……</p>
+          <p>正在生成影像</p>
+          <p>通常需要一点时间。</p>
         </div>
       </section>
     </main>;
@@ -222,10 +222,10 @@ export function CreateMemoryExperience() {
     </header>
     <section className={styles.ritual}>
       {created ? <div className={styles.success}>
-        <div className={styles.eyebrow}>记忆已经收好</div>
-        <h1>{created.name}，已经在这里了。</h1>
-        <p>这是 AI 纪念陪伴，不代表真实意识或真实出现。</p>
-        <MemoryButton onClick={() => router.replace("/memory-world")}>进入相伴</MemoryButton>
+        <div className={styles.eyebrow}>资料已完成</div>
+        <h1>{created.name}的资料已保存。</h1>
+        <p>AI 生成内容基于你确认的信息。</p>
+        <MemoryButton onClick={() => router.replace("/memory-world")}>继续</MemoryButton>
       </div> : <>
         {stage === 0 ? <section className={styles.invitation} key="invitation">
           <div className={styles.paperSheet}>
@@ -234,7 +234,7 @@ export function CreateMemoryExperience() {
               <p className={styles.intro}>写下那个你最熟悉的名字。</p>
             </div>
             <label className={styles.memoryLine}>
-              <span>我一直叫 TA</span>
+              <span>怎么称呼</span>
               <input
                 aria-label="TA 称呼"
                 value={draft.name}
@@ -246,8 +246,8 @@ export function CreateMemoryExperience() {
                 autoFocus
               />
             </label>
-            <div className={styles.relationshipMoment} aria-label="与 TA 的关系">
-              <p>在你的记忆里，TA 是</p>
+            <div className={styles.relationshipMoment} aria-label="你们的关系">
+              <p>你们的关系</p>
               <div className={styles.relationshipChoices}>
               {relationships.map((relationship) => <button type="button" key={relationship} className={draft.relationship === relationship ? styles.relationshipActive : styles.relationship} onClick={() => update("relationship", relationship)}>
                 <strong>{relationship}</strong><span aria-hidden="true" />
@@ -257,32 +257,32 @@ export function CreateMemoryExperience() {
           </div>
           {error && <p className={styles.error} role="alert">{error}</p>}
           <div className={styles.actions}>
-            <MemoryButton className={styles.primaryAction} onClick={moveNext} rightSlot={<span aria-hidden="true">→</span>}>继续</MemoryButton>
+            <MemoryButton className={styles.primaryAction} onClick={moveNext} rightSlot={<span aria-hidden="true">→</span>}>下一步</MemoryButton>
           </div>
         </section> : <section className={styles.trace} key="trace">
           <div className={styles.photoPaper}>
             <label className={styles.portraitStage}>
-              {photoPreview ? <img src={photoPreview} alt="已选择的 TA 照片预览" /> : <span className={styles.portraitEmpty}><b>+</b><small>放上一张 TA 的照片</small><i>选择照片</i></span>}
+              {photoPreview ? <img src={photoPreview} alt="已选择的照片预览" /> : <span className={styles.portraitEmpty}><b>+</b><small>放上一张照片</small><i>选择照片</i></span>}
               <input type="file" accept="image/*" onChange={choosePhoto} />
               <span className={styles.changePortrait}>{photoPreview ? "更换照片" : "选择照片"}</span>
             </label>
           </div>
           <div className={styles.detailPaper}>
-            <h1>留下 TA 的痕迹</h1>
+            <h1>放上一张照片</h1>
             <label className={styles.paperField}>
-              <span>TA 的生日</span>
-              <input aria-label="TA 的生日" type="date" value={birthDate} onChange={(event: ChangeEvent<HTMLInputElement>) => setBirthDate(event.currentTarget.value)} required />
+              <span>生日</span>
+              <input aria-label="生日" type="date" value={birthDate} onChange={(event: ChangeEvent<HTMLInputElement>) => setBirthDate(event.currentTarget.value)} required />
             </label>
             <label className={styles.paperField}>
-              <span>如果 TA 看到你，最可能会说什么？</span>
-              <textarea aria-label="TA 最可能会说什么（可选）" value={draft.catchPhrases} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => update("catchPhrases", event.currentTarget.value)} placeholder="回来啦，吃饭了没有？" maxLength={30} />
+              <span>补充一句（可选）</span>
+              <textarea aria-label="补充一句（可选）" value={draft.catchPhrases} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => update("catchPhrases", event.currentTarget.value)} placeholder="例如：她说话时很有耐心。" maxLength={30} />
               <small>{draft.catchPhrases.length} / 30</small>
             </label>
-            <label className={styles.consent}><input type="checkbox" checked={draft.consent} onChange={(event) => update("consent", event.target.checked)} /><span>我已年满 18 周岁，确认拥有资料使用权，并同意隐私说明。</span></label>
-            <p className={styles.safetyCopy}>首发只收集你选择提交的照片和文字资料，不收集声音文件，也不提供声音克隆。未来回应越能贴近你确认的内容；忆见不是现实中的 TA。</p>
+            <label className={styles.consent}><input type="checkbox" checked={draft.consent} onChange={(event) => update("consent", event.target.checked)} /><span>我确认有权使用这张照片，并了解生成内容由 AI 合成。</span></label>
+            <p className={styles.safetyCopy}>生日仅用于年龄与安全确认。我们只处理你主动提交的照片和文字资料。</p>
             {error && <p className={styles.error} role="alert">{error}</p>}
             <div className={styles.actions}>
-              <MemoryButton className={styles.primaryAction} loading={status === "submitting" || status === "uploading"} onClick={creationUncertain ? recoverCreation : create} rightSlot={<span aria-hidden="true">→</span>}>{creationUncertain ? "确认创建结果" : "开始遇见"}</MemoryButton>
+              <MemoryButton className={styles.primaryAction} loading={status === "submitting" || status === "uploading"} onClick={creationUncertain ? recoverCreation : create} rightSlot={<span aria-hidden="true">→</span>}>{creationUncertain ? "确认结果" : "完成"}</MemoryButton>
             </div>
           </div>
         </section>}

@@ -53,7 +53,7 @@ export default function DissolutionStats({ state, personalityTone, closenessPct 
       </span>
 
       <div className="flex items-center gap-1.5">
-        <span style={{ fontSize: 8, color: "rgba(160,150,140,0.18)" }}>亲密度</span>
+        <span style={{ fontSize: 8, color: "rgba(160,150,140,0.18)" }}>互动记录</span>
         <div style={{ width: 36, height: 2, borderRadius: 1, background: "rgba(255,255,255,0.04)" }}>
           <motion.div
             animate={{ width: closenessPct.toString() + "%" }}

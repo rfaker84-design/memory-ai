@@ -97,7 +97,7 @@ const TEMPLATES: Record<string, PersonaProfile> = {
       emotionalWeight: "light",
     },
     memoryAnchors: [],
-    relationshipPosition: "我在这里",
+    relationshipPosition: "AI生成 · 基于你确认的信息",
   },
 };
 

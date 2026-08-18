@@ -21,7 +21,7 @@ function isPhoto(item: PickedMedia): boolean {
 
 function assertPhotoOnly(media: readonly PickedMedia[]): void {
   if (!media.length || !media.every(isPhoto)) {
-    throw new CreationFlowError("创建 TA 仅支持照片，不录音或上传声音");
+    throw new CreationFlowError("创建人物资料仅支持照片，不录音或上传声音");
   }
 }
 

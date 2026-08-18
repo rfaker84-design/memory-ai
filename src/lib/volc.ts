@@ -81,7 +81,7 @@ export async function callVolcLLM(
       max_tokens: 200,
     });
 
-    const text = resp.choices?.[0]?.message?.content?.trim() || "我在这里。";
+    const text = resp.choices?.[0]?.message?.content?.trim() || "这次没有生成回复，请稍后重试。";
     const emotion = detectEmotion(text);
 
     return { text, emotion };
