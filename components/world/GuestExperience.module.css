@@ -1,3 +1,146 @@
+.guestExperience {
+  --guest-ink: #30271f;
+  --guest-muted: #7b7064;
+  --guest-ivory: #f5efe6;
+  --guest-button: #c6a484;
+
+  min-height: 100dvh;
+  overflow-x: clip;
+  color: var(--guest-ink);
+  background: var(--guest-ivory);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
+.guestHero {
+  position: relative;
+  min-height: max(54svh, 430px);
+  overflow: hidden;
+  isolation: isolate;
+  background: #e5d7c5;
+}
+
+.guestHeroImage,
+.guestHeroVeil {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.guestHeroImage {
+  z-index: -2;
+  object-fit: cover;
+  object-position: 48% 35%;
+  animation: guestSceneIn 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.guestHeroVeil {
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(250, 247, 241, 0.92) 0%, rgba(250, 247, 241, 0.78) 40%, rgba(250, 247, 241, 0.16) 72%, rgba(250, 247, 241, 0.02) 100%),
+    linear-gradient(180deg, rgba(250, 247, 241, 0.2), rgba(250, 247, 241, 0) 52%, rgba(245, 239, 230, 0.58));
+}
+
+.guestHeader {
+  display: flex;
+  align-items: center;
+  min-height: 70px;
+  padding: max(20px, calc(env(safe-area-inset-top) + 12px)) 24px 0;
+}
+
+.guestWordmark {
+  color: rgba(48, 39, 31, 0.92);
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+  font-size: 21px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+}
+
+.guestHeroCopy {
+  position: absolute;
+  inset: auto 24px 44px;
+  animation: guestCopyIn 720ms 80ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.guestHeroCopy h1,
+.guestInvitation h2 {
+  margin: 0;
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+  font-weight: 400;
+}
+
+.guestHeroCopy h1 {
+  max-width: 7em;
+  font-size: clamp(42px, 12vw, 68px);
+  line-height: 1.12;
+  letter-spacing: 0.035em;
+}
+
+.guestHeroCopy p {
+  margin: 20px 0 0;
+  color: rgba(62, 51, 41, 0.72);
+  font-size: 15px;
+  line-height: 1.75;
+  letter-spacing: 0.025em;
+}
+
+.guestInvitation {
+  display: grid;
+  min-height: max(46svh, 360px);
+  place-items: center;
+  padding: 54px 24px max(46px, calc(env(safe-area-inset-bottom) + 30px));
+  background: var(--guest-ivory);
+}
+
+.guestInvitationInner {
+  width: min(100%, 390px);
+  display: grid;
+  justify-items: center;
+  text-align: center;
+}
+
+.guestInvitation h2 {
+  font-size: clamp(28px, 8vw, 38px);
+  line-height: 1.3;
+  letter-spacing: 0.05em;
+}
+
+.guestInvitation p {
+  margin: 12px 0 30px;
+  color: var(--guest-muted);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+}
+
+.guestPrimaryAction {
+  width: min(100%, 342px);
+  min-height: 54px;
+  border: 0;
+  border-radius: 999px;
+  color: #fffaf3;
+  background: var(--guest-button);
+  box-shadow: 0 9px 20px rgba(109, 79, 49, 0.12);
+  font: 500 16px/1 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  letter-spacing: 0.09em;
+  cursor: pointer;
+  transition: transform 90ms cubic-bezier(0.16, 1, 0.3, 1), background-color 180ms ease;
+}
+
+.guestPrimaryAction:hover { background: #b99270; }
+.guestPrimaryAction:active { transform: scale(0.97); }
+.guestPrimaryAction:focus-visible { outline: 2px solid #6f5138; outline-offset: 4px; }
+
+@keyframes guestSceneIn {
+  from { opacity: 0.82; transform: scale(1.012); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes guestCopyIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .experience {
   --home-warm-black: #0d0a07;
   --home-soft-white: #f8f3ea;
@@ -609,6 +752,35 @@
 }
 
 @media (min-width: 760px) {
+  .guestHero {
+    min-height: min(64svh, 760px);
+  }
+
+  .guestHeroImage {
+    object-position: 58% 42%;
+  }
+
+  .guestHeader {
+    padding-inline: clamp(40px, 6vw, 86px);
+  }
+
+  .guestHeroCopy {
+    inset-inline: clamp(10vw, 16vw, 18vw) auto;
+    bottom: clamp(74px, 12vh, 132px);
+  }
+
+  .guestHeroCopy h1 {
+    font-size: clamp(58px, 5.6vw, 88px);
+  }
+
+  .guestHeroCopy p {
+    font-size: 17px;
+  }
+
+  .guestInvitation {
+    min-height: 44svh;
+  }
+
   .experience { padding-inline: 40px; }
   .experience[data-stage="entry"] { padding-inline: 0; }
   .entry, .awakening, .companion { padding-top: 52px; }
@@ -651,6 +823,16 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .guestHeroImage,
+  .guestHeroCopy {
+    animation: none;
+    transform: none;
+  }
+
+  .guestPrimaryAction {
+    transition: none;
+  }
+
   .video {
     display: none;
     transition: none;

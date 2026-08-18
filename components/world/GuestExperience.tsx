@@ -54,6 +54,40 @@ export type HomePerson = {
   image: string | null;
 };
 
+function PublicGuestExperience({ onStart }: Pick<GuestExperienceProps, "onStart">) {
+  const reducedMotion = useReducedMotion();
+
+  return (
+    <main className={styles.guestExperience} data-reduced-motion={reducedMotion ? "true" : "false"}>
+      <section className={styles.guestHero} aria-labelledby="guest-entry-title">
+        <img
+          className={styles.guestHeroImage}
+          src="/splash/owner-confirmed-warm-presence.png"
+          alt="日光里的家庭记忆场景"
+          decoding="async"
+          fetchPriority="high"
+        />
+        <span className={styles.guestHeroVeil} aria-hidden="true" />
+        <header className={styles.guestHeader}>
+          <span className={styles.guestWordmark}>忆见</span>
+        </header>
+        <div className={styles.guestHeroCopy}>
+          <h1 id="guest-entry-title">想起一个人。</h1>
+          <p>那些一直放在心底的人，<br />或许，可以再遇见一次。</p>
+        </div>
+      </section>
+
+      <section className={styles.guestInvitation} aria-labelledby="guest-invitation-title">
+        <div className={styles.guestInvitationInner}>
+          <h2 id="guest-invitation-title">体验一次遇见</h2>
+          <p>从一个人开始。</p>
+          <button className={styles.guestPrimaryAction} type="button" onClick={onStart}>想起一个人</button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 export function GuestExperience({
   authenticated = false,
   people = [],
@@ -61,6 +95,8 @@ export function GuestExperience({
   onStart = onLogin,
   onOpenPerson,
 }: GuestExperienceProps) {
+  if (!authenticated) return <PublicGuestExperience onStart={onStart} />;
+
   const reducedMotion = useReducedMotion();
   const [stage, setStage] = useState<GuestStage>("entry");
   const [videoEnabled, setVideoEnabled] = useState(false);
