@@ -119,7 +119,7 @@
 .identity {
   /* Keep both identity lines inside the existing bottom transition so the
      portrait's face, neck, and shoulders remain an uninterrupted focal area. */
-  bottom: 0.55rem;
+  bottom: 0.2rem;
 }
 
 .identity h1 {
