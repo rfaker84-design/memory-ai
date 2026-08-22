@@ -42,20 +42,49 @@ npm run preflight:staging-web-capacity -- \
   --candidate-unpacked <exact-unpacked-release-directory>
 ```
 
-Use `preflight:staging-worker-capacity` for a Worker artifact, supplying a
-**distinct, verified Worker rollback SHA**. The gate obtains the target disk's
-available bytes and active PM2 cwd over SSH, verifies the active and rollback
-release paths, and blocks when:
+Use `preflight:staging-worker-capacity` for a Worker artifact without a
+historical rollback argument. A Worker preflight treats the serving immutable
+release as `previous_release`: it verifies the active PM2 cwd, SHA-named
+immutable directory, `SHA256SUMS`, PM2 online/zero unstable restarts, and a
+read-only Worker runtime dependency smoke. The candidate is still blocked when
+the target disk does not have:
+
+```bash
+npm run preflight:staging-worker-capacity -- \
+  --ssh-target memoryai-prod \
+  --remote-root /home/ubuntu/memoryai-staging \
+  --candidate-artifact <exact-worker-artifact.tar.gz> \
+  --candidate-unpacked <exact-unpacked-worker-directory>
+```
 
 ```text
 available < max(8 GiB, 2 × candidate_unpacked_size + 5 GiB)
 ```
 
-It must never make space by deleting the active or rollback release. After a
-successful cutover, the matching `postflight:staging-*-capacity` command must
-verify at least 5 GiB free, that the active and rollback releases still exist,
-and that the exact temporary candidate package path has been removed. A Worker
-deployment is NO-GO until a distinct verified Worker rollback exists.
+It must never make space by deleting the active release. A Worker candidate is
+unpacked only into a new SHA-named immutable release directory, where it must
+complete exact-artifact, ready, and runtime smoke checks before PM2 is
+switched. The promotion journal records `previous_release`, candidate release,
+start time, and PM2 cwd before the switch. On success, the candidate becomes
+current and `previous_release` becomes the distinct verified rollback. On a
+failed post-switch PM2/ready/dependency/smoke/unstable-restart check, restore
+`previous_release`, verify it is online, and retain the candidate for
+diagnosis; never retry a business task or delete that candidate automatically.
+
+Only a system with no active Worker at all may use the explicit `--bootstrap`
+path. Absence of an older historical rollback is not bootstrap and must not
+block a normal promotion from a verified active Worker. After a successful
+cutover, `postflight:staging-worker-capacity` receives the recorded
+`--rollback-sha <previous-release-sha>` and must verify both independent paths,
+the rollback's minimal runtime smoke, at least 5 GiB free, and removal of the
+exact temporary candidate package path.
+
+The promotion helper is intentionally dry-run by default. Its `dry-run` mode
+must be used to validate the recorded transaction before an approved executor
+performs a PM2 cutover; it does not start PM2, submit a job, or modify release
+directories. The executor supplies the same record to the helper's promotion
+state machine so candidate failure invokes the recorded `previous_release`
+restoration path and preserves the candidate evidence.
 
 ## Planned maintenance sequence
 

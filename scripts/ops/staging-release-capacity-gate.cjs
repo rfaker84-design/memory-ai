@@ -125,30 +125,35 @@ function candidateSizing(args) {
   };
 }
 
-function remoteInspection({ sshTarget, remoteRoot, component, rollbackSha, candidateTempPath = null }) {
+function remoteInspection({ sshTarget, remoteRoot, component, rollbackSha = null, candidateTempPath = null }) {
   const remoteScript = [
     "set -euo pipefail",
     'root="$1"',
     'component="$2"',
     'rollback_sha="$3"',
     'candidate_temp="$' + '{4:-}"',
+    '[ "$rollback_sha" = "-" ] && rollback_sha=""',
+    '[ "$candidate_temp" = "-" ] && candidate_temp=""',
     'release_root="$root/releases"',
     '[ -d "$release_root" ] || { echo "CAPACITY_GATE_REMOTE_ROOT_MISSING:$release_root" >&2; exit 61; }',
-    '[ -d "$release_root/$rollback_sha" ] || { echo "CAPACITY_GATE_ROLLBACK_MISSING:$release_root/$rollback_sha" >&2; exit 62; }',
+    'if [ -n "$rollback_sha" ]; then [ -d "$release_root/$rollback_sha" ] || { echo "CAPACITY_GATE_ROLLBACK_MISSING:$release_root/$rollback_sha" >&2; exit 62; }; fi',
     'if [ "$component" = web ]; then app=memoryai-staging; active_release=$(readlink -f "$root/current"); [ -d "$active_release/runtime" ] || { echo "CAPACITY_GATE_WEB_CURRENT_INVALID:$active_release" >&2; exit 63; }; else app=memoryai-staging-video-worker; active_release=""; fi',
     'pid=$(pm2 pid "$app" | tail -n 1 | tr -d "[:space:]")',
     'case "$pid" in ""|0|*[!0-9]*) echo "CAPACITY_GATE_PM2_PID_MISSING:$app" >&2; exit 64;; esac',
     'cwd=$(readlink -f "/proc/$pid/cwd")',
     'case "$cwd" in "$release_root"/*) ;; *) echo "CAPACITY_GATE_PM2_CWD_OUTSIDE_RELEASES:$cwd" >&2; exit 65;; esac',
     'if [ "$component" = worker ]; then active_release=$(dirname "$cwd"); fi',
-    '[ "$active_release" != "$release_root/$rollback_sha" ] || { echo "CAPACITY_GATE_DISTINCT_ROLLBACK_REQUIRED:$rollback_sha" >&2; exit 66; }',
+    'if [ -n "$rollback_sha" ]; then [ "$active_release" != "$release_root/$rollback_sha" ] || { echo "CAPACITY_GATE_DISTINCT_ROLLBACK_REQUIRED:$rollback_sha" >&2; exit 66; }; fi',
     'if [ "$component" = web ]; then [ "$cwd" = "$active_release/runtime" ] || { echo "CAPACITY_GATE_WEB_CWD_MISMATCH:$cwd" >&2; exit 67; }; else [ "$cwd" = "$active_release/worker" ] || { echo "CAPACITY_GATE_WORKER_CWD_MISMATCH:$cwd" >&2; exit 68; }; fi',
+    String.raw`if [ "$component" = worker ]; then active_sha=$(basename "$active_release"); printf "%s" "$active_sha" | grep -Eq "^[0-9a-f]{40}$" || { echo "CAPACITY_GATE_WORKER_RELEASE_NOT_IMMUTABLE:$active_release" >&2; exit 70; }; [ -f "$active_release/SHA256SUMS" ] || { echo "CAPACITY_GATE_WORKER_CHECKSUM_MISSING:$active_release" >&2; exit 71; }; (cd "$active_release" && sha256sum --check SHA256SUMS >/dev/null) || { echo "CAPACITY_GATE_WORKER_CHECKSUM_FAILED:$active_release" >&2; exit 72; }; pm2_health=$(pm2 jlist | node -e 'let input = ""; process.stdin.on("data", (chunk) => input += chunk).on("end", () => { const app = JSON.parse(input).find((item) => item.name === process.argv[1]); if (!app) process.exit(2); const env = app.pm2_env || {}; process.stdout.write(String(env.status) + ":" + String(env.unstable_restarts)); });' "$app") || { echo "CAPACITY_GATE_WORKER_PM2_STATE_UNREADABLE:$app" >&2; exit 73; }; [ "$pm2_health" = "online:0" ] || { echo "CAPACITY_GATE_WORKER_PM2_UNHEALTHY:$pm2_health" >&2; exit 74; }; test -f "$cwd/video-worker.cjs" || { echo "CAPACITY_GATE_WORKER_ENTRY_MISSING:$cwd" >&2; exit 75; }; node --check "$cwd/video-worker.cjs" || { echo "CAPACITY_GATE_WORKER_SYNTAX_FAILED:$cwd" >&2; exit 76; }; (cd "$cwd" && node -e 'require("sharp");') || { echo "CAPACITY_GATE_WORKER_RUNTIME_DEPENDENCY_FAILED:$cwd" >&2; exit 77; }; fi`,
+    String.raw`if [ "$component" = worker ] && [ -n "$rollback_sha" ]; then rollback_worker="$release_root/$rollback_sha/worker"; test -f "$rollback_worker/video-worker.cjs" || { echo "CAPACITY_GATE_WORKER_ROLLBACK_ENTRY_MISSING:$rollback_worker" >&2; exit 78; }; (cd "$release_root/$rollback_sha" && sha256sum --check SHA256SUMS >/dev/null) || { echo "CAPACITY_GATE_WORKER_ROLLBACK_CHECKSUM_FAILED:$rollback_sha" >&2; exit 79; }; node --check "$rollback_worker/video-worker.cjs" || { echo "CAPACITY_GATE_WORKER_ROLLBACK_SYNTAX_FAILED:$rollback_worker" >&2; exit 80; }; (cd "$rollback_worker" && node -e 'require("sharp");') || { echo "CAPACITY_GATE_WORKER_ROLLBACK_RUNTIME_DEPENDENCY_FAILED:$rollback_worker" >&2; exit 81; }; fi`,
     'if [ -n "$candidate_temp" ] && [ -e "$candidate_temp" ]; then echo "CAPACITY_GATE_TEMP_NOT_CLEANED:$candidate_temp" >&2; exit 69; fi',
     'available=$(df -B1 --output=avail "$root" | tail -n 1 | tr -d "[:space:]")',
     'echo "availableBytes=$available"',
     'echo "activeRelease=$active_release"',
     'echo "activeCwd=$cwd"',
-    'echo "rollbackRelease=$release_root/$rollback_sha"',
+    'echo "rollbackRelease=${rollback_sha:+$release_root/$rollback_sha}"',
+    'if [ "$component" = worker ]; then echo "currentRuntimeSmoke=pass"; fi',
   ].join("\n");
 
   const result = spawnSync("ssh", [
@@ -158,8 +163,8 @@ function remoteInspection({ sshTarget, remoteRoot, component, rollbackSha, candi
     "--",
     remoteRoot,
     component,
-    rollbackSha,
-    candidateTempPath ?? "",
+    rollbackSha ?? "-",
+    candidateTempPath ?? "-",
   ], { input: remoteScript, encoding: "utf8" });
   if (result.error) fail("CAPACITY_GATE_SSH_FAILED", result.error.message);
   if (result.status !== 0) {
@@ -187,7 +192,7 @@ function printPreflight({ component, sizing, remote }) {
     "availableBytes=" + remote.availableBytes,
     "requiredBytes=" + sizing.requiredFreeBytes,
     "activeRelease=" + remote.activeRelease,
-    "rollbackRelease=" + remote.rollbackRelease,
+    component === "worker" ? "previousRelease=" + remote.activeRelease : "rollbackRelease=" + remote.rollbackRelease,
   ].join(" "));
   if (state !== "PASS") process.exitCode = 10;
 }
@@ -196,7 +201,9 @@ function preflight(args) {
   const component = assertComponent(option(args, "--component", { required: true }));
   const sshTarget = option(args, "--ssh-target", { required: true });
   const remoteRoot = assertSafeRemotePath(option(args, "--remote-root", { required: true }), "CAPACITY_GATE_REMOTE_ROOT_INVALID");
-  const rollbackSha = assertSha(option(args, "--rollback-sha", { required: true }), "CAPACITY_GATE_ROLLBACK_SHA_INVALID");
+  const rollbackSha = component === "web"
+    ? assertSha(option(args, "--rollback-sha", { required: true }), "CAPACITY_GATE_ROLLBACK_SHA_INVALID")
+    : null;
   const sizing = candidateSizing(args);
   const remote = remoteInspection({ sshTarget, remoteRoot, component, rollbackSha });
   printPreflight({ component, sizing, remote });
