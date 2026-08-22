@@ -33,6 +33,7 @@ import { AiGeneratedLabel } from "../safety/AiGeneratedLabel";
 import { resolveSmsLoginAction } from "../auth/loginExperienceClient";
 import { fetchAuthRequestJson } from "../auth/authRequestClient";
 import { DirectLoginExperience } from "./DirectLoginExperience";
+import { reportProductInteraction } from "../product-metrics/productInteractionClient";
 
 type EntryStage = "create" | "login-phone" | "preview-create";
 type FlowStage =
@@ -450,6 +451,14 @@ export function FirstPresenceFlow({
         ...(photoFile ? { photo: photoFile } : {}),
       },
     });
+    if (photoFile) {
+      reportProductInteraction({
+        eventName: "photo_upload_succeeded",
+        idempotencyKey: `metrics:v1:photo-upload:${memoryId}`,
+        memoryId,
+        properties: { surface: "first_presence" },
+      });
+    }
     if (conversationNavigationCommitted.current) return;
     conversationNavigationCommitted.current = true;
     markCreationChatHandoff(memoryId);

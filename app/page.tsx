@@ -12,6 +12,7 @@ import { FirstPresenceFlow } from "../src/components/first-presence/FirstPresenc
 import StaticBrandLaunch from "../src/components/launch/StaticBrandLaunch";
 import { claimBrandLaunch } from "../src/components/launch/staticBrandLaunchPolicy";
 import { loadOwnedMediaUrl } from "../src/components/memory/ownedMemoryClient";
+import { reportProductInteraction } from "../src/components/product-metrics/productInteractionClient";
 import { MotionProvider } from "../src/motion";
 
 function HomeLoadingFallback() {
@@ -156,6 +157,15 @@ export default function HomePage() {
     setStage("home");
   }, []);
 
+  const startGuestExperience = useCallback(() => {
+    reportProductInteraction({
+      eventName: "guest_experience_started",
+      idempotencyKey: "metrics:v1:guest-experience-started",
+      properties: { surface: "guest_home" },
+    });
+    beginCreation();
+  }, [beginCreation]);
+
   return (
     <MotionProvider>
       {stage === "checking" && <HomeLoadingFallback />}
@@ -165,7 +175,7 @@ export default function HomePage() {
           authenticated={homeState.authenticated}
           people={homeState.people}
           onLogin={openLogin}
-          onStart={beginCreation}
+          onStart={startGuestExperience}
           onOpenPerson={openCompanion}
         />
       )}

@@ -9,6 +9,7 @@ import { fetchPickupRequestJson, PickupRequestError } from "@/src/components/mem
 import { AiGeneratedLabel } from "@/src/components/safety/AiGeneratedLabel";
 import { useQuietCompanionPresence } from "@/src/components/first-presence/quietCompanionPresence";
 import { useReducedMotion } from "@/src/motion";
+import { reportProductInteraction } from "@/src/components/product-metrics/productInteractionClient";
 
 type VideoJob = {
   id: string;
@@ -20,7 +21,7 @@ type VideoJob = {
 
 type EncounterState =
   | { status: "loading" }
-  | { status: "ready"; name: string; portraitUrl: string | null; playbackUrl: string | null }
+  | { status: "ready"; name: string; portraitUrl: string | null; playbackUrl: string | null; playbackJobId: string | null }
   | { status: "unauthenticated" }
   | { status: "timeout" }
   | { status: "error" };
@@ -40,6 +41,9 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
   const [playbackComplete, setPlaybackComplete] = useState(false);
   const [encounterViewed, setEncounterViewed] = useState(false);
   const leaveTimer = useRef<number | null>(null);
+  const playbackLastTime = useRef(0);
+  const playbackWatchedSeconds = useRef(0);
+  const playback3sRecorded = useRef(false);
   const reducedMotion = useReducedMotion();
   const presence = useQuietCompanionPresence({ reducedMotion, replying: false });
   const useStaticEncounter = presence === "static";
@@ -74,7 +78,7 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
             }
           }
         }
-        if (!signal?.aborted) setState({ status: "ready", name: memory.name, portraitUrl, playbackUrl });
+        if (!signal?.aborted) setState({ status: "ready", name: memory.name, portraitUrl, playbackUrl, playbackJobId: preview?.id ?? null });
     } catch (error) {
       if (signal?.aborted) return;
       if (error instanceof OwnedMemoryRequestError && error.status === 401) setState({ status: "unauthenticated" });
@@ -97,6 +101,21 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
     window.localStorage.setItem(encounterViewedKey(memoryId), "viewed");
     setEncounterViewed(true);
   };
+  const observePlayback = (video: HTMLVideoElement, playbackJobId: string | null) => {
+    const current = video.currentTime;
+    const delta = current - playbackLastTime.current;
+    playbackLastTime.current = current;
+    if (delta <= 0 || delta > 1.5 || playback3sRecorded.current) return;
+    playbackWatchedSeconds.current += delta;
+    if (playbackWatchedSeconds.current < 3 || !playbackJobId) return;
+    playback3sRecorded.current = true;
+    reportProductInteraction({
+      eventName: "first_presence_video_played_3s",
+      idempotencyKey: `metrics:v1:first-presence-played-3s:${playbackJobId}`,
+      memoryId,
+      properties: { elapsed_ms: 3000, job_id: playbackJobId },
+    });
+  };
   const afterPlayback = () => {
     // Keep the last frame briefly visible, then enter the disclosed chat.
     setPlaybackComplete(true);
@@ -115,7 +134,7 @@ export default function EncounterPage({ params }: { params: Promise<{ id: string
       <h1 style={{ margin: 0 }}>与 {state.name} 的第一次遇见</h1>
       {playbackComplete && <p role="status" aria-live="polite">影像播放结束，正在进入相伴。</p>}
       {state.playbackUrl && !useStaticEncounter && !encounterViewed ? <div style={{ position: "relative" }}>
-        <video src={state.playbackUrl} autoPlay playsInline controls={false} controlsList="nodownload noremoteplayback" disablePictureInPicture onPlay={markEncounterViewed} onEnded={afterPlayback} style={{ width: "100%", borderRadius: 20, background: "#15120e" }} aria-label={`${state.name} 的首次相遇影像`} />
+        <video src={state.playbackUrl} autoPlay playsInline controls={false} controlsList="nodownload noremoteplayback" disablePictureInPicture onPlay={(event) => { playbackLastTime.current = event.currentTarget.currentTime; markEncounterViewed(); }} onSeeking={(event) => { playbackLastTime.current = event.currentTarget.currentTime; }} onTimeUpdate={(event) => observePlayback(event.currentTarget, state.playbackJobId)} onEnded={afterPlayback} style={{ width: "100%", borderRadius: 20, background: "#15120e" }} aria-label={`${state.name} 的首次相遇影像`} />
         <span data-ai-generated-overlay="true" aria-hidden="true" style={{ position: "absolute", top: 12, right: 12, pointerEvents: "none", borderRadius: 999, padding: "4px 8px", background: "rgba(9,8,7,0.78)", color: "#fff", fontSize: 12 }}>AI生成</span>
       </div> : <>
         {state.portraitUrl ? <img src={state.portraitUrl} alt={`${state.name} 的照片`} style={{ width: "100%", aspectRatio: "9 / 16", objectFit: "cover", borderRadius: 20 }} /> : <div role="img" aria-label={`${state.name} 的静态形象`} style={{ minHeight: 360, display: "grid", placeItems: "center", borderRadius: 20, background: "#15120e" }}>{state.name}</div>}

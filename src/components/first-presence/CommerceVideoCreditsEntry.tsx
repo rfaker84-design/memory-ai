@@ -40,6 +40,7 @@ import {
   TrustConsentRequestError,
 } from "../trust/trustConsentClient";
 import styles from "./CommerceVideoCreditsEntry.module.css";
+import { reportProductInteraction } from "../product-metrics/productInteractionClient";
 
 type View = "choices" | "invite" | "packages";
 
@@ -78,6 +79,7 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
   const [orderRecovery, setOrderRecovery] = useState<CommerceVideoOrderRecovery | null>(null);
   const [occasionOffers, setOccasionOffers] = useState<OccasionRewardOffer[]>([]);
   const balanceAttempt = useRef(0);
+  const paywallExposureRecorded = useRef(false);
 
   const refreshBalance = useCallback(async () => {
     const attempt = balanceAttempt.current + 1;
@@ -95,9 +97,21 @@ export function CommerceVideoCreditsEntry({ memoryId }: Props) {
 
   useEffect(() => {
     setCommercialAccepted(false);
+    paywallExposureRecorded.current = false;
     const recovery = readCommerceVideoOrderRecovery();
     setOrderRecovery(recovery?.memoryId === memoryId ? recovery : null);
   }, [memoryId]);
+
+  useEffect(() => {
+    if (view !== "packages" || paywallExposureRecorded.current) return;
+    paywallExposureRecorded.current = true;
+    reportProductInteraction({
+      eventName: "paywall_viewed",
+      idempotencyKey: `metrics:v1:paywall-viewed:${memoryId}`,
+      memoryId,
+      properties: { surface: "commerce" },
+    });
+  }, [memoryId, view]);
 
   useEffect(() => {
     void refreshBalance();

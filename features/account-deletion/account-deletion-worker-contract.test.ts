@@ -13,6 +13,9 @@ test("account deletion worker has exclusive claim, retry and redacted batch obse
   assert.match(worker, /DELETE FROM public\.long_term_memories/);
   assert.match(worker, /DELETE FROM public\.video_generation_jobs/);
   assert.match(worker, /DELETE FROM public\.business_funnel_events/);
+  assert.match(worker, /DELETE FROM public\.product_interaction_events/);
+  assert.match(worker, /DELETE FROM public\.product_first_touch_attributions/);
+  assert.match(worker, /DELETE FROM public\.product_metrics_subject_flags/);
   assert.match(worker, /DELETE FROM public\.auth_external_identities/);
   assert.match(worker, /archiveFinancialRecords/);
   assert.match(worker, /purgeLiveFinancialProductRecords/);
