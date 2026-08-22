@@ -1,6 +1,7 @@
 const { cpSync, existsSync, mkdirSync, rmSync } = require("node:fs");
 const { execFileSync } = require("node:child_process");
 const path = require("node:path");
+const { writeReleaseCapacityMetadata } = require("./staging-release-capacity-gate.cjs");
 
 const root = path.resolve(__dirname, "../..");
 const outputDirectory = process.env.VIDEO_WORKER_RELEASE_OUTPUT
@@ -48,4 +49,5 @@ try {
   throw error;
 }
 
-console.log(`VIDEO_WORKER_RELEASE_PACKAGED output=${outputDirectory}`);
+const capacity = writeReleaseCapacityMetadata({ outputDirectory, component: "worker" });
+console.log(`VIDEO_WORKER_RELEASE_PACKAGED output=${outputDirectory} candidateUnpackedBytes=${capacity.candidateUnpackedBytes}`);

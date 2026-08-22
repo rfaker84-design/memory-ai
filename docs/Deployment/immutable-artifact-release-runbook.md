@@ -27,6 +27,36 @@ Missing, mismatched, or unverified input is a release **NO-GO**. A source
 checkout, `git pull`, `npm install`, local rebuild, mutable symlink target, or
 artifact without a matching manifest is never a release unit.
 
+## Staging candidate capacity gate
+
+Before an artifact is uploaded, copied, or unpacked on Staging, the release
+operator must run the matching capacity preflight from the sealed source
+checkout. This is a fail-closed release prerequisite, not an advisory log.
+
+```bash
+npm run preflight:staging-web-capacity -- \
+  --ssh-target memoryai-prod \
+  --remote-root /home/ubuntu/memoryai-staging \
+  --rollback-sha <verified-web-rollback-sha> \
+  --candidate-artifact <exact-artifact.tar.gz> \
+  --candidate-unpacked <exact-unpacked-release-directory>
+```
+
+Use `preflight:staging-worker-capacity` for a Worker artifact, supplying a
+**distinct, verified Worker rollback SHA**. The gate obtains the target disk's
+available bytes and active PM2 cwd over SSH, verifies the active and rollback
+release paths, and blocks when:
+
+```text
+available < max(8 GiB, 2 × candidate_unpacked_size + 5 GiB)
+```
+
+It must never make space by deleting the active or rollback release. After a
+successful cutover, the matching `postflight:staging-*-capacity` command must
+verify at least 5 GiB free, that the active and rollback releases still exist,
+and that the exact temporary candidate package path has been removed. A Worker
+deployment is NO-GO until a distinct verified Worker rollback exists.
+
 ## Planned maintenance sequence
 
 1. Perform read-only preflight: record production PM2 identity, active
