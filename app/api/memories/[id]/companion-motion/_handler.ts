@@ -12,6 +12,10 @@ import {
   type AuthSession,
   verifyRequestSession,
 } from "@/src/server/auth";
+import {
+  findStagingOwnerReadOnlyApprovedIdle,
+  resolveStagingOwnerReadOnlyReviewForSession,
+} from "@/src/server/auth/staging-owner-readonly-review";
 import { DatabaseDependencyError } from "@/src/server/database";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 import {
@@ -63,6 +67,16 @@ export function createCompanionMotionHandler(
         if (!session) return json({ error: "UNAUTHENTICATED" }, { status: 401 });
         if ([...request.nextUrl.searchParams.keys()].length > 0) return json({ error: "INVALID_COMPANION_MOTION_REQUEST" }, { status: 400 });
         const { id: memoryId } = await params;
+        if (session.readOnlyReview) {
+          const review = await resolveStagingOwnerReadOnlyReviewForSession(session);
+          if (!review || review.memoryId !== memoryId) return json({ error: "COMPANION_MOTION_UNAVAILABLE" }, { status: 404 });
+          const idle = await findStagingOwnerReadOnlyApprovedIdle({ userId: review.userId, memoryId: review.memoryId });
+          if (!idle) return json({ error: "COMPANION_MOTION_UNAVAILABLE" }, { status: 404 });
+          return json({
+            eligible: true,
+            slots: [{ jobId: idle.jobId, variant: "idle", status: "succeeded", artifactAvailable: true }],
+          });
+        }
         return json(await serviceFactory().getState({ externalUserId: session.externalUserId, memoryId }));
       } catch (error) { return failure(error); }
     },

@@ -13,6 +13,7 @@ import {
   type VideoArtifactReaderPort,
 } from "@/features/video";
 import { type AuthSession, verifyRequestSession } from "@/src/server/auth";
+import { resolveStagingOwnerReadOnlyReviewForSession } from "@/src/server/auth/staging-owner-readonly-review";
 import { DatabaseDependencyError } from "@/src/server/database";
 import { getVideoArtifactRuntimeConfiguration } from "@/features/video/video-artifact-runtime";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
@@ -75,6 +76,10 @@ export function createFirstPresencePlaybackReadHandler(
         const resolved = dependencyFactory();
         const claims = resolved.signer.verify(token);
         if (!claims) return unavailable();
+        if (session.readOnlyReview) {
+          const review = await resolveStagingOwnerReadOnlyReviewForSession(session);
+          if (!review || review.memoryId !== claims.memoryId) return unavailable();
+        }
         const artifact = await resolved.artifacts.findApprovedForOwner({
           externalUserId: session.externalUserId,
           memoryId: claims.memoryId,

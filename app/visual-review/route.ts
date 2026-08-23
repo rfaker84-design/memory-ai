@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { issueSession, setSessionCookie, verifyRequestSession } from "@/src/server/auth";
-import { queryPostgres } from "@/src/server/database";
+import { verifyRequestSession } from "@/src/server/auth";
+import {
+  findStagingOwnerReadOnlyApprovedIdle,
+  resolveStagingOwnerReadOnlyReviewForSession,
+} from "@/src/server/auth/staging-owner-readonly-review";
 import {
   aiGeneratedPlaybackHeaders,
   createVideoArtifactStorageFromEnvironment,
@@ -18,82 +21,32 @@ const REVIEW_COMPANION_MOTION_QUERY = "reviewCompanionMotion";
 const REVIEW_COMPANION_PLAYBACK_QUERY = "reviewCompanionPlayback";
 const REVIEW_COMPANION_MEDIA_QUERY = "reviewCompanionMedia";
 const PLAYBACK_TOKEN_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
-const REVIEW_TTL_SECONDS = 30 * 60;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-type OwnerSubject = Readonly<{ id: string; external_id: string }>;
 type ApprovedIdleSlot = Readonly<{
   jobId: string;
   variant: "idle";
   status: "succeeded";
   artifactAvailable: true;
 }>;
-type ApprovedIdleArtifact = Readonly<{
-  jobId: string;
-  artifactKey: string;
-}>;
-
 function unavailable(): NextResponse {
   return applyAuthNoStore(new NextResponse(null, { status: 404 }));
 }
 
-function reviewWindow(): { memoryId: string; expiresAt: Date } | null {
-  const memoryId = process.env.STAGING_OWNER_READONLY_REVIEW_MEMORY_ID?.trim();
-  const rawExpiry = process.env.STAGING_VISUAL_REVIEW_EXPIRES_AT?.trim();
-  if (!memoryId || !UUID_PATTERN.test(memoryId) || !rawExpiry) return null;
-  const expiresAt = new Date(rawExpiry);
-  const remainingMilliseconds = expiresAt.getTime() - Date.now();
-  // The operator supplies one absolute expiry. It must never create a rolling
-  // window or silently extend beyond the requested 30-minute review period.
-  if (!Number.isFinite(expiresAt.getTime()) || remainingMilliseconds < 1 || remainingMilliseconds > REVIEW_TTL_SECONDS * 1000) return null;
-  return { memoryId, expiresAt };
-}
-
-async function ownerSubject(memoryId: string): Promise<OwnerSubject | null> {
-  const result = await queryPostgres<OwnerSubject>(
-    `SELECT u.id, u.external_id
-       FROM public.memories m
-       INNER JOIN public.users u ON u.id = m.user_id
-      WHERE m.id = $1::uuid
-        AND m.deleted_at IS NULL`,
-    [memoryId],
-  );
-  return result.rows[0] ?? null;
-}
-
-async function approvedIdleArtifact(input: { userId: string; memoryId: string; jobId?: string }): Promise<ApprovedIdleArtifact | null> {
-  const result = await queryPostgres<ApprovedIdleArtifact>(
-    `SELECT j.id AS "jobId", j.artifact_key AS "artifactKey"
-       FROM public.video_generation_jobs j
-      WHERE j.user_id = $1::uuid
-        AND j.memory_id = $2::uuid
-        AND j.use_case = 'companion_micro_motion'
-        AND j.motion_variant = 'idle'
-        AND j.status = 'succeeded'
-        AND j.quality_status = 'approved'
-        AND j.artifact_key IS NOT NULL
-        AND ($3::uuid IS NULL OR j.id = $3::uuid)
-      ORDER BY j.pack_version DESC, j.created_at DESC, j.id DESC
-      LIMIT 1`,
-    [input.userId, input.memoryId, input.jobId ?? null],
-  );
-  return result.rows[0] ?? null;
-}
-
-async function readOnlyReviewSubject(request: NextRequest): Promise<{ subject: OwnerSubject; memoryId: string } | null> {
-  const window = reviewWindow();
-  if (!window) return null;
+async function readOnlyReviewSubject(request: NextRequest): Promise<{ subject: { id: string; external_id: string }; memoryId: string } | null> {
   const session = await verifyRequestSession(request);
-  if (!session?.readOnlyReview) return null;
-  const subject = await ownerSubject(window.memoryId);
-  return subject && subject.id === session.userId ? { subject, memoryId: window.memoryId } : null;
+  const subject = await resolveStagingOwnerReadOnlyReviewForSession(session);
+  return subject ? {
+    subject: { id: subject.userId, external_id: subject.externalUserId },
+    memoryId: subject.memoryId,
+  } : null;
 }
 
 async function readOnlyCompanionMotion(request: NextRequest): Promise<NextResponse> {
   if ([...request.nextUrl.searchParams.keys()].join(",") !== REVIEW_COMPANION_MOTION_QUERY) return unavailable();
   const review = await readOnlyReviewSubject(request);
   if (!review) return unavailable();
-  const idle = await approvedIdleArtifact({ userId: review.subject.id, memoryId: review.memoryId });
+  const idle = await findStagingOwnerReadOnlyApprovedIdle({ userId: review.subject.id, memoryId: review.memoryId });
   // No fallback is allowed: only an existing, approved idle artifact can be returned.
   if (!idle) return unavailable();
   const slot: ApprovedIdleSlot = {
@@ -114,7 +67,7 @@ async function readOnlyCompanionPlayback(request: NextRequest): Promise<NextResp
   ) return unavailable();
   const review = await readOnlyReviewSubject(request);
   if (!review) return unavailable();
-  const idle = await approvedIdleArtifact({ userId: review.subject.id, memoryId: review.memoryId, jobId });
+  const idle = await findStagingOwnerReadOnlyApprovedIdle({ userId: review.subject.id, memoryId: review.memoryId, jobId });
   // The opaque token binds the exact approved artifact without disclosing its key.
   if (!idle) return unavailable();
   const configuration = getVideoArtifactRuntimeConfiguration();
@@ -157,7 +110,7 @@ async function readOnlyCompanionMedia(request: NextRequest): Promise<NextRespons
   const signer = new FirstPresencePlaybackSigner(configuration.signingSecret, configuration.previousSigningSecret);
   const claims = signer.verify(token);
   if (!claims || claims.memoryId !== review.memoryId) return unavailable();
-  const idle = await approvedIdleArtifact({ userId: review.subject.id, memoryId: review.memoryId, jobId: claims.jobId });
+  const idle = await findStagingOwnerReadOnlyApprovedIdle({ userId: review.subject.id, memoryId: review.memoryId, jobId: claims.jobId });
   if (!idle || !signer.assertMatchesArtifact(claims, {
     jobId: idle.jobId,
     memoryId: review.memoryId,
@@ -192,9 +145,9 @@ async function readOnlyCompanionMedia(request: NextRequest): Promise<NextRespons
 }
 
 /**
- * A Staging-only, Nginx-origin-bound bootstrap endpoint. Its response contains
- * no identity or credential material; it only installs the formal host-only
- * session cookie and sends the reviewer to the existing product experience.
+ * A Staging-only, Nginx-origin-bound helper for the no-Cookie direct review.
+ * Normal page navigation never reaches this route; it only serves the narrow
+ * approved-idle responses required by the existing companion client.
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
   if (
@@ -223,28 +176,5 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
   if ([...request.nextUrl.searchParams.keys()].length > 0) return unavailable();
 
-  const window = reviewWindow();
-  if (!window) return unavailable();
-
-  try {
-    // Owner identity is resolved only server-side from the configured target
-    // Memory. Neither the Memory nor Owner identifier is returned or logged.
-    const subject = await ownerSubject(window.memoryId);
-    if (!subject) return unavailable();
-
-    const ttlSeconds = Math.floor((window.expiresAt.getTime() - Date.now()) / 1000);
-    if (ttlSeconds < 1 || ttlSeconds > REVIEW_TTL_SECONDS) return unavailable();
-    const token = await issueSession({
-      userId: subject.id,
-      externalUserId: subject.external_id,
-      ttlSeconds,
-      readOnlyReview: true,
-    });
-    const response = NextResponse.redirect(new URL("/memory-world", request.url), 303);
-    setSessionCookie(response, token, ttlSeconds);
-    return applyAuthNoStore(response);
-  } catch {
-    // The bridge fails closed on database, signing, or configuration failures.
-    return unavailable();
-  }
+  return unavailable();
 }

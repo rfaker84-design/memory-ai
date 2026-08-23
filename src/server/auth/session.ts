@@ -13,6 +13,7 @@ import {
 import { queryPostgres } from "../database/postgres";
 import { AuthConfigurationError, sessionSigningKeyRing, verificationPepperKeyRing } from "./crypto";
 import { isSessionRevoked } from "./session-revocation";
+import { resolveDirectStagingOwnerReadOnlyReviewSession } from "./staging-owner-readonly-review";
 
 export type AuthSession = {
   userId: string;
@@ -144,6 +145,8 @@ export async function verifySessionToken(
 }
 
 export async function verifyRequestSession(request: NextRequest): Promise<AuthSession | null> {
+  const directReview = await resolveDirectStagingOwnerReadOnlyReviewSession(request);
+  if (directReview) return directReview;
   const token = request.cookies.get(AUTH_SESSION_COOKIE)?.value;
   return token ? verifySessionToken(token) : null;
 }

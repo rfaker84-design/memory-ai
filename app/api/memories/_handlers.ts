@@ -91,7 +91,12 @@ export function createMemoriesHandlers(
         if ("response" in owner) return owner.response;
         const memories = await memoryServiceFactory().listUserMemories(owner.externalUserId);
 
-        return json(memories);
+        // The direct visual-review identity is server-only. The existing UI
+        // needs a stable grouping value for presentation preferences, but it
+        // must never receive the Owner's external identifier.
+        return json(owner.session.readOnlyReview
+          ? memories.map(({ userId: _ownerExternalId, ...memory }) => ({ ...memory, userId: "staging-readonly-review" }))
+          : memories);
       } catch (error) {
         return databaseErrorResponse(error);
       }

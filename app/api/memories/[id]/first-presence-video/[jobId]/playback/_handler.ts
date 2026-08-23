@@ -9,6 +9,7 @@ import {
   type PlaybackAuthorizationDto,
 } from "@/features/video";
 import { AuthConfigurationError, type AuthSession, verifyRequestSession } from "@/src/server/auth";
+import { resolveStagingOwnerReadOnlyReviewForSession } from "@/src/server/auth/staging-owner-readonly-review";
 import { DatabaseDependencyError } from "@/src/server/database";
 import { getVideoArtifactRuntimeConfiguration } from "@/features/video/video-artifact-runtime";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
@@ -54,6 +55,10 @@ export function createFirstPresencePlaybackAuthorizationHandler(
           return json({ error: "INVALID_PLAYBACK_REQUEST" }, { status: 400 });
         }
         const { id: memoryId, jobId } = await params;
+        if (session.readOnlyReview) {
+          const review = await resolveStagingOwnerReadOnlyReviewForSession(session);
+          if (!review || review.memoryId !== memoryId) return json({ error: "PLAYBACK_NOT_AVAILABLE" }, { status: 404 });
+        }
         const playback: PlaybackAuthorizationDto = await serviceFactory().authorize({
           externalUserId: session.externalUserId,
           memoryId,

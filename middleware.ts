@@ -21,9 +21,22 @@ const STAGING_ACCESS_HEADER = "x-memoryai-staging-access";
 const STAGING_VISUAL_REVIEW_HEADER = "x-memoryai-staging-visual-review";
 const STAGING_APP_HOST = "app.staging.yijianmemory.cn";
 const REQUEST_ID_HEADER = "x-request-id";
-const COMPANION_MOTION_PATH = /^\/api\/memories\/[^/]+\/companion-motion$/;
-const COMPANION_PLAYBACK_PATH = /^\/api\/memories\/[^/]+\/first-presence-video\/([0-9a-f-]{36})\/playback$/i;
-const SIGNED_PLAYBACK_PATH = /^\/api\/first-presence-video\/playback\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/;
+
+function hasDirectStagingVisualReviewSource(request: NextRequest): boolean {
+  if (
+    !isStagingRuntime()
+    || (request.headers.get("host") ?? request.nextUrl.host) !== STAGING_APP_HOST
+    || request.headers.get(STAGING_VISUAL_REVIEW_HEADER) !== "1"
+  ) return false;
+  const rawExpiry = process.env.STAGING_VISUAL_REVIEW_EXPIRES_AT?.trim();
+  const expiresAt = rawExpiry ? Date.parse(rawExpiry) : Number.NaN;
+  const remaining = expiresAt - Date.now();
+  return Number.isFinite(expiresAt) && remaining > 0 && remaining <= 30 * 60 * 1000;
+}
+
+function hasDirectStagingVisualReviewRead(request: NextRequest): boolean {
+  return ["GET", "HEAD"].includes(request.method) && hasDirectStagingVisualReviewSource(request);
+}
 
 function hasReadOnlyVisualReviewMarker(request: NextRequest): boolean {
   // The actual route handlers verify the JWT signature before granting any
@@ -191,7 +204,7 @@ function requiresStagingAccessToken(request: NextRequest): boolean {
   if (
     ["GET", "HEAD"].includes(request.method)
     && request.headers.get(STAGING_VISUAL_REVIEW_HEADER) === "1"
-    && hasReadOnlyVisualReviewMarker(request)
+    && (hasReadOnlyVisualReviewMarker(request) || hasDirectStagingVisualReviewRead(request))
   ) return false;
   // This is a self-authenticating, 60-second reviewer-preview bearer URL. A
   // native video element cannot attach the staging access header to range
@@ -258,50 +271,15 @@ export function middleware(request: NextRequest) {
     allowedCorsOrigin = browserOrigin;
   }
 
-  if (MUTATION_METHODS.has(request.method) && hasReadOnlyVisualReviewMarker(request)) {
+  if (MUTATION_METHODS.has(request.method) && (hasReadOnlyVisualReviewMarker(request) || hasDirectStagingVisualReviewSource(request))) {
     return reject(stagingVisualReviewReadOnlyFailure(allowedCorsOrigin), "STAGING_VISUAL_REVIEW_READ_ONLY");
   }
 
-  // The formal companion endpoint requires an entitlement before it reveals a
-  // pack. A bounded review Session may read one server-resolved, already
-  // approved idle artifact instead; the internal target validates the signed
-  // Session and configured Memory again and cannot create any slot.
   if (
-    request.method === "GET"
-    && COMPANION_MOTION_PATH.test(request.nextUrl.pathname)
-    && request.headers.get(STAGING_VISUAL_REVIEW_HEADER) === "1"
-    && hasReadOnlyVisualReviewMarker(request)
+    hasDirectStagingVisualReviewRead(request)
+    && (request.nextUrl.pathname === "/api/account/export" || /\/download$/.test(request.nextUrl.pathname))
   ) {
-    // Standalone does not execute an App-route rewrite across its loopback
-    // listener. A same-origin redirect makes the browser re-enter through
-    // Nginx, which injects the marker again only for the bound /32.
-    const target = new URL(`https://${STAGING_APP_HOST}/visual-review?reviewCompanionMotion=1`);
-    return NextResponse.redirect(target, 307);
-  }
-
-  const signedPlayback = request.nextUrl.pathname.match(SIGNED_PLAYBACK_PATH);
-  if (
-    request.method === "GET"
-    && signedPlayback
-    && request.headers.get(STAGING_VISUAL_REVIEW_HEADER) === "1"
-    && hasReadOnlyVisualReviewMarker(request)
-  ) {
-    const target = new URL(`https://${STAGING_APP_HOST}/visual-review?reviewCompanionMedia=${signedPlayback[1]}`);
-    if (request.nextUrl.searchParams.size > 0 && !(request.nextUrl.searchParams.size === 1 && request.nextUrl.searchParams.get("rendition") === "mobile")) {
-      return reject(stagingVisualReviewReadOnlyFailure(allowedCorsOrigin), "STAGING_VISUAL_REVIEW_READ_ONLY");
-    }
-    return NextResponse.redirect(target, 307);
-  }
-
-  const companionPlayback = request.nextUrl.pathname.match(COMPANION_PLAYBACK_PATH);
-  if (
-    request.method === "GET"
-    && companionPlayback
-    && request.headers.get(STAGING_VISUAL_REVIEW_HEADER) === "1"
-    && hasReadOnlyVisualReviewMarker(request)
-  ) {
-    const target = new URL(`https://${STAGING_APP_HOST}/visual-review?reviewCompanionPlayback=${companionPlayback[1]}`);
-    return NextResponse.redirect(target, 307);
+    return reject(stagingVisualReviewReadOnlyFailure(allowedCorsOrigin), "STAGING_VISUAL_REVIEW_READ_ONLY");
   }
 
   if (requiresStagingAccessToken(request)) {
