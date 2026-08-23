@@ -3,10 +3,29 @@ import test from "node:test";
 
 import { NextRequest } from "next/server";
 
+import { MediaType } from "@/features/media";
 import { createUploadMediaHandler } from "./_handler";
 
 const memoryId = "00000000-0000-4000-8000-000000000001";
 const image = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function uploadedAsset(id: string) {
+  return {
+    id,
+    userId: "media-metrics-owner",
+    memoryId,
+    mediaType: MediaType.IMAGE,
+    storageKey: "staging/media-metrics.png",
+    mimeType: "image/png",
+    sizeBytes: image.length,
+    sha256: "a".repeat(64),
+    status: "uploaded" as const,
+    failureCode: null,
+    deletedAt: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+}
 
 function request(): NextRequest {
   const form = new FormData();
@@ -61,4 +80,54 @@ test("the public media route rejects audio before consent, storage, or database 
   assert.deepEqual(await response.json(), { error: "AUDIO_UPLOAD_NOT_AVAILABLE" });
   assert.equal(consentCalls, 0);
   assert.equal(uploadCalls, 0);
+});
+
+test("a confirmed image upload records the server-owned photo-success fact", async () => {
+  const recorded: unknown[] = [];
+  const handler = createUploadMediaHandler(
+    async () => "phone:media-metrics-owner",
+    () => null,
+    () => ({
+      async upload() {
+        return {
+          asset: uploadedAsset("asset-metrics"),
+          duplicate: false,
+        };
+      },
+    }),
+    async () => true,
+    () => ({ async recordInteraction(input) { recorded.push(input); return { recorded: true }; } }),
+  );
+
+  const response = await handler(request());
+  assert.equal(response.status, 201);
+  assert.deepEqual(recorded, [{
+    schemaVersion: 1,
+    eventName: "photo_upload_succeeded",
+    idempotencyKey: `metrics:v1:photo-upload:${memoryId}`,
+    source: "server",
+    externalUserId: "phone:media-metrics-owner",
+    memoryId,
+    properties: { surface: "first_presence" },
+  }]);
+});
+
+test("a metrics write failure does not change confirmed media-upload success", async () => {
+  const handler = createUploadMediaHandler(
+    async () => "phone:media-metrics-owner",
+    () => null,
+    () => ({
+      async upload() {
+        return {
+          asset: uploadedAsset("asset-metrics-failure"),
+          duplicate: false,
+        };
+      },
+    }),
+    async () => true,
+    () => ({ async recordInteraction() { throw new Error("metrics unavailable"); } }),
+  );
+
+  const response = await handler(request());
+  assert.equal(response.status, 201);
 });

@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 
 import { hasApprovedMemoryConsent } from "@/features/consent/trust-consent-postgres";
+import { ProductMetricsPostgresDataSource } from "@/features/product-metrics";
 
 import {
   authenticate,
@@ -12,6 +13,7 @@ import {
 } from "../_lib";
 
 type UploadMediaService = Pick<ReturnType<typeof mediaService>, "upload">;
+type ProductMetricsRecorder = Pick<ProductMetricsPostgresDataSource, "recordInteraction">;
 type ConsentVerifier = (input: {
   externalUserId: string;
   consentType: "media_asset";
@@ -23,6 +25,7 @@ export function createUploadMediaHandler(
   requireOrigin: typeof requireMediaMutationOrigin = requireMediaMutationOrigin,
   getMediaService: () => UploadMediaService = mediaService,
   consentVerifier: ConsentVerifier = hasApprovedMemoryConsent,
+  getMetricsRecorder: () => ProductMetricsRecorder = () => new ProductMetricsPostgresDataSource(),
 ) {
   return async function POST(req: NextRequest) {
     const userId = await authenticateRequest(req);
@@ -52,6 +55,21 @@ export function createUploadMediaHandler(
       }
       const result = await getMediaService().upload({ externalUserId: userId, memoryId,
         file: { name: file.name, type: file.type, body: Buffer.from(await file.arrayBuffer()) } });
+      // This is the shared, authoritative success boundary for every creation
+      // route. Metrics failure must never change an already-confirmed upload.
+      try {
+        await getMetricsRecorder().recordInteraction({
+          schemaVersion: 1,
+          eventName: "photo_upload_succeeded",
+          idempotencyKey: `metrics:v1:photo-upload:${memoryId}`,
+          source: "server",
+          externalUserId: userId,
+          memoryId,
+          properties: { surface: "first_presence" },
+        });
+      } catch {
+        console.error("[metrics] photo upload event failed");
+      }
       return mediaJson({ asset: safeMediaAsset(result.asset), duplicate: result.duplicate }, { status: result.duplicate ? 200 : 201 });
     } catch (error) { return mediaError(error); }
   };
