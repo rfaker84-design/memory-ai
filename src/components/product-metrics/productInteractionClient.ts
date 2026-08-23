@@ -11,6 +11,10 @@ export function reportProductInteraction(interaction: Interaction): void {
   void fetch("/api/product-interactions", {
     method: "POST",
     credentials: "same-origin",
+    // The formal upload completes immediately before the creation flow
+    // navigates to chat. Keep this bounded request eligible for delivery
+    // across that navigation without delaying the successful upload itself.
+    keepalive: interaction.eventName === "photo_upload_succeeded",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ schemaVersion: 1, ...interaction }),
   }).catch(() => undefined);

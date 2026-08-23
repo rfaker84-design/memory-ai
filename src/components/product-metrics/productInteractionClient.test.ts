@@ -11,6 +11,10 @@ test("product metrics client is same-origin fire-and-forget and does not expose 
   assert.doesNotMatch(client, /await fetch|phone_number|chat_message|photo_url|cos_key|birthday/i);
 });
 
+test("a confirmed photo upload remains deliverable across the immediate chat navigation", () => {
+  assert.match(client, /keepalive: interaction\.eventName === "photo_upload_succeeded"/);
+});
+
 test("real success nodes contain non-visual metric calls", () => {
   const home = read("app/page.tsx");
   const creation = read("src/components/first-presence/FirstPresenceFlow.tsx");
@@ -18,6 +22,8 @@ test("real success nodes contain non-visual metric calls", () => {
   const commerce = read("src/components/first-presence/CommerceVideoCreditsEntry.tsx");
   assert.match(home, /guest_experience_started/);
   assert.match(creation, /photo_upload_succeeded/);
+  const completion = creation.slice(creation.indexOf("const completeCreatedMemory"), creation.indexOf("const continueRecoveredCreation"));
+  assert.match(completion, /await uploadCurrentCreationMedia\([\s\S]*?photo_upload_succeeded[\s\S]*?router\.replace\(`\/memory-chat\//);
   assert.match(encounter, /first_presence_video_played_3s/);
   assert.match(encounter, /playbackWatchedSeconds\.current \+= delta/);
   assert.match(commerce, /view !== "packages"/);
