@@ -34,6 +34,7 @@ const EXACT_FORMAL_PATHS = new Set([
   "/api/account/deletion/guardian-confirmation",
   "/api/business-events",
   "/api/business-metrics/funnel",
+  "/api/product-interactions",
   "/api/payments/orders",
   "/api/payments/refunds",
   "/api/payments/entitlements",
@@ -178,7 +179,7 @@ test("video reconciliation is an explicitly audited formal internal route", () =
 
 test("every tracked non-formal Route Handler is a route-level 410", async () => {
   const routes = trackedRoutes();
-  assert.equal(routes.length, 143, "the audit must enumerate the complete tracked API surface");
+  assert.equal(routes.length, 144, "the audit must enumerate the complete tracked API surface");
 
   for (const { file, pathname } of routes) {
     const formal = isFormalApiPath(pathname);
@@ -247,6 +248,7 @@ test("formal Session ownership and public health contracts remain explicit", asy
     guardianDeletionConfirmation: readFileSync("app/api/account/deletion/guardian-confirmation/route.ts", "utf8"),
     businessEvents: readFileSync("app/api/business-events/_handler.ts", "utf8"),
     businessFunnel: readFileSync("app/api/business-metrics/funnel/_handler.ts", "utf8"),
+    productInteractions: readFileSync("app/api/product-interactions/_handler.ts", "utf8"),
     paymentOrders: readFileSync("app/api/payments/orders/route.ts", "utf8"),
     paymentRefunds: readFileSync("app/api/payments/refunds/route.ts", "utf8"),
     paymentEntitlements: readFileSync("app/api/payments/entitlements/route.ts", "utf8"),
@@ -341,6 +343,7 @@ test("formal Session ownership and public health contracts remain explicit", asy
   assert.match(sources.videoInternalAccess, /constantTimeEquals/);
   assert.match(sources.businessEvents, /verifyRequestSession/);
   assert.match(sources.businessFunnel, /BUSINESS_METRICS_ACCESS_TOKEN/);
+  assert.match(sources.productInteractions, /createProductInteractionHandler/);
 
   const { GET: aiHealth } = await import("./health/ai/route");
   const response = await aiHealth();

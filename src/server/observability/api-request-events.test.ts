@@ -25,6 +25,7 @@ test("API observability uses stable route templates and never logs dynamic ident
   assert.equal(observabilityRoute("/api/health"), "/api/health");
   assert.equal(observabilityRoute("/api/account/crisis-contacts"), "/api/account/crisis-contacts");
   assert.equal(observabilityRoute("/api/account/notification-preferences"), "/api/account/notification-preferences");
+  assert.equal(observabilityRoute("/api/product-interactions"), "/api/product-interactions");
   assert.equal(
     observabilityRoute("/api/legacy/alice@example.test/signed-provider-token"),
     "/api/:unknown",

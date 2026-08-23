@@ -8,12 +8,16 @@ const untracked = execFileSync("git", ["ls-files", "--others", "--exclude-standa
 const paths = [...new Set([...tracked, ...untracked])].sort();
 const exact = new Set([
   "app/page.tsx",
+  "app/api/api-policy.test.ts",
   "app/memory/[id]/encounter/page.tsx",
   "features/account-deletion/account-deletion-worker.ts",
   "features/account-deletion/account-deletion-worker-contract.test.ts",
   "package.json",
   "src/components/first-presence/FirstPresenceFlow.tsx",
   "src/components/first-presence/CommerceVideoCreditsEntry.tsx",
+  "middleware.ts",
+  "src/server/observability/api-request-events.ts",
+  "src/server/observability/api-request-events.test.ts",
 ]);
 const prefixes = [
   "app/api/product-interactions/",
