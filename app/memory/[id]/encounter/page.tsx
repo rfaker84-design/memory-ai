@@ -8,7 +8,7 @@ import { loadOwnedMemory, loadOwnedMediaUrl, OwnedMemoryRequestError } from "@/s
 import { fetchPickupRequestJson, PickupRequestError } from "@/src/components/memory/pickupRequestClient";
 import { AiGeneratedLabel } from "@/src/components/safety/AiGeneratedLabel";
 import { useQuietCompanionPresence } from "@/src/components/first-presence/quietCompanionPresence";
-import { useReducedMotion } from "@/src/motion";
+import { MotionProvider, useReducedMotion } from "@/src/motion";
 import { reportProductInteraction } from "@/src/components/product-metrics/productInteractionClient";
 
 type VideoJob = {
@@ -35,6 +35,10 @@ function encounterViewedKey(memoryId: string): string {
  * provider request. It can play only an already approved owner artifact.
  */
 export default function EncounterPage({ params }: { params: Promise<{ id: string }> }) {
+  return <MotionProvider><EncounterPageContent params={params} /></MotionProvider>;
+}
+
+function EncounterPageContent({ params }: { params: Promise<{ id: string }> }) {
   const { id: memoryId } = use(params);
   const router = useRouter();
   const [state, setState] = useState<EncounterState>({ status: "loading" });

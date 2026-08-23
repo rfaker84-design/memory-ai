@@ -10,6 +10,7 @@ const exact = new Set([
   "app/page.tsx",
   "app/api/api-policy.test.ts",
   "app/memory/[id]/encounter/page.tsx",
+  "app/memory/encounter-contract.test.ts",
   "features/account-deletion/account-deletion-worker.ts",
   "features/account-deletion/account-deletion-worker-contract.test.ts",
   "package.json",

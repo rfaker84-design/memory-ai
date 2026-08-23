@@ -5,6 +5,7 @@ import test from "node:test";
 const source = readFileSync(new URL("./[id]/encounter/page.tsx", import.meta.url), "utf8");
 
 test("encounter only reads an approved owner preview and never submits a generation", () => {
+  assert.match(source, /<MotionProvider><EncounterPageContent params=\{params\} \/><\/MotionProvider>/);
   assert.match(source, /fetchPickupRequestJson\(`\/api\/memories/);
   assert.match(source, /intent === "initial_preview"/);
   assert.match(source, /job\.status === "succeeded"/);
