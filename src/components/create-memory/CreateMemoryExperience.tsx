@@ -7,6 +7,7 @@ import { useReducedMotion } from "../../motion";
 import { useCreateMemoryDraft } from "./useCreateMemoryDraft";
 import { createMemoryRequestHeaders, validateStage } from "./createMemoryLogic";
 import { recordTrustConsent } from "../trust/trustConsentClient";
+import { reportProductInteraction } from "../product-metrics/productInteractionClient";
 import { AccountProfileRequestError, saveAdultBirthDate } from "../trust/accountProfileClient";
 import {
   CreationRecoveryRequestError,
@@ -76,6 +77,14 @@ export function CreateMemoryExperience() {
     if (photo) await recordTrustConsent("media_asset", memory.id);
     setStatus("uploading");
     await uploadCurrentCreationMedia({ memoryId: memory.id, idempotencyKey, files });
+    if (photo) {
+      reportProductInteraction({
+        eventName: "photo_upload_succeeded",
+        idempotencyKey: `metrics:v1:photo-upload:${memory.id}`,
+        memoryId: memory.id,
+        properties: { surface: "first_presence" },
+      });
+    }
     setCreated(memory);
     clear();
     setStatus("success");
