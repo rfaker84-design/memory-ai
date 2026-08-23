@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { checkAllowedOrigin } from "@/src/server/security/origin";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
+import { AUTH_SESSION_COOKIE } from "@/src/server/auth/config";
 import { isLegacyChatCommerceTestEnvironment } from "@/features/payment/legacy-chat-commerce-gate";
 import {
   hasValidStagingAccessToken,
@@ -17,7 +18,30 @@ const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const CORS_ALLOWED_METHODS = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
 const CORS_ALLOWED_HEADERS = "Content-Type, Authorization, Idempotency-Key, X-MemoryAI-Staging-Access, X-Video-Review-Access-Token, X-Video-Reviewer-Account";
 const STAGING_ACCESS_HEADER = "x-memoryai-staging-access";
+const STAGING_VISUAL_REVIEW_HEADER = "x-memoryai-staging-visual-review";
+const STAGING_APP_HOST = "app.staging.yijianmemory.cn";
 const REQUEST_ID_HEADER = "x-request-id";
+const COMPANION_MOTION_PATH = /^\/api\/memories\/[^/]+\/companion-motion$/;
+const COMPANION_PLAYBACK_PATH = /^\/api\/memories\/[^/]+\/first-presence-video\/([0-9a-f-]{36})\/playback$/i;
+const SIGNED_PLAYBACK_PATH = /^\/api\/first-presence-video\/playback\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/;
+
+function hasReadOnlyVisualReviewMarker(request: NextRequest): boolean {
+  // The actual route handlers verify the JWT signature before granting any
+  // owner-scoped read. Here an untrusted marker can only make a request more
+  // restrictive (write-denied), so decode failure and forged cookies fail safe.
+  const token = request.cookies.get(AUTH_SESSION_COOKIE)?.value;
+  if (!token) return false;
+  try {
+    const encodedPayload = token.split(".")[1];
+    if (!encodedPayload) return false;
+    const base64 = encodedPayload.replace(/-/g, "+").replace(/_/g, "/");
+    const binary = atob(base64);
+    const payload = JSON.parse(new TextDecoder().decode(Uint8Array.from(binary, (character) => character.charCodeAt(0)))) as unknown;
+    return typeof payload === "object" && payload !== null && (payload as { readOnlyReview?: unknown }).readOnlyReview === true;
+  } catch {
+    return false;
+  }
+}
 
 const FORMAL_API_PATHS = new Set([
   "/api/auth/send-code",
@@ -151,8 +175,24 @@ function stagingAccessFailure(status: 403 | 503, allowedOrigin?: string): NextRe
   return allowedOrigin ? applyCredentialedCors(response, allowedOrigin) : response;
 }
 
+function stagingVisualReviewReadOnlyFailure(allowedOrigin?: string): NextResponse {
+  const response = applyAuthNoStore(NextResponse.json(
+    { error: "STAGING_VISUAL_REVIEW_READ_ONLY" },
+    { status: 403 },
+  ));
+  return allowedOrigin ? applyCredentialedCors(response, allowedOrigin) : response;
+}
+
 function requiresStagingAccessToken(request: NextRequest): boolean {
   if (!isStagingRuntime()) return false;
+  // A signed, read-only review session may read only through the Nginx-injected
+  // marker. The marker has an empty proxy default, so a browser cannot spoof
+  // it; mutation methods are rejected above before any route handler runs.
+  if (
+    ["GET", "HEAD"].includes(request.method)
+    && request.headers.get(STAGING_VISUAL_REVIEW_HEADER) === "1"
+    && hasReadOnlyVisualReviewMarker(request)
+  ) return false;
   // This is a self-authenticating, 60-second reviewer-preview bearer URL. A
   // native video element cannot attach the staging access header to range
   // reads, so the route verifies its signed, exact-job token again in the
@@ -216,6 +256,52 @@ export function middleware(request: NextRequest) {
     const result = checkAllowedOrigin(request);
     if (!result.allowed) return reject(corsFailure(result.code), result.code);
     allowedCorsOrigin = browserOrigin;
+  }
+
+  if (MUTATION_METHODS.has(request.method) && hasReadOnlyVisualReviewMarker(request)) {
+    return reject(stagingVisualReviewReadOnlyFailure(allowedCorsOrigin), "STAGING_VISUAL_REVIEW_READ_ONLY");
+  }
+
+  // The formal companion endpoint requires an entitlement before it reveals a
+  // pack. A bounded review Session may read one server-resolved, already
+  // approved idle artifact instead; the internal target validates the signed
+  // Session and configured Memory again and cannot create any slot.
+  if (
+    request.method === "GET"
+    && COMPANION_MOTION_PATH.test(request.nextUrl.pathname)
+    && request.headers.get(STAGING_VISUAL_REVIEW_HEADER) === "1"
+    && hasReadOnlyVisualReviewMarker(request)
+  ) {
+    // Standalone does not execute an App-route rewrite across its loopback
+    // listener. A same-origin redirect makes the browser re-enter through
+    // Nginx, which injects the marker again only for the bound /32.
+    const target = new URL(`https://${STAGING_APP_HOST}/visual-review?reviewCompanionMotion=1`);
+    return NextResponse.redirect(target, 307);
+  }
+
+  const signedPlayback = request.nextUrl.pathname.match(SIGNED_PLAYBACK_PATH);
+  if (
+    request.method === "GET"
+    && signedPlayback
+    && request.headers.get(STAGING_VISUAL_REVIEW_HEADER) === "1"
+    && hasReadOnlyVisualReviewMarker(request)
+  ) {
+    const target = new URL(`https://${STAGING_APP_HOST}/visual-review?reviewCompanionMedia=${signedPlayback[1]}`);
+    if (request.nextUrl.searchParams.size > 0 && !(request.nextUrl.searchParams.size === 1 && request.nextUrl.searchParams.get("rendition") === "mobile")) {
+      return reject(stagingVisualReviewReadOnlyFailure(allowedCorsOrigin), "STAGING_VISUAL_REVIEW_READ_ONLY");
+    }
+    return NextResponse.redirect(target, 307);
+  }
+
+  const companionPlayback = request.nextUrl.pathname.match(COMPANION_PLAYBACK_PATH);
+  if (
+    request.method === "GET"
+    && companionPlayback
+    && request.headers.get(STAGING_VISUAL_REVIEW_HEADER) === "1"
+    && hasReadOnlyVisualReviewMarker(request)
+  ) {
+    const target = new URL(`https://${STAGING_APP_HOST}/visual-review?reviewCompanionPlayback=${companionPlayback[1]}`);
+    return NextResponse.redirect(target, 307);
   }
 
   if (requiresStagingAccessToken(request)) {

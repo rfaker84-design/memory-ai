@@ -135,6 +135,23 @@ test("safe methods pass through without Origin", () => {
   }
 });
 
+test("a read-only visual-review session is fail-closed for every mutation", async () => {
+  const reviewToken = [
+    "eyJhbGciOiJub25lIn0",
+    "eyJyZWFkT25seVJldmlldyI6dHJ1ZX0",
+    "",
+  ].join(".");
+  for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+    const response = middleware(new NextRequest("https://memoryai.test/api/memories", {
+      method,
+      headers: { cookie: `__Host-memoryai_session=${reviewToken}` },
+    }));
+    assert.equal(response.status, 403, method);
+    assert.deepEqual(await response.json(), { error: "STAGING_VISUAL_REVIEW_READ_ONLY" }, method);
+    assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0", method);
+  }
+});
+
 test("the packaged same-site App origin receives credentialed CORS without wildcard reflection", async () => {
   const preflight = middleware(new NextRequest("https://memoryai.test/api/memories", {
     method: "OPTIONS",
@@ -224,6 +241,32 @@ test("staging requires the Debug APK access token after CORS preflight while per
 
     const signedMedia = middleware(new NextRequest("https://api.staging.yijianmemory.cn/api/media/local?signature=opaque"));
     assert.equal(signedMedia.headers.get("x-middleware-next"), "1");
+
+    const visualReviewRead = middleware(new NextRequest("https://api.staging.yijianmemory.cn/api/memories/memory-id", {
+      headers: {
+        "x-memoryai-staging-visual-review": "1",
+        cookie: "__Host-memoryai_session=eyJhbGciOiJub25lIn0.eyJyZWFkT25seVJldmlldyI6dHJ1ZX0.",
+      },
+    }));
+    assert.equal(visualReviewRead.headers.get("x-middleware-next"), "1");
+
+    const visualReviewIdle = middleware(new NextRequest("https://app.staging.yijianmemory.cn/api/memories/memory-id/companion-motion", {
+      headers: {
+        "x-memoryai-staging-visual-review": "1",
+        cookie: "__Host-memoryai_session=eyJhbGciOiJub25lIn0.eyJyZWFkT25seVJldmlldyI6dHJ1ZX0.",
+      },
+    }));
+    assert.equal(visualReviewIdle.status, 307);
+    assert.equal(visualReviewIdle.headers.get("location"), "https://app.staging.yijianmemory.cn/visual-review?reviewCompanionMotion=1");
+
+    const visualReviewPlayback = middleware(new NextRequest("https://app.staging.yijianmemory.cn/api/memories/memory-id/first-presence-video/00000000-0000-4000-8000-000000000001/playback", {
+      headers: {
+        "x-memoryai-staging-visual-review": "1",
+        cookie: "__Host-memoryai_session=eyJhbGciOiJub25lIn0.eyJyZWFkT25seVJldmlldyI6dHJ1ZX0.",
+      },
+    }));
+    assert.equal(visualReviewPlayback.status, 307);
+    assert.equal(visualReviewPlayback.headers.get("location"), "https://app.staging.yijianmemory.cn/visual-review?reviewCompanionPlayback=00000000-0000-4000-8000-000000000001");
   } finally {
     for (const [key, value] of previous) {
       if (value === undefined) delete process.env[key];

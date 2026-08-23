@@ -392,6 +392,18 @@ test("session rejects bad signatures and expired tokens", async () => {
   assert.equal(await verifySessionToken(expired), null);
 });
 
+test("read-only visual-review sessions remain signed and expire at their bounded TTL", async () => {
+  const token = await issueSession({
+    userId: "00000000-0000-4000-8000-000000000017",
+    externalUserId: "owner-read-only-review",
+    ttlSeconds: 60,
+    readOnlyReview: true,
+  });
+  const verified = await verifySessionToken(token, async () => false);
+  assert.equal(verified?.readOnlyReview, true);
+  assert.equal(Date.parse(verified!.expiresAt) - Date.parse(verified!.authenticatedAt!), 60_000);
+});
+
 test("same-user Sessions issued in the same second rotate with unpredictable jti values", async () => {
   const input = {
     userId: "00000000-0000-4000-8000-000000000001",

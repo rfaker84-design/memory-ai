@@ -17,6 +17,8 @@ import { isSessionRevoked } from "./session-revocation";
 export type AuthSession = {
   userId: string;
   externalUserId: string;
+  /** True only for the bounded, Staging-only read-only visual review bridge. */
+  readOnlyReview?: true;
   /** Present for JWT-backed sessions; injected test and legacy adapters may omit it. */
   authenticatedAt?: string;
   expiresAt: string;
@@ -45,16 +47,26 @@ export async function issueSession(input: {
   userId: string;
   externalUserId: string;
   now?: Date;
+  /** A bounded session is needed only by the Staging visual-review bridge. */
+  ttlSeconds?: number;
+  readOnlyReview?: true;
 }): Promise<string> {
   const now = input.now ?? new Date();
+  const ttlSeconds = input.ttlSeconds ?? AUTH_POLICY.sessionTtlSeconds;
+  if (!Number.isInteger(ttlSeconds) || ttlSeconds < 1 || ttlSeconds > AUTH_POLICY.sessionTtlSeconds) {
+    throw new AuthConfigurationError("SESSION_TTL_INVALID");
+  }
   const keyRing = sessionSigningKeyRing();
-  return new SignJWT({ externalUserId: input.externalUserId })
+  return new SignJWT({
+    externalUserId: input.externalUserId,
+    ...(input.readOnlyReview ? { readOnlyReview: true } : {}),
+  })
     .setProtectedHeader({ alg: "HS256", typ: "JWT", kid: keyRing.current.id })
     .setSubject(input.userId)
     .setIssuer(AUTH_SESSION_ISSUER)
     .setAudience(AUTH_SESSION_AUDIENCE)
     .setIssuedAt(Math.floor(now.getTime() / 1000))
-    .setExpirationTime(Math.floor(now.getTime() / 1000) + AUTH_POLICY.sessionTtlSeconds)
+    .setExpirationTime(Math.floor(now.getTime() / 1000) + ttlSeconds)
     .setJti(randomUUID())
     .sign(keyRing.current.secret);
 }
@@ -88,7 +100,7 @@ export async function verifySessionToken(
       }
     }
     if (!verified) return null;
-    const { sub, externalUserId, iat, exp, jti } = verified.payload;
+    const { sub, externalUserId, iat, exp, jti, readOnlyReview } = verified.payload;
     const nowSeconds = Math.floor(Date.now() / 1000);
     if (
       typeof sub !== "string"
@@ -121,6 +133,7 @@ export async function verifySessionToken(
     return {
       userId: sub,
       externalUserId: canonicalExternalUserId,
+      ...(readOnlyReview === true ? { readOnlyReview: true as const } : {}),
       authenticatedAt: new Date(iat * 1000).toISOString(),
       expiresAt: new Date(exp * 1000).toISOString(),
     };
@@ -135,7 +148,11 @@ export async function verifyRequestSession(request: NextRequest): Promise<AuthSe
   return token ? verifySessionToken(token) : null;
 }
 
-export function setSessionCookie(response: NextResponse, token: string): void {
+export function setSessionCookie(
+  response: NextResponse,
+  token: string,
+  maxAge: number = AUTH_POLICY.sessionTtlSeconds,
+): void {
   response.cookies.set({
     name: AUTH_SESSION_COOKIE,
     value: token,
@@ -143,7 +160,7 @@ export function setSessionCookie(response: NextResponse, token: string): void {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
-    maxAge: AUTH_POLICY.sessionTtlSeconds,
+    maxAge,
   });
 }
 
