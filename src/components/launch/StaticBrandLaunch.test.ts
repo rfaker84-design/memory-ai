@@ -43,7 +43,7 @@ test("the splash uses the exact approved copy, real background, and restrained m
   const styles = readFileSync("src/components/launch/StaticBrandLaunch.module.css", "utf8");
 
   assert.match(component, /忆见/);
-  assert.match(component, /忆一人 见一生/);
+  assert.match(component, /见一人 忆一生/);
   assert.match(component, /owner-confirmed-warm-presence\.png/);
   assert.match(component, /id="splash-background-sharpen"/);
   assert.match(component, /feConvolveMatrix/);

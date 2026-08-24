@@ -31,7 +31,7 @@ export default function StaticBrandLaunch({ onComplete, ready }: StaticBrandLaun
   }, [minimumElapsed, onComplete, ready]);
 
   return (
-    <section className={`${styles.launch} ${exiting ? styles.exiting : ""}`} aria-label="忆见，忆一人 见一生">
+    <section className={`${styles.launch} ${exiting ? styles.exiting : ""}`} aria-label="忆见，见一人 忆一生">
       <svg aria-hidden="true" className={styles.filters} focusable="false">
         <filter
           id="splash-background-sharpen"
@@ -60,7 +60,7 @@ export default function StaticBrandLaunch({ onComplete, ready }: StaticBrandLaun
       <div aria-hidden="true" className={styles.tone} />
       <div className={styles.content}>
         <h1 className={styles.brand}>忆见</h1>
-        <p className={styles.tagline}>忆一人 见一生</p>
+        <p className={styles.tagline}>见一人 忆一生</p>
       </div>
     </section>
   );

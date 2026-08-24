@@ -6,12 +6,12 @@ const home = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 const world = readFileSync(new URL("./memory-world/page.tsx", import.meta.url), "utf8");
 
 test("the root always resolves to the home after the existing launch", () => {
-  assert.match(home, /type EntryStage = "checking" \| "launch" \| "home" \| "login" \| "preview"/);
+  assert.match(home, /type EntryStage = "launch" \| "home" \| "login" \| "preview"/);
   assert.match(home, /useState<EntryStage>\("launch"\)/);
-  assert.match(home, /const showLaunch = claimBrandLaunch\(window\.sessionStorage\)/);
   assert.match(home, /if \(!launchComplete \|\| homeState === null\) return;[\s\S]*?setStage\("home"\)/);
   assert.match(home, /<StaticBrandLaunch onComplete=\{completeLaunch\} ready=\{homeState !== null\} \/>/);
   assert.match(home, /stage === "home" && homeState/);
+  assert.doesNotMatch(home, /HomeLoadingFallback|正在加载|claimBrandLaunch/);
   assert.doesNotMatch(home, /resolvePostLoginDestination|router\.replace\(entryResolution\)/);
   const startup = home.slice(home.indexOf("useEffect(() => {"), home.indexOf("const completeLaunch"));
   assert.doesNotMatch(startup, /router\.(?:push|replace)\(/);

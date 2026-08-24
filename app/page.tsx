@@ -10,33 +10,18 @@ import { fetchCompanionHomeMemoriesJson } from "../src/components/companion/comp
 import { persistCompanionPrimaryPreference } from "../src/components/companion/companionHomeState";
 import { FirstPresenceFlow } from "../src/components/first-presence/FirstPresenceFlow";
 import StaticBrandLaunch from "../src/components/launch/StaticBrandLaunch";
-import { claimBrandLaunch } from "../src/components/launch/staticBrandLaunchPolicy";
 import { loadOwnedMediaUrl } from "../src/components/memory/ownedMemoryClient";
 import { reportProductInteraction } from "../src/components/product-metrics/productInteractionClient";
 import { MotionProvider } from "../src/motion";
 
-function HomeLoadingFallback() {
-  return (
-    <main
-      role="status"
-      aria-live="polite"
-      aria-label="正在加载"
-      style={{ minHeight: "100dvh", display: "grid", placeItems: "center", alignContent: "center", gap: 10, background: "#0B0A08", color: "#F6EEE2" }}
-    >
-      <strong style={{ fontSize: 24, letterSpacing: "0.16em" }}>忆见</strong>
-      <span style={{ color: "#D5B172", fontSize: 14 }}>正在加载</span>
-    </main>
-  );
-}
-
 const OriginalHomeLogin = dynamic(
   () => import("../components/world/OriginalHomeLogin").then((module) => module.OriginalHomeLogin),
-  { ssr: false, loading: () => <HomeLoadingFallback /> }
+  { ssr: false }
 );
 
 const VISUAL_PREVIEW_ENABLED = process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_MEMORYAI_ENABLE_PRESENCE_PREVIEW === "true";
 
-type EntryStage = "checking" | "launch" | "home" | "login" | "preview";
+type EntryStage = "launch" | "home" | "login" | "preview";
 type LoginIntent = "login" | "create";
 type SessionPayload = { authenticated?: unknown };
 type OwnerMemory = {
@@ -96,11 +81,6 @@ export default function HomePage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    const showLaunch = claimBrandLaunch(window.sessionStorage);
-    if (!showLaunch) {
-      setLaunchComplete(true);
-      setStage("checking");
-    }
 
     void loadHomeState(controller.signal)
       .then((nextState) => {
@@ -139,7 +119,6 @@ export default function HomePage() {
       router.replace("/create-memory");
       return;
     }
-    setStage("checking");
     const nextState = await loadHomeState().catch(() => ({ authenticated: true, ownerId: null, people: [] }));
     setHomeState(nextState);
     setStage("home");
@@ -168,7 +147,6 @@ export default function HomePage() {
 
   return (
     <MotionProvider>
-      {stage === "checking" && <HomeLoadingFallback />}
       {stage === "launch" && <StaticBrandLaunch onComplete={completeLaunch} ready={homeState !== null} />}
       {stage === "home" && homeState && (
         <GuestExperience

@@ -48,12 +48,10 @@ test("preview is explicit, zero-write, and production-gated", () => {
   assert.doesNotMatch(previewRendering, /fetch\(|recordTrustConsent|MemoryExperienceOffer/);
 });
 
-test("home cold start is a disclosed static loading state, not a blank client-only screen", () => {
-  assert.match(page, /function HomeLoadingFallback/);
-  assert.match(page, /role="status"[\s\S]*aria-live="polite"/);
-  assert.match(page, /正在加载/);
-  assert.match(page, /loading: \(\) => <HomeLoadingFallback \/>/);
-  assert.match(page, /stage === "checking" && <HomeLoadingFallback \/>/);
+test("home cold start keeps the approved brand launch on screen instead of a loading placeholder", () => {
+  assert.match(page, /useState<EntryStage>\("launch"\)/);
+  assert.match(page, /<StaticBrandLaunch onComplete=\{completeLaunch\} ready=\{homeState !== null\} \/>/);
+  assert.doesNotMatch(page, /HomeLoadingFallback|正在加载|stage === "checking"/);
   assert.match(page, /stage === "home" && homeState && \(/);
   assert.match(page, /<GuestExperience/);
   assert.match(page, /stage === "login" && <OriginalHomeLogin/);
