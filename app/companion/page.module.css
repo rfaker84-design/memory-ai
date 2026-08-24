@@ -2,7 +2,7 @@
 .statusPage {
   min-height: 100dvh;
   color: #332a21;
-  background: #1a120d;
+  background: #f4ece0;
   font-family: "Songti SC", "STSong", Georgia, serif;
 }
 
@@ -398,7 +398,7 @@
 }
 
 @media (min-width: 760px) {
-  .space { padding-block: 20px; background: #211711; }
+  .space { padding-block: 20px; background: #f4ece0; }
   .hero { width: min(100%, 760px); margin-inline: auto; border-radius: 28px 28px 0 0; }
   .paper { border-radius: 30px; }
 }

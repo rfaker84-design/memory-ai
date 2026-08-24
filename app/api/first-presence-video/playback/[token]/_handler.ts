@@ -11,9 +11,13 @@ import {
   parseSingleRange,
   type VideoArtifactQueryPort,
   type VideoArtifactReaderPort,
+  type ApprovedVideoArtifact,
 } from "@/features/video";
 import { type AuthSession, verifyRequestSession } from "@/src/server/auth";
-import { resolveStagingOwnerReadOnlyReviewForSession } from "@/src/server/auth/staging-owner-readonly-review";
+import {
+  findStagingOwnerReadOnlyApprovedIdle,
+  resolveStagingOwnerReadOnlyReviewForSession,
+} from "@/src/server/auth/staging-owner-readonly-review";
 import { DatabaseDependencyError } from "@/src/server/database";
 import { getVideoArtifactRuntimeConfiguration } from "@/features/video/video-artifact-runtime";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
@@ -38,6 +42,19 @@ function dependencies(): PlaybackReadDependencies {
 
 function unavailable(status = 404): NextResponse {
   return applyAuthNoStore(NextResponse.json({ error: "PLAYBACK_NOT_AVAILABLE" }, { status }));
+}
+
+function reviewIdleArtifact(input: { memoryId: string; jobId: string; artifactKey: string }): ApprovedVideoArtifact {
+  return {
+    memoryId: input.memoryId,
+    jobId: input.jobId,
+    artifactKey: input.artifactKey,
+    playbackUrl: "",
+    playbackExpiresAt: "",
+    presentation: "additional_generation",
+    saveAllowed: false,
+    motionVariant: "idle",
+  };
 }
 
 function requestedRendition(request: NextRequest): "mobile" | null | "invalid" {
@@ -76,15 +93,29 @@ export function createFirstPresencePlaybackReadHandler(
         const resolved = dependencyFactory();
         const claims = resolved.signer.verify(token);
         if (!claims) return unavailable();
-        if (session.readOnlyReview) {
+        if (session.readOnlyReview || session.stagingVisualRepair) {
           const review = await resolveStagingOwnerReadOnlyReviewForSession(session);
           if (!review || review.memoryId !== claims.memoryId) return unavailable();
         }
-        const artifact = await resolved.artifacts.findApprovedForOwner({
-          externalUserId: session.externalUserId,
-          memoryId: claims.memoryId,
-          jobId: claims.jobId,
-        });
+        let artifact: ApprovedVideoArtifact | null;
+        if (session.stagingVisualRepair) {
+          const review = await resolveStagingOwnerReadOnlyReviewForSession(session);
+          if (!review || review.memoryId !== claims.memoryId) return unavailable();
+          const idle = await findStagingOwnerReadOnlyApprovedIdle({
+            userId: review.userId,
+            memoryId: review.memoryId,
+            jobId: claims.jobId,
+          });
+          artifact = idle
+            ? reviewIdleArtifact({ memoryId: review.memoryId, jobId: idle.jobId, artifactKey: idle.artifactKey })
+            : null;
+        } else {
+          artifact = await resolved.artifacts.findApprovedForOwner({
+            externalUserId: session.externalUserId,
+            memoryId: claims.memoryId,
+            jobId: claims.jobId,
+          });
+        }
         const playable = assertPlayableArtifact({
           signer: resolved.signer,
           token,

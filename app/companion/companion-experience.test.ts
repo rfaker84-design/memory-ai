@@ -25,7 +25,7 @@ test("companion presents one warm Owner portrait scene without status gamificati
   assert.match(page, /variant="idle"/);
   assert.match(page, /motionEnabled=\{!reducedMotion\}/);
   assert.match(page, /想对 \{memory\.name\} 说的话/);
-  assert.match(page, /AI 纪念陪伴 · 基于你确认的资料/);
+  assert.match(page, /AI生成 · 基于你确认的信息/);
   assert.match(styles, /\.heroMotion[\s\S]*?filter: saturate/);
   assert.doesNotMatch(page, /相伴多少天|在线|亲密度|礼物|热度|陪伴时长|连续天数|打卡|等级|视频通话|语音通话|送礼物/);
   assert.doesNotMatch(styles, /stars|portraitHalo|radial-gradient\(circle at 50% 28%/);
