@@ -190,3 +190,38 @@
 @media (prefers-reduced-motion: reduce) {
   .page *, .page *::before, .page *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
 }
+
+/* A readable collection surface for regular viewing, rather than a second
+   dark decorative environment. */
+.page {
+  background: linear-gradient(180deg, #fbf7ef 0%, #f2e9dc 100%);
+  color: #302820;
+}
+.stars { display: none; }
+.intro > p,
+.capture > div:first-child > p,
+.collectionHeading p,
+.memoryMeta > span { color: #8c6831; }
+.intro > span,
+.capture > div:first-child > span,
+.collectionHeading > span,
+.collectionEmpty span,
+.captureChoices small,
+.memoryMeta,
+.memoryCard dd,
+.memoryCard details { color: #675b4e; }
+.status,
+.empty { color: #4d4135; border-left-color: rgba(151, 111, 48, 0.42); }
+.capture,
+.collectionEmpty,
+.memoryCard { border-color: rgba(117, 86, 43, 0.2); }
+.captureChoices article { border-color: rgba(117, 86, 43, 0.16); }
+.captureChoices article > span { color: #72552d; border-color: rgba(117, 86, 43, 0.3); background: #fff9ef; }
+.organizedText { color: #40352a; }
+.memoryCard dt,
+.memoryCard summary,
+.captureChoices a,
+.memoryActions a,
+.status button,
+.status a,
+.empty a { color: #795a2d; }

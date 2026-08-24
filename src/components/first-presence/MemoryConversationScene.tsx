@@ -43,6 +43,7 @@ type ConversationPhase = "loading" | "greeting" | "ready" | "sending" | "replyin
 type PendingMessage = PendingConversationMessage;
 type CorrectionPhase = "idle" | "saving";
 type NotificationPromptState = "hidden" | "available" | "requesting" | "granted" | "denied";
+type ConversationMotionVariant = "idle" | "attentive" | "acknowledgement" | "reflective";
 type FormalMemoryProfile = {
   personalityProfile?: string | null;
   speechStyle?: string | null;
@@ -66,10 +67,17 @@ function createMessageIdempotencyKey() {
 function readableFailure(error: unknown) {
   if (error instanceof ConversationRequestError && error.status === 401) return "登录已失效。请重新登录。";
   if (error instanceof ConversationRequestError && error.status === 404) return "暂时找不到这段记忆，请回到首页重新进入。";
+  if (error instanceof ConversationRequestError && error.status === 403 && error.message === "STAGING_VISUAL_REVIEW_READ_ONLY") return "当前为只读视觉审阅：可以查看已有对话，但不会发送、保存或改动内容。";
   if (error instanceof ConversationRequestError && error.status === 429 && error.message === "FREE_CHAT_DAILY_LIMIT_REACHED") return "今天的免费对话已用完；你可以明天再来。安全陪伴始终可用。";
   if (error instanceof ConversationRequestError && error.status === 503) return "这次没有生成回复。";
   if (error instanceof ConversationRequestError && error.status === 408) return "请求等待过久。先找回刚才的对话，再由你决定是否重试。";
   return "网络暂时不可用。你的输入已保留，不会自动重发。";
+}
+
+function isReadOnlyVisualReviewFailure(error: unknown): boolean {
+  return error instanceof ConversationRequestError
+    && error.status === 403
+    && error.message === "STAGING_VISUAL_REVIEW_READ_ONLY";
 }
 
 function pickupHintViewKey(value: string): string {
@@ -100,6 +108,8 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   const [failureRequestId, setFailureRequestId] = useState<string | null>(null);
   const [assistanceOfferVisible, setAssistanceOfferVisible] = useState(false);
   const [networkOffline, setNetworkOffline] = useState(false);
+  const [readOnlyVisualReview, setReadOnlyVisualReview] = useState(false);
+  const [motionVariant, setMotionVariant] = useState<ConversationMotionVariant>("idle");
   const [pickupSuggestionVisible, setPickupSuggestionVisible] = useState(false);
   const [correctionMessage, setCorrectionMessage] = useState<ConversationMessage | null>(null);
   const [correctionReason, setCorrectionReason] = useState<ReplyCorrectionReason>("称呼不对");
@@ -119,6 +129,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   const retryCandidateRef = useRef<PendingMessage | null>(null);
   const greetingViewedRef = useRef(false);
   const notificationEligibilityCheckedRef = useRef(false);
+  const motionTimersRef = useRef<number[]>([]);
   const titleId = useId();
 
   const restore = useCallback(async (signal?: AbortSignal) => {
@@ -132,6 +143,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     setPhase("loading");
     setNotice("");
     setFailureRequestId(null);
+    setReadOnlyVisualReview(false);
     try {
       setPhase("greeting");
       const restored = await restoreConversationWithFirstGreeting(
@@ -144,6 +156,12 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
       setPhase("ready");
     } catch (error) {
       if (signal?.aborted) return;
+      if (isReadOnlyVisualReviewFailure(error)) {
+        setReadOnlyVisualReview(true);
+        setNotice(readableFailure(error));
+        setPhase("ready");
+        return;
+      }
       setNotice(readableFailure(error));
       setFailureRequestId(supportRequestId(error));
       setPhase("error");
@@ -155,6 +173,25 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     void loadOrRequestGreeting(controller.signal);
     return () => controller.abort();
   }, [loadOrRequestGreeting]);
+
+  useEffect(() => () => {
+    for (const timer of motionTimersRef.current) window.clearTimeout(timer);
+    motionTimersRef.current = [];
+  }, []);
+
+  const beginReplyMotion = () => {
+    for (const timer of motionTimersRef.current) window.clearTimeout(timer);
+    motionTimersRef.current = [];
+    setMotionVariant("attentive");
+  };
+
+  const settleReplyMotion = () => {
+    for (const timer of motionTimersRef.current) window.clearTimeout(timer);
+    setMotionVariant("acknowledgement");
+    const reflectiveTimer = window.setTimeout(() => setMotionVariant("reflective"), reducedMotion ? 0 : 900);
+    const idleTimer = window.setTimeout(() => setMotionVariant("idle"), reducedMotion ? 0 : 3_400);
+    motionTimersRef.current = [reflectiveTimer, idleTimer];
+  };
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -248,13 +285,13 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   };
 
   useEffect(() => {
-    if (controlsVisible || !hasPersistedFirstGreeting(messages)) return;
+    if (controlsVisible || (!hasPersistedFirstGreeting(messages) && !readOnlyVisualReview)) return;
     const timer = window.setTimeout(
       () => setControlsVisible(true),
       reducedMotion ? 0 : 760,
     );
     return () => window.clearTimeout(timer);
-  }, [controlsVisible, messages, reducedMotion]);
+  }, [controlsVisible, messages, readOnlyVisualReview, reducedMotion]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -283,6 +320,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
     setNotice("");
     setFailureRequestId(null);
     setPhase("sending");
+    beginReplyMotion();
     const replyingTimer = window.setTimeout(() => setPhase("replying"), reducedMotion ? 0 : 360);
 
     try {
@@ -290,6 +328,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
       await restore();
       setPendingMessage(null);
       setPhase("ready");
+      settleReplyMotion();
       if (admission.freeChatWarning) {
         setNotice("今天的免费对话次数快用完了。危机支持不受这个限制。");
       }
@@ -298,6 +337,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
       setFailureRequestId(supportRequestId(error));
       setNotice(`${readableFailure(error)} 已保留原文，但不会自动重发。`);
       setPhase("error");
+      setMotionVariant("idle");
     } finally {
       window.clearTimeout(replyingTimer);
       inFlightRef.current = false;
@@ -442,9 +482,10 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
               className={styles.portraitMotion}
               memoryId={memoryId}
               portraitUrl={portraitUrl}
-              variant="idle"
+              variant={motionVariant}
               motionEnabled={!reducedMotion}
               singleVideo
+              onAcknowledgementUnavailable={() => setMotionVariant("reflective")}
             />
           ) : (
             <span className={styles.portraitInitials}>{Array.from(memoryName).slice(0, 2).join("")}</span>
@@ -461,7 +502,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
 
       <div className={styles.conversation}>
         <div className={styles.messageScroller} ref={messageScrollRef}>
-        {notificationPrompt === "available" && (
+        {!readOnlyVisualReview && notificationPrompt === "available" && (
           <aside className={styles.notificationPrompt} aria-label="问候通知选择">
             <p>如果你愿意，可以在这里开启忆见的问候提醒。锁屏提醒只会显示“忆见里有一份新的问候。”，不会显示 TA 姓名或内容。</p>
             <MemoryButton variant="secondary" onClick={() => void requestGreetingNotifications()}>开启问候提醒</MemoryButton>
@@ -533,7 +574,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
                   ；后者仅用于你明确预授权的内部支持队列，不替代紧急服务，也不表示已经通知外部人员。
                 </p>
               )}
-              {message.role === "assistant" && !isSafetyAssistantMessage(message) && (
+              {message.role === "assistant" && !isSafetyAssistantMessage(message) && !readOnlyVisualReview && (
                 <button
                   type="button"
                   className={styles.replyCorrection}
@@ -657,12 +698,12 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
                   }
                 }}
                 placeholder="说点什么…"
-                disabled={isBusy || phase === "error"}
+                disabled={readOnlyVisualReview || isBusy || phase === "error"}
                 rows={1}
               />
-              <MemoryButton type="submit" loading={phase === "sending" || phase === "replying"} disabled={!draft.trim() || isBusy || phase === "error" || networkOffline}>{networkOffline ? "等待" : "发送"}</MemoryButton>
+              <MemoryButton type="submit" loading={phase === "sending" || phase === "replying"} disabled={readOnlyVisualReview || !draft.trim() || isBusy || phase === "error" || networkOffline}>{networkOffline ? "等待" : "发送"}</MemoryButton>
             </div>
-            <p>网络不稳定时，这句话不会被自动重复发送。</p>
+            <p>{readOnlyVisualReview ? "当前为只读视觉审阅；不会发送、保存或改动内容。" : "网络不稳定时，这句话不会被自动重复发送。"}</p>
           </form>
         )}
 

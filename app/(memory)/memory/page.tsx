@@ -118,7 +118,7 @@ export default function PickupIndexPage() {
             <dl>
               <div><dt>关于</dt><dd>{item.memoryName}{item.relationship ? ` · ${item.relationship}` : ""}</dd></div>
               <div><dt>来源</dt><dd>你的主动讲述与明确确认{item.photoAssetId ? " · 已确认照片" : ""}</dd></div>
-              <div><dt>状态</dt><dd>confirmed · TA 可引用</dd></div>
+              <div><dt>状态</dt><dd>已核对 · 可用于相伴</dd></div>
             </dl>
             <details><summary>查看你的原话</summary><p>{item.originalText}</p></details>
             <div className={styles.memoryActions}>

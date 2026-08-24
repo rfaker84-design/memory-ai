@@ -215,6 +215,7 @@ test("staging requires the Debug APK access token after CORS preflight while per
     STAGING_MEDIA_SIGNING_SECRET: "m".repeat(32),
     STAGING_OWNER_READONLY_REVIEW_MEMORY_ID: "00000000-0000-4000-8000-000000000001",
     STAGING_VISUAL_REVIEW_EXPIRES_AT: new Date(Date.now() + 60_000).toISOString(),
+    STAGING_OWNER_VISUAL_REPAIR_EXPIRES_AT: new Date(Date.now() + 60_000).toISOString(),
     LLM_PROVIDER: "mock",
     TTS_PROVIDER: "mock",
   };
@@ -272,6 +273,35 @@ test("staging requires the Debug APK access token after CORS preflight while per
     }));
     assert.equal(directReviewWrite.status, 403);
     assert.deepEqual(await directReviewWrite.json(), { error: "STAGING_VISUAL_REVIEW_READ_ONLY" });
+
+    const repairHeaders = {
+      origin: "https://app.staging.yijianmemory.cn",
+      "x-memoryai-staging-visual-repair": "1",
+    };
+    const repairChat = middleware(new NextRequest("https://app.staging.yijianmemory.cn/api/memory-chat", {
+      method: "POST",
+      headers: repairHeaders,
+    }));
+    assert.equal(repairChat.headers.get("x-middleware-next"), "1");
+    const repairSession = middleware(new NextRequest("https://app.staging.yijianmemory.cn/api/memories/00000000-0000-4000-8000-000000000001/chat-session", {
+      method: "POST",
+      headers: repairHeaders,
+    }));
+    assert.equal(repairSession.headers.get("x-middleware-next"), "1");
+    for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+      const blocked = middleware(new NextRequest("https://app.staging.yijianmemory.cn/api/memories/00000000-0000-4000-8000-000000000001/pickups", {
+        method,
+        headers: repairHeaders,
+      }));
+      assert.equal(blocked.status, 403, method);
+      assert.deepEqual(await blocked.json(), { error: "STAGING_VISUAL_REVIEW_READ_ONLY" }, method);
+    }
+    const forgedOutsideHost = middleware(new NextRequest("https://api.staging.yijianmemory.cn/api/memory-chat", {
+      method: "POST",
+      headers: repairHeaders,
+    }));
+    assert.equal(forgedOutsideHost.status, 403);
+    assert.deepEqual(await forgedOutsideHost.json(), { error: "STAGING_ACCESS_DENIED" });
   } finally {
     for (const [key, value] of previous) {
       if (value === undefined) delete process.env[key];

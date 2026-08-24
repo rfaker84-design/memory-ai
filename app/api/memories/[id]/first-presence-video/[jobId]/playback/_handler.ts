@@ -55,7 +55,7 @@ export function createFirstPresencePlaybackAuthorizationHandler(
           return json({ error: "INVALID_PLAYBACK_REQUEST" }, { status: 400 });
         }
         const { id: memoryId, jobId } = await params;
-        if (session.readOnlyReview) {
+        if (session.readOnlyReview || session.stagingVisualRepair) {
           const review = await resolveStagingOwnerReadOnlyReviewForSession(session);
           if (!review || review.memoryId !== memoryId) return json({ error: "PLAYBACK_NOT_AVAILABLE" }, { status: 404 });
         }

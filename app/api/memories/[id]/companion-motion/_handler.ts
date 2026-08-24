@@ -67,7 +67,7 @@ export function createCompanionMotionHandler(
         if (!session) return json({ error: "UNAUTHENTICATED" }, { status: 401 });
         if ([...request.nextUrl.searchParams.keys()].length > 0) return json({ error: "INVALID_COMPANION_MOTION_REQUEST" }, { status: 400 });
         const { id: memoryId } = await params;
-        if (session.readOnlyReview) {
+        if (session.readOnlyReview || session.stagingVisualRepair) {
           const review = await resolveStagingOwnerReadOnlyReviewForSession(session);
           if (!review || review.memoryId !== memoryId) return json({ error: "COMPANION_MOTION_UNAVAILABLE" }, { status: 404 });
           const idle = await findStagingOwnerReadOnlyApprovedIdle({ userId: review.userId, memoryId: review.memoryId });

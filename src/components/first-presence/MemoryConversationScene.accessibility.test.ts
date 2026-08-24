@@ -20,9 +20,12 @@ test("reply correction uses the bounded JSON transport for its owner-only read a
   assert.doesNotMatch(scene, /const updateResponse = await fetch\(/);
 });
 
-test("chat presence uses only the approved idle loop", () => {
-  assert.match(scene, /variant="idle"/);
-  assert.doesNotMatch(scene, /resolveConversationMotionVariant/);
+test("chat presence makes the bounded attentive-to-idle sequence explicit", () => {
+  assert.match(scene, /type ConversationMotionVariant = "idle" \| "attentive" \| "acknowledgement" \| "reflective"/);
+  assert.match(scene, /const beginReplyMotion/);
+  assert.match(scene, /const settleReplyMotion/);
+  assert.match(scene, /variant=\{motionVariant\}/);
+  assert.match(scene, /onAcknowledgementUnavailable=\{\(\) => setMotionVariant\("reflective"\)\}/);
   assert.doesNotMatch(scene, /draft\.trim\(\) \? "attentive"/);
   assert.doesNotMatch(scene, /replyPulse/);
 });

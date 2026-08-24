@@ -7,6 +7,7 @@ import type { AuthSession } from "./session";
 
 export const STAGING_VISUAL_REVIEW_HEADER = "x-memoryai-staging-visual-review";
 export const STAGING_VISUAL_REVIEW_HOST = "app.staging.yijianmemory.cn";
+export const STAGING_VISUAL_REPAIR_HEADER = "x-memoryai-staging-visual-repair";
 
 const REVIEW_TTL_SECONDS = 30 * 60;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -25,19 +26,35 @@ export type StagingApprovedIdleArtifact = Readonly<{
 
 type ReviewWindow = Readonly<{ memoryId: string; expiresAt: Date }>;
 
-/** The expiry is absolute, bounded to thirty minutes, and never rolls forward. */
-export function stagingOwnerReadOnlyReviewWindow(
+function boundedStagingOwnerWindow(
+  expiryVariable: "STAGING_VISUAL_REVIEW_EXPIRES_AT" | "STAGING_OWNER_VISUAL_REPAIR_EXPIRES_AT",
   environment: NodeJS.ProcessEnv = process.env,
   now: Date = new Date(),
 ): ReviewWindow | null {
   if (!isStagingRuntime(environment)) return null;
   const memoryId = environment.STAGING_OWNER_READONLY_REVIEW_MEMORY_ID?.trim();
-  const rawExpiry = environment.STAGING_VISUAL_REVIEW_EXPIRES_AT?.trim();
+  const rawExpiry = environment[expiryVariable]?.trim();
   if (!memoryId || !UUID_PATTERN.test(memoryId) || !rawExpiry) return null;
   const expiresAt = new Date(rawExpiry);
   const remainingMilliseconds = expiresAt.getTime() - now.getTime();
   if (!Number.isFinite(expiresAt.getTime()) || remainingMilliseconds < 1 || remainingMilliseconds > REVIEW_TTL_SECONDS * 1000) return null;
   return { memoryId, expiresAt };
+}
+
+/** The expiry is absolute, bounded to thirty minutes, and never rolls forward. */
+export function stagingOwnerReadOnlyReviewWindow(
+  environment: NodeJS.ProcessEnv = process.env,
+  now: Date = new Date(),
+): ReviewWindow | null {
+  return boundedStagingOwnerWindow("STAGING_VISUAL_REVIEW_EXPIRES_AT", environment, now);
+}
+
+/** A separate, bounded Staging regression window for the one live chat check. */
+export function stagingOwnerVisualRepairWindow(
+  environment: NodeJS.ProcessEnv = process.env,
+  now: Date = new Date(),
+): ReviewWindow | null {
+  return boundedStagingOwnerWindow("STAGING_OWNER_VISUAL_REPAIR_EXPIRES_AT", environment, now);
 }
 
 /**
@@ -52,8 +69,15 @@ export function isDirectStagingOwnerReadOnlyReviewRequest(request: NextRequest):
     && stagingOwnerReadOnlyReviewWindow() !== null;
 }
 
-export async function resolveStagingOwnerReadOnlyReviewSubject(): Promise<StagingOwnerReadOnlyReviewSubject | null> {
-  const window = stagingOwnerReadOnlyReviewWindow();
+export function isDirectStagingOwnerVisualRepairRequest(request: NextRequest): boolean {
+  return (request.headers.get("host") ?? request.nextUrl.host) === STAGING_VISUAL_REVIEW_HOST
+    && request.headers.get(STAGING_VISUAL_REPAIR_HEADER) === "1"
+    && stagingOwnerVisualRepairWindow() !== null;
+}
+
+async function resolveStagingOwnerReadOnlyReviewSubjectForWindow(
+  window: ReviewWindow | null,
+): Promise<StagingOwnerReadOnlyReviewSubject | null> {
   if (!window) return null;
   const result = await queryPostgres<{ userId: string; externalUserId: string }>(
     `SELECT u.id AS "userId", u.external_id AS "externalUserId"
@@ -71,6 +95,10 @@ export async function resolveStagingOwnerReadOnlyReviewSubject(): Promise<Stagin
   } : null;
 }
 
+export async function resolveStagingOwnerReadOnlyReviewSubject(): Promise<StagingOwnerReadOnlyReviewSubject | null> {
+  return resolveStagingOwnerReadOnlyReviewSubjectForWindow(stagingOwnerReadOnlyReviewWindow());
+}
+
 export async function resolveDirectStagingOwnerReadOnlyReviewSession(request: NextRequest): Promise<AuthSession | null> {
   if (!isDirectStagingOwnerReadOnlyReviewRequest(request)) return null;
   const subject = await resolveStagingOwnerReadOnlyReviewSubject();
@@ -82,12 +110,31 @@ export async function resolveDirectStagingOwnerReadOnlyReviewSession(request: Ne
   } : null;
 }
 
+/**
+ * The repair identity is server-injected, has an absolute thirty-minute
+ * expiry, and is narrowed in middleware to the one normal chat mutation used
+ * by this Staging regression. It is never a browser token or a general Owner
+ * session.
+ */
+export async function resolveDirectStagingOwnerVisualRepairSession(request: NextRequest): Promise<AuthSession | null> {
+  if (!isDirectStagingOwnerVisualRepairRequest(request)) return null;
+  const subject = await resolveStagingOwnerReadOnlyReviewSubjectForWindow(stagingOwnerVisualRepairWindow());
+  return subject ? {
+    userId: subject.userId,
+    externalUserId: subject.externalUserId,
+    stagingVisualRepair: true,
+    expiresAt: subject.expiresAt,
+  } : null;
+}
+
 /** A signed legacy review session is also constrained to the configured owner and Memory. */
 export async function resolveStagingOwnerReadOnlyReviewForSession(
   session: AuthSession | null,
 ): Promise<StagingOwnerReadOnlyReviewSubject | null> {
-  if (!session?.readOnlyReview) return null;
-  const subject = await resolveStagingOwnerReadOnlyReviewSubject();
+  if (!session || (!session.readOnlyReview && !session.stagingVisualRepair)) return null;
+  const subject = await resolveStagingOwnerReadOnlyReviewSubjectForWindow(
+    session.stagingVisualRepair ? stagingOwnerVisualRepairWindow() : stagingOwnerReadOnlyReviewWindow(),
+  );
   return subject && subject.userId === session.userId && subject.externalUserId === session.externalUserId
     ? subject
     : null;

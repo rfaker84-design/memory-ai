@@ -10,8 +10,9 @@ export class PostLoginDestinationError extends Error {
 
 /**
  * Route only from the formal Owner-scoped memory list. Returning Owners go
- * straight to their TA; genuinely empty Owners enter the single Sprint23
- * creator. A missing Session never falls back to client-side draft state.
+ * straight to their TA; genuinely empty Owners see the calm empty state and
+ * choose whether to create a person. A missing Session never falls back to
+ * client-side draft state.
  */
 export async function resolvePostLoginDestination(
   request: typeof fetch = fetch,
@@ -24,5 +25,5 @@ export async function resolvePostLoginDestination(
   if (!response.ok || !Array.isArray(body)) {
     throw new PostLoginDestinationError("POST_LOGIN_OWNER_READ_FAILED");
   }
-  return body.length > 0 ? "/memory-world" : "/create-memory";
+  return "/memory-world";
 }

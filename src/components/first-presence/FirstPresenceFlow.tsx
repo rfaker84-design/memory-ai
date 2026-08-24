@@ -712,7 +712,7 @@ export function FirstPresenceFlow({
           control: (
             <div className={styles.consentBlock}>
               <SceneField type="date" label="你的出生日期" value={birthDate} onChange={(value) => { noteDraftRevision(); setBirthDate(value); }} />
-              <p>照片只在正式创建后上传，并绑定你拥有的同一 TA。公开首发不收集声音、不录音，也不提供声音克隆。请阅读 <a href="/privacy">隐私政策</a>、<a href="/terms">用户协议</a> 与 <a href="/authorization">AI 内容和素材说明</a>。数据删除入口位于 <a href="/report">投诉与删除</a>。</p>
+              <p>照片只在正式创建后上传，并绑定你拥有的同一 TA。公开首发不收集声音、不录音，也不提供声音克隆。请阅读 <a href="/privacy">隐私政策</a>、<a href="/terms">用户协议</a> 与 <a href="/authorization">AI 内容和素材说明</a>，也可以先查看 <a href="/help">帮助与安全说明</a>。数据删除入口位于 <a href="/report">投诉与删除</a>。</p>
               <label className={styles.trustCheck}>
                 <input type="checkbox" checked={trustAccepted} onChange={(event) => { noteDraftRevision(); setTrustAccepted(event.currentTarget.checked); }} />
                 <span>我确认有权使用这张照片，并了解生成内容由 AI 合成。</span>

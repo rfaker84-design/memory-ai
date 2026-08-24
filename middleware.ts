@@ -19,6 +19,7 @@ const CORS_ALLOWED_METHODS = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
 const CORS_ALLOWED_HEADERS = "Content-Type, Authorization, Idempotency-Key, X-MemoryAI-Staging-Access, X-Video-Review-Access-Token, X-Video-Reviewer-Account";
 const STAGING_ACCESS_HEADER = "x-memoryai-staging-access";
 const STAGING_VISUAL_REVIEW_HEADER = "x-memoryai-staging-visual-review";
+const STAGING_VISUAL_REPAIR_HEADER = "x-memoryai-staging-visual-repair";
 const STAGING_APP_HOST = "app.staging.yijianmemory.cn";
 const REQUEST_ID_HEADER = "x-request-id";
 
@@ -36,6 +37,25 @@ function hasDirectStagingVisualReviewSource(request: NextRequest): boolean {
 
 function hasDirectStagingVisualReviewRead(request: NextRequest): boolean {
   return ["GET", "HEAD"].includes(request.method) && hasDirectStagingVisualReviewSource(request);
+}
+
+function hasDirectStagingVisualRepairSource(request: NextRequest): boolean {
+  if (
+    !isStagingRuntime()
+    || (request.headers.get("host") ?? request.nextUrl.host) !== STAGING_APP_HOST
+    || request.headers.get(STAGING_VISUAL_REPAIR_HEADER) !== "1"
+  ) return false;
+  const rawExpiry = process.env.STAGING_OWNER_VISUAL_REPAIR_EXPIRES_AT?.trim();
+  const expiresAt = rawExpiry ? Date.parse(rawExpiry) : Number.NaN;
+  const remaining = expiresAt - Date.now();
+  return Number.isFinite(expiresAt) && remaining > 0 && remaining <= 30 * 60 * 1000;
+}
+
+function isStagingVisualRepairMutationPath(pathname: string): boolean {
+  if (pathname === "/api/memory-chat") return true;
+  const memoryId = pathname.match(/^\/api\/memories\/([^/]+)\/chat-session$/u)?.[1];
+  const configuredMemoryId = process.env.STAGING_OWNER_READONLY_REVIEW_MEMORY_ID?.trim();
+  return Boolean(memoryId && configuredMemoryId && memoryId === configuredMemoryId);
 }
 
 function hasReadOnlyVisualReviewMarker(request: NextRequest): boolean {
@@ -198,6 +218,9 @@ function stagingVisualReviewReadOnlyFailure(allowedOrigin?: string): NextRespons
 
 function requiresStagingAccessToken(request: NextRequest): boolean {
   if (!isStagingRuntime()) return false;
+  // This marker is stripped from all non-review sources by Nginx and remains
+  // bounded in the server process. Mutations are still narrowed below.
+  if (hasDirectStagingVisualRepairSource(request)) return false;
   // A signed, read-only review session may read only through the Nginx-injected
   // marker. The marker has an empty proxy default, so a browser cannot spoof
   // it; mutation methods are rejected above before any route handler runs.
@@ -273,6 +296,14 @@ export function middleware(request: NextRequest) {
 
   if (MUTATION_METHODS.has(request.method) && (hasReadOnlyVisualReviewMarker(request) || hasDirectStagingVisualReviewSource(request))) {
     return reject(stagingVisualReviewReadOnlyFailure(allowedCorsOrigin), "STAGING_VISUAL_REVIEW_READ_ONLY");
+  }
+
+  if (
+    MUTATION_METHODS.has(request.method)
+    && hasDirectStagingVisualRepairSource(request)
+    && !isStagingVisualRepairMutationPath(request.nextUrl.pathname)
+  ) {
+    return reject(stagingVisualReviewReadOnlyFailure(allowedCorsOrigin), "STAGING_VISUAL_REVIEW_REPAIR_SCOPE_DENIED");
   }
 
   if (

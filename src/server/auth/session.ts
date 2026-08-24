@@ -13,13 +13,18 @@ import {
 import { queryPostgres } from "../database/postgres";
 import { AuthConfigurationError, sessionSigningKeyRing, verificationPepperKeyRing } from "./crypto";
 import { isSessionRevoked } from "./session-revocation";
-import { resolveDirectStagingOwnerReadOnlyReviewSession } from "./staging-owner-readonly-review";
+import {
+  resolveDirectStagingOwnerReadOnlyReviewSession,
+  resolveDirectStagingOwnerVisualRepairSession,
+} from "./staging-owner-readonly-review";
 
 export type AuthSession = {
   userId: string;
   externalUserId: string;
   /** True only for the bounded, Staging-only read-only visual review bridge. */
   readOnlyReview?: true;
+  /** True only for the bounded Staging visual-repair chat regression bridge. */
+  stagingVisualRepair?: true;
   /** Present for JWT-backed sessions; injected test and legacy adapters may omit it. */
   authenticatedAt?: string;
   expiresAt: string;
@@ -145,6 +150,8 @@ export async function verifySessionToken(
 }
 
 export async function verifyRequestSession(request: NextRequest): Promise<AuthSession | null> {
+  const visualRepair = await resolveDirectStagingOwnerVisualRepairSession(request);
+  if (visualRepair) return visualRepair;
   const directReview = await resolveDirectStagingOwnerReadOnlyReviewSession(request);
   if (directReview) return directReview;
   const token = request.cookies.get(AUTH_SESSION_COOKIE)?.value;

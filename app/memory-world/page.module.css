@@ -320,3 +320,56 @@
     animation: none !important;
   }
 }
+
+/* The owner home is intentionally quiet: the person is the focal point, not a
+   decorative night-sky surface. */
+.world {
+  background: linear-gradient(180deg, #fbf7ef 0%, #f3eadc 100%) !important;
+  color: #312820;
+}
+
+.stars,
+.portraitStars { display: none !important; }
+
+.ambientLight {
+  top: 16%;
+  background: radial-gradient(circle, rgba(205, 160, 92, 0.17), rgba(205, 160, 92, 0.04) 46%, transparent 72%);
+}
+
+.topBar button { color: #75582f; }
+.topBar span,
+.identity { color: #80633b; }
+.hero h1 { color: #302820; }
+.hero h1 em { color: #936d31; text-shadow: none; }
+.relationship,
+.greeting { color: #625548; }
+
+.portraitGlow {
+  background: radial-gradient(circle, rgba(205, 160, 92, 0.22), rgba(205, 160, 92, 0.06) 48%, transparent 70%);
+}
+
+.heroPortrait {
+  border-color: rgba(124, 91, 45, 0.24);
+  background: #e8ddcf !important;
+  box-shadow: 0 22px 52px rgba(86, 63, 37, 0.18), 0 0 0 12px rgba(205, 160, 92, 0.08) !important;
+}
+
+.heroActions > button:not(:first-child) { color: #6f5a3d; }
+.heroActions > button:not(:first-child):hover { border-bottom-color: #a27a38; color: #46351e; }
+
+.moreActions {
+  display: grid;
+  gap: 10px;
+}
+
+.moreActions button {
+  min-height: 48px;
+  border: 1px solid rgba(122, 91, 48, 0.24);
+  border-radius: 14px;
+  background: #fffaf2;
+  color: #3e3022;
+  font: inherit;
+  text-align: left;
+  padding: 0 16px;
+  cursor: pointer;
+}

@@ -220,9 +220,10 @@ export function CompanionMotionBackground({
       delete next[failed];
       return next;
     });
-    if (failed === "attentive" && visibleVariantRef.current === failed && sources.idle) {
-      // Attentive is an optional enhancement over the approved idle loop. Its
-      // failure must return to idle, never expose the static portrait.
+    if (failed !== "idle" && visibleVariantRef.current === failed && sources.idle) {
+      // Every conversational action is an enhancement over the approved idle
+      // loop. A failed attentive, acknowledgement, or reflective clip must
+      // return to that live idle rather than expose a permanent still.
       visibleVariantRef.current = "idle";
       setVisibleVariant("idle");
     } else if (visibleVariantRef.current === failed) {

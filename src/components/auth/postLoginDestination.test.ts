@@ -6,7 +6,7 @@ import {
   resolvePostLoginDestination,
 } from "./postLoginDestination";
 
-test("a returning Owner enters the real TA landing while a new Owner enters the sole creator", async () => {
+test("post-login always lands in the Owner space so creation is an explicit choice", async () => {
   const calls: RequestInit[] = [];
   const returning = await resolvePostLoginDestination((async (_input, init) => {
     calls.push(init ?? {});
@@ -15,7 +15,7 @@ test("a returning Owner enters the real TA landing while a new Owner enters the 
   const firstTime = await resolvePostLoginDestination((async () => Response.json([])) as typeof fetch);
 
   assert.equal(returning, "/memory-world");
-  assert.equal(firstTime, "/create-memory");
+  assert.equal(firstTime, "/memory-world");
   assert.equal(calls[0]?.credentials, "same-origin");
   assert.equal(calls[0]?.cache, "no-store");
 });

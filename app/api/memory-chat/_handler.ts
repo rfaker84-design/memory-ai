@@ -29,6 +29,7 @@ import {
 } from "../../../src/server/auth";
 import { DatabaseDependencyError, safeDatabaseErrorLog } from "../../../src/server/database";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
+import { isStagingRuntime } from "@/src/server/runtime/staging-contract";
 
 type MemoryChatRequest = { memoryId: string; question: string };
 type MemoryOwnershipService = Pick<MemoryService, "getMemoryForUser">;
@@ -53,6 +54,14 @@ type CrisisSupportEscalation = (input: { userId: string; externalUserId: string;
 type ChatEligibility = (externalUserId: string) => Promise<boolean>;
 
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isBoundedStagingVisualRepairMemory(session: AuthSession, memoryId: string): boolean {
+  if (!session.stagingVisualRepair) return true;
+  if (!isStagingRuntime()) return false;
+  const configured = process.env.STAGING_OWNER_READONLY_REVIEW_MEMORY_ID?.trim();
+  return Boolean(configured && UUID_PATTERN.test(configured) && configured === memoryId);
+}
 
 const createMemoryService = (): MemoryOwnershipService =>
   new MemoryService(new MemoryRepository(new MemoryPostgresDataSource()));
@@ -210,6 +219,10 @@ export function createMemoryChatHandler(
       }
       const parsed = parseBody(body);
       if (!parsed) return json({ error: "INVALID_REQUEST" }, { status: 400 });
+      if (!isBoundedStagingVisualRepairMemory(session, parsed.memoryId)) {
+        // Do not disclose whether another historical Owner row exists.
+        return json({ error: "MEMORY_NOT_FOUND" }, { status: 404 });
+      }
 
       const userId = session.externalUserId;
       const memory = await memoryServiceFactory().getMemoryForUser(parsed.memoryId, userId);

@@ -113,7 +113,7 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
     }
     setOriginalText(selected.originalText);
     setOrganizedText(organizationDraft(selected.originalText));
-    setMessage("忆见已根据你主动选择的聊天原话整理草稿。当前仍是 draft；只有你确认后才会保存。");
+    setMessage("忆见已根据你主动选择的聊天原话整理了一份待确认内容；只有你确认后才会保存。");
   }, [memoryId, startsFromChat]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -189,7 +189,7 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
       <span>你说，忆见帮你整理。只有经过你确认，才会成为 TA 可以引用的记忆。忆见不是 TA，不会从普通聊天自动收集资料，也不会猜测空缺。</span>
     </header>
     {startsFromChat && <section className={styles.draftNotice} aria-label="聊天拾忆草稿状态">
-      <strong>draft · 未保存</strong>
+      <strong>待确认 · 尚未保存</strong>
       <p>{originalText ? "这段原话来自你刚才主动选择的聊天内容。请核对整理稿，再决定是否确认。" : "没有带入聊天原话；普通聊天没有被自动保存。"}</p>
     </section>}
     {startsFromPhoto && <section className={styles.photoSource} aria-labelledby="pickup-photo-source-heading">
@@ -206,7 +206,7 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
       </fieldset>}
     </section>}
     {!editing && <form className={styles.draftForm} onSubmit={submit}>
-      <div className={styles.formHeading}><span>draft</span><h2>整理一段记忆</h2><p>草稿只停留在当前页面；确认前不会写入正式拾忆。</p></div>
+      <div className={styles.formHeading}><span>待确认</span><h2>整理一段记忆</h2><p>这段内容只停留在当前页面；确认前不会写入正式拾忆。</p></div>
       <label>你的原话<textarea value={originalText} onChange={(event) => { pendingRequestKey.current = null; setOriginalText(event.currentTarget.value); }} maxLength={8000} rows={5} required /></label>
       {!followUpAsked && originalText.trim() && <TouchButton type="button" onClick={() => setFollowUpAsked(true)}>忆见可以追问一件事</TouchButton>}
       {followUpAsked && <p role="note">忆见想确认一件事：这件事大约发生在什么时候？你可以直接补充在原话里。每次整理最多提出这一项追问。</p>}
@@ -217,13 +217,13 @@ export default function PickupPage({ params }: { params: Promise<{ id: string }>
     </form>}
     {message && <p className={styles.message} role="status">{message}</p>}
     <section className={styles.confirmedList} aria-labelledby="confirmed-pickups-title">
-    <div className={styles.confirmedHeading}><span>confirmed</span><h2 id="confirmed-pickups-title">已确认的忆</h2></div>
+    <div className={styles.confirmedHeading}><span>已确认</span><h2 id="confirmed-pickups-title">已确认的忆</h2></div>
     {pickups.length === 0 && <p className={styles.confirmedEmpty}>还没有已确认资料。普通聊天和未确认草稿不会出现在这里。</p>}
     {pickups.map((pickup) => <article className={styles.confirmedCard} key={pickup.id}>
       <div className={styles.cardMeta}><span>已确认</span><time dateTime={pickup.createdAt}>{recordedAt(pickup.createdAt)}</time></div>
       <h3>{memoryCollectionTitle(pickup.organizedText)}</h3>
       <p className={styles.organizedText}>{pickup.organizedText}</p>
-      <dl><div><dt>来源</dt><dd>你的主动讲述与明确确认</dd></div><div><dt>叙述者</dt><dd>你</dd></div><div><dt>状态</dt><dd>confirmed · TA 可引用</dd></div></dl>
+      <dl><div><dt>来源</dt><dd>你的主动讲述与明确确认</dd></div><div><dt>叙述者</dt><dd>你</dd></div><div><dt>状态</dt><dd>已核对 · 可用于相伴</dd></div></dl>
       <details><summary>查看你的原话</summary><p>{pickup.originalText}</p></details>
       {pickup.photoAssetId && <p className={styles.photoProvenance}>附带来源：你确认选择的已上传照片</p>}
       <div className={styles.cardActions}>

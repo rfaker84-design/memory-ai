@@ -18,6 +18,7 @@ import {
   AuthConfigurationError,
   requireAllowedOrigin,
 } from "../../../src/server/auth";
+import { isStagingRuntime } from "@/src/server/runtime/staging-contract";
 import { hasApprovedMemoryCreationConsents } from "../../../features/consent/trust-consent-postgres";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
 
@@ -41,6 +42,15 @@ type MemoryServiceFactory = () => Pick<
 >;
 type AuditServiceFactory = () => Pick<AuditService, "log">;
 type MemoryProfileConsentVerifier = (externalUserId: string) => Promise<boolean>;
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function stagingVisualRepairMemoryId(environment: NodeJS.ProcessEnv = process.env): string | null {
+  if (!isStagingRuntime(environment)) return null;
+  const configured = environment.STAGING_OWNER_VISUAL_REPAIR_MEMORY_ID?.trim()
+    || environment.STAGING_OWNER_READONLY_REVIEW_MEMORY_ID?.trim();
+  return configured && UUID_PATTERN.test(configured) ? configured : null;
+}
 
 function databaseErrorResponse(error: unknown) {
   if (error instanceof MemoryLimitError) {
@@ -89,14 +99,27 @@ export function createMemoriesHandlers(
             : undefined
         );
         if ("response" in owner) return owner.response;
-        const memories = await memoryServiceFactory().listUserMemories(owner.externalUserId);
+        const allMemories = await memoryServiceFactory().listUserMemories(owner.externalUserId);
+        const visualRepairMemoryId = owner.session.stagingVisualRepair
+          ? stagingVisualRepairMemoryId()
+          : null;
+        // Staging Owner visual repair has exactly one canonical person. This
+        // is a presentation scope only: duplicate historical rows remain
+        // untouched and no client-side preference can choose them.
+        const memories = visualRepairMemoryId && allMemories.some((memory) => memory.id === visualRepairMemoryId)
+          ? allMemories.filter((memory) => memory.id === visualRepairMemoryId)
+          : allMemories;
 
         // The direct visual-review identity is server-only. The existing UI
         // needs a stable grouping value for presentation preferences, but it
         // must never receive the Owner's external identifier.
-        return json(owner.session.readOnlyReview
-          ? memories.map(({ userId: _ownerExternalId, ...memory }) => ({ ...memory, userId: "staging-readonly-review" }))
-          : memories);
+        if (owner.session.readOnlyReview || owner.session.stagingVisualRepair) {
+          const presentationOwner = owner.session.stagingVisualRepair
+            ? "staging-visual-repair"
+            : "staging-readonly-review";
+          return json(memories.map(({ userId: _ownerExternalId, ...memory }) => ({ ...memory, userId: presentationOwner })));
+        }
+        return json(memories);
       } catch (error) {
         return databaseErrorResponse(error);
       }

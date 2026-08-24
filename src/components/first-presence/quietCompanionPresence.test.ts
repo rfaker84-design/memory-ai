@@ -16,10 +16,10 @@ test("companion scene uses the owner-specific motion background and retains the 
   const presence = readFileSync(new URL("./quietCompanionPresence.ts", import.meta.url), "utf8");
   const scene = readFileSync(new URL("./MemoryConversationScene.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("./MemoryConversationScene.module.css", import.meta.url), "utf8");
-  assert.match(scene, /useQuietCompanionPresence/);
-  assert.match(scene, /data-presence=\{quietPresence\}/);
+  assert.match(scene, /data-presence="quiet"/);
   assert.match(scene, /<CompanionMotionBackground/);
   assert.match(scene, /motionEnabled=\{!reducedMotion\}/);
+  assert.match(scene, /variant=\{motionVariant\}/);
   assert.doesNotMatch(scene, /home-hero|initial_preview|encounter-playback|audioRef|lip/);
   assert.match(css, /data-presence="static"/);
   assert.match(css, /data-presence="static"\] \.portraitMotion/);
@@ -33,9 +33,12 @@ test("companion scene uses the owner-specific motion background and retains the 
   assert.doesNotMatch(presence, /getThermalState|thermalState/);
 });
 
-test("chat keeps the approved idle loop independent from request lifecycle states", () => {
+test("chat transitions through approved conversational motion states and falls back safely", () => {
   const scene = readFileSync(new URL("./MemoryConversationScene.tsx", import.meta.url), "utf8");
-  assert.match(scene, /<CompanionMotionBackground[\s\S]*variant=\{draft\.trim\(\) \? "attentive" : "idle"\}[\s\S]*motionEnabled=\{!reducedMotion\}/);
-  assert.match(scene, /const conversationPresenceVariant = resolveConversationMotionVariant/);
-  assert.doesNotMatch(scene, /acknowledgementActive|preloadMotionVariant|onAcknowledgementComplete|onAcknowledgementUnavailable/);
+  assert.match(scene, /<CompanionMotionBackground[\s\S]*variant=\{motionVariant\}[\s\S]*motionEnabled=\{!reducedMotion\}/);
+  assert.match(scene, /setMotionVariant\("attentive"\)/);
+  assert.match(scene, /setMotionVariant\("acknowledgement"\)/);
+  assert.match(scene, /setMotionVariant\("reflective"\)/);
+  assert.match(scene, /setMotionVariant\("idle"\)/);
+  assert.match(scene, /onAcknowledgementUnavailable/);
 });
