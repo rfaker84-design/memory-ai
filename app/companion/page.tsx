@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { GuestExperience } from "../../components/world/GuestExperience";
+import { OriginalHomeLogin } from "../../components/world/OriginalHomeLogin";
+
 import {
   COMPANION_PRIMARY_KEY,
   companionPrimaryStorageKey,
@@ -21,6 +24,7 @@ import {
   CompanionHomeRequestError,
   fetchCompanionHomeMemoriesJson,
 } from "@/src/components/companion/companionHomeRequest";
+import { fetchAuthRequestJson } from "@/src/components/auth/authRequestClient";
 import {
   CompanionMotionBackground,
   type CompanionMotionSelectionDebug,
@@ -43,7 +47,8 @@ type CompanionMemory = {
   createdAt?: string | null;
 };
 
-type CompanionState = "loading" | "unauthenticated" | "empty" | "ready" | "error" | "timeout";
+type CompanionState = "home" | "ready" | "error" | "timeout";
+type LoginIntent = "login" | "create" | null;
 
 type CompanionPickup = {
   id: string;
@@ -90,25 +95,38 @@ function CompanionContent() {
   const router = useRouter();
   const reducedMotion = useReducedMotion();
   const presence = useQuietCompanionPresence({ reducedMotion, replying: false });
-  const [state, setState] = useState<CompanionState>("loading");
+  const [state, setState] = useState<CompanionState>("home");
   const [memory, setMemory] = useState<CompanionMemory | null>(null);
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null);
   const [latestPickup, setLatestPickup] = useState<CompanionPickup | null>(null);
   const [pickupImageUrl, setPickupImageUrl] = useState<string | null>(null);
   const [visitState, setVisitState] = useState<CompanionVisitState>("first_visit");
   const [motionDebugSelection, setMotionDebugSelection] = useState<CompanionMotionSelectionDebug | null>(null);
+  const [loginIntent, setLoginIntent] = useState<LoginIntent>(null);
+  const [authenticated, setAuthenticated] = useState(false);
 
   const load = useCallback(async (signal?: AbortSignal) => {
-    setState("loading");
     const debugRequested = stagingMotionDebugRequested();
     if (debugRequested) setMotionDebugSelection(null);
     try {
-      const { response, body } = await fetchCompanionHomeMemoriesJson(fetch, signal);
+      // Public home must never make a private memory request just to discover
+      // that a visitor is logged out.
+      const { response: sessionResponse, body: sessionBody } = await fetchAuthRequestJson("/api/auth/session", {
+        cache: "no-store",
+        credentials: "same-origin",
+      }, fetch, signal);
       if (signal?.aborted) return;
-      if (response.status === 401) {
-        setState("unauthenticated");
+      if (!sessionResponse.ok || (sessionBody as { authenticated?: unknown }).authenticated !== true) {
+        setAuthenticated(false);
+        setMemory(null);
+        setState("home");
         return;
       }
+      setAuthenticated(true);
+
+      const { response, body } = await fetchCompanionHomeMemoriesJson(fetch, signal);
+      if (signal?.aborted) return;
+      if (response.status === 401) throw new Error("COMPANION_SESSION_CHANGED");
       if (!response.ok) throw new Error("COMPANION_LIST_UNAVAILABLE");
       const memories = Array.isArray(body) ? body as CompanionMemory[] : [];
       const ownerId = typeof memories[0]?.userId === "string" && memories[0].userId.trim()
@@ -121,7 +139,7 @@ function CompanionContent() {
       const scopedValueBefore = debugRequested && scopedKey ? readPresentationValue(scopedKey) : null;
       const legacyValueBefore = debugRequested ? readPresentationValue(COMPANION_PRIMARY_KEY) : null;
       const selection = ownerId
-        ? resolveCompanionPrimaryPreference(memories, ownerId, window.localStorage)
+        ? resolveCompanionPrimaryPreference(memories, ownerId, window.localStorage, { allowSingleMemoryFallback: false })
         : null;
       const selected = selection?.memory ?? null;
       if (debugRequested) {
@@ -155,13 +173,11 @@ function CompanionContent() {
         });
       }
       if (!selected) {
-        if (memories.length > 1 && selection?.needsExplicitChoice) {
-          // Reuse the existing memory-world picker. Array order must never
-          // silently become a multi-person Owner's primary preference.
-          router.replace("/memory-world");
-          return;
-        }
-        setState(memories.length === 0 ? "empty" : "error");
+        // The fixed home never restores a former route or silently promotes
+        // the newest (or only) memory. A person appears here only after the
+        // Owner explicitly selected it as primary.
+        setMemory(null);
+        setState("home");
         return;
       }
 
@@ -204,7 +220,7 @@ function CompanionContent() {
       if (signal?.aborted) return;
       setState(error instanceof CompanionHomeRequestError ? "timeout" : "error");
     }
-  }, [router]);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -212,16 +228,30 @@ function CompanionContent() {
     return () => controller.abort();
   }, [load]);
 
-  if (state === "loading") {
-    return <section className={styles.statusPage} aria-label="陪伴空间"><p role="status" aria-live="polite">正在打开陪伴空间…</p></section>;
+  const openLogin = () => setLoginIntent("login");
+  const beginCreation = () => {
+    if (authenticated) {
+      router.push("/create-memory");
+      return;
+    }
+    setLoginIntent("create");
+  };
+  const completeAuthentication = async () => {
+    if (loginIntent === "create") {
+      router.replace("/create-memory");
+      return;
+    }
+    setAuthenticated(true);
+    setLoginIntent(null);
+    await load();
+  };
+
+  if (loginIntent) {
+    return <OriginalHomeLogin onAuthenticated={completeAuthentication} onBackToExperience={() => setLoginIntent(null)} />;
   }
 
-  if (state === "unauthenticated") {
-    return <section className={styles.statusPage} aria-label="陪伴空间"><p role="alert">请先登录，再进入属于你的陪伴空间。</p><button type="button" onClick={() => router.replace("/login")}>前往登录</button></section>;
-  }
-
-  if (state === "empty") {
-    return <section className={styles.statusPage} aria-label="相伴空间"><p role="status">还没有可以进入相伴的人物。</p><button type="button" onClick={() => router.replace("/create-memory")}>开始</button></section>;
+  if (state === "home") {
+    return <GuestExperience onLogin={openLogin} onStart={beginCreation} showLogin={!authenticated} />;
   }
 
   if (state === "error" || state === "timeout" || !memory) {

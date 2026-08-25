@@ -17,6 +17,11 @@ export type CompanionPrimaryResolution<T extends CompanionHomeMemory> = {
   source: "scoped" | "legacy-migrated" | "single-memory" | "selection-required";
 };
 
+export type CompanionPrimaryResolutionOptions = {
+  /** A fixed homepage may require a user-set primary even when only one TA exists. */
+  allowSingleMemoryFallback?: boolean;
+};
+
 /**
  * The browser preference is deliberately scoped to the current Owner. A
  * selected person is presentation state, but it must never leak across two
@@ -76,6 +81,7 @@ export function resolveCompanionPrimaryPreference<T extends CompanionHomeMemory>
   memories: readonly T[],
   ownerId: string,
   storage: CompanionPrimaryStorage,
+  options: CompanionPrimaryResolutionOptions = {},
 ): CompanionPrimaryResolution<T> {
   const scopedKey = companionPrimaryStorageKey(ownerId);
   const scopedId = readStorage(storage, scopedKey);
@@ -97,13 +103,13 @@ export function resolveCompanionPrimaryPreference<T extends CompanionHomeMemory>
     }
   }
 
-  if (memories.length === 1) {
+  if (options.allowSingleMemoryFallback !== false && memories.length === 1) {
     const only = memories[0] ?? null;
     if (only) writeStorage(storage, scopedKey, only.id);
     return { memory: only, needsExplicitChoice: false, source: "single-memory" };
   }
 
-  return { memory: null, needsExplicitChoice: memories.length > 1, source: "selection-required" };
+  return { memory: null, needsExplicitChoice: memories.length > 0, source: "selection-required" };
 }
 
 /** Explicit entry points call this only after the Owner chose a person. */

@@ -65,6 +65,15 @@ test("a one-person owner is selected safely and explicit choices can later be cl
   assert.equal(local.values.get(companionPrimaryStorageKey("owner-b")), "other");
 });
 
+test("the fixed homepage never turns a single returned memory into an implicit primary", () => {
+  const local = storage();
+  const result = resolveCompanionPrimaryPreference([{ id: "only" }], "owner-a", local, { allowSingleMemoryFallback: false });
+  assert.equal(result.memory, null);
+  assert.equal(result.needsExplicitChoice, true);
+  assert.equal(result.source, "selection-required");
+  assert.equal(local.values.has(companionPrimaryStorageKey("owner-a")), false);
+});
+
 test("daily companion greeting is shown once per day and selected TA", () => {
   const day = companionDay(new Date(2026, 7, 2));
   const marker = dailyGreetingMarker(day, "first");
@@ -75,8 +84,7 @@ test("daily companion greeting is shown once per day and selected TA", () => {
 
 test("daily companion greeting is transparent and never claims a real TA initiated it", () => {
   const greeting = dailyCompanionGreeting("小林");
-  assert.match(greeting, /^今日 AI 纪念问候 · 基于已确认资料：/);
-  assert.match(greeting, /小林/);
+  assert.match(greeting, /^AI生成 · 基于你确认的信息：/);
   assert.doesNotMatch(greeting, /我在等你|一直在这里|很快见面|来陪我/);
 });
 

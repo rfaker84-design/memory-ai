@@ -5,52 +5,33 @@ import test from "node:test";
 const experience = readFileSync(new URL("./GuestExperience.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("./GuestExperience.module.css", import.meta.url), "utf8");
 
-const publicExperience = experience.slice(
-  experience.indexOf("function PublicGuestExperience"),
-  experience.indexOf("export function GuestExperience"),
-);
-
-test("the public route follows the approved family-frame encounter invitation", () => {
-  for (const copy of [
-    "忆见",
-    "从一张照片开始。",
-    "一张照片，一个称呼。",
-    "体验一次遇见",
-  ]) {
-    assert.match(publicExperience, new RegExp(copy));
+test("the approved homepage carousel keeps the five existing, separate synthetic stories", () => {
+  for (const slug of ["elderly-woman", "elderly-man", "child-drawing", "young-woman", "younger-man"]) {
+    assert.match(experience, new RegExp(`slug: "${slug}"`));
   }
-  assert.match(publicExperience, /family-frame-hero-v2\.png/);
-  assert.match(publicExperience, /onClick=\{onStart\}>开始/);
-  assert.doesNotMatch(publicExperience, /<video|体验 TA|创建 TA|数字生命|AI 视频|AI 对话|AI 声音/);
+  assert.match(experience, /\/home-hero-assets\/\$\{story\.slug\}\.\$\{extension\}/);
+  assert.match(experience, /CROSSFADE_MS = 1_000/);
+  assert.match(experience, /autoPlay[\s\S]*?muted[\s\S]*?playsInline/);
+  assert.match(experience, /onEnded=\{\(\) => incomingIndex === null && advanceStory\(\)\}/);
+  assert.match(experience, /onError=\{\(\) => setVideoEnabled\(false\)\}/);
 });
 
-test("the public route has no fictional demo state machine or feature matrix", () => {
-  assert.doesNotMatch(publicExperience, /GuestStage|awakening|companion|setStage|HOME_STORIES|DISCLOSURE/);
-  assert.doesNotMatch(publicExperience, /<form|<input|<textarea|type="file"|contentEditable/);
+test("the homepage contains no rejected photo landing page, public demo flow, or marketing copy", () => {
+  for (const rejected of ["从一张照片开始", "一张照片，一个称呼", "体验一次遇见", "family-frame-hero-v2", "awakening", "companion", "guest-experience"]) {
+    assert.doesNotMatch(experience, new RegExp(rejected));
+  }
+  assert.match(experience, />创建 TA</);
+  assert.match(experience, /showLogin && <button className=\{styles\.loginAction\}[^>]*>登录/);
+  assert.doesNotMatch(experience, /<h1|<h2|invitationLine|heroSecondaryAction/);
 });
 
-test("the authenticated home keeps owned people without automatic navigation", () => {
-  assert.match(experience, /!authenticated && <button className=\{styles\.loginAction\}/);
-  assert.match(experience, /authenticated && people\.length > 0/);
-  assert.match(experience, /person\.image/);
-  assert.match(experience, /\{person\.name\}/);
-  assert.match(experience, /onOpenPerson\?\.\(person\.id\)/);
-  assert.match(experience, /people\.length < 3/);
-  assert.match(experience, /aria-label="开始记录另一个人"/);
-  assert.doesNotMatch(experience, /创建 TA|我的 TA|再记一个人|新增 TA|进入 TA|TA 管理/);
-});
-
-test("the public invitation remains isolated from Owner data and write paths", () => {
-  assert.doesNotMatch(publicExperience, /fetch\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon/);
-  assert.doesNotMatch(publicExperience, /localStorage|sessionStorage|indexedDB|caches\./);
-  assert.doesNotMatch(publicExperience, /\/api\/|photoAssetId|authRequestClient|ownedMemoryClient/);
-  assert.doesNotMatch(publicExperience, /method:\s*"(?:POST|PATCH|PUT|DELETE)"/);
-});
-
-test("the public invitation respects reduced motion, mobile safe areas, and touch targets", () => {
-  assert.match(publicExperience, /useReducedMotion/);
+test("the public carousel is read-only, privacy-safe, and falls back to its approved posters", () => {
+  assert.doesNotMatch(experience, /fetch\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon|localStorage|sessionStorage|indexedDB|\/api\//);
+  assert.doesNotMatch(experience, /method:\s*"(?:POST|PATCH|PUT|DELETE)"/);
+  assert.match(experience, /poster=\{assetPath\(activeStory, "poster\.webp"\)\}/);
+  assert.match(experience, /shouldUseStaticHero/);
+  assert.match(experience, /useReducedMotion/);
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(styles, /safe-area-inset-top/);
   assert.match(styles, /safe-area-inset-bottom/);
-  assert.match(styles, /min-height: 54px/);
-  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
 });

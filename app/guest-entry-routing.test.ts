@@ -3,48 +3,35 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const home = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
-const world = readFileSync(new URL("./memory-world/page.tsx", import.meta.url), "utf8");
+const companion = readFileSync(new URL("./companion/page.tsx", import.meta.url), "utf8");
+const guest = readFileSync(new URL("../components/world/GuestExperience.tsx", import.meta.url), "utf8");
 
-test("the root always resolves to the home after the existing launch", () => {
-  assert.match(home, /type EntryStage = "launch" \| "home" \| "login" \| "preview"/);
-  assert.match(home, /useState<EntryStage>\("launch"\)/);
-  assert.match(home, /if \(!launchComplete \|\| homeState === null\) return;[\s\S]*?setStage\("home"\)/);
-  assert.match(home, /<StaticBrandLaunch onComplete=\{completeLaunch\} ready=\{homeState !== null\} \/>/);
-  assert.match(home, /stage === "home" && homeState/);
-  assert.doesNotMatch(home, /HomeLoadingFallback|正在加载|claimBrandLaunch/);
-  assert.doesNotMatch(home, /resolvePostLoginDestination|router\.replace\(entryResolution\)/);
-  const startup = home.slice(home.indexOf("useEffect(() => {"), home.indexOf("const completeLaunch"));
-  assert.doesNotMatch(startup, /router\.(?:push|replace)\(/);
+test("every cold root launch plays the brand opening and then enters the fixed companion home", () => {
+  assert.match(home, /<StaticBrandLaunch onComplete=\{enterHome\} ready \/>/);
+  assert.match(home, /router\.replace\("\/companion"\)/);
+  assert.doesNotMatch(home, /fetchAuthRequestJson|fetchCompanionHomeMemoriesJson|resolvePostLoginDestination|localStorage|sessionStorage/);
 });
 
-test("the root reads only the current Owner list and resolves real portraits", () => {
-  assert.match(home, /fetchAuthRequestJson\("\/api\/auth\/session"/);
-  assert.match(home, /response\.ok \|\| payload\.authenticated !== true/);
-  assert.match(home, /fetchCompanionHomeMemoriesJson\(fetch, signal\)/);
-  assert.match(home, /loadOwnedMediaUrl\(assetId, signal\)/);
-  assert.match(home, /credentials: "same-origin"/);
-  assert.match(home, /cache: "no-store"/);
-  assert.match(home, /memoriesBody\.slice\(0, 3\)/);
+test("the fixed home does not force a guest login or request private memories", () => {
+  assert.match(companion, /fetchAuthRequestJson\("\/api\/auth\/session"/);
+  const loadStart = companion.indexOf("const load =");
+  const sessionGate = companion.slice(loadStart, companion.indexOf("fetchCompanionHomeMemoriesJson", loadStart));
+  assert.match(sessionGate, /setState\("home"\)/);
+  assert.match(companion, /if \(state === "home"\)[\s\S]*?<GuestExperience/);
+  assert.doesNotMatch(companion, /router\.replace\("\/login"\)/);
+  assert.doesNotMatch(companion, /router\.replace\("\/memory-world"\)/);
+  assert.doesNotMatch(guest, /fetch\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon|localStorage|sessionStorage|indexedDB|\/api\//);
 });
 
-test("formal creation and person selection use the existing product routes", () => {
-  assert.match(home, /if \(homeState\?\.authenticated\) \{[\s\S]*?router\.push\("\/create-memory"\)/);
-  assert.match(home, /setLoginIntent\("create"\)[\s\S]*?setStage\("login"\)/);
-  assert.match(home, /if \(loginIntent === "create"\) \{[\s\S]*?router\.replace\("\/create-memory"\)/);
-  assert.match(home, /persistCompanionPrimaryPreference\(window\.localStorage, homeState\.ownerId, personId\)/);
-  assert.match(home, /router\.push\("\/companion"\)/);
-  assert.doesNotMatch(home, /FirstPresenceFlow initialStage="create"/);
-  assert.match(home, /FirstPresenceFlow initialStage="preview-create"/);
+test("creation is the only homepage conversion and it asks for login only when needed", () => {
+  assert.match(companion, /if \(authenticated\) \{[\s\S]*?router\.push\("\/create-memory"\)/);
+  assert.match(companion, /setLoginIntent\("create"\)/);
+  assert.match(companion, /loginIntent === "create"[\s\S]*?router\.replace\("\/create-memory"\)/);
+  assert.match(companion, /<OriginalHomeLogin onAuthenticated=\{completeAuthentication\}/);
 });
 
-test("a stale Owner view is cleared before memory-world exposes the public experience link", () => {
-  const unauthenticated = world.slice(world.indexOf("if (response.status === 401)"), world.indexOf("if (!response.ok)"));
-  for (const reset of [
-    "setMemories([])",
-    "setPrimaryId(null)",
-    "setPrimaryPortraitUrl(null)",
-    "setDailyGreetingVisible(false)",
-  ]) assert.ok(unauthenticated.includes(reset));
-  assert.match(world, /先看看忆见的公开体验/);
-  assert.match(world, /href="\/"/);
+test("the fixed home does not restore a prior page, draft, or newest memory", () => {
+  assert.match(companion, /allowSingleMemoryFallback: false/);
+  assert.match(companion, /The fixed home never restores a former route or silently promotes/);
+  assert.doesNotMatch(companion, /const selected = memories\[0\]|memories\.slice\(0,|router\.replace\(entryResolution\)/);
 });
