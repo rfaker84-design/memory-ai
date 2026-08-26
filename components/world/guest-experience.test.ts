@@ -17,11 +17,12 @@ test("the approved homepage carousel keeps the five existing, separate synthetic
 });
 
 test("the homepage contains no rejected photo landing page, public demo flow, or marketing copy", () => {
-  for (const rejected of ["从一张照片开始", "一张照片，一个称呼", "体验一次遇见", "family-frame-hero-v2", "awakening", "companion", "guest-experience"]) {
+  for (const rejected of ["从一张照片开始", "一张照片，一个称呼", "体验一次遇见", "family-frame-hero-v2", "awakening", "guest-experience"]) {
     assert.doesNotMatch(experience, new RegExp(rejected));
   }
   assert.match(experience, />创建 TA</);
   assert.match(experience, /showLogin && <button className=\{styles\.loginAction\}[^>]*>登录/);
+  assert.match(experience, /<PublicProductNavigation active="home" overMedia \/>/);
   assert.doesNotMatch(experience, /<h1|<h2|invitationLine|heroSecondaryAction/);
 });
 

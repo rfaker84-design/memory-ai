@@ -81,7 +81,7 @@
 .loginAction:focus-visible, .heroPrimaryAction:focus-visible { outline: 2px solid var(--home-pale-gold); outline-offset: 4px; }
 .heroDisclosure {
   position: absolute;
-  inset: auto 20px max(18px, calc(env(safe-area-inset-bottom) + 10px));
+  inset: auto 20px max(82px, calc(env(safe-area-inset-bottom) + 72px));
   z-index: 2;
   margin: 0;
   color: rgba(248, 243, 234, 0.48);
@@ -97,7 +97,7 @@
   .heroHeader { padding-top: max(16px, calc(env(safe-area-inset-top) + 10px)); }
   .heroInvitation { inset-inline: 20px; bottom: max(78px, calc(env(safe-area-inset-bottom) + 64px)); }
   .heroPrimaryAction { min-height: 48px; }
-  .heroDisclosure { bottom: max(12px, calc(env(safe-area-inset-bottom) + 7px)); }
+  .heroDisclosure { bottom: max(78px, calc(env(safe-area-inset-bottom) + 68px)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .video { display: none; transition: none; }

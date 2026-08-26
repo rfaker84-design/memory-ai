@@ -27,11 +27,9 @@ test("the public carousel does not force a guest login or request private memori
   assert.doesNotMatch(guest, /fetch\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon|localStorage|sessionStorage|indexedDB|\/api\//);
 });
 
-test("creation checks login only after the user explicitly asks to create and preserves that intent", () => {
-  assert.match(home, /const beginCreation = useCallback\(async \(\) => \{[\s\S]*?fetchAuthRequestJson\("\/api\/auth\/session"/);
-  assert.match(home, /authenticated === true[\s\S]*?router\.push\("\/create-memory"\)/);
-  assert.match(home, /setLoginIntent\("create"\)[\s\S]*?setStage\("login"\)/);
-  assert.match(home, /if \(loginIntent === "create"\) \{[\s\S]*?router\.replace\("\/create-memory"\)/);
+test("creation enters a public local first step without a session read or an immediate login wall", () => {
+  assert.match(home, /const beginCreation = useCallback\(\(\) => \{[\s\S]*?router\.push\("\/guest\/create"\)/);
+  assert.doesNotMatch(home, /fetchAuthRequestJson|\/api\/auth\/session|setLoginIntent/);
 });
 
 test("companion is a second-level route and never turns an absent context into the public carousel or a default person", () => {

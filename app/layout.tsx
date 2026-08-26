@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import MobileAppShell from "../src/components/MobileAppShell";
+import { GuestCreateContinuationProvider } from "../src/components/create-memory/GuestCreateContinuationProvider";
 import "./globals.css";
 import { RootDocument } from "./root-document";
 
@@ -20,7 +21,9 @@ export const viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <RootDocument>
-      <MobileAppShell>{children}</MobileAppShell>
+      <GuestCreateContinuationProvider>
+        <MobileAppShell>{children}</MobileAppShell>
+      </GuestCreateContinuationProvider>
     </RootDocument>
   );
 }

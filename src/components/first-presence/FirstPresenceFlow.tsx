@@ -12,6 +12,7 @@ import {
 import { useRouter } from "next/navigation";
 
 import { createMemoryRequestHeaders } from "../create-memory/createMemoryLogic";
+import { useGuestCreateContinuation } from "../create-memory/GuestCreateContinuationProvider";
 import { MemoryAvatar, MemoryButton, MemoryInput, MemorySurface } from "../memory-ui";
 import { MemoryMotion } from "../../design";
 import { useReducedMotion } from "../../motion";
@@ -206,11 +207,12 @@ export function FirstPresenceFlow({
   const router = useRouter();
   const previewMode = initialStage === "preview-create";
   const directLogin = initialStage === "login-phone";
+  const { continuation: guestContinuation, clearGuestCreateContinuation } = useGuestCreateContinuation();
   const [stage, setStage] = useState<FlowStage>(directLogin ? "login-phone" : "questions");
   const [questionIndex, setQuestionIndex] = useState(0);
   const [authState, setAuthState] = useState<AuthState>(previewMode ? "preview" : "checking");
-  const [name, setName] = useState("");
-  const [relationship, setRelationship] = useState("");
+  const [name, setName] = useState(() => guestContinuation?.name ?? "");
+  const [relationship, setRelationship] = useState(() => guestContinuation?.relationship ?? "");
   const [preferredAddress, setPreferredAddress] = useState("");
   const [catchPhrases, setCatchPhrases] = useState("");
   const [speechStyle, setSpeechStyle] = useState("");
@@ -238,6 +240,10 @@ export function FirstPresenceFlow({
   }, []);
 
   useEffect(() => () => releaseLocalPortrait(), [releaseLocalPortrait]);
+
+  useEffect(() => {
+    if (guestContinuation) clearGuestCreateContinuation();
+  }, [clearGuestCreateContinuation, guestContinuation]);
 
   useEffect(() => {
     if (previewMode) return;

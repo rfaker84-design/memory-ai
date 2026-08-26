@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useReducedMotion } from "../../src/motion";
+import { PublicProductNavigation } from "./PublicProductNavigation";
 import styles from "./GuestExperience.module.css";
 
 type HomeStory = {
@@ -166,6 +167,7 @@ export function GuestExperience({ onLogin, onStart, showLogin = true }: GuestExp
       </section>
 
       <p className={styles.heroDisclosure} role="note">{DISCLOSURE}</p>
+      <PublicProductNavigation active="home" overMedia />
       <p className={styles.srOnly} aria-live="polite">正在展示：{activeStory.label}</p>
     </main>
   );

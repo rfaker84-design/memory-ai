@@ -5,12 +5,10 @@ import { useRouter } from "next/navigation";
 
 import { GuestExperience } from "../components/world/GuestExperience";
 import { OriginalHomeLogin } from "../components/world/OriginalHomeLogin";
-import { fetchAuthRequestJson } from "../src/components/auth/authRequestClient";
 import StaticBrandLaunch from "../src/components/launch/StaticBrandLaunch";
 import { MotionProvider } from "../src/motion";
 
 type HomeStage = "launch" | "home" | "login";
-type LoginIntent = "login" | "create";
 
 /**
  * The public root is intentionally self-contained: it plays the approved
@@ -20,40 +18,22 @@ type LoginIntent = "login" | "create";
 export default function HomePage() {
   const router = useRouter();
   const [stage, setStage] = useState<HomeStage>("launch");
-  const [loginIntent, setLoginIntent] = useState<LoginIntent>("login");
 
   const enterHome = useCallback(() => setStage("home"), []);
 
   const openLogin = useCallback(() => {
-    setLoginIntent("login");
     setStage("login");
   }, []);
 
-  const beginCreation = useCallback(async () => {
-    try {
-      const { response, body } = await fetchAuthRequestJson("/api/auth/session", {
-        cache: "no-store",
-        credentials: "same-origin",
-      });
-      if (response.ok && (body as { authenticated?: unknown }).authenticated === true) {
-        router.push("/create-memory");
-        return;
-      }
-    } catch {
-      // A transient session read must not turn a deliberate create action
-      // into a dead end. The established contextual login can recover it.
-    }
-    setLoginIntent("create");
-    setStage("login");
+  const beginCreation = useCallback(() => {
+    // The public first step intentionally has no session check. It is local
+    // only, and asks for login precisely at the first upload/save boundary.
+    router.push("/guest/create");
   }, [router]);
 
   const completeAuthentication = useCallback(() => {
-    if (loginIntent === "create") {
-      router.replace("/create-memory");
-      return;
-    }
     setStage("home");
-  }, [loginIntent, router]);
+  }, []);
 
   return (
     <MotionProvider>
