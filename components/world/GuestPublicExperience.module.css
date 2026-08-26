@@ -1,58 +1,146 @@
-.publicNavigation { position:fixed; z-index:80; right:0; bottom:0; left:0; display:grid; grid-template-columns:repeat(4,1fr); min-height:70px; padding:0 max(12px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(12px, env(safe-area-inset-left)); background:#f8f3ea; border-top:1px solid rgba(42,33,23,.12); }
-.publicNavigation button { min-height:58px; border:0; background:transparent; color:#817667; font:500 12px/1 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; letter-spacing:.08em; cursor:pointer; }
-.publicNavigation button[aria-current="page"] { color:#2a2117; font-weight:650; }
-.publicNavigationOverMedia { background:rgba(13,10,7,.66); border-color:rgba(255,255,255,.16); }
-.publicNavigationOverMedia button { color:rgba(248,243,234,.64); text-shadow:0 1px 10px rgba(0,0,0,.45); }
-.publicNavigationOverMedia button[aria-current="page"] { color:#fffaf2; }
+.publicPage {
+  --ink: #362516;
+  --muted-ink: #8b745d;
+  --paper: #f5eee2;
+  --line: rgba(99, 69, 39, .2);
+  min-height: 100dvh;
+  box-sizing: border-box;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
 
-.publicPage { min-height:100dvh; box-sizing:border-box; padding:24px 20px calc(94px + env(safe-area-inset-bottom)); color:#2a2117; background:#f8f3ea; font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif; }
-.publicHeader { display:flex; align-items:center; justify-content:space-between; min-height:40px; font-family:"Songti SC","STSong",serif; font-size:20px; letter-spacing:.13em; }
-.publicHeader small { color:#897b68; font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; font-size:11px; letter-spacing:.06em; }
-.publicContent { width:min(100%,640px); margin:34px auto 0; }
-.companionStage { position:relative; overflow:hidden; min-height:44dvh; border-radius:24px; background:#1a1510; }
-.companionStage video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
-.companionStage::after { position:absolute; inset:auto 0 0; height:35%; content:""; background:linear-gradient(transparent,rgba(0,0,0,.52)); pointer-events:none; }
-.companionStage span { position:absolute; z-index:1; right:16px; bottom:14px; color:rgba(255,250,242,.8); font-size:11px; letter-spacing:.07em; }
-.chatDemo { margin-top:18px; }
-.chatDemo > p { display:inline-block; max-width:78%; margin:0 0 14px; padding:12px 14px; border-radius:16px 16px 16px 4px; background:#eee4d6; font-size:15px; line-height:1.55; }
-.chatDemo form { display:flex; gap:8px; }
-.chatDemo input { flex:1; min-width:0; border:1px solid #d9cbbb; border-radius:14px; padding:13px; color:#2a2117; background:#fffdf8; font:inherit; }
-.chatDemo button,.warmAction { border:0; border-radius:14px; padding:0 17px; color:#fffaf2; background:#82694a; font:600 14px/1 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; cursor:pointer; }
-.memoryList { display:grid; gap:0; border-top:1px solid #dfd2c2; }
-.eyebrow { margin:0 0 12px; color:#85735c; font-size:11px; letter-spacing:.12em; }
-.memoryList .eyebrow { padding-top:4px; }
-.memoryList article { display:flex; gap:18px; padding:20px 0; border-bottom:1px solid #dfd2c2; }
-.memoryList time { flex:0 0 46px; color:#8c795f; font-size:12px; }
-.memoryList h1 { margin:0 0 7px; font-family:"Songti SC","STSong",serif; font-size:23px; font-weight:500; }
-.memoryList p { margin:0; color:#716452; font-size:14px; line-height:1.65; }
-.warmAction { min-height:50px; margin-top:25px; width:100%; }
-.accountIntro { padding:20px 0 30px; border-bottom:1px solid #dfd2c2; }
-.accountIntro p { margin:0 0 11px; color:#85735c; font-size:12px; letter-spacing:.08em; }
-.accountIntro h1 { margin:0; font-family:"Songti SC","STSong",serif; font-size:30px; font-weight:500; line-height:1.25; }
-.accountIntro .warmAction { width:auto; min-width:130px; }
-.accountLinks { display:grid; margin-top:10px; }
-.accountLinks a { display:flex; align-items:center; min-height:55px; color:#453b2f; border-bottom:1px solid #e1d5c6; text-decoration:none; font-size:15px; }
-.accountLinks a::after { margin-left:auto; content:"›"; color:#a08d74; font-size:23px; }
-.createStep { display:grid; gap:16px; }
-.createStep h1 { margin:0 0 14px; font-family:"Songti SC","STSong",serif; font-size:32px; font-weight:500; }
-.createStep label { display:grid; gap:8px; color:#5d5142; font-size:13px; }
-.createStep input { min-height:52px; border:1px solid #d7c8b6; border-radius:13px; padding:0 14px; color:#2a2117; background:#fffdf8; font:16px/1 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; }
-.formError,.loginError { margin:0; color:#9b4c3f; font-size:13px; line-height:1.5; }
-.textAction { justify-self:center; border:0; padding:8px; color:#786b5c; background:transparent; font:14px/1 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; cursor:pointer; }
+.paperPage { padding-bottom: calc(100px + env(safe-area-inset-bottom)); }
+.companionPage { overflow: hidden; color: #f5e6cf; background: #17100a; }
 
-.loginLayer { position:fixed; z-index:100; inset:0; display:grid; place-items:end center; padding:20px 16px max(20px, env(safe-area-inset-bottom)); background:rgba(35,27,19,.38); }
-.loginPanel { position:relative; width:min(100%,480px); box-sizing:border-box; padding:25px 22px 20px; border:1px solid #d8c9b5; border-radius:22px; color:#2a2117; background:#fffaf2; box-shadow:0 20px 48px rgba(31,22,14,.2); }
-.loginHeading p { margin:0 0 8px; color:#87755e; font-size:12px; letter-spacing:.08em; }
-.loginHeading h1 { max-width:84%; margin:0; font-family:"Songti SC","STSong",serif; font-size:24px; font-weight:500; line-height:1.25; }
-.closeButton { position:absolute; top:17px; right:16px; width:34px; height:34px; border:0; border-radius:50%; color:#5b5042; background:#f0e7da; font-size:23px; line-height:1; cursor:pointer; }
-.loginForm { display:grid; gap:14px; margin-top:22px; }
-.loginForm label:not(.agreement) { display:grid; gap:7px; color:#5d5142; font-size:12px; }
-.loginForm input { box-sizing:border-box; min-height:46px; width:100%; border:1px solid #d7c8b6; border-radius:12px; padding:0 12px; color:#2a2117; background:#fffdf8; font:16px/1 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; }
-.codeRow { display:flex; gap:8px; }
-.codeRow button { flex:0 0 100px; border:1px solid #cbb99f; border-radius:12px; color:#5f4d35; background:#f5ebde; font:12px/1 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; cursor:pointer; }
-.agreement { display:flex; gap:8px; align-items:flex-start; color:#6d604f; font-size:12px; line-height:1.5; }
-.agreement input { flex:0 0 auto; min-height:auto; width:auto; margin:3px 0 0; }
-.agreement a { color:#6f5637; }
-.loginContinue { min-height:48px; border:0; border-radius:13px; color:#fffaf2; background:#82694a; font:600 14px/1 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; cursor:pointer; }
-.loginCancel { min-height:36px; border:0; color:#786b5c; background:transparent; font:14px/1 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; cursor:pointer; }
-@media (min-width:700px) { .publicPage { padding-top:36px; }.publicContent { margin-top:46px; }.publicNavigation { left:50%; width:min(540px,100%); transform:translateX(-50%); border-inline:1px solid rgba(42,33,23,.12); border-radius:18px 18px 0 0; }.publicNavigationOverMedia { border-color:rgba(255,255,255,.16); } }
+.sceneHeader {
+  position: absolute;
+  z-index: 3;
+  top: max(24px, calc(env(safe-area-inset-top) + 14px));
+  right: max(22px, env(safe-area-inset-right));
+  left: max(22px, env(safe-area-inset-left));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--ink);
+  pointer-events: none;
+}
+
+.sceneHeader strong {
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+  font-size: 21px;
+  font-weight: 400;
+  letter-spacing: .16em;
+}
+
+.sceneHeader span { font-size: 12px; font-weight: 600; letter-spacing: .05em; }
+.sceneHeaderLight { color: #f6ddbb; text-shadow: 0 1px 16px rgba(16, 9, 3, .35); }
+
+.companionStage { position: relative; min-height: 100dvh; isolation: isolate; background: #17100a; }
+.companionStage video { position: absolute; z-index: -3; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 55% center; }
+.companionVeil { position: absolute; z-index: -2; inset: 0; background: linear-gradient(180deg, rgba(10, 6, 3, .24) 0%, rgba(10, 6, 3, .04) 32%, rgba(10, 6, 3, .26) 60%, rgba(10, 6, 3, .92) 100%); pointer-events: none; }
+.companionConversation { position: absolute; z-index: 1; right: 10%; bottom: 180px; left: 10%; }
+.companionArrival { display: inline-block; margin: 0 0 16px; padding: 12px 17px; border-radius: 22px 22px 22px 6px; color: #f8e8d1; background: rgba(53, 42, 31, .74); font-family: "Songti SC", "STSong", "Noto Serif SC", serif; font-size: 22px; line-height: 1; }
+.companionQuestion { margin: 0; color: rgba(250, 238, 219, .92); font-family: "Songti SC", "STSong", "Noto Serif SC", serif; font-size: 18px; line-height: 1.4; }
+.syntheticDisclosure { position: absolute; z-index: 1; right: 10%; bottom: 133px; margin: 0; color: rgba(240, 223, 194, .55); font-size: 10px; letter-spacing: .1em; }
+.companionComposer { position: absolute; z-index: 2; right: max(20px, env(safe-area-inset-right)); bottom: calc(86px + env(safe-area-inset-bottom)); left: max(20px, env(safe-area-inset-left)); display: flex; min-height: 46px; overflow: hidden; border: 1px solid rgba(219, 184, 130, .34); border-radius: 24px; background: rgba(28, 20, 13, .72); }
+.companionComposer input { flex: 1; min-width: 0; border: 0; padding: 0 16px; outline: 0; color: #fff3dd; background: transparent; font: 15px/1 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+.companionComposer input::placeholder { color: rgba(242, 222, 192, .48); }
+.companionComposer button { width: 68px; border: 0; color: #d5a66b; background: transparent; font: 600 15px/1 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; cursor: pointer; }
+
+.memoriesHero, .accountHero, .createHero { position: relative; overflow: hidden; background: #46311d; }
+.memoriesHero { height: clamp(300px, 44vw, 500px); }
+.accountHero { height: clamp(250px, 35vw, 410px); }
+.createHero { height: 370px; }
+.memoriesHero img, .accountHero img, .createHero img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.memoriesHero img { object-position: center center; }
+.accountHero img { object-position: center center; }
+.createHero img { object-position: center 45%; }
+
+.memoriesBody, .accountBody, .createBody { width: min(100% - 44px, 880px); margin: 0 auto; }
+.memoriesBody { padding: 22px 0 12px; }
+.memoryDisclosure { margin: 0 0 10px; color: var(--muted-ink); font-size: 11px; letter-spacing: .11em; }
+.memoryTimeline { position: relative; display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.memoryTimeline::before { position: absolute; top: 19px; bottom: 19px; left: 8px; width: 1px; content: ""; background: rgba(139, 110, 72, .45); }
+.memoryTimeline li { position: relative; display: grid; grid-template-columns: 104px 1fr; column-gap: 16px; align-items: center; min-height: 112px; padding: 8px 0 8px 24px; border-bottom: 1px solid var(--line); }
+.timelineStem { position: absolute; z-index: 1; top: 50%; left: 2px; width: 13px; height: 13px; box-sizing: border-box; border: 3px solid #d2b07d; border-radius: 50%; background: var(--paper); transform: translateY(-50%); }
+.memoryTimeline img { width: 104px; aspect-ratio: 1/1; border-radius: 12px; object-fit: cover; box-shadow: 0 8px 22px rgba(73, 47, 25, .11); }
+.memoryTimeline time { display: block; margin-bottom: 4px; color: var(--muted-ink); font-size: 12px; }
+.memoryTimeline h2 { margin: 0 0 5px; color: #553719; font-family: "Songti SC", "STSong", "Noto Serif SC", serif; font-size: 20px; font-weight: 500; line-height: 1.15; }
+.memoryTimeline p { margin: 0; color: #795e40; font-family: "Songti SC", "STSong", "Noto Serif SC", serif; font-size: 12px; line-height: 1.55; }
+.warmAction { width: 100%; min-height: 50px; margin-top: 20px; border: 0; border-radius: 14px; color: #fff8ed; background: #806039; box-shadow: 0 9px 18px rgba(91, 58, 26, .15); font: 600 16px/1 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; cursor: pointer; }
+
+.accountBody { padding: 28px 0 18px; }
+.accountIntro { padding: 0 0 24px; border-bottom: 1px solid var(--line); }
+.accountIntro p { margin: 0 0 12px; color: var(--muted-ink); font-size: 12px; letter-spacing: .08em; }
+.accountIntro h1 { max-width: 650px; margin: 0; color: #3c2716; font-family: "Songti SC", "STSong", "Noto Serif SC", serif; font-size: 28px; font-weight: 500; line-height: 1.22; }
+.accountLogin { min-width: 145px; min-height: 48px; margin-top: 20px; border: 0; border-radius: 14px; color: #fff8ed; background: #806039; font: 600 16px/1 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; cursor: pointer; }
+.accountLinks { display: grid; margin-top: 8px; }
+.accountLinks a { display: flex; align-items: center; min-height: 49px; color: #4b321d; border-bottom: 1px solid var(--line); text-decoration: none; font-family: "Songti SC", "STSong", "Noto Serif SC", serif; font-size: 17px; }
+.accountLinks a::after { margin-left: auto; content: "›"; color: #a48664; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 25px; font-weight: 300; }
+
+.createBody { display: grid; gap: 16px; padding: 62px 0 18px; }
+.createBody h1 { margin: 0 0 16px; color: #3c2716; font-family: "Songti SC", "STSong", "Noto Serif SC", serif; font-size: 25px; font-weight: 500; line-height: 1.2; }
+.createBody label { display: grid; gap: 8px; color: #7d6851; font-family: "Songti SC", "STSong", "Noto Serif SC", serif; font-size: 14px; }
+.createBody input { min-height: 50px; box-sizing: border-box; border: 1px solid #d4c2ac; border-radius: 14px; padding: 0 16px; outline: 0; color: #402b18; background: rgba(255, 253, 248, .72); font: 17px/1 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+.createBody input::placeholder { color: #b1a08d; }
+.formError, .loginError { margin: 0; color: #9b4c3f; font-size: 14px; line-height: 1.5; }
+.textAction { justify-self: center; min-height: 38px; border: 0; padding: 8px 18px; color: #785d3e; background: transparent; font: 15px/1 "Songti SC", "STSong", "Noto Serif SC", serif; cursor: pointer; }
+
+.publicNavigation { position: fixed; z-index: 80; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(4, 1fr); min-height: 78px; box-sizing: border-box; padding: 0 max(14px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(14px, env(safe-area-inset-left)); border-top: 1px solid rgba(89, 59, 29, .16); background: rgba(247, 240, 229, .96); }
+.publicNavigation button { position: relative; min-height: 64px; border: 0; color: #947e62; background: transparent; font: 600 15px/1 "Songti SC", "STSong", "Noto Serif SC", serif; cursor: pointer; }
+.publicNavigation button[aria-current="page"] { color: #3b2716; }
+.publicNavigation button[aria-current="page"]::after { position: absolute; right: 50%; bottom: 9px; width: 7px; height: 7px; border-radius: 50%; content: ""; background: #9c7441; transform: translateX(50%); }
+.publicNavigationOverMedia { border-color: transparent; background: rgba(10, 7, 4, .74); }
+.publicNavigationOverMedia button { color: rgba(241, 222, 191, .62); text-shadow: 0 1px 12px rgba(0, 0, 0, .55); }
+.publicNavigationOverMedia button[aria-current="page"] { color: #e0b777; }
+.publicNavigationOverMedia button[aria-current="page"]::after { background: #d7a96b; }
+
+.publicPage button:focus-visible, .publicPage input:focus-visible, .publicPage a:focus-visible { outline: 3px solid #d9ad70; outline-offset: 3px; }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; clip-path: inset(50%); }
+
+.loginLayer { position: fixed; z-index: 100; inset: 0; display: grid; place-items: end center; padding: 20px 16px max(20px, env(safe-area-inset-bottom)); background: rgba(35, 27, 19, .38); }
+.loginPanel { position: relative; width: min(100%, 480px); box-sizing: border-box; padding: 25px 22px 20px; border: 1px solid #d8c9b5; border-radius: 22px; color: #2a2117; background: #fffaf2; box-shadow: 0 20px 48px rgba(31, 22, 14, .2); }
+.loginHeading p { margin: 0 0 8px; color: #87755e; font-size: 12px; letter-spacing: .08em; }
+.loginHeading h1 { max-width: 84%; margin: 0; font-family: "Songti SC", "STSong", serif; font-size: 24px; font-weight: 500; line-height: 1.25; }
+.closeButton { position: absolute; top: 17px; right: 16px; width: 34px; height: 34px; border: 0; border-radius: 50%; color: #5b5042; background: #f0e7da; font-size: 23px; line-height: 1; cursor: pointer; }
+.loginForm { display: grid; gap: 14px; margin-top: 22px; }
+.loginForm label:not(.agreement) { display: grid; gap: 7px; color: #5d5142; font-size: 12px; }
+.loginForm input { box-sizing: border-box; min-height: 46px; width: 100%; border: 1px solid #d7c8b6; border-radius: 12px; padding: 0 12px; color: #2a2117; background: #fffdf8; font: 16px/1 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+.codeRow { display: flex; gap: 8px; }
+.codeRow button { flex: 0 0 100px; border: 1px solid #cbb99f; border-radius: 12px; color: #5f4d35; background: #f5ebde; font: 12px/1 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; cursor: pointer; }
+.agreement { display: flex; gap: 8px; align-items: flex-start; color: #6d604f; font-size: 12px; line-height: 1.5; }
+.agreement input { flex: 0 0 auto; min-height: auto; width: auto; margin: 3px 0 0; }
+.agreement a { color: #6f5637; }
+.loginContinue { min-height: 48px; border: 0; border-radius: 13px; color: #fffaf2; background: #82694a; font: 600 14px/1 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; cursor: pointer; }
+.loginCancel { min-height: 36px; border: 0; color: #786b5c; background: transparent; font: 14px/1 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; cursor: pointer; }
+
+@media (min-width: 760px) {
+  .sceneHeader { top: 34px; right: 48px; left: 48px; }
+  .sceneHeader strong { font-size: 26px; }
+  .companionConversation { right: max(9vw, 110px); bottom: 210px; left: max(9vw, 110px); }
+  .companionComposer { right: max(9vw, 110px); bottom: 95px; left: max(9vw, 110px); max-width: 840px; }
+  .syntheticDisclosure { right: max(9vw, 110px); bottom: 160px; }
+  .memoriesBody, .accountBody, .createBody { width: min(100% - 96px, 1040px); }
+  .memoryTimeline li { grid-template-columns: 220px 1fr; min-height: 222px; column-gap: 34px; padding-left: 38px; }
+  .memoryTimeline img { width: 220px; }
+  .memoryTimeline h2 { font-size: 35px; }
+  .accountBody { display: grid; grid-template-columns: minmax(0, .86fr) minmax(390px, 1fr); gap: 80px; padding-top: 68px; }
+  .accountIntro { border-bottom: 0; }
+  .accountLinks { margin-top: 0; }
+  .createBody { width: min(100% - 96px, 740px); }
+  .publicNavigation { right: 50%; left: auto; width: min(720px, calc(100% - 48px)); border: 1px solid rgba(89, 59, 29, .16); border-bottom: 0; border-radius: 22px 22px 0 0; transform: translateX(50%); }
+  .publicNavigationOverMedia { border-color: rgba(231, 203, 159, .18); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .companionStage video { display: none; }
+  .companionStage { background: #1c1209 url("/home-hero-assets/elderly-woman.poster.webp") center/cover no-repeat; }
+}
+
+@media (max-width: 374px) {
+  .memoryTimeline li { grid-template-columns: 112px 1fr; column-gap: 16px; }
+  .memoryTimeline img { width: 112px; }
+  .memoryTimeline h1 { font-size: 23px; }
+  .sceneHeader strong { font-size: 25px; }
+}

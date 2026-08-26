@@ -1,29 +1,29 @@
-**Source visual truth**
+# Secondary public pages — visual QA
 
-- Reference: `C:\Users\ADMINI~1\AppData\Local\Temp\codex-clipboard-021e4e9c-6032-487c-a8c5-b4fb47591da1.png`
-- Source size: 1200 × 1300 px.
-- Implementation: `C:\Users\Administrator\AppData\Local\Temp\memoryai-guest-experience-qa.png`
-- Implementation capture: browser-rendered local `/`, 1280 × 720 CSS px, device scale factor 1, full page 1278 × 778 px.
-- State: unauthenticated public entry after the existing brand launch completes.
+## Reference and implementation evidence
 
-**Comparison**
+All comparisons use the approved mobile references scaled to 390×844 beside a live local implementation at the same viewport.
 
-- Full-view evidence: both images were opened together for comparison.
-- Focused regions: the hero copy and the single CTA were both readable in the full view; no separate crop was needed.
+| Page | Approved reference | Live implementation | Comparison |
+| --- | --- | --- | --- |
+| `/guest/companion` | `evidence/approved-secondary-pages-20260826-extracted/yijian-secondary-pages-approved-2026-08-26/01-companion-approved.png` | `evidence/staging-secondary-pages-20260827/local-mobile-companion-v3.png` | `evidence/staging-secondary-pages-20260827/compare-companion-v3.png` |
+| `/guest/memories` | `evidence/approved-secondary-pages-20260826-extracted/yijian-secondary-pages-approved-2026-08-26/02-memories-approved.png` | `evidence/staging-secondary-pages-20260827/local-mobile-memories-v3.png` | `evidence/staging-secondary-pages-20260827/compare-memories-v3.png` |
+| `/guest/create` | `evidence/approved-secondary-pages-20260826-extracted/yijian-secondary-pages-approved-2026-08-26/03-create-approved.png` | `evidence/staging-secondary-pages-20260827/local-mobile-create-v3.png` | `evidence/staging-secondary-pages-20260827/compare-create-v3.png` |
+| `/guest/account` | `evidence/approved-secondary-pages-20260826-extracted/yijian-secondary-pages-approved-2026-08-26/04-account-approved.png` | `evidence/staging-secondary-pages-20260827/local-mobile-account-v3.png` | `evidence/staging-secondary-pages-20260827/compare-account-v3.png` |
 
-**Findings**
+Desktop 1440×1024 evidence is in `evidence/staging-secondary-pages-20260827/local-desktop-*-v1.png`.
 
-- Fonts and typography: Passed. The implementation uses a restrained Songti-family display treatment for the two headings and a legible system sans fallback for supporting copy.
-- Spacing and layout rhythm: Passed. The hero and the invitation preserve the reference's quiet two-part rhythm, with a single centered CTA and no card grid or navigation bar.
-- Colors and visual tokens: Passed. The implementation uses warm ivory, soft warm-neutral CTA color, and low-contrast supporting copy; no black/gold or technology styling remains in the public route.
-- Image quality and asset fidelity: Passed with the approved asset constraint. The existing `owner-confirmed-warm-presence.png` provides a genuine home/daylight scene and blends into the warm hero; no generated or placeholder asset was introduced.
-- Copy and content: Passed. The page contains only the brand, one headline, a two-line supporting thought, the encounter CTA, and its one-line support copy. The existing contract still routes the CTA through the formal login/create flow, so no unsupported "无需登录" claim is shown.
+## Inspection result
 
-**Implementation Checklist**
+- `companion`: immersive live public synthetic video, the approved hierarchy, disclosure, composer and fixed navigation are present. The person’s live video phase differs from the reference still, as intended; no new media was generated.
+- `memories`: photo-led three-item timeline, warm paper density and contextual add action match the approved structure; all three items and the action remain visible above the fixed mobile navigation.
+- `create`: empty-frame scene, two local-only fields and the upload login boundary match the approved first step. No upload control or persistence is mounted before login.
+- `account`: album-and-envelope hero, guest status, login and five service links match the approved hierarchy.
+- All four pages have no horizontal overflow at 390×844 or 1440×1024. No P0, P1, or P2 discrepancy remained after the second visual pass.
 
-- [x] Remove public demo states, feature claims, and video rotation from the unauthenticated route.
-- [x] Reuse an approved real-life visual asset.
-- [x] Preserve the existing CTA contract.
-- [x] Verify the browser-rendered public route and its no-error console state.
+## Interaction evidence
 
-final result: passed
+- Create upload boundary: `evidence/staging-secondary-pages-20260827/local-mobile-create-contextual-login-v1.png`; closing the panel retained the entered local name and relationship.
+- Companion send boundary: `evidence/staging-secondary-pages-20260827/local-mobile-companion-contextual-login-v1.png`; closing the panel returned to the public companion surface.
+
+Final result: passed

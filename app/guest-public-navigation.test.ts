@@ -25,18 +25,32 @@ test("public navigation exposes all four product surfaces without routing a gues
 test("guest companion and memory are synthetic, local, and defer authentication to the real action", () => {
   assert.match(surfaces, /AI 合成示例/);
   assert.match(surfaces, /home-hero-assets\/elderly-woman\.mp4/);
+  assert.match(surfaces, /你来了。/);
+  assert.match(surfaces, /guest-secondary-assets\/memories-hero-approved\.png/);
+  assert.match(surfaces, /guest-secondary-assets\/memory-spring-approved\.png/);
+  assert.match(surfaces, /guest-secondary-assets\/memory-summer-approved\.png/);
+  assert.match(surfaces, /guest-secondary-assets\/memory-today-approved\.png/);
   assert.match(surfaces, /reason="登录后，继续和 TA 说话"/);
   assert.match(surfaces, /reason="登录后，保存这段回忆"/);
   assert.doesNotMatch(surfaces, /\/api\/memories|fetch\(|router\.push\("\/companion"/);
 });
 
 test("public creation collects only local first-step text and asks for login at upload", () => {
-  assert.match(surfaces, /创建 TA · 第一步/);
+  assert.match(surfaces, /guest-secondary-assets\/create-empty-frame-approved\.png/);
   assert.match(surfaces, /下一步：上传照片/);
   assert.match(surfaces, /reason="登录后，上传照片并继续创建"/);
   assert.match(surfaces, /continueGuestCreate\(\{ name: name\.trim\(\), relationship: relationship\.trim\(\) \}\)/);
   assert.match(surfaces, /router\.push\(GUEST_CREATE_CONTINUATION_URL\)/);
   assert.doesNotMatch(surfaces, /type="file"|\/api\/memories/);
+});
+
+test("approved secondary-page imagery is represented as responsive component assets, not page screenshots", () => {
+  const styles = read("components/world/GuestPublicExperience.module.css");
+  assert.match(surfaces, /guest-secondary-assets\/account-album-approved\.png/);
+  assert.match(styles, /\.companionStage video \{[\s\S]*?object-fit: cover/);
+  assert.match(styles, /\.memoriesHero img, \.accountHero img, \.createHero img \{[\s\S]*?object-fit: cover/);
+  assert.match(styles, /@media \(min-width: 760px\)/);
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
 });
 
 test("contextual login has a close path and only calls authentication endpoints from explicit actions", () => {
