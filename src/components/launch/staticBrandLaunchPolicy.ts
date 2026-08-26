@@ -1,4 +1,6 @@
-export const BRAND_LAUNCH_DURATION_MS = 1600;
+// Keep the established artwork and restraint, while making the approved
+// opening brief enough that cold launch never reads as a blank wait.
+export const BRAND_LAUNCH_DURATION_MS = 1200;
 export const BRAND_LAUNCH_EXIT_MS = 250;
 export const BRAND_LAUNCH_HOLD_MS = BRAND_LAUNCH_DURATION_MS - BRAND_LAUNCH_EXIT_MS;
 export const BRAND_LAUNCH_SESSION_KEY = "memoryai:static-brand-launch-seen";

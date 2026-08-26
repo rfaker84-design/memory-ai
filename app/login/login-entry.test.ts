@@ -17,12 +17,14 @@ test("the direct login URL returns an authenticated user to the root home", () =
   assert.doesNotMatch(flow, /if \(directLogin\) setStage\("questions"\)/);
 });
 
-test("the fixed companion home distinguishes login from an explicitly requested creation", () => {
-  const home = read("app/companion/page.tsx");
+test("the true public home distinguishes login from an explicitly requested creation", () => {
+  const home = read("app/page.tsx");
+  const companion = read("app/companion/page.tsx");
 
   assert.match(home, /type LoginIntent = "login" \| "create"/);
   assert.match(home, /onAuthenticated=\{completeAuthentication\}/);
   assert.match(home, /loginIntent === "create"[\s\S]*?router\.replace\("\/create-memory"\)/);
-  assert.match(home, /<OriginalHomeLogin onAuthenticated=\{completeAuthentication\}/);
+  assert.match(home, /<OriginalHomeLogin[\s\S]*?onAuthenticated=\{completeAuthentication\}/);
   assert.doesNotMatch(home, /FirstPresenceFlow initialStage="create"|FirstPresenceFlow initialStage="preview-create"/);
+  assert.doesNotMatch(companion, /type LoginIntent|OriginalHomeLogin|GuestExperience/);
 });

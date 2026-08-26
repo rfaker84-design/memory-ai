@@ -22,14 +22,13 @@ function memoryStorage(initialValue: string | null = null) {
   };
 }
 
-test("cold launch is claimed once per session and lasts within the Owner-approved window", () => {
+test("cold launch is claimed once per session and remains a brief approved opening", () => {
   const gate = createBrandLaunchGate();
   const storage = memoryStorage();
 
   assert.equal(gate(storage), true);
   assert.equal(gate(storage), false);
-  assert.ok(BRAND_LAUNCH_DURATION_MS >= 1200);
-  assert.ok(BRAND_LAUNCH_DURATION_MS <= 1800);
+  assert.equal(BRAND_LAUNCH_DURATION_MS, 1200);
   assert.equal(BRAND_LAUNCH_HOLD_MS + BRAND_LAUNCH_EXIT_MS, BRAND_LAUNCH_DURATION_MS);
 });
 
