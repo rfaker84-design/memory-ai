@@ -38,3 +38,10 @@ test("web and worker package payloads receive deterministic sizing metadata", ()
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("capacity gate source includes an explicit retention hook, but never enables deletion by default", () => {
+  const source = require("node:fs").readFileSync(path.join(__dirname, "staging-release-capacity-gate.cjs"), "utf8");
+  assert.match(source, /--retention-gc-audit/);
+  assert.match(source, /--retention-gc-apply/);
+  assert.match(source, /CAPACITY_GATE_RETENTION_AUDIT_REQUIRED/);
+});

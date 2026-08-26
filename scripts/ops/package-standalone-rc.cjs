@@ -3,6 +3,7 @@ const path = require("node:path");
 
 const { packageStandaloneRuntime } = require("./standalone-runtime-layout.cjs");
 const { writeReleaseCapacityMetadata } = require("./staging-release-capacity-gate.cjs");
+const { writeReleaseIdentityManifest } = require("./release-identity-manifest.cjs");
 
 const root = path.resolve(__dirname, "../..");
 const outputDirectory = process.env.STANDALONE_RC_OUTPUT
@@ -30,5 +31,6 @@ cpSync(
   path.join(outputDirectory, "prepare-linux-standalone-runtime.cjs"),
 );
 
+const identity = writeReleaseIdentityManifest({ outputDirectory, sourceRoot: root, component: "web" });
 const capacity = writeReleaseCapacityMetadata({ outputDirectory, component: "web" });
-console.log(`STANDALONE_RC_PACKAGED serverEntry=${result.serverEntry} candidateUnpackedBytes=${capacity.candidateUnpackedBytes}`);
+console.log(`STANDALONE_RC_PACKAGED serverEntry=${result.serverEntry} sourceSha=${identity.sourceSha} candidateUnpackedBytes=${capacity.candidateUnpackedBytes}`);

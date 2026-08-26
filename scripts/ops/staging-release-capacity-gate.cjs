@@ -125,6 +125,27 @@ function candidateSizing(args) {
   };
 }
 
+function runRetentionGcIfRequested(args, { sshTarget, remoteRoot }) {
+  const auditOutput = option(args, "--retention-gc-audit");
+  const apply = args.includes("--retention-gc-apply");
+  if (!auditOutput && !apply) return;
+  if (!auditOutput) fail("CAPACITY_GATE_RETENTION_AUDIT_REQUIRED");
+  const gcScript = path.join(__dirname, "staging-release-retention-gc.cjs");
+  const gcArgs = [
+    gcScript,
+    apply ? "apply" : "dry-run",
+    "--ssh-target", sshTarget,
+    "--remote-root", remoteRoot,
+    "--source-root", path.resolve(__dirname, "../.."),
+    "--audit-output", path.resolve(auditOutput),
+  ];
+  if (apply) gcArgs.push("--pipeline-id", "staging-immutable-promotion");
+  const result = spawnSync(process.execPath, gcArgs, { encoding: "utf8", env: process.env });
+  if (result.error || result.status !== 0) {
+    fail("CAPACITY_GATE_RETENTION_GC_BLOCKED", (result.stderr || result.stdout || result.error?.message || String(result.status)).trim());
+  }
+}
+
 function remoteInspection({ sshTarget, remoteRoot, component, rollbackSha = null, candidateTempPath = null }) {
   const remoteScript = [
     "set -euo pipefail",
@@ -205,6 +226,7 @@ function preflight(args) {
     ? assertSha(option(args, "--rollback-sha", { required: true }), "CAPACITY_GATE_ROLLBACK_SHA_INVALID")
     : null;
   const sizing = candidateSizing(args);
+  runRetentionGcIfRequested(args, { sshTarget, remoteRoot });
   const remote = remoteInspection({ sshTarget, remoteRoot, component, rollbackSha });
   printPreflight({ component, sizing, remote });
 }
