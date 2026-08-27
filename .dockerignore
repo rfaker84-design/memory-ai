@@ -1,14 +1,12 @@
-# Build context must contain source and the lockfile only; never transfer local
-# dependencies, build outputs, environment files, or evidence into the image.
+.git
 node_modules
-mobile/node_modules
 .next
-mobile/.next
 .env*
-!.env.example
 artifacts
 coverage
-.git
-.gitignore
-*.log
-*.tsbuildinfo
+source/.git
+source/node_modules
+source/.next
+source/.env*
+source/artifacts
+source/coverage

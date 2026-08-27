@@ -177,7 +177,7 @@ test("real 68-style journal disagreement is dry-run blocked until an append-only
   assert.equal(report.remoteWrites, 0);
 });
 
-test("CLI exposes dry-run only and performs no remote operation", () => {
+test("dry-run CLI remains read-only even though execute is an explicit separate command", () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), "memoryai-web-promotion-"));
   try {
     const plan = path.join(directory, "plan.json");
@@ -205,13 +205,14 @@ test("Web PM2 config launches only the release-local manifest launcher", () => {
     writeFileSync(path.join(directory, "run-standalone-from-manifest.cjs"), "\n");
     const config = path.join(__dirname, "staging-web-pm2-manifest.config.cjs");
     const output = spawnSync(process.execPath, ["-e", "const x=require(process.argv[1]); console.log(JSON.stringify(x.apps[0]))", config], {
-      env: { ...process.env, MEMORYAI_RELEASE_ROOT: directory, MEMORYAI_PM2_APP_NAME: "memoryai-staging" },
+      env: { ...process.env, MEMORYAI_RELEASE_ROOT: directory, MEMORYAI_PM2_APP_NAME: "memoryai-staging", MEMORYAI_PORT: "3100" },
       encoding: "utf8",
     });
     assert.equal(output.status, 0, output.stderr);
     const app = JSON.parse(output.stdout);
     assert.equal(app.cwd, directory);
     assert.equal(app.script, "run-standalone-from-manifest.cjs");
+    assert.equal(app.env.PORT, "3100");
     assert.equal(app.env.AUTH_PROXY_LOOPBACK_ONLY, "true");
   } finally {
     rmSync(directory, { recursive: true, force: true });

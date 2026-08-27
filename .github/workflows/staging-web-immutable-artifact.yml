@@ -1,0 +1,78 @@
+name: Staging Web immutable BuildKit artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Exact immutable 40-character application source commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    name: Build Linux standalone artifact only
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    concurrency:
+      group: staging-web-immutable-artifact-${{ inputs.source_commit }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out the versioned runner
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Record runner identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "RUNNER_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Check out the exact application source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.source_commit }}
+          path: source
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Refuse substituted or dirty source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ inputs.source_commit }}" = "$(git -C source rev-parse HEAD)"
+          test -z "$(git -C source status --porcelain)"
+          git -C source rev-parse HEAD
+          git -C source rev-parse HEAD^{tree}
+
+      - name: Export immutable Linux BuildKit archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_commit=$(git -C source rev-parse HEAD)
+          source_tree=$(git -C source rev-parse HEAD^{tree})
+          docker buildx version
+          docker buildx build --pull=false \
+            --build-arg "STAGING_WEB_ARTIFACT_SOURCE_COMMIT=$source_commit" \
+            --build-arg "STAGING_WEB_ARTIFACT_SOURCE_TREE=$source_tree" \
+            --target export \
+            --output "type=local,dest=artifacts/staging-web-immutable-$source_commit" \
+            -f scripts/ops/Dockerfile.staging-web-artifact .
+          cd "artifacts/staging-web-immutable-$source_commit"
+          sha256sum --check "memoryai-staging-web-$source_commit.tar.gz.sha256"
+          mkdir verify
+          tar -xzf "memoryai-staging-web-$source_commit.tar.gz" -C verify
+          ( cd verify && sha256sum --check SHA256SUMS )
+          test "$(node -e 'const value=require("./manifest.json"); process.stdout.write(String(value.build.featureFlags.NEXT_PUBLIC_SOUNDSCAPE_ENABLED === true && value.source.commit === process.argv[1]))' "$source_commit")" = true
+
+      - name: Upload immutable archive and evidence
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: staging-web-immutable-${{ inputs.source_commit }}
+          path: artifacts/staging-web-immutable-${{ inputs.source_commit }}
+          if-no-files-found: error
+          retention-days: 90

@@ -1,11 +1,11 @@
 "use strict";
 
-// This is intentionally a Web-only promotion state machine.  It has no SSH,
-// file-write, or PM2 CLI side effects: an approved, separately installed
-// executor supplies the narrowly-scoped operations below.  The CLI exposes
-// dry-run only, so this repository candidate cannot promote a release by
-// itself.
+// This is intentionally a Web-only promotion state machine. Its dry-run
+// remains side-effect-free; execute and reconciliation are delegated only to
+// the versioned Linux executor, which accepts a SHA-bound archive and rejects
+// source directories, Worker artifacts, and unstated release selections.
 const { requiredFreeBytes } = require("./staging-release-capacity-gate.cjs");
+const { executeImmutableWebPromotion, reconcileStagingWebHistory } = require("./staging-web-immutable-executor.cjs");
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/i;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/i;
@@ -283,8 +283,22 @@ function dryRun(input) {
   return { transaction, report };
 }
 
-function main(args) {
+async function main(args) {
   const command = args.shift();
+  if (command === "execute") {
+    if (args[0] !== "--input" || !args[1] || args.length !== 2) fail("WEB_PROMOTION_EXECUTE_INPUT_REQUIRED");
+    const input = JSON.parse(require("node:fs").readFileSync(args[1], "utf8"));
+    const result = await executeImmutableWebPromotion(input);
+    console.log(JSON.stringify(result));
+    return;
+  }
+  if (command === "reconcile") {
+    if (args[0] !== "--input" || !args[1] || args.length !== 2) fail("WEB_RECONCILIATION_INPUT_REQUIRED");
+    const input = JSON.parse(require("node:fs").readFileSync(args[1], "utf8"));
+    const result = await reconcileStagingWebHistory(input);
+    console.log(JSON.stringify(result));
+    return;
+  }
   if (command !== "dry-run") fail("WEB_PROMOTION_COMMAND_INVALID", command ?? "missing");
   if (args[0] !== "--input" || !args[1] || args.length !== 2) fail("WEB_PROMOTION_DRY_RUN_INPUT_REQUIRED");
   // Reading an operator-provided record is the only CLI filesystem access.
@@ -295,12 +309,10 @@ function main(args) {
 }
 
 if (require.main === module) {
-  try {
-    main(process.argv.slice(2));
-  } catch (error) {
+  void main(process.argv.slice(2)).catch((error) => {
     console.error(error instanceof Error ? error.message : "WEB_PROMOTION_FAILED");
     process.exitCode = 64;
-  }
+  });
 }
 
 module.exports = {

@@ -1,117 +1,104 @@
 # Staging Web immutable runner
 
-Status: **CANDIDATE ONLY — DRY-RUN ONLY — NO REMOTE PROMOTION AUTHORITY**
+Status: **versioned execution candidate — Staging Web only**
 
-`scripts/ops/staging-web-immutable-promotion.cjs` is a Web-only transaction
-state machine. Its CLI exposes `dry-run` only. It deliberately has no SSH,
-tar construction, source-checkout startup, direct symlink replacement, PM2
-command, or database operation. An Owner-approved installation of the
-versioned executor must supply the narrow operation adapter used by the state
-machine; the existing Worker promotion helper is prohibited for this purpose.
+This runner is the only Web promotion path in this repository. It is distinct
+from the Worker helper and never accepts a source checkout, a remote build,
+or a Worker archive. It never touches Production, database schema/data,
+application APIs, Nginx traffic, chat flow, or PM2 Worker processes.
 
-## Required build and delivery inputs
+## Immutable Linux artifact
 
-The only accepted build is the existing `Production candidate evidence` GitHub
-Actions workflow, invoked with the exact 40-character candidate source commit.
-It produces the Action artifact `production-candidate-<source_sha>` containing
-the Linux Node 20.20.2/npm 10.8.2 BuildKit evidence bundle:
+`.github/workflows/staging-web-immutable-artifact.yml` is a manually dispatched
+Linux BuildKit-only workflow. It checks out the supplied full source commit
+into a clean `source` directory, confirms its exact SHA and tree, and builds
+only a downloadable artifact. The workflow has `contents: read` permission and
+contains no Staging/Production host credential, SSH, PM2, or promotion step.
 
-- `manifest.json`, whose source commit and runtime digest equal the candidate;
-- `sbom.spdx.json` and `provenance.intoto.json`, whose runtime subject equals
-  `manifest.json`;
-- `SHA256SUMS`, successfully checked before delivery; and
-- the associated immutable standalone runtime selected by that manifest.
+The BuildKit recipe pins Node `20.20.2`, npm `10.8.2`, and
+`node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293`.
+It sets `NEXT_PUBLIC_SOUNDSCAPE_ENABLED=true` before `next build`, executes the
+soundscape test suite, and refuses to produce evidence unless the compiled
+client chunks contain the soundscape preference key with the public environment
+reference removed. The manifest records this feature-flag proof and chunk
+hashes.
 
-The authorized Web executor receives that Action artifact as an immutable
-evidence bundle, verifies `SHA256SUMS`, and materializes its runtime only at
-`/home/ubuntu/memoryai-staging/releases/<candidate_sha>/runtime`. It must not
-rebuild it, construct a replacement tarball, start from a remote source tree,
-or write through `current` or `rollback`. The artifact transport record must
-include the SHA-256 of the delivered bundle and the three evidence-file hashes
-used in the dry-run input.
+The uploaded artifact includes exactly one deployable standalone archive and
+its SHA-256 sidecar. The archive contains only:
 
-Before materialization, the executor must run the existing Web capacity gate
-with the actual candidate artifact and actual unpacked bytes. It blocks unless
-free space is at least `max(8 GiB, 2 * candidate_unpacked_bytes + 5 GiB)`.
+- `runtime/`, including a release-local manifest launcher and identity manifest;
+- `release-manifest.json`, `manifest.json`, `provenance.intoto.json`,
+  `sbom.spdx.json`, and `SHA256SUMS`.
 
-## Transaction contract
+`SHA256SUMS` covers every regular archive file except itself. Archive links and
+special files are rejected by the executor; the BuildKit recipe dereferences
+runtime links before evidence generation. No source directory is delivered.
 
-The operation adapter is required to do all of the following under the named
-exclusive lock `memoryai-staging-web-immutable-promotion`:
+## Execute input
 
-1. Append a `prepared` record to the append-only promotion journal.
-2. Verify artifact, manifest, SBOM, provenance, and `SHA256SUMS`; materialize
-   the candidate in the SHA-named immutable release directory.
-3. Start the isolated candidate using the versioned
-   `staging-web-pm2-manifest.config.cjs`. That PM2 file starts only the
-   release-local `run-standalone-from-manifest.cjs` and requires the release
-   local `standalone-manifest.json`.
-4. Verify candidate PM2 cwd, manifest, checksums, zero unstable restarts,
-   `/api/health` 200, and `/api/health/database` 200.
-5. Atomically replace both symlink selections as one transaction:
-   `current -> <candidate>` and `rollback -> <previous current>`, then reload
-   the serving PM2 app through the same manifest launcher and repeat the health
-   checks.
-6. Append `promoted`, or on any post-cutover failure atomically restore
-   `current -> <previous current>` and `rollback -> <rollback before>`, reload
-   the previous PM2 manifest, prove health, and append `rolled_back`.
-
-Candidate evidence is retained on every failure. The runner never deletes a
-release, does not touch Production, database, API behavior, or Worker PM2.
-
-## Dry-run input and test evidence
+The installed runner exposes these explicit commands:
 
 ```sh
-node scripts/ops/staging-web-immutable-promotion.cjs dry-run --input <operator-record.json>
+node scripts/ops/staging-web-immutable-promotion.cjs dry-run --input <record.json>
+node scripts/ops/staging-web-immutable-promotion.cjs execute --input <record.json>
+node scripts/ops/staging-web-immutable-promotion.cjs reconcile --input <record.json>
 ```
 
-The record must contain exact candidate/current/rollback SHA release paths,
-checksum and manifest attestations, delivered artifact SHA-256, evidence-file
-SHA-256 values, actual capacity data, PM2 cwd/status, health attestations, and
-the current promotion-journal history. The command writes nothing. A history
-disagreement returns `reconciliation_required` with exit status 10; malformed
-or missing inputs exit 64.
+`execute` runs only on Linux and accepts all of the following exact inputs:
 
-`scripts/ops/staging-web-immutable-promotion.test.cjs` includes fault injection
-for invalid artifact evidence and post-cutover health failure. It proves that
-the latter restores the previous current and the pre-existing rollback and that
-the CLI performs zero remote writes.
+- an archive already stored below `<root>/.incoming/.../*.tar.gz`, plus its
+  SHA-256;
+- SHA-256 values for `release-manifest.json`, `manifest.json`, provenance,
+  SBOM, and `SHA256SUMS` in that archive;
+- expected candidate source SHA, current SHA, and rollback SHA;
+- `component: "web"` and a non-serving candidate loopback port.
 
-## Observed 68 release-history reconciliation — plan only
+It rejects source directories, other archive locations, Worker artifacts,
+symlinks/special archive members, incomplete evidence, and artifacts whose
+manifest, runtime digest, provenance, SBOM, checksums, or baked feature flag do
+not match. A candidate release is retained after every failure; the runner
+never deletes `releases/` or `.incoming/`.
 
-Read-only inspection on 2026-08-27 established:
+## Execute transaction
 
-- `current` is `68f52a752d88c0370cc8218d6afe105a0d0545ff` and `rollback` is
-  `91a844e33d18c2aa1444054b706106dd755c9895`.
-- The 68 journal
-  `/home/ubuntu/memoryai-staging/.promotion/68f52a752d88c0370cc8218d6afe105a0d0545ff.json`
-  has SHA-256
-  `b1bae82689f42a72cae5b9cee579cc6dbec48f08e30e7c6a65c01dc343abce4e`.
-  It records `previous=91a844…` but stale `rollback=219750eebd…`.
-- The 91 release checksum verification passes; its runtime release-manifest
-  SHA-256 is `17434ab109fd40c9ac0739624130428ca82de32775381b03f7c35f49ecbfd972`.
-- The 219750 release checksum verification passes; both release-manifest
-  copies have SHA-256
-  `6465e208de3126015c87d0d70601cb073305c4b1e94f71352b2142b924323ed0`.
-  The 91 journal identifies 219750 as 91's earlier rollback. Git confirms
-  `219750… -> 91a844… -> 68f52a…` parent ancestry.
-- No retained `.incoming` artifact exists for 91 or 219750, so this evidence
-  proves their installed release trees and manifests, not original artifact
-  delivery hashes.
+Under an exclusive `wx` lock, the runner rereads current/rollback and PM2 before
+any journal write. State drift stops with no promotion journal record. It then:
 
-Therefore the actual 68 rollback must remain **91a844…**. After separate Owner
-authorization, the one-time correction may write only:
+1. fsync-appends `prepared` and subsequent JSONL events;
+2. validates the actual archive SHA, archive layout, checksums, and evidence;
+3. extracts to a retained candidate directory and uses actual archive and
+   unpacked bytes for the capacity requirement: at least 8 GiB and the
+   existing retained-release budget plus the archive;
+4. starts a separate candidate with the release-local PM2 manifest launcher;
+5. requires candidate PM2/manifest/checksum status plus `/api/health` and
+   `/api/health/database` HTTP 200;
+6. changes `current` and `rollback` through individually atomic renames under
+   the same exclusive lock, verifies the pair, and restores both selections if
+   either rename fails;
+7. reloads the serving PM2 process from the new release-local manifest.
 
-1. Temporary lock:
-   `/home/ubuntu/memoryai-staging/.promotion/locks/staging-web-history-reconciliation.lock`
-   (removed when complete).
-2. New append-only record:
-   `/home/ubuntu/memoryai-staging/.promotion/reconciliations/68f52a752d88c0370cc8218d6afe105a0d0545ff-rollback-reconciliation-v1.json`.
+On success, `rollback` becomes the previous `current`. If any post-cutover
+action or health check fails, the runner restores the old current and rollback,
+reloads the old PM2 manifest, verifies it, and preserves the candidate and all
+journal evidence. It does not clean files to pass capacity.
 
-That new record must repeat the observed `current=68f52a…`,
-`actualRollback=91a844…`, legacy journal SHA above, stale
-`journalRollback=219750eebd…`, the two verified release-manifest hashes, the
-Owner authorization identifier, and `decision="retain_actual_rollback"`.
-It must not write `current`, `rollback`, any existing journal, release tree, or
-incoming artifact. The next dry-run may mark reconciliation verified only after
-the new record is read back and its checksum is captured.
+## One-time 68 history reconciliation
+
+`reconcile` has a narrower immutable contract. It accepts only the Owner
+authorization `STAGING_WEB_RECONCILIATION_AUTHORIZED_2026-08-27` and the exact
+lineage `219750eebd5bed2ef5243282be45ac0ca5220035 →
+91a844e33d18c2aa1444054b706106dd755c9895 →
+68f52a752d88c0370cc8218d6afe105a0d0545ff`.
+
+Before creating anything it requires current `68f52a…`, rollback `91a844…`,
+valid installed manifests and `SHA256SUMS` for all three releases, the legacy
+journal to state `previous=91a844…` and stale `rollback=219750…`, and an
+unchanged online `memoryai-staging` manifest launcher at port 3100. Any drift
+stops before an added record.
+
+When every check holds, it copies the old journal text and SHA-256 into exactly
+one exclusive new reconciliation record. That record states that the real
+previous current/rollback for 68 was `91a844…`, that `219750…` is no longer the
+effective rollback, names the one-time `promote-68f52a7.sh` discrepancy and
+Owner authorization, and preserves all old journal files. It never changes
+`current`, `rollback`, old journal files, releases, or incoming artifacts.
