@@ -60,6 +60,9 @@
 .memoriesBody, .accountBody, .createBody { width: min(100% - 44px, 880px); margin: 0 auto; }
 .memoriesBody { padding: 22px 0 12px; }
 .memoryDisclosure { margin: 0 0 10px; color: var(--muted-ink); font-size: 11px; letter-spacing: .11em; }
+.memoryIntro { margin: 0 0 12px; padding: 0 0 16px; border-bottom: 1px solid var(--line); }
+.memoryIntro h1 { margin: 0; color: #553719; font-family: "Songti SC", "STSong", "Noto Serif SC", serif; font-size: clamp(24px, 6.5vw, 34px); font-weight: 500; line-height: 1.28; }
+.memoryIntro p { max-width: 38em; margin: 9px 0 0; color: #795e40; font-family: "Songti SC", "STSong", "Noto Serif SC", serif; font-size: 14px; line-height: 1.65; }
 .memoryTimeline { position: relative; display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
 .memoryTimeline::before { position: absolute; top: 19px; bottom: 19px; left: 8px; width: 1px; content: ""; background: rgba(139, 110, 72, .45); }
 .memoryTimeline li { position: relative; display: grid; grid-template-columns: 104px 1fr; column-gap: 16px; align-items: center; min-height: 112px; padding: 8px 0 8px 24px; border-bottom: 1px solid var(--line); }

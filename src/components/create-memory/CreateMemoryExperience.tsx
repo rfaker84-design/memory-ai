@@ -4,6 +4,11 @@ import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MemoryButton } from "../memory-ui";
 import { useReducedMotion } from "../../motion";
+import {
+  persistCompanionPrimaryPreference,
+  resolveCreatedMemoryCompanionHandoff,
+} from "../companion/companionHomeState";
+import { fetchCompanionHomeMemoriesJson } from "../companion/companionHomeRequest";
 import { useCreateMemoryDraft } from "./useCreateMemoryDraft";
 import { createMemoryRequestHeaders, validateStage } from "./createMemoryLogic";
 import { recordTrustConsent } from "../trust/trustConsentClient";
@@ -18,7 +23,14 @@ import {
 } from "../first-presence/creationRecoveryClient";
 import styles from "./CreateMemoryExperience.module.css";
 
-type CreatedMemory = { id: string; name: string };
+type CreatedMemory = {
+  id: string;
+  name: string;
+  autoEnterCompanion: boolean;
+  ownerId: string | null;
+};
+
+type OwnedMemory = { id: string; userId?: string | null };
 
 const relationships = ["父母", "伴侣", "子女", "朋友", "其他"];
 
@@ -44,13 +56,32 @@ export function CreateMemoryExperience() {
   }, [photo]);
 
   useEffect(() => {
-    if (!created) return;
+    if (!created?.autoEnterCompanion) return;
     const timer = window.setTimeout(
-      () => router.replace("/memory-world"),
+      () => router.replace("/companion"),
       reducedMotion ? 80 : 650,
     );
     return () => window.clearTimeout(timer);
-  }, [created, reducedMotion, router]);
+  }, [created?.autoEnterCompanion, reducedMotion, router]);
+
+  const resolveCompanionHandoff = async (memoryId: string) => {
+    try {
+      const { response, body } = await fetchCompanionHomeMemoriesJson(fetch);
+      const memories = response.ok && Array.isArray(body) ? body as OwnedMemory[] : [];
+      const ownerId = typeof memories[0]?.userId === "string" && memories[0].userId.trim()
+        ? memories[0].userId
+        : null;
+      if (!ownerId || !memories.some((memory) => memory.id === memoryId)) {
+        return { autoEnterCompanion: false, ownerId: null };
+      }
+      const handoff = resolveCreatedMemoryCompanionHandoff(memories, ownerId, memoryId, window.localStorage);
+      return { autoEnterCompanion: handoff.autoEnterCompanion, ownerId };
+    } catch {
+      // Creation has succeeded; a temporary list failure must never select a
+      // different TA or hide the completed state.
+      return { autoEnterCompanion: false, ownerId: null };
+    }
+  };
 
   const moveNext = () => {
     if (validateStage(0, draft)) {
@@ -71,14 +102,23 @@ export function CreateMemoryExperience() {
     setError("");
   };
 
-  const completeCreatedMemory = async (memory: CreatedMemory) => {
+  const completeCreatedMemory = async (memory: Pick<CreatedMemory, "id" | "name">) => {
     const files = photo ? { photo } : {};
     if (photo) await recordTrustConsent("media_asset", memory.id);
     setStatus("uploading");
     await uploadCurrentCreationMedia({ memoryId: memory.id, idempotencyKey, files });
-    setCreated(memory);
+    const handoff = await resolveCompanionHandoff(memory.id);
+    setCreated({ ...memory, ...handoff });
     clear();
     setStatus("success");
+  };
+
+  const enterCreatedCompanion = () => {
+    if (!created) return;
+    if (created.ownerId) {
+      persistCompanionPrimaryPreference(window.localStorage, created.ownerId, created.id);
+    }
+    router.replace("/companion");
   };
 
   const exitCreateFlow = () => {
@@ -225,7 +265,7 @@ export function CreateMemoryExperience() {
         <div className={styles.eyebrow}>资料已完成</div>
         <h1>{created.name}的资料已保存。</h1>
         <p>AI 生成内容基于你确认的信息。</p>
-        <MemoryButton onClick={() => router.replace("/memory-world")}>继续</MemoryButton>
+        <MemoryButton onClick={enterCreatedCompanion}>立即与 TA 相伴</MemoryButton>
       </div> : <>
         {stage === 0 ? <section className={styles.invitation} key="invitation">
           <div className={styles.paperSheet}>

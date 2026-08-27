@@ -37,6 +37,9 @@ test("guest companion and memory are synthetic, local, and defer authentication 
   assert.match(surfaces, /guest-secondary-assets\/memory-spring-approved\.png/);
   assert.match(surfaces, /guest-secondary-assets\/memory-summer-approved\.png/);
   assert.match(surfaces, /guest-secondary-assets\/memory-today-approved\.png/);
+  assert.match(surfaces, /把那些差点忘记的小事，一点点留住。/);
+  assert.match(surfaces, /照片、声音、地点和你记得的话，会在这里串成关于 TA 的时间线。/);
+  assert.match(surfaces, />记下一段关于 TA 的回忆</);
   assert.match(surfaces, /reason="登录后，继续和 TA 说话"/);
   assert.match(surfaces, /reason="登录后，保存这段回忆"/);
   assert.doesNotMatch(surfaces, /\/api\/memories|fetch\(|router\.push\("\/companion"/);

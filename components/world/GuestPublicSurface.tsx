@@ -68,9 +68,9 @@ export function GuestCompanionSurface() {
 }
 
 const DEMO_MEMORIES = [
-  { date: "春天", title: "窗边的一盆花", detail: "一张照片和一句话，留住当时的光。", image: "/guest-secondary-assets/memory-spring-approved.png" },
-  { date: "夏天", title: "那条熟悉的路", detail: "把一个真实片段慢慢写下来。", image: "/guest-secondary-assets/memory-summer-approved.png" },
-  { date: "今天", title: "想起的一件小事", detail: "每一次确认，都会成为可回看的记忆。", image: "/guest-secondary-assets/memory-today-approved.png" },
+  { date: "春天", title: "妈妈总把这盆花搬到窗边", detail: "窗边 · 一张照片", image: "/guest-secondary-assets/memory-spring-approved.png" },
+  { date: "夏天", title: "回家那条路，她总会在路口等我", detail: "回家的路 · 一句记得的话", image: "/guest-secondary-assets/memory-summer-approved.png" },
+  { date: "今天", title: "忽然想起她收衣服时说过的一句话", detail: "今天 · 一段文字", image: "/guest-secondary-assets/memory-today-approved.png" },
 ];
 
 export function GuestMemorySurface() {
@@ -84,6 +84,10 @@ export function GuestMemorySurface() {
       </section>
       <section className={styles.memoriesBody} aria-label="公开拾忆示例">
         <p className={styles.memoryDisclosure}>AI 合成示例</p>
+        <header className={styles.memoryIntro}>
+          <h1>把那些差点忘记的小事，一点点留住。</h1>
+          <p>照片、声音、地点和你记得的话，会在这里串成关于 TA 的时间线。</p>
+        </header>
         <ol className={styles.memoryTimeline}>
           {DEMO_MEMORIES.map((item) => (
             <li key={item.title}>
@@ -97,7 +101,7 @@ export function GuestMemorySurface() {
             </li>
           ))}
         </ol>
-        <button className={styles.warmAction} type="button" onClick={() => setLoginOpen(true)}>添加一段回忆</button>
+        <button className={styles.warmAction} type="button" onClick={() => setLoginOpen(true)}>记下一段关于 TA 的回忆</button>
       </section>
       {loginOpen && <GuestLoginPanel reason="登录后，保存这段回忆" onClose={() => setLoginOpen(false)} onAuthenticated={() => setLoginOpen(false)} />}
     </PublicFrame>

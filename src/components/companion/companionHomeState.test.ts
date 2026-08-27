@@ -9,6 +9,7 @@ import {
   dailyGreetingMarker,
   isDailyCompanionGreetingDue,
   persistCompanionPrimaryPreference,
+  resolveCreatedMemoryCompanionHandoff,
   resolveCompanionPrimaryPreference,
   restoreCompanionPosition,
   selectPrimaryCompanion,
@@ -72,6 +73,20 @@ test("the fixed homepage never turns a single returned memory into an implicit p
   assert.equal(result.needsExplicitChoice, true);
   assert.equal(result.source, "selection-required");
   assert.equal(local.values.has(companionPrimaryStorageKey("owner-a")), false);
+});
+
+test("only the first successfully created TA becomes current automatically", () => {
+  const firstStorage = storage();
+  const first = resolveCreatedMemoryCompanionHandoff([{ id: "first" }], "owner-a", "first", firstStorage);
+  assert.equal(first.autoEnterCompanion, true);
+  assert.equal(first.selectedMemoryId, "first");
+  assert.equal(firstStorage.values.get(companionPrimaryStorageKey("owner-a")), "first");
+
+  const laterStorage = storage({ [companionPrimaryStorageKey("owner-a")]: "first" });
+  const later = resolveCreatedMemoryCompanionHandoff(memories, "owner-a", "second", laterStorage);
+  assert.equal(later.autoEnterCompanion, false);
+  assert.equal(later.selectedMemoryId, "first");
+  assert.equal(laterStorage.values.get(companionPrimaryStorageKey("owner-a")), "first");
 });
 
 test("daily companion greeting is shown once per day and selected TA", () => {

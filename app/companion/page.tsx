@@ -136,7 +136,7 @@ function CompanionContent() {
       const scopedValueBefore = debugRequested && scopedKey ? readPresentationValue(scopedKey) : null;
       const legacyValueBefore = debugRequested ? readPresentationValue(COMPANION_PRIMARY_KEY) : null;
       const selection = ownerId
-        ? resolveCompanionPrimaryPreference(memories, ownerId, window.localStorage, { allowSingleMemoryFallback: false })
+        ? resolveCompanionPrimaryPreference(memories, ownerId, window.localStorage)
         : null;
       const selected = selection?.memory ?? null;
       if (debugRequested) {
@@ -170,9 +170,9 @@ function CompanionContent() {
         });
       }
       if (!selected) {
-        // Companion is a second-level person space. With no explicit,
-        // Owner-scoped choice it must not silently promote the newest (or
-        // only) memory or reuse a default person as a fallback.
+        // Companion is a second-level person space. A multi-person Owner must
+        // choose explicitly; a sole owned TA is safely made current by the
+        // Owner-scoped resolver above.
         setMemory(null);
         setState("redirecting");
         return;

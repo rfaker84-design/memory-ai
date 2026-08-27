@@ -5,21 +5,19 @@ import { useRouter } from "next/navigation";
 
 import { GuestExperience } from "../components/world/GuestExperience";
 import { OriginalHomeLogin } from "../components/world/OriginalHomeLogin";
-import StaticBrandLaunch from "../src/components/launch/StaticBrandLaunch";
 import { MotionProvider } from "../src/motion";
 
-type HomeStage = "launch" | "home" | "login";
+type HomeStage = "home" | "login";
 
 /**
- * The public root is intentionally self-contained: it plays the approved
- * opening, then mounts the approved five-person carousel in place. It never
- * restores a former route or reads an Owner memory during startup.
+ * The approved opening is shown once per public browser session by the
+ * layout-level PublicBrandLaunchGate. This root then mounts the approved
+ * five-person carousel in place; it never restores a former route or reads
+ * an Owner memory during startup.
  */
 export default function HomePage() {
   const router = useRouter();
-  const [stage, setStage] = useState<HomeStage>("launch");
-
-  const enterHome = useCallback(() => setStage("home"), []);
+  const [stage, setStage] = useState<HomeStage>("home");
 
   const openLogin = useCallback(() => {
     setStage("login");
@@ -37,7 +35,6 @@ export default function HomePage() {
 
   return (
     <MotionProvider>
-      {stage === "launch" && <StaticBrandLaunch onComplete={enterHome} ready />}
       {stage === "home" && <GuestExperience onLogin={openLogin} onStart={beginCreation} />}
       {stage === "login" && (
         <OriginalHomeLogin

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import MobileAppShell from "../src/components/MobileAppShell";
 import { GuestCreateContinuationProvider } from "../src/components/create-memory/GuestCreateContinuationProvider";
+import { PublicBrandLaunchGate } from "../src/components/launch/PublicBrandLaunchGate";
 import "./globals.css";
 import { RootDocument } from "./root-document";
 
@@ -22,7 +23,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <RootDocument>
       <GuestCreateContinuationProvider>
-        <MobileAppShell>{children}</MobileAppShell>
+        <PublicBrandLaunchGate>
+          <MobileAppShell>{children}</MobileAppShell>
+        </PublicBrandLaunchGate>
       </GuestCreateContinuationProvider>
     </RootDocument>
   );

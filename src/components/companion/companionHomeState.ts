@@ -22,6 +22,11 @@ export type CompanionPrimaryResolutionOptions = {
   allowSingleMemoryFallback?: boolean;
 };
 
+export type CreatedMemoryCompanionHandoff = {
+  autoEnterCompanion: boolean;
+  selectedMemoryId: string | null;
+};
+
 /**
  * The browser preference is deliberately scoped to the current Owner. A
  * selected person is presentation state, but it must never leak across two
@@ -110,6 +115,24 @@ export function resolveCompanionPrimaryPreference<T extends CompanionHomeMemory>
   }
 
   return { memory: null, needsExplicitChoice: memories.length > 0, source: "selection-required" };
+}
+
+/**
+ * The very first successfully created TA becomes the current companion. Later
+ * creations never replace an existing choice merely because they are newer.
+ */
+export function resolveCreatedMemoryCompanionHandoff<T extends CompanionHomeMemory>(
+  memories: readonly T[],
+  ownerId: string,
+  createdMemoryId: string,
+  storage: CompanionPrimaryStorage,
+): CreatedMemoryCompanionHandoff {
+  const selection = resolveCompanionPrimaryPreference(memories, ownerId, storage);
+  const createdIsOnlyMemory = memories.length === 1 && selection.memory?.id === createdMemoryId;
+  return {
+    autoEnterCompanion: createdIsOnlyMemory,
+    selectedMemoryId: selection.memory?.id ?? null,
+  };
 }
 
 /** Explicit entry points call this only after the Owner chose a person. */
