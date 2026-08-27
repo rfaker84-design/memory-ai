@@ -3,6 +3,7 @@ WORKDIR /app
 
 ARG STAGING_WEB_ARTIFACT_SOURCE_COMMIT
 ARG STAGING_WEB_ARTIFACT_SOURCE_TREE
+ARG STAGING_WEB_ARTIFACT_RUNNER_COMMIT
 RUN apk add --no-cache git libc6-compat && test "$(node --version)" = "v20.20.2" && test "$(npm --version)" = "10.8.2"
 
 COPY source/package.json source/package-lock.json ./
@@ -25,6 +26,7 @@ RUN mkdir -p /bundle && cp -aL .next/standalone-rc /bundle/runtime && \
     test -z "$(find /bundle/runtime -type l -print -quit)" && \
     STAGING_WEB_ARTIFACT_SOURCE_COMMIT="$STAGING_WEB_ARTIFACT_SOURCE_COMMIT" \
     STAGING_WEB_ARTIFACT_SOURCE_TREE="$STAGING_WEB_ARTIFACT_SOURCE_TREE" \
+    STAGING_WEB_ARTIFACT_RUNNER_COMMIT="$STAGING_WEB_ARTIFACT_RUNNER_COMMIT" \
     STAGING_WEB_ARTIFACT_BUILD_ROOT=/app \
     STAGING_WEB_ARTIFACT_RECIPE=/build-recipe/Dockerfile.staging-web-artifact \
     NEXT_PUBLIC_SOUNDSCAPE_ENABLED=true \
@@ -35,6 +37,7 @@ RUN mkdir -p /bundle && cp -aL .next/standalone-rc /bundle/runtime && \
 
 FROM alpine:3.21@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1 AS staging-web-artifact-export
 ARG STAGING_WEB_ARTIFACT_SOURCE_COMMIT
+ARG STAGING_WEB_ARTIFACT_RUNNER_COMMIT
 RUN apk add --no-cache tar
 COPY --from=builder /bundle /bundle
 RUN mkdir -p /export && \

@@ -9,6 +9,7 @@ const path = require("node:path");
 const [runtimeDirectory, outputDirectory] = process.argv.slice(2);
 const sourceCommit = process.env.STAGING_WEB_ARTIFACT_SOURCE_COMMIT;
 const sourceTree = process.env.STAGING_WEB_ARTIFACT_SOURCE_TREE;
+const runnerCommit = process.env.STAGING_WEB_ARTIFACT_RUNNER_COMMIT;
 const baseImage = "node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293";
 const nodeVersion = "v20.20.2";
 const npmVersion = "10.8.2";
@@ -68,6 +69,7 @@ if (!runtimeDirectory || !outputDirectory || !existsSync(runtimeDirectory)) fail
 
 const expectedCommit = sha(sourceCommit, "STAGING_WEB_ARTIFACT_SOURCE_COMMIT_INVALID");
 const expectedTree = sha(sourceTree, "STAGING_WEB_ARTIFACT_SOURCE_TREE_INVALID");
+const expectedRunnerCommit = sha(runnerCommit, "STAGING_WEB_ARTIFACT_RUNNER_COMMIT_INVALID");
 const runtime = path.resolve(runtimeDirectory);
 const output = path.resolve(outputDirectory);
 const buildRoot = path.resolve(process.env.STAGING_WEB_ARTIFACT_BUILD_ROOT ?? "");
@@ -99,6 +101,7 @@ const manifest = {
   component: "web",
   build: {
     platform: "linux/amd64",
+    runnerSourceCommit: expectedRunnerCommit,
     node: nodeVersion.slice(1),
     npm: npmVersion,
     baseImage,
@@ -125,6 +128,7 @@ const provenance = {
       internalParameters: { node: nodeVersion.slice(1), npm: npmVersion, platform: "linux/amd64" },
       resolvedDependencies: [
         { uri: "git+repository", digest: { sha1: expectedCommit }, annotations: { gitTree: expectedTree } },
+        { uri: "git+repository?path=staging-web-immutable-runner", digest: { sha1: expectedRunnerCommit } },
         { uri: "pkg:npm/memory-ai@0.1.0", digest: { sha256: hashFile(lockfile) } },
         { uri: `pkg:docker/library/node@20-alpine?digest=${baseImage.split("@")[1]}`, digest: { sha256: baseImage.split("sha256:")[1] } },
       ],

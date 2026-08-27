@@ -16,6 +16,7 @@ test("immutable Staging Web artifact workflow checks out an exact source commit 
   assert.match(workflow, /ref: \$\{\{ inputs\.source_commit \}\}\s*[\s\S]*?path: source/);
   assert.match(workflow, /test "\$\{\{ inputs\.source_commit \}\}" = "\$\(git -C source rev-parse HEAD\)"/);
   assert.match(workflow, /docker buildx build --pull=false/);
+  assert.match(workflow, /--build-arg "STAGING_WEB_ARTIFACT_RUNNER_COMMIT=\$RUNNER_COMMIT"/);
   assert.match(workflow, /--target export/);
   assert.match(workflow, /actions\/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08/);
   assert.doesNotMatch(workflow, /\b(?:ssh|pm2|nginx|kubectl|helm|promotion|deploy)\b/i);
@@ -37,5 +38,6 @@ test("evidence generator fails closed unless its client feature flag was baked b
   assert.match(generator, /NEXT_PUBLIC_SOUNDSCAPE_ENABLED !== "true"/);
   assert.match(generator, /STAGING_WEB_ARTIFACT_FEATURE_FLAG_NOT_BAKED/);
   assert.match(generator, /compiledClientChunks/);
+  assert.match(generator, /runnerSourceCommit/);
   assert.match(generator, /STAGING_WEB_ARTIFACT_SYMLINK_FORBIDDEN/);
 });

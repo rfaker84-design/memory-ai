@@ -59,6 +59,7 @@ jobs:
           docker buildx build --pull=false \
             --build-arg "STAGING_WEB_ARTIFACT_SOURCE_COMMIT=$source_commit" \
             --build-arg "STAGING_WEB_ARTIFACT_SOURCE_TREE=$source_tree" \
+            --build-arg "STAGING_WEB_ARTIFACT_RUNNER_COMMIT=$RUNNER_COMMIT" \
             --target export \
             --output "type=local,dest=artifacts/staging-web-immutable-$source_commit" \
             -f scripts/ops/Dockerfile.staging-web-artifact .
