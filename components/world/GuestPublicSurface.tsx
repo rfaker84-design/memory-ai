@@ -10,7 +10,7 @@ import styles from "./GuestPublicExperience.module.css";
 
 type PublicPageVariant = "account" | "companion" | "create" | "memories";
 
-function PublicFrame({ active, children, variant }: { active: PublicProductTab; children: ReactNode; variant: PublicPageVariant }) {
+function PublicFrame({ active, children, variant }: { active: PublicProductTab | null; children: ReactNode; variant: PublicPageVariant }) {
   const className = variant === "companion"
     ? `${styles.publicPage} ${styles.companionPage}`
     : `${styles.publicPage} ${styles.paperPage}`;
@@ -79,7 +79,7 @@ export function GuestMemorySurface() {
   return (
     <PublicFrame active="memory" variant="memories">
       <section className={styles.memoriesHero}>
-        <img src="/guest-secondary-assets/memories-hero-approved.png" alt="公开合成示例：窗边的老人和一盆花" />
+        <img src="/guest-secondary-assets/memories-hero-approved.png" alt="公开合成示例：窗边的老人和一盆花" loading="eager" fetchPriority="high" decoding="async" />
         <SceneHeader marker="公开示例" tone="light" />
       </section>
       <section className={styles.memoriesBody} aria-label="公开拾忆示例">
@@ -88,7 +88,7 @@ export function GuestMemorySurface() {
           {DEMO_MEMORIES.map((item) => (
             <li key={item.title}>
               <span className={styles.timelineStem} aria-hidden="true" />
-              <img src={item.image} alt="" />
+              <img src={item.image} alt="" loading="lazy" fetchPriority="low" decoding="async" />
               <div>
                 <time>{item.date}</time>
                 <h2>{item.title}</h2>
@@ -111,7 +111,7 @@ export function GuestAccountSurface() {
   return (
     <PublicFrame active="account" variant="account">
       <section className={styles.accountHero}>
-        <img src="/guest-secondary-assets/account-album-approved.png" alt="窗边相册与信封" />
+        <img src="/guest-secondary-assets/account-album-approved.png" alt="窗边相册与信封" loading="eager" fetchPriority="high" decoding="async" />
         <SceneHeader tone="light" />
       </section>
       <section className={styles.accountBody}>
@@ -143,9 +143,9 @@ export function GuestCreateSurface() {
   };
 
   return (
-    <PublicFrame active="home" variant="create">
+    <PublicFrame active={null} variant="create">
       <section className={styles.createHero}>
-        <img src="/guest-secondary-assets/create-empty-frame-approved.png" alt="普通家庭环境中的空相框与空白纸条" />
+        <img src="/guest-secondary-assets/create-empty-frame-approved.png" alt="普通家庭环境中的空相框与空白纸条" loading="eager" fetchPriority="high" decoding="async" />
         <SceneHeader marker="第一步" tone="light" />
       </section>
       <section className={styles.createBody} aria-labelledby="guest-create-title">

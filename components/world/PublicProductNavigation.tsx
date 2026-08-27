@@ -13,7 +13,7 @@ const TABS: ReadonlyArray<{ key: PublicProductTab; label: string; path: string }
   { key: "account", label: "我的", path: "/guest/account" },
 ];
 
-export function PublicProductNavigation({ active, overMedia = false }: { active: PublicProductTab; overMedia?: boolean }) {
+export function PublicProductNavigation({ active, overMedia = false }: { active: PublicProductTab | null; overMedia?: boolean }) {
   const router = useRouter();
   return (
     <nav className={`${styles.publicNavigation} ${overMedia ? styles.publicNavigationOverMedia : ""}`} aria-label="主导航">

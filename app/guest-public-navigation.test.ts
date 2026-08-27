@@ -22,6 +22,13 @@ test("public navigation exposes all four product surfaces without routing a gues
   assert.doesNotMatch(navigation, /path: "\/companion"/);
 });
 
+test("creation is a child flow, so it leaves every primary navigation item unselected", () => {
+  assert.match(surfaces, /<PublicFrame active=\{null\} variant="create">/);
+  assert.match(navigation, /active: PublicProductTab \| null/);
+  assert.match(navigation, /const selected = tab\.key === active/);
+  assert.doesNotMatch(surfaces, /<PublicFrame active="home" variant="create">/);
+});
+
 test("guest companion and memory are synthetic, local, and defer authentication to the real action", () => {
   assert.match(surfaces, /AI 合成示例/);
   assert.match(surfaces, /home-hero-assets\/elderly-woman\.mp4/);
@@ -51,6 +58,17 @@ test("approved secondary-page imagery is represented as responsive component ass
   assert.match(styles, /\.memoriesHero img, \.accountHero img, \.createHero img \{[\s\S]*?object-fit: cover/);
   assert.match(styles, /@media \(min-width: 760px\)/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
+});
+
+test("each secondary-page hero is eagerly prioritized while memory thumbnails remain deferred", () => {
+  for (const hero of [
+    "memories-hero-approved.png",
+    "account-album-approved.png",
+    "create-empty-frame-approved.png",
+  ]) {
+    assert.match(surfaces, new RegExp(`${hero.replaceAll(".", "\\.")}"[^>]*loading="eager"[^>]*fetchPriority="high"`));
+  }
+  assert.match(surfaces, /src=\{item\.image\} alt="" loading="lazy" fetchPriority="low"/);
 });
 
 test("contextual login has a close path and only calls authentication endpoints from explicit actions", () => {
