@@ -53,6 +53,27 @@ function requireExact(environment: NodeJS.ProcessEnv, name: string, expected: st
   }
 }
 
+function assertQwenVoiceCloneBetaConfiguration(environment: NodeJS.ProcessEnv): void {
+  if (environment.MEMORYAI_QWEN_AUDIO_TTS_FLASH_VOICE_CLONE_BETA_ENABLED !== "true") return;
+  requireExact(environment, "MEMORYAI_DEPLOYMENT_TIER", "internal-beta");
+  requireExact(environment, "MEMORYAI_BETA_DATA_SCOPE", "isolated-test");
+  if (!required(environment, "MEMORYAI_QWEN_AUDIO_TTS_FLASH_VOICE_CLONE_BETA_TEST_USER_IDS")) {
+    throw new StagingRuntimeConfigurationError("MEMORYAI_QWEN_AUDIO_TTS_FLASH_VOICE_CLONE_BETA_TEST_USER_IDS_NOT_CONFIGURED");
+  }
+  required(environment, "DASHSCOPE_API_KEY");
+  const endpoint = required(environment, "DASHSCOPE_VOICE_CLONE_ENDPOINT");
+  try {
+    const url = new URL(endpoint);
+    const allowedHost = url.hostname === "dashscope.aliyuncs.com"
+      || url.hostname.endsWith(".maas.aliyuncs.com");
+    if (url.protocol !== "https:" || !allowedHost || url.pathname !== "/api/v1/services/audio/tts/customization") {
+      throw new Error("invalid DashScope endpoint");
+    }
+  } catch {
+    throw new StagingRuntimeConfigurationError("DASHSCOPE_VOICE_CLONE_ENDPOINT_INVALID");
+  }
+}
+
 function parseStagingDatabaseName(environment: NodeJS.ProcessEnv): string {
   const name = required(environment, "STAGING_DATABASE_NAME");
   if (!/^[a-z][a-z0-9_]{2,62}$/i.test(name) || !name.toLowerCase().includes("staging")) {
@@ -168,6 +189,7 @@ export function getStagingRuntimeConfiguration(
   requireExact(environment, "STAGING_DATA_SOURCE", "empty");
   requireExact(environment, "LLM_PROVIDER", "mock");
   requireExact(environment, "TTS_PROVIDER", "mock");
+  assertQwenVoiceCloneBetaConfiguration(environment);
 
   const fixedSmsCode = required(environment, "STAGING_FIXED_SMS_CODE");
   if (!/^\d{6}$/.test(fixedSmsCode)) {

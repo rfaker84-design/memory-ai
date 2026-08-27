@@ -11,7 +11,7 @@ import { MEMORY_CREATION_AUTHORIZATION_ACKNOWLEDGEMENT } from "@/features/consen
 import { blockedHighRiskResponse } from "@/features/understanding-assistance/understanding-assistance";
 import { defaultUnderstandingAssistanceGuard, UnderstandingAssistanceError, type UnderstandingAssistanceGuard } from "@/features/understanding-assistance/understanding-assistance-postgres";
 
-const CONSENT_TYPES = new Set(["adult_eligibility", "memory_profile", "media_asset", "commercial_use", "crisis_support_escalation"]);
+const CONSENT_TYPES = new Set(["adult_eligibility", "memory_profile", "media_asset", "voice_clone", "commercial_use", "crisis_support_escalation"]);
 const REQUEST_KEY = /^[A-Za-z0-9._:-]{16,128}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 type RecordConsent = (input: { externalUserId: string; consentType: TrustConsentType; memoryId: string | null; requestKey: string; acknowledgement: string | null }) => Promise<void>;
@@ -30,7 +30,7 @@ function parseBody(value: unknown): { consentType: TrustConsentType; memoryId: s
   if (typeof body.consentType !== "string" || !CONSENT_TYPES.has(body.consentType)) return null;
   const memoryId = body.memoryId;
   if (memoryId !== undefined && (typeof memoryId !== "string" || !UUID.test(memoryId))) return null;
-  if ((body.consentType === "media_asset" || body.consentType === "commercial_use") && memoryId === undefined) return null;
+  if ((body.consentType === "media_asset" || body.consentType === "voice_clone" || body.consentType === "commercial_use") && memoryId === undefined) return null;
   const acknowledgement = typeof body.acknowledgement === "string" ? body.acknowledgement : null;
   if (body.consentType === "memory_profile" && acknowledgement !== MEMORY_CREATION_AUTHORIZATION_ACKNOWLEDGEMENT) return null;
   return { consentType: body.consentType as TrustConsentType, memoryId: typeof memoryId === "string" ? memoryId : null, acknowledgement };

@@ -1,0 +1,32 @@
+.root {
+  min-height: 100dvh;
+  padding: max(24px, env(safe-area-inset-top)) 20px max(32px, env(safe-area-inset-bottom));
+  background: #141210;
+  color: #f3eadc;
+}
+
+.root :global(.voiceClonePage) {
+  display: grid;
+  min-height: calc(100dvh - 56px);
+  place-items: center;
+}
+
+.root :global(.voiceClonePanel) {
+  width: min(100%, 520px);
+  padding: 32px 24px;
+  border: 1px solid rgba(222, 191, 143, 0.18);
+  border-radius: 24px;
+  background: rgba(32, 28, 24, 0.9);
+}
+
+.root :global(.voiceCloneEyebrow) { margin: 0 0 10px; color: #c9a56e; font-size: 12px; letter-spacing: .12em; }
+.root :global(h1) { margin: 0; font-size: clamp(30px, 8vw, 42px); }
+.root :global(.voiceCloneLead) { margin: 16px 0 28px; color: rgba(243, 234, 220, .72); line-height: 1.7; }
+.root :global(.voiceCloneFile) { display: grid; gap: 10px; font-weight: 600; }
+.root :global(.voiceCloneFile small) { color: rgba(243, 234, 220, .58); font-weight: 400; line-height: 1.6; }
+.root :global(.voiceCloneConsent) { display: flex; gap: 10px; margin: 24px 0; color: rgba(243, 234, 220, .8); line-height: 1.55; }
+.root :global(button) { width: 100%; min-height: 48px; border: 0; border-radius: 999px; background: #d3ae77; color: #21180f; font: inherit; font-weight: 700; }
+.root :global(button:disabled) { opacity: .48; }
+.root :global(.voiceCloneStatus), .root :global(.voiceCloneError) { margin: 18px 0 0; line-height: 1.5; }
+.root :global(.voiceCloneStatus) { color: #d9c19c; }
+.root :global(.voiceCloneError) { color: #efaaa0; }

@@ -7,6 +7,7 @@ export type TrustConsentType =
   | "adult_eligibility"
   | "memory_profile"
   | "media_asset"
+  | "voice_clone"
   | "commercial_use"
   | "crisis_support_escalation";
 

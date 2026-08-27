@@ -36,3 +36,35 @@ test("internal beta fails closed when any non-production boundary is absent", ()
     );
   }
 });
+
+test("Qwen voice cloning has its own explicit flag and exact allowlist", () => {
+  const qwenEnabled = {
+    DEPLOYMENT_ENV: "staging",
+    MEMORYAI_DEPLOYMENT_TIER: "internal-beta",
+    MEMORYAI_BETA_DATA_SCOPE: "isolated-test",
+    MEMORYAI_QWEN_AUDIO_TTS_FLASH_VOICE_CLONE_BETA_ENABLED: "true",
+    MEMORYAI_QWEN_AUDIO_TTS_FLASH_VOICE_CLONE_BETA_TEST_USER_IDS: "voice-tester",
+  };
+  assert.equal(
+    resolveInternalBetaAccess("qwen-audio-tts-flash-voice-clone", "voice-tester", qwenEnabled).allowed,
+    true
+  );
+  assert.equal(
+    resolveInternalBetaAccess("qwen-audio-tts-flash-voice-clone", "tester-a", qwenEnabled).allowed,
+    false
+  );
+  assert.equal(
+    resolveInternalBetaAccess("qwen-audio-tts-flash-voice-clone", "voice-tester", {
+      ...qwenEnabled,
+      MEMORYAI_QWEN_AUDIO_TTS_FLASH_VOICE_CLONE_BETA_ENABLED: "false",
+    }).allowed,
+    false
+  );
+  assert.deepEqual(
+    resolveInternalBetaAccess("qwen-audio-tts-flash-voice-clone", "voice-tester", {
+      ...qwenEnabled,
+      DEPLOYMENT_ENV: "production",
+    }),
+    { allowed: false, reason: "deployment_not_staging" }
+  );
+});

@@ -53,6 +53,25 @@ function requireConfiguredExact(environment, name, expected, code) {
   if (environment[name] !== expected) throw failure(code);
 }
 
+function requireQwenVoiceCloneStagingContract(environment) {
+  if (environment.MEMORYAI_QWEN_AUDIO_TTS_FLASH_VOICE_CLONE_BETA_ENABLED !== "true") return;
+  requireExact(environment, "MEMORYAI_DEPLOYMENT_TIER", "internal-beta");
+  requireExact(environment, "MEMORYAI_BETA_DATA_SCOPE", "isolated-test");
+  required(environment, "MEMORYAI_QWEN_AUDIO_TTS_FLASH_VOICE_CLONE_BETA_TEST_USER_IDS");
+  required(environment, "DASHSCOPE_API_KEY");
+  const endpoint = required(environment, "DASHSCOPE_VOICE_CLONE_ENDPOINT");
+  try {
+    const url = new URL(endpoint);
+    const allowedHost = url.hostname === "dashscope.aliyuncs.com"
+      || url.hostname.endsWith(".maas.aliyuncs.com");
+    if (url.protocol !== "https:" || !allowedHost || url.pathname !== "/api/v1/services/audio/tts/customization") {
+      throw new Error("invalid DashScope endpoint");
+    }
+  } catch {
+    throw failure("DASHSCOPE_VOICE_CLONE_ENDPOINT_INVALID");
+  }
+}
+
 function requireSessionRotationContract(environment) {
   const maximumOverlapMilliseconds = (7 * 24 * 60 * 60 + 30) * 1000;
   const currentId = environment.SESSION_SECRET_KID && environment.SESSION_SECRET_KID.trim() || "current";
@@ -140,6 +159,7 @@ function requireStagingContract(environment) {
   requireExact(environment, "STAGING_DATA_SOURCE", "empty");
   requireExact(environment, "LLM_PROVIDER", "mock");
   requireExact(environment, "TTS_PROVIDER", "mock");
+  requireQwenVoiceCloneStagingContract(environment);
   if (!/^\d{6}$/.test(required(environment, "STAGING_FIXED_SMS_CODE"))) {
     throw failure("STAGING_FIXED_SMS_CODE_INVALID");
   }

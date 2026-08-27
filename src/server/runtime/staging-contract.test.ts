@@ -44,6 +44,29 @@ test("staging runtime fails closed for production-shaped database, origin, provi
   }
 });
 
+test("Qwen voice cloning cannot be enabled on Staging without its isolated beta and DashScope contract", () => {
+  const enabled = {
+    ...stagingEnvironment,
+    MEMORYAI_QWEN_AUDIO_TTS_FLASH_VOICE_CLONE_BETA_ENABLED: "true",
+    MEMORYAI_DEPLOYMENT_TIER: "internal-beta",
+    MEMORYAI_BETA_DATA_SCOPE: "isolated-test",
+    MEMORYAI_QWEN_AUDIO_TTS_FLASH_VOICE_CLONE_BETA_TEST_USER_IDS: "voice-tester",
+    DASHSCOPE_API_KEY: "staging-only-key",
+    DASHSCOPE_VOICE_CLONE_ENDPOINT: "https://workspace.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/customization",
+  };
+  assert.doesNotThrow(() => getStagingRuntimeConfiguration(enabled));
+  for (const [override, code] of [
+    [{ DASHSCOPE_API_KEY: "" }, "DASHSCOPE_API_KEY_NOT_CONFIGURED"],
+    [{ DASHSCOPE_VOICE_CLONE_ENDPOINT: "https://example.test" }, "DASHSCOPE_VOICE_CLONE_ENDPOINT_INVALID"],
+    [{ MEMORYAI_BETA_DATA_SCOPE: "shared" }, "MEMORYAI_BETA_DATA_SCOPE_INVALID"],
+  ] as const) {
+    assert.throws(
+      () => getStagingRuntimeConfiguration({ ...enabled, ...override }),
+      (error: unknown) => error instanceof StagingRuntimeConfigurationError && error.code === code,
+    );
+  }
+});
+
 test("staging access rotation accepts one previous token only during a bounded overlap", () => {
   const now = new Date("2026-08-01T00:00:00.000Z");
   const valid = {
