@@ -1,17 +1,20 @@
 import { SOUNDSCAPE_PRESETS } from "./presets";
-import type { SoundscapeId, SoundscapeMediaEvent, SoundscapePreset } from "./types";
+import type { ForegroundAudioKind, SoundscapeId, SoundscapeMediaEvent, SoundscapePreset } from "./types";
 
 const CROSSFADE_MS = 1500;
+export const FADE_TO_STOP_MS = 1500;
 const VIDEO_FADE_MS = 240;
 const VIDEO_RECOVER_MS = 1000;
 const VOICE_DUCK_RATIO = 0.15;
 const VOICE_RECOVER_MS = 750;
+export const ROLLING_NOISE_BLOCK_SECONDS = 12;
+export const ROLLING_NOISE_CROSSFADE_SECONDS = 1.2;
 
 type ContextFactory = () => AudioContext;
-type ActiveLayer = { preset: SoundscapePreset; gain: GainNode; sources: AudioScheduledSourceNode[]; timers: Array<ReturnType<typeof setTimeout>> };
-type MediaState = { video: boolean; voice: boolean; visible: boolean };
+type ActiveLayer = { preset: SoundscapePreset; gain: GainNode; noiseFilter: BiquadFilterNode; sources: AudioScheduledSourceNode[]; nodes: AudioNode[]; timers: Array<ReturnType<typeof setTimeout>> };
+type MediaState = { video: boolean; foreground: Set<Exclude<ForegroundAudioKind, "video">>; visible: boolean };
 
-function seededRandom(seed: string): () => number {
+export function seededRandom(seed: string): () => number {
   let state = 2166136261;
   for (const unit of seed) state = Math.imul(state ^ unit.charCodeAt(0), 16777619);
   return () => {
@@ -21,6 +24,18 @@ function seededRandom(seed: string): () => number {
     value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
     return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+/** Deterministic, non-looping pink-noise block. Adjacent indexes use unique seed material. */
+export function createDeterministicPinkNoiseBlock(frames: number, seed: string, blockIndex: number): Float32Array {
+  const random = seededRandom(`${seed}:pink-noise:${blockIndex}`);
+  const samples = new Float32Array(Math.max(1, frames));
+  let pink = 0;
+  for (let index = 0; index < samples.length; index += 1) {
+    pink = pink * 0.985 + (random() * 2 - 1) * 0.015;
+    samples[index] = pink;
+  }
+  return samples;
 }
 
 function browserAudioContext(): AudioContext {
@@ -54,7 +69,7 @@ export class SoundscapeEngine {
   private readonly layers = new Set<ActiveLayer>();
   private currentId: SoundscapeId | null = null;
   private volume = 0.22;
-  private media: MediaState = { video: false, voice: false, visible: true };
+  private media: MediaState = { video: false, foreground: new Set(), visible: true };
   private recoverFromVideo = false;
   private suspendTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -91,10 +106,12 @@ export class SoundscapeEngine {
     const context = this.context;
     const master = this.master;
     if (!context || !master || this.currentId === id) return;
+    if (context.state === "suspended") void context.resume().catch(() => undefined);
     const next = this.createLayer(context, master, SOUNDSCAPE_PRESETS[id]);
     const previous = this.active;
     this.active = next;
     this.currentId = id;
+    this.scheduleRollingNoise(context, next, next.noiseFilter);
     equalPowerCrossfade(next.gain.gain, context.currentTime, true);
     if (previous) {
       equalPowerCrossfade(previous.gain.gain, context.currentTime, false);
@@ -113,12 +130,30 @@ export class SoundscapeEngine {
     this.currentId = null;
   }
 
+  /** Fade out route-owned ambience before releasing its graph. Safe to repeat during rapid navigation. */
+  public fadeToStop(): void {
+    const context = this.context;
+    const master = this.master;
+    if (!context || !master || this.layers.size === 0) return;
+    this.clearSuspendTimer();
+    ramp(master.gain, context.currentTime, master.gain.value, 0, FADE_TO_STOP_MS);
+    const retiring = [...this.layers];
+    this.active = null;
+    this.currentId = null;
+    for (const layer of retiring) {
+      layer.timers.push(setTimeout(() => this.destroyLayer(layer), FADE_TO_STOP_MS + 80));
+    }
+  }
+
   public handleMediaEvent(event: SoundscapeMediaEvent): void {
     if (event.type === "video") {
       this.recoverFromVideo = !event.active && this.media.video;
       this.media.video = event.active;
     }
-    if (event.type === "voice") this.media.voice = event.active;
+    if (event.type !== "video" && event.type !== "visibility") {
+      if (event.active) this.media.foreground.add(event.type);
+      else this.media.foreground.delete(event.type);
+    }
     if (event.type === "visibility") this.media.visible = event.visible;
     this.applyMediaPolicy();
   }
@@ -147,6 +182,7 @@ export class SoundscapeEngine {
     wetGain.connect(master);
 
     const sources: AudioScheduledSourceNode[] = [];
+    const nodes: AudioNode[] = [layerGain, reverb, dryGain, wetGain];
     const makeDrone = (frequency: number, type: OscillatorType, gainLevel: number, pan: number) => {
       const oscillator = context.createOscillator();
       const filter = context.createBiquadFilter();
@@ -165,24 +201,17 @@ export class SoundscapeEngine {
       panner.connect(layerGain);
       oscillator.start();
       sources.push(oscillator);
+      nodes.push(filter, gain, panner);
     };
     makeDrone(preset.droneHz[0], "sine", 0.055, -preset.stereoWidth);
     makeDrone(preset.droneHz[1], "triangle", 0.026, preset.stereoWidth);
 
-    const noise = context.createBufferSource();
-    noise.buffer = this.createPinkNoise(context, random, 31.1 + random() * 7.9);
-    noise.loop = true;
     const noiseFilter = context.createBiquadFilter();
-    const noiseGain = context.createGain();
     noiseFilter.type = "lowpass";
     noiseFilter.frequency.value = preset.noiseFilterHz;
     noiseFilter.Q.value = 0.42;
-    noiseGain.gain.value = preset.noiseGain;
-    noise.connect(noiseFilter);
-    noiseFilter.connect(noiseGain);
-    noiseGain.connect(layerGain);
-    noise.start();
-    sources.push(noise);
+    noiseFilter.connect(layerGain);
+    nodes.push(noiseFilter);
 
     const lfo = context.createOscillator();
     const lfoDepth = context.createGain();
@@ -193,8 +222,9 @@ export class SoundscapeEngine {
     lfoDepth.connect(layerGain.gain);
     lfo.start();
     sources.push(lfo);
+    nodes.push(lfoDepth);
 
-    const layer: ActiveLayer = { preset, gain: layerGain, sources, timers: [] };
+    const layer: ActiveLayer = { preset, gain: layerGain, noiseFilter, sources, nodes, timers: [] };
     this.layers.add(layer);
     this.scheduleShimmer(context, layer, random);
     return layer;
@@ -226,11 +256,16 @@ export class SoundscapeEngine {
       oscillator.start(now);
       oscillator.stop(now + duration + 0.02);
       layer.sources.push(oscillator);
+      layer.nodes.push(filter, gain, panner);
       oscillator.onended = () => {
         const sourceIndex = layer.sources.indexOf(oscillator);
         if (sourceIndex >= 0) layer.sources.splice(sourceIndex, 1);
         for (const node of [oscillator, filter, gain, panner]) {
           try { node.disconnect(); } catch { /* already disconnected */ }
+        }
+        for (const node of [filter, gain, panner]) {
+          const nodeIndex = layer.nodes.indexOf(node);
+          if (nodeIndex >= 0) layer.nodes.splice(nodeIndex, 1);
         }
       };
       const [minimum, maximum] = layer.preset.shimmerIntervalMs;
@@ -240,16 +275,42 @@ export class SoundscapeEngine {
     layer.timers.push(setTimeout(emit, minimum + random() * (maximum - minimum)));
   }
 
-  private createPinkNoise(context: AudioContext, random: () => number, seconds: number): AudioBuffer {
-    const frames = Math.max(1, Math.floor(context.sampleRate * seconds));
-    const buffer = context.createBuffer(1, frames, context.sampleRate);
-    const samples = buffer.getChannelData(0);
-    let pink = 0;
-    for (let index = 0; index < samples.length; index += 1) {
-      pink = pink * 0.985 + (random() * 2 - 1) * 0.015;
-      samples[index] = pink;
-    }
-    return buffer;
+  private scheduleRollingNoise(context: AudioContext, layer: ActiveLayer, filter: BiquadFilterNode): void {
+    let blockIndex = 0;
+    const schedule = () => {
+      if (this.active !== layer || !this.layers.has(layer) || !this.context || this.context.state === "closed") return;
+      const source = context.createBufferSource();
+      const gain = context.createGain();
+      const frames = Math.max(1, Math.floor(context.sampleRate * ROLLING_NOISE_BLOCK_SECONDS));
+      const buffer = context.createBuffer(1, frames, context.sampleRate);
+      buffer.getChannelData(0).set(createDeterministicPinkNoiseBlock(frames, layer.preset.seed, blockIndex));
+      blockIndex += 1;
+      source.buffer = buffer;
+      source.loop = false;
+      source.connect(gain);
+      gain.connect(filter);
+      const now = context.currentTime;
+      const fade = ROLLING_NOISE_CROSSFADE_SECONDS;
+      const end = now + ROLLING_NOISE_BLOCK_SECONDS;
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(layer.preset.noiseGain, now + fade);
+      gain.gain.setValueAtTime(layer.preset.noiseGain, end - fade);
+      gain.gain.linearRampToValueAtTime(0, end);
+      source.start(now);
+      source.stop(end + 0.03);
+      layer.sources.push(source);
+      layer.nodes.push(gain);
+      source.onended = () => {
+        const sourceIndex = layer.sources.indexOf(source);
+        if (sourceIndex >= 0) layer.sources.splice(sourceIndex, 1);
+        const nodeIndex = layer.nodes.indexOf(gain);
+        if (nodeIndex >= 0) layer.nodes.splice(nodeIndex, 1);
+        try { source.disconnect(); } catch { /* already disconnected */ }
+        try { gain.disconnect(); } catch { /* already disconnected */ }
+      };
+      layer.timers.push(setTimeout(schedule, (ROLLING_NOISE_BLOCK_SECONDS - fade) * 1000));
+    };
+    schedule();
   }
 
   private createImpulse(context: AudioContext, preset: SoundscapePreset, random: () => number): AudioBuffer {
@@ -276,8 +337,9 @@ export class SoundscapeEngine {
       return;
     }
     if (context.state === "suspended") void context.resume().catch(() => undefined);
-    const target = this.volume * this.active.preset.gain * (this.media.voice ? VOICE_DUCK_RATIO : 1);
-    const duration = this.media.voice ? 160 : this.recoverFromVideo ? VIDEO_RECOVER_MS : VOICE_RECOVER_MS;
+    const foregroundActive = this.media.foreground.size > 0;
+    const target = this.volume * this.active.preset.gain * (foregroundActive ? VOICE_DUCK_RATIO : 1);
+    const duration = foregroundActive ? 160 : this.recoverFromVideo ? VIDEO_RECOVER_MS : VOICE_RECOVER_MS;
     this.recoverFromVideo = false;
     ramp(master.gain, context.currentTime, master.gain.value, target, duration);
   }
@@ -294,6 +356,8 @@ export class SoundscapeEngine {
       try { source.stop(); } catch { /* already stopped */ }
       try { source.disconnect(); } catch { /* already disconnected */ }
     }
-    try { layer.gain.disconnect(); } catch { /* already disconnected */ }
+    for (const node of layer.nodes) {
+      try { node.disconnect(); } catch { /* already disconnected */ }
+    }
   }
 }

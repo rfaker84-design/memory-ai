@@ -5,10 +5,10 @@ import { usePathname } from "next/navigation";
 
 import { SoundscapeControl } from "./SoundscapeControl";
 import { SoundscapeEngine } from "./SoundscapeEngine";
-import { attachSoundscapeMediaBridge } from "./SoundscapeMediaBridge";
+import { attachSoundscapeEncounterPhaseBridge, attachSoundscapeMediaBridge } from "./SoundscapeMediaBridge";
 import { isSoundscapeFeatureEnabled, resolveSoundscapeRoute } from "./SoundscapePolicy";
 import { readSoundscapePreference, withSoundscapeEnabled, withSoundscapeVolume, writeSoundscapePreference } from "./SoundscapePreference";
-import type { SoundscapePreference } from "./types";
+import type { SoundscapeEncounterPhase, SoundscapePreference } from "./types";
 
 const SOUNDSCAPE_FEATURE_ENABLED = isSoundscapeFeatureEnabled(process.env.NEXT_PUBLIC_SOUNDSCAPE_ENABLED);
 type Props = Readonly<{ children: React.ReactNode }>;
@@ -21,7 +21,8 @@ export function SoundscapeProvider({ children }: Props) {
 
 function SoundscapeRuntime({ children }: Props) {
   const pathname = usePathname();
-  const decision = resolveSoundscapeRoute(pathname);
+  const [encounterPhase, setEncounterPhase] = useState<SoundscapeEncounterPhase>("off");
+  const decision = resolveSoundscapeRoute(pathname, encounterPhase);
   const [preference, setPreference] = useState<SoundscapePreference>(() => (
     typeof window === "undefined" ? { version: 1, enabled: false, volume: 0.22 } : readSoundscapePreference(window.localStorage)
   ));
@@ -84,8 +85,10 @@ function SoundscapeRuntime({ children }: Props) {
     if (!engine) return;
     engine.setVolume(preference.volume);
     if (preference.enabled && decision.soundscape) engine.play(decision.soundscape);
-    else engine.stop();
+    else engine.fadeToStop();
   }, [decision.soundscape, preference.enabled, preference.volume, sessionActivated]);
+
+  useEffect(() => attachSoundscapeEncounterPhaseBridge(document, ({ phase }) => setEncounterPhase(phase)), []);
 
   useEffect(() => {
     if (!sessionActivated || !preference.enabled || !engineRef.current) return;

@@ -9,7 +9,10 @@ test("soundscape policy only maps frozen public routes", () => {
   assert.deepEqual(resolveSoundscapeRoute("/guest/companion"), { soundscape: "companion", reason: "companion" });
   assert.deepEqual(resolveSoundscapeRoute("/memories"), { soundscape: "stardust", reason: "memories" });
   assert.deepEqual(resolveSoundscapeRoute("/guest/memories"), { soundscape: "stardust", reason: "memories" });
-  assert.deepEqual(resolveSoundscapeRoute("/memory/memory-1/encounter"), { soundscape: "reunion", reason: "encounter" });
+  assert.deepEqual(resolveSoundscapeRoute("/memory"), { soundscape: "stardust", reason: "memories" });
+  assert.deepEqual(resolveSoundscapeRoute("/memory/memory-1/encounter"), { soundscape: null, reason: "off-route" });
+  assert.deepEqual(resolveSoundscapeRoute("/memory/memory-1/encounter", "preparing"), { soundscape: "reunion", reason: "encounter" });
+  assert.deepEqual(resolveSoundscapeRoute("/memory/memory-1/encounter", "settling"), { soundscape: "reunion", reason: "encounter" });
   assert.deepEqual(resolveSoundscapeRoute("/memory-chat/memory-1"), { soundscape: null, reason: "off-route" });
   assert.deepEqual(resolveSoundscapeRoute("/login"), { soundscape: null, reason: "off-route" });
 });

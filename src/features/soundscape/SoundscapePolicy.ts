@@ -1,12 +1,19 @@
-import type { SoundscapeRouteDecision } from "./types";
+import type { SoundscapeEncounterPhase, SoundscapeRouteDecision } from "./types";
 
 const OFF_ROUTE: SoundscapeRouteDecision = { soundscape: null, reason: "off-route" };
 
-export function resolveSoundscapeRoute(pathname: string | null | undefined): SoundscapeRouteDecision {
+export function resolveSoundscapeRoute(
+  pathname: string | null | undefined,
+  encounterPhase: SoundscapeEncounterPhase = "off",
+): SoundscapeRouteDecision {
   if (pathname === "/") return { soundscape: "glow", reason: "home" };
   if (pathname === "/companion" || pathname === "/guest/companion") return { soundscape: "companion", reason: "companion" };
+  // /memory is the canonical signed-in memory collection route. Keep it
+  // alongside the frozen public paths rather than inventing a duplicate page.
   if (pathname === "/memories" || pathname === "/guest/memories" || pathname === "/memory") return { soundscape: "stardust", reason: "memories" };
-  if (/^\/memory\/[^/]+\/encounter$/u.test(pathname ?? "")) return { soundscape: "reunion", reason: "encounter" };
+  if (/^\/memory\/[^/]+\/encounter$/u.test(pathname ?? "") && encounterPhase !== "off") {
+    return { soundscape: "reunion", reason: "encounter" };
+  }
   return OFF_ROUTE;
 }
 
