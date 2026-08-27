@@ -21,7 +21,7 @@ It sets `NEXT_PUBLIC_SOUNDSCAPE_ENABLED=true` before `next build`, executes the
 soundscape test suite, and refuses to produce evidence unless the compiled
 client chunks contain the soundscape preference key with the public environment
 reference removed. The manifest records this feature-flag proof and chunk
-hashes.
+hashes, plus the exact versioned runner commit that created the artifact.
 
 The uploaded artifact includes exactly one deployable standalone archive and
 its SHA-256 sidecar. The archive contains only:
