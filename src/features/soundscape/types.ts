@@ -22,13 +22,20 @@ export type SoundscapeRouteDecision = {
   reason: "home" | "companion" | "memories" | "encounter" | "off-route";
 };
 
+/**
+ * Encounter is silent by default. These are explicit, read-only lifecycle
+ * markers emitted by the existing encounter presentation surface.
+ */
+export type SoundscapeEncounterPhase = "off" | "preparing" | "settling";
+
 export type SoundscapePreference = {
   version: 1;
   enabled: boolean;
   volume: number;
 };
 
+export type ForegroundAudioKind = "video" | "audio" | "tts" | "system_voice";
+
 export type SoundscapeMediaEvent =
-  | { type: "video"; active: boolean }
-  | { type: "voice"; active: boolean }
+  | { type: ForegroundAudioKind; active: boolean }
   | { type: "visibility"; visible: boolean };

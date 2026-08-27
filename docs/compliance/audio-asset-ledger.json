@@ -1,6 +1,12 @@
 {
   "version": 1,
   "scope": "MemoryAI original procedural ambient soundscape",
+  "routePolicy": {
+    "glow": ["/"],
+    "companion": ["/companion", "/guest/companion"],
+    "stardust": ["/memories", "/guest/memories", "/memory"],
+    "reunion": ["/memory/:id/encounter#preparing", "/memory/:id/encounter#settling"]
+  },
   "entries": [
     { "id": "glow", "title": "微光", "sourceType": "procedural_internal", "engineVersion": "1", "seed": "memoryai-glow-v1", "thirdPartyAudio": false, "samples": [], "remoteSources": [], "aiGenerated": false, "exportAllowed": false, "territory": "CN", "expiresAt": null },
     { "id": "companion", "title": "相伴", "sourceType": "procedural_internal", "engineVersion": "1", "seed": "memoryai-companion-v1", "thirdPartyAudio": false, "samples": [], "remoteSources": [], "aiGenerated": false, "exportAllowed": false, "territory": "CN", "expiresAt": null },

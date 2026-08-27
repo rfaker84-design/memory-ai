@@ -31,6 +31,8 @@ test("soundscape cannot request or embed remote audio", () => {
 test("procedural soundscape ledger is complete and forbids third-party audio", () => {
   const ledger = JSON.parse(readFileSync(ledgerPath, "utf8"));
   assert.equal(ledger.version, 1);
+  assert.deepEqual(ledger.routePolicy.stardust, ["/memories", "/guest/memories", "/memory"]);
+  assert.deepEqual(ledger.routePolicy.reunion, ["/memory/:id/encounter#preparing", "/memory/:id/encounter#settling"]);
   assert.deepEqual(ledger.entries.map((entry) => entry.id), ["glow", "companion", "stardust", "reunion"]);
   for (const entry of ledger.entries) {
     assert.equal(entry.sourceType, "procedural_internal");
@@ -42,6 +44,16 @@ test("procedural soundscape ledger is complete and forbids third-party audio", (
     assert.equal(entry.exportAllowed, false);
     assert.equal(entry.territory, "CN");
   }
+});
+
+test("encounter reunion is explicitly gated by existing read-only presentation phase", () => {
+  const encounterPage = readFileSync(path.join(root, "app", "memory", "[id]", "encounter", "page.tsx"), "utf8");
+  assert.match(encounterPage, /SoundscapeEncounterPhaseAdapter/);
+  assert.match(encounterPage, /playbackComplete \? "settling" : encounterViewed \? "off" : "preparing"/);
+  assert.match(encounterPage, /<SoundscapeEncounterPhaseAdapter phase=\{soundscapePhase\} \/>/);
+  // The adapter is observational: it is not allowed to introduce an encounter timer.
+  const phaseBlock = encounterPage.slice(encounterPage.indexOf("const soundscapePhase"), encounterPage.indexOf("return <main"));
+  assert.doesNotMatch(phaseBlock, /setTimeout|setInterval|setState/u);
 });
 
 test("candidate package does not add runtime dependencies", () => {
