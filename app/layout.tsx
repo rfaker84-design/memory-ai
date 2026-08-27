@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import MobileAppShell from "../src/components/MobileAppShell";
 import { GuestCreateContinuationProvider } from "../src/components/create-memory/GuestCreateContinuationProvider";
 import { PublicBrandLaunchGate } from "../src/components/launch/PublicBrandLaunchGate";
+import { SoundscapeProvider } from "../src/features/soundscape/SoundscapeProvider";
 import "./globals.css";
 import { RootDocument } from "./root-document";
 
@@ -22,11 +23,13 @@ export const viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <RootDocument>
-      <GuestCreateContinuationProvider>
-        <PublicBrandLaunchGate>
-          <MobileAppShell>{children}</MobileAppShell>
-        </PublicBrandLaunchGate>
-      </GuestCreateContinuationProvider>
+      <SoundscapeProvider>
+        <GuestCreateContinuationProvider>
+          <PublicBrandLaunchGate>
+            <MobileAppShell>{children}</MobileAppShell>
+          </PublicBrandLaunchGate>
+        </GuestCreateContinuationProvider>
+      </SoundscapeProvider>
     </RootDocument>
   );
 }
