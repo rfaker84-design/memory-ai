@@ -300,7 +300,33 @@ function noOpenDescriptors(candidatePath) {
   if (result.error || ![0, 1].includes(result.status)) fail("RELEASE_GC_OPEN_FD_CHECK_FAILED", candidatePath);
   return result.status === 1 && result.stdout.trim() === "";
 }
-function walk(candidatePath) {
+function hardlinkIndex() {
+  const mountRoot = mustCommand("findmnt", ["-n", "-o", "TARGET", "--target", releases], "RELEASE_GC_FILESYSTEM_ROOT_UNREADABLE").trim();
+  if (!mountRoot.startsWith("/")) fail("RELEASE_GC_FILESYSTEM_ROOT_INVALID", mountRoot);
+  const output = sudoCommand("find", [mountRoot, "-xdev", "-type", "f", "-links", "+1", "-printf", "%D\\t%i\\t%n\\t%b\\t%p\\0"], "RELEASE_GC_HARDLINK_INDEX_FAILED", { timeout: 600000, maxBuffer: 64 * 1024 * 1024 });
+  const inodes = new Map();
+  for (const record of output.split("\0")) {
+    if (!record) continue;
+    const fields = [];
+    let start = 0;
+    for (let index = 0; index < 4; index += 1) {
+      const separator = record.indexOf("\t", start);
+      if (separator === -1) fail("RELEASE_GC_HARDLINK_INDEX_INVALID");
+      fields.push(record.slice(start, separator));
+      start = separator + 1;
+    }
+    const [dev, ino, nlink, blocks] = fields.map((value) => Number(value));
+    const location = record.slice(start);
+    if (![dev, ino, nlink, blocks].every(Number.isSafeInteger) || nlink <= 1 || blocks < 0 || !location.startsWith("/")) fail("RELEASE_GC_HARDLINK_INDEX_INVALID");
+    const key = String(dev) + ":" + String(ino);
+    const prior = inodes.get(key);
+    if (prior && (prior.nlink !== nlink || prior.blocks !== blocks)) fail("RELEASE_GC_HARDLINK_INDEX_DRIFT", location);
+    if (prior) prior.locations.push(location);
+    else inodes.set(key, { nlink, blocks, locations: [location] });
+  }
+  return { mountRoot, inodes };
+}
+function walk(candidatePath, hardlinks) {
   const candidateReal = fs.realpathSync(candidatePath);
   let blocks = 0;
   let externalSymlink = false;
@@ -333,16 +359,13 @@ function walk(candidatePath) {
     inodeLocations.get(key).locations.push(entryPath);
   };
   visit(candidateReal);
-  const mountRoot = mustCommand("findmnt", ["-n", "-o", "TARGET", "--target", candidateReal], "RELEASE_GC_FILESYSTEM_ROOT_UNREADABLE").trim();
-  if (!mountRoot.startsWith("/")) fail("RELEASE_GC_FILESYSTEM_ROOT_INVALID", mountRoot);
   for (const inode of inodeLocations.values()) {
     if (inode.nlink <= 1) {
       blocks += inode.blocks * 512;
       continue;
     }
-    const links = sudoCommand("find", [mountRoot, "-xdev", "-inum", String(inode.ino), "-printf", "%p\\n"], "RELEASE_GC_HARDLINK_CHECK_FAILED", { timeout: 600000 })
-      .split(/\n/).filter(Boolean);
-    if (links.length !== inode.nlink || links.some((link) => !inside(candidateReal, link))) externalHardlink = true;
+    const indexed = hardlinks.inodes.get(String(inode.dev) + ":" + String(inode.ino));
+    if (!indexed || indexed.nlink !== inode.nlink || indexed.blocks !== inode.blocks || indexed.locations.length !== inode.nlink || indexed.locations.some((link) => !inside(candidateReal, link))) externalHardlink = true;
     else blocks += inode.blocks * 512;
   }
   return { exclusiveBytes: blocks, externalSymlink, externalHardlink, forbiddenPersistentFile };
@@ -364,13 +387,13 @@ function manifest(candidatePath, sha) {
   const checksumsVerified = command("bash", ["-lc", "cd -- \"$1\" && sha256sum --check SHA256SUMS >/dev/null", "release-gc", candidatePath]).status === 0;
   return { manifestVerified, checksumsVerified, immutable: manifestVerified && checksumsVerified, rebuildable: manifestVerified && checksumsVerified, sourceSha: parsed?.sourceSha || null };
 }
-function inspectCandidate(entry, protectedShas, systemdInspection) {
+function inspectCandidate(entry, protectedShas, systemdInspection, hardlinks) {
   const stat = fs.lstatSync(entry.path);
   const candidate = { sha: entry.sha, path: entry.path, directory: stat.isDirectory(), symlink: stat.isSymbolicLink(), mountpoint: false, externalSymlink: false, externalHardlink: false, forbiddenPersistentFile: false, openFileDescriptor: false, processReference: protectedShas.has(entry.sha), pm2Reference: protectedShas.has(entry.sha), systemdReference: false, nginxReference: false, journalReference: false, lockReference: false, manifestVerified: false, checksumsVerified: false, immutable: false, rebuildable: false, gitCommitVerified: config.gitApprovedShas.includes(entry.sha), exclusiveBytes: 0, reasons: [] };
   if (!candidate.directory || candidate.symlink) { candidate.reasons.push("NOT_PLAIN_DIRECTORY"); return candidate; }
   candidate.mountpoint = !mountSafe(entry.path);
   if (candidate.mountpoint) candidate.reasons.push("MOUNTPOINT");
-  const walked = walk(entry.path);
+  const walked = walk(entry.path, hardlinks);
   candidate.externalSymlink = walked.externalSymlink;
   candidate.externalHardlink = walked.externalHardlink;
   candidate.forbiddenPersistentFile = walked.forbiddenPersistentFile;
@@ -431,11 +454,12 @@ function main() {
   const protectedShas = pm2References();
   protectedShas.add(baseline.current.sha); protectedShas.add(baseline.rollback.sha);
   const systemdInspection = inspectSystemdEntries("RELEASE_GC_SERVICE_REFERENCE_CHECK_FAILED");
+  const hardlinks = hardlinkIndex();
   const systemd = { scannedEntries: systemdInspection.entries.length, brokenLinks: systemdInspection.brokenLinks, maskedLinks: systemdInspection.maskedLinks };
   if (beforeBytes >= TRIGGER_BYTES) {
     return { version: 1, mode: config.mode, state: "no_op", beforeBytes, afterBytes: beforeBytes, actualFreedBytes: 0, expectedFreedBytes: 0, current: baseline.current.sha, rollback: baseline.rollback.sha, protectedShas: [...protectedShas].sort(), systemd, candidates: [], deletedPaths: [] };
   }
-  const candidates = releaseEntries().map((entry) => inspectCandidate(entry, protectedShas, systemdInspection));
+  const candidates = releaseEntries().map((entry) => inspectCandidate(entry, protectedShas, systemdInspection, hardlinks));
   const plan = select(beforeBytes, candidates);
   if (!plan.targetReached) return { version: 1, mode: config.mode, state: "blocked", beforeBytes, afterBytes: beforeBytes, actualFreedBytes: 0, current: baseline.current.sha, rollback: baseline.rollback.sha, protectedShas: [...protectedShas].sort(), systemd, candidates, deletedPaths: [], plan };
   const selected = plan.selected;
@@ -443,7 +467,7 @@ function main() {
   if (config.mode === "dry-run") return { version: 1, mode: config.mode, state: "dry_run", beforeBytes, afterBytes: beforeBytes, actualFreedBytes: 0, expectedFreedBytes: plan.expectedFreedBytes, current: baseline.current.sha, rollback: baseline.rollback.sha, protectedShas: [...protectedShas].sort(), systemd, candidates, deletedPaths: [], plan: { ...plan, selected: selectedShas } };
   if (JSON.stringify(selectedShas) !== JSON.stringify([...config.plannedDeleteShas].sort())) fail("RELEASE_GC_PLAN_CHANGED");
   for (const candidate of selected) {
-    const latest = inspectCandidate({ sha: candidate.sha, path: candidate.path }, protectedShas, systemdInspection);
+    const latest = inspectCandidate({ sha: candidate.sha, path: candidate.path }, protectedShas, systemdInspection, hardlinks);
     if (!candidateSafe(latest)) fail("RELEASE_GC_CANDIDATE_CHANGED", candidate.sha);
     if (fs.realpathSync(latest.path) !== latest.path || path.dirname(latest.path) !== releases || !fs.lstatSync(latest.path).isDirectory() || fs.lstatSync(latest.path).isSymbolicLink()) fail("RELEASE_GC_DELETE_TARGET_INVALID", latest.path);
     fs.rmSync(latest.path, { recursive: true, force: false, maxRetries: 0 });
