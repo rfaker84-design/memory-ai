@@ -215,7 +215,7 @@ function verifyBundle(directory, plan) {
   if (provenance?._type !== "https://in-toto.io/Statement/v1" || provenance?.subject?.[0]?.digest?.sha256 !== runtimeDigest) fail("WEB_EXECUTOR_PROVENANCE_RUNTIME_MISMATCH");
   const sbom = parseJson(path.join(directory, "sbom.spdx.json"), "WEB_EXECUTOR_SBOM_INVALID");
   if (typeof sbom?.spdxVersion !== "string" || !sbom.spdxVersion.startsWith("SPDX-")) fail("WEB_EXECUTOR_SBOM_INVALID");
-  if (manifest?.build?.featureFlags?.NEXT_PUBLIC_SOUNDSCAPE_ENABLED !== true) fail("WEB_EXECUTOR_FEATURE_FLAG_UNVERIFIED");
+  if (manifest?.build?.featureFlags?.qwenAudioTtsFlashVoiceClone !== true) fail("WEB_EXECUTOR_QWEN_VOICE_CLONE_UNVERIFIED");
   const runtime = path.join(directory, "runtime");
   for (const required of ["standalone-manifest.json", "run-standalone-from-manifest.cjs", "release-manifest.json"]) {
     if (!existsSync(path.join(runtime, required))) fail("WEB_EXECUTOR_RUNTIME_FILE_MISSING", required);

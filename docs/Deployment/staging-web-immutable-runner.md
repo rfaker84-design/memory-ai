@@ -17,11 +17,11 @@ contains no Staging/Production host credential, SSH, PM2, or promotion step.
 
 The BuildKit recipe pins Node `20.20.2`, npm `10.8.2`, and
 `node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293`.
-It sets `NEXT_PUBLIC_SOUNDSCAPE_ENABLED=true` before `next build`, executes the
-soundscape test suite, and refuses to produce evidence unless the compiled
-client chunks contain the soundscape preference key with the public environment
-reference removed. The manifest records this feature-flag proof and chunk
-hashes, plus the exact versioned runner commit that created the artifact.
+It executes the Qwen voice-clone beta test suite before `next build`, and
+refuses to produce evidence unless compiled client chunks contain the
+`Qwen-Audio-3.0-TTS-Flash` beta surface. The manifest records this Qwen
+capability proof and chunk hashes, plus the exact versioned runner commit that
+created the artifact.
 
 The uploaded artifact includes exactly one deployable standalone archive and
 its SHA-256 sidecar. The archive contains only:

@@ -48,6 +48,7 @@ jobs:
           test -z "$(git -C source status --porcelain)"
           git -C source rev-parse HEAD
           git -C source rev-parse HEAD^{tree}
+          rm -rf source/.git
 
       - name: Export immutable Linux BuildKit archive
         shell: bash
@@ -68,7 +69,7 @@ jobs:
           mkdir verify
           tar -xzf "memoryai-staging-web-$source_commit.tar.gz" -C verify
           ( cd verify && sha256sum --check SHA256SUMS )
-          test "$(node -e 'const value=require("./manifest.json"); process.stdout.write(String(value.build.featureFlags.NEXT_PUBLIC_SOUNDSCAPE_ENABLED === true && value.source.commit === process.argv[1]))' "$source_commit")" = true
+          test "$(node -e 'const value=require("./manifest.json"); process.stdout.write(String(value.build.featureFlags.qwenAudioTtsFlashVoiceClone === true && value.source.commit === process.argv[1]))' "$source_commit")" = true
 
       - name: Upload immutable archive and evidence
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0

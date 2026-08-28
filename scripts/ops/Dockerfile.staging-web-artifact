@@ -19,8 +19,7 @@ COPY scripts/ops/Dockerfile.staging-web-artifact /build-recipe/Dockerfile.stagin
 RUN git init --quiet && git config user.email buildkit@memoryai.invalid && git config user.name buildkit && git add -A && git commit --quiet -m build-input && test "$(git write-tree)" = "$STAGING_WEB_ARTIFACT_SOURCE_TREE"
 
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NEXT_PUBLIC_SOUNDSCAPE_ENABLED=true
-RUN npm run test:soundscape && npm run build && npm run package:standalone-rc
+RUN npm run test:qwen-voice-clone-beta && npm run build && npm run package:standalone-rc
 
 RUN mkdir -p /bundle && cp -aL .next/standalone-rc /bundle/runtime && \
     test -z "$(find /bundle/runtime -type l -print -quit)" && \
@@ -29,7 +28,6 @@ RUN mkdir -p /bundle && cp -aL .next/standalone-rc /bundle/runtime && \
     STAGING_WEB_ARTIFACT_RUNNER_COMMIT="$STAGING_WEB_ARTIFACT_RUNNER_COMMIT" \
     STAGING_WEB_ARTIFACT_BUILD_ROOT=/app \
     STAGING_WEB_ARTIFACT_RECIPE=/build-recipe/Dockerfile.staging-web-artifact \
-    NEXT_PUBLIC_SOUNDSCAPE_ENABLED=true \
     node /tools/generate-staging-web-artifact-evidence.cjs /bundle/runtime /bundle && \
     npm sbom --sbom-format=spdx --sbom-type=application > /bundle/sbom.spdx.json && \
     cd /bundle && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS && \
