@@ -29,7 +29,7 @@ test("immutable Staging Web artifact workflow checks out an exact source commit 
     component: "web",
     environment: "staging",
     sourceCommit: "e9a2d5a7c6cf3a86784ba4ccd28ee26c7a747632",
-    attempt: 2,
+    attempt: 3,
   });
   assert.doesNotMatch(dockerignore, /(?:^|\n)(?:source\/)?\.env\*/);
   assert.match(dockerignore, /(?:^|\n)source\/\.git(?:\n|$)/);
@@ -43,6 +43,8 @@ test("BuildKit recipe locks Linux Node/npm, bakes the feature flag, and exports 
   assert.match(dockerfile, /npm run test:soundscape && npm run build && npm run package:standalone-rc/);
   assert.match(dockerfile, /tar --dereference -C \/bundle -czf/);
   assert.match(dockerfile, /find \. -type f ! -name SHA256SUMS/);
+  assert.match(dockerfile, /sha256sum -c SHA256SUMS/);
+  assert.doesNotMatch(dockerfile, /sha256sum --check/);
   assert.doesNotMatch(dockerfile, /COPY --from=builder \/app(\s|$)/);
 });
 
