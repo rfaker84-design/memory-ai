@@ -17,6 +17,7 @@ const {
   httpStatus,
   requiredPromotionBytes,
   runtimeIdentity,
+  verifyChecksums,
   writeExclusiveJson,
 } = require("./staging-web-immutable-executor.cjs");
 
@@ -155,6 +156,16 @@ test("capacity gate accounts for the real archive and unpacked runtime and the r
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("checksum verification is status-only so a large valid artifact cannot overflow captured output", () => {
+  const calls = [];
+  verifyChecksums("/candidate", (...args) => calls.push(args));
+  assert.deepEqual(calls, [[
+    "sha256sum",
+    ["--check", "--status", "SHA256SUMS"],
+    { cwd: "/candidate", stdio: ["ignore", "ignore", "pipe"] },
+  ]]);
 });
 
 test("health probes send the dedicated Staging access header", async () => {

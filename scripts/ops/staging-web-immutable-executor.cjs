@@ -175,6 +175,17 @@ function command(file, args, options = {}) {
   }
 }
 
+// A full artifact contains thousands of files.  `sha256sum --check` normally
+// emits one success line per file, so capture only stderr and ask GNU coreutils
+// for status-only output.  This keeps complete checksum validation fail-closed
+// without exhausting Node's default 1 MiB child-process buffer.
+function verifyChecksums(directory, commandRunner = command) {
+  return commandRunner("sha256sum", ["--check", "--status", "SHA256SUMS"], {
+    cwd: directory,
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+}
+
 function parseJson(file, code) {
   try { return JSON.parse(readFileSync(file, "utf8")); } catch { fail(code, file); }
 }
@@ -198,7 +209,7 @@ function verifyBundle(directory, plan) {
   for (const [file, expectedHash] of Object.entries(plan.evidenceSha256)) {
     if (hashFile(path.join(directory, file)) !== expectedHash) fail("WEB_EXECUTOR_EVIDENCE_HASH_MISMATCH", file);
   }
-  command("sha256sum", ["--check", "SHA256SUMS"], { cwd: directory });
+  verifyChecksums(directory);
   const releaseManifest = assertReleaseManifest(path.join(directory, "release-manifest.json"), plan.expectedSourceSha);
   const runtimeManifest = assertReleaseManifest(path.join(directory, "runtime", "release-manifest.json"), plan.expectedSourceSha);
   if (JSON.stringify(releaseManifest) !== JSON.stringify(runtimeManifest)) fail("WEB_EXECUTOR_RELEASE_MANIFEST_COPIES_DIFFER");
@@ -244,7 +255,7 @@ function pm2Record(appName = "memoryai-staging") {
 
 function verifyInstalledRelease(release) {
   if (!existsSync(release.path)) fail("WEB_EXECUTOR_INSTALLED_RELEASE_MISSING", release.sha);
-  command("sha256sum", ["--check", "SHA256SUMS"], { cwd: release.path });
+  verifyChecksums(release.path);
   const manifestPath = existsSync(path.join(release.path, "release-manifest.json"))
     ? path.join(release.path, "release-manifest.json")
     : path.join(release.path, "runtime", "release-manifest.json");
@@ -568,5 +579,6 @@ module.exports = {
   requiredPromotionBytes,
   reconcileStagingWebHistory,
   runtimeIdentity,
+  verifyChecksums,
   writeExclusiveJson,
 };
