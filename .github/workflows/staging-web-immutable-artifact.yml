@@ -90,7 +90,7 @@ jobs:
           trap 'rm -rf "$verify_dir"' EXIT
           tar -xzf "memoryai-staging-web-$source_commit.tar.gz" -C "$verify_dir"
           ( cd "$verify_dir" && sha256sum --check SHA256SUMS )
-          test "$(node -e 'const value=require(process.argv[1]); process.stdout.write(String(value.build.featureFlags.NEXT_PUBLIC_SOUNDSCAPE_ENABLED === true && value.source.commit === process.argv[2]))' "$verify_dir/manifest.json" "$source_commit")" = true
+          test "$(node -e 'const value=require(process.argv[1]); process.stdout.write(String(value.build.featureFlags.qwenAudioTtsFlashVoiceClone === true && value.build.featureFlags.NEXT_PUBLIC_SOUNDSCAPE_ENABLED === true && value.source.commit === process.argv[2]))' "$verify_dir/manifest.json" "$source_commit")" = true
           rm -rf "$verify_dir"
           trap - EXIT
 

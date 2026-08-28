@@ -28,8 +28,8 @@ test("immutable Staging Web artifact workflow checks out an exact source commit 
     schemaVersion: 1,
     component: "web",
     environment: "staging",
-    sourceCommit: "e9a2d5a7c6cf3a86784ba4ccd28ee26c7a747632",
-    attempt: 4,
+    sourceCommit: "aefb4fa6bd4d93e1f2ee0bb2d974e9e69be92f1b",
+    attempt: 2,
   });
   assert.doesNotMatch(dockerignore, /(?:^|\n)(?:source\/)?\.env\*/);
   assert.match(dockerignore, /(?:^|\n)source\/\.git(?:\n|$)/);
@@ -43,7 +43,7 @@ test("BuildKit recipe locks Linux Node/npm, bakes the feature flag, and exports 
   assert.match(dockerfile, /node --version\)" = "v20\.20\.2"/);
   assert.match(dockerfile, /npm --version\)" = "10\.8\.2"/);
   assert.match(dockerfile, /ENV NEXT_PUBLIC_SOUNDSCAPE_ENABLED=true/);
-  assert.match(dockerfile, /npm run test:soundscape && npm run build && npm run package:standalone-rc/);
+  assert.match(dockerfile, /npm run test:qwen-voice-clone-beta && npm run test:soundscape && npm run build && npm run package:standalone-rc/);
   assert.match(dockerfile, /tar --dereference -C \/bundle -czf/);
   assert.match(dockerfile, /find \. -type f ! -name SHA256SUMS/);
   assert.match(dockerfile, /sha256sum -c SHA256SUMS/);
@@ -51,11 +51,21 @@ test("BuildKit recipe locks Linux Node/npm, bakes the feature flag, and exports 
   assert.doesNotMatch(dockerfile, /COPY --from=builder \/app(\s|$)/);
 });
 
-test("evidence generator fails closed unless its client feature flag was baked by Linux BuildKit", () => {
+test("evidence generator fails closed unless both Qwen and soundscape capabilities were verified by Linux BuildKit", () => {
   assert.match(generator, /process\.platform !== "linux"/);
   assert.match(generator, /NEXT_PUBLIC_SOUNDSCAPE_ENABLED !== "true"/);
+  assert.match(generator, /Qwen-Audio-3\.0-TTS-Flash/);
+  assert.match(generator, /STAGING_WEB_ARTIFACT_QWEN_VOICE_CLONE_CLIENT_CHUNK_MISSING/);
+  assert.match(generator, /qwenAudioTtsFlashVoiceClone: true/);
+  assert.match(generator, /NEXT_PUBLIC_SOUNDSCAPE_ENABLED: true/);
   assert.match(generator, /STAGING_WEB_ARTIFACT_FEATURE_FLAG_NOT_BAKED/);
-  assert.match(generator, /compiledClientChunks/);
+  assert.match(generator, /qwenVoiceCloneCompiledClientChunks/);
+  assert.match(generator, /soundscapeCompiledClientChunks/);
   assert.match(generator, /runnerSourceCommit/);
   assert.match(generator, /STAGING_WEB_ARTIFACT_SYMLINK_FORBIDDEN/);
+});
+
+test("workflow refuses to upload a manifest missing either executor-required capability proof", () => {
+  assert.match(workflow, /featureFlags\.qwenAudioTtsFlashVoiceClone === true/);
+  assert.match(workflow, /featureFlags\.NEXT_PUBLIC_SOUNDSCAPE_ENABLED === true/);
 });

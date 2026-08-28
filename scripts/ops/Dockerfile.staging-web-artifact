@@ -20,7 +20,7 @@ RUN git init --quiet && git config user.email buildkit@memoryai.invalid && git c
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PUBLIC_SOUNDSCAPE_ENABLED=true
-RUN npm run test:soundscape && npm run build && npm run package:standalone-rc
+RUN npm run test:qwen-voice-clone-beta && npm run test:soundscape && npm run build && npm run package:standalone-rc
 
 RUN mkdir -p /bundle && cp -aL .next/standalone-rc /bundle/runtime && \
     test -z "$(find /bundle/runtime -type l -print -quit)" && \
