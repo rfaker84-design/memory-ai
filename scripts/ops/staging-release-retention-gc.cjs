@@ -369,8 +369,16 @@ function walk(candidatePath, hardlinks) {
       forbiddenPersistentFile = true;
     }
     if (stat.isSymbolicLink()) {
-      const resolved = fs.realpathSync(entryPath);
-      if (!inside(candidateReal, resolved)) externalSymlink = true;
+      // A release that contains a dangling symlink is not self-contained.
+      // Treat it exactly like an external link and leave the entire release
+      // ineligible; do not let a failed realpath abort inspection of every
+      // other release.
+      try {
+        const resolved = fs.realpathSync(entryPath);
+        if (!inside(candidateReal, resolved)) externalSymlink = true;
+      } catch {
+        externalSymlink = true;
+      }
       return;
     }
     if (stat.dev !== fs.statSync(candidateReal).dev) fail("RELEASE_GC_CHILD_MOUNTPOINT", entryPath);

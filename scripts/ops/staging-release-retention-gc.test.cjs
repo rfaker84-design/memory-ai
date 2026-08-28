@@ -59,6 +59,10 @@ test("symlink, mount, open-FD, journal, and lock checks fail closed", () => {
   }
 });
 
+test("a release containing an unresolved symlink remains ineligible", () => {
+  assert.equal(candidateIsSafe({ ...safeCandidate(21), externalSymlink: true }), false);
+});
+
 test("only existing systemd symlink targets can retain a release", () => {
   const candidatePath = "/home/ubuntu/memoryai-staging/releases/0000000000000000000000000000000000000002";
   assert.equal(existingSystemdTargetReferencesCandidate({ candidatePath, targetExists: false, targetPath: candidatePath }), false);
