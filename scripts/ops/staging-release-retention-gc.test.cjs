@@ -10,6 +10,7 @@ const {
   TRIGGER_BYTES,
   buildExecutionPlan,
   candidateIsSafe,
+  classifySystemdSymlinkTarget,
   existingSystemdTargetReferencesCandidate,
   exclusiveBlocksForSet,
   selectMinimalReleaseSet,
@@ -63,6 +64,13 @@ test("only existing systemd symlink targets can retain a release", () => {
   assert.equal(existingSystemdTargetReferencesCandidate({ candidatePath, targetExists: false, targetPath: candidatePath }), false);
   assert.equal(existingSystemdTargetReferencesCandidate({ candidatePath, targetExists: true, targetPath: `${candidatePath}/memoryai.service` }), true);
   assert.equal(existingSystemdTargetReferencesCandidate({ candidatePath, targetExists: true, targetPath: "/etc/systemd/system/memoryai.service" }), false);
+});
+
+test("broken and masked systemd symlinks are recorded but cannot retain a release", () => {
+  assert.equal(classifySystemdSymlinkTarget({ targetExists: false, targetPath: "/usr/lib/systemd/system/missing.service", targetType: null }), "broken");
+  assert.equal(classifySystemdSymlinkTarget({ targetExists: true, targetPath: "/dev/null", targetType: "character-device" }), "masked");
+  assert.equal(classifySystemdSymlinkTarget({ targetExists: true, targetPath: "/usr/lib/systemd/system/memoryai.service", targetType: "file" }), "unit");
+  assert.equal(classifySystemdSymlinkTarget({ targetExists: true, targetPath: "/run/systemd/unit.sock", targetType: "socket" }), "invalid");
 });
 
 test("only inode blocks whose every link is selected count as reclaimable", () => {

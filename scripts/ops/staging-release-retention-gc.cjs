@@ -38,6 +38,13 @@ function existingSystemdTargetReferencesCandidate({ candidatePath, targetExists,
   return targetExists === true && typeof targetPath === "string" && pathIsWithin(candidatePath, targetPath);
 }
 
+function classifySystemdSymlinkTarget({ targetExists, targetPath, targetType }) {
+  if (targetExists !== true) return "broken";
+  if (targetPath === "/dev/null" && targetType === "character-device") return "masked";
+  if (targetType === "file") return "unit";
+  return "invalid";
+}
+
 function exclusiveBlocksForSet(inodes, selectedPaths) {
   const selected = new Set(selectedPaths);
   let blocks = 0;
@@ -221,6 +228,7 @@ function inspectSystemdEntries(code) {
   const directories = ["/etc/systemd/system", "/lib/systemd/system"];
   const entries = [];
   const brokenLinks = [];
+  const maskedLinks = [];
   const visit = (entryPath) => {
     let stat;
     try { stat = fs.lstatSync(entryPath); } catch (error) { fail(code, "lstat:" + entryPath + ":" + (error.code || "unknown")); }
@@ -245,7 +253,15 @@ function inspectSystemdEntries(code) {
     }
     try {
       const targetStat = fs.statSync(resolvedTarget);
-      if (!targetStat.isFile()) fail(code, "target-not-file:" + entryPath);
+      if (targetStat.isFile()) {
+        entries.push({ path: entryPath, contentPath: resolvedTarget, target });
+        return;
+      }
+      if (resolvedTarget === "/dev/null" && targetStat.isCharacterDevice()) {
+        maskedLinks.push({ path: entryPath, target, resolvedTarget });
+        return;
+      }
+      fail(code, "target-not-file:" + entryPath);
     } catch (error) {
       if (error?.code === "ENOENT") {
         brokenLinks.push({ path: entryPath, target, resolvedTarget });
@@ -253,10 +269,9 @@ function inspectSystemdEntries(code) {
       }
       fail(code, "target:" + entryPath + ":" + (error.code || "unknown"));
     }
-    entries.push({ path: entryPath, contentPath: resolvedTarget, target });
   };
   for (const directory of directories) visit(directory);
-  return { entries, brokenLinks };
+  return { entries, brokenLinks, maskedLinks };
 }
 function systemdReference(candidatePath, inspection, code) {
   for (const entry of inspection.entries) {
@@ -414,7 +429,7 @@ function main() {
   const protectedShas = pm2References();
   protectedShas.add(baseline.current.sha); protectedShas.add(baseline.rollback.sha);
   const systemdInspection = inspectSystemdEntries("RELEASE_GC_SERVICE_REFERENCE_CHECK_FAILED");
-  const systemd = { scannedEntries: systemdInspection.entries.length, brokenLinks: systemdInspection.brokenLinks };
+  const systemd = { scannedEntries: systemdInspection.entries.length, brokenLinks: systemdInspection.brokenLinks, maskedLinks: systemdInspection.maskedLinks };
   if (beforeBytes >= TRIGGER_BYTES) {
     return { version: 1, mode: config.mode, state: "no_op", beforeBytes, afterBytes: beforeBytes, actualFreedBytes: 0, expectedFreedBytes: 0, current: baseline.current.sha, rollback: baseline.rollback.sha, protectedShas: [...protectedShas].sort(), systemd, candidates: [], deletedPaths: [] };
   }
@@ -529,6 +544,7 @@ module.exports = {
   TRIGGER_BYTES,
   buildExecutionPlan,
   candidateIsSafe,
+  classifySystemdSymlinkTarget,
   existingSystemdTargetReferencesCandidate,
   exclusiveBlocksForSet,
   runReleaseRetentionGc,
