@@ -327,11 +327,10 @@ function promotionLockPresent() {
   return Boolean(regular || irregular);
 }
 function candidateLockReference(candidatePath, code) {
-  const localLocks = mustCommand("find", [candidatePath, "-xdev", "-type", "f", "-name", "*.lock", "-print"], "RELEASE_GC_LOCK_CHECK_FAILED").trim();
-  if (localLocks) return true;
-  // History locks outside the release tree are relevant only when their text
-  // names this exact candidate.  Review-submission locks live elsewhere and
-  // must not block unrelated immutable release retention.
+  // A manifest-verified immutable release can legitimately package lockfiles
+  // such as yarn.lock.  Only deployment/rollback lock records outside the
+  // release tree are relevant, and only when they name this exact candidate.
+  // Review-submission locks live elsewhere and must not block retention.
   return grepReference(candidatePath, [path.join(root, ".promotion"), path.join(root, "operations"), path.join(root, "rollbacks")], code);
 }
 function hardlinkIndex() {
