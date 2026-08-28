@@ -1,12 +1,10 @@
 .git
 node_modules
 .next
-.env*
 artifacts
 coverage
 source/.git
 source/node_modules
 source/.next
-source/.env*
 source/artifacts
 source/coverage
