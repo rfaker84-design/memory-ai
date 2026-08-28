@@ -158,7 +158,7 @@ test("soundscape restores browser preference only after hydration", () => {
 
   assert.match(provider, /useState<SoundscapePreference>\(\(\) => \(\{ \.\.\.DEFAULT_SOUNDSCAPE_PREFERENCE \}\)\)/);
   assert.match(provider, /useEffect\(\(\) => \{\s*setPreference\(readSoundscapePreference\(window\.localStorage\)\);\s*setHydrated\(true\);\s*\}, \[\]\);/);
-  assert.match(provider, /hydrated && decision\.soundscape \? <SoundscapeControl/);
+  assert.match(provider, /hydrated && activeSoundscape \? \(/);
   assert.doesNotMatch(provider, /useState<SoundscapePreference>\(\(\) => \([\s\S]*typeof window/);
 });
 
