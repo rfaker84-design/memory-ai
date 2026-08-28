@@ -86,10 +86,13 @@ jobs:
             -f scripts/ops/Dockerfile.staging-web-artifact .
           cd "artifacts/staging-web-immutable-$source_commit"
           sha256sum --check "memoryai-staging-web-$source_commit.tar.gz.sha256"
-          mkdir verify
-          tar -xzf "memoryai-staging-web-$source_commit.tar.gz" -C verify
-          ( cd verify && sha256sum --check SHA256SUMS )
-          test "$(node -e 'const value=require("./manifest.json"); process.stdout.write(String(value.build.featureFlags.NEXT_PUBLIC_SOUNDSCAPE_ENABLED === true && value.source.commit === process.argv[1]))' "$source_commit")" = true
+          verify_dir="$(mktemp -d)"
+          trap 'rm -rf "$verify_dir"' EXIT
+          tar -xzf "memoryai-staging-web-$source_commit.tar.gz" -C "$verify_dir"
+          ( cd "$verify_dir" && sha256sum --check SHA256SUMS )
+          test "$(node -e 'const value=require(process.argv[1]); process.stdout.write(String(value.build.featureFlags.NEXT_PUBLIC_SOUNDSCAPE_ENABLED === true && value.source.commit === process.argv[2]))' "$verify_dir/manifest.json" "$source_commit")" = true
+          rm -rf "$verify_dir"
+          trap - EXIT
 
       - name: Upload immutable archive and evidence
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
