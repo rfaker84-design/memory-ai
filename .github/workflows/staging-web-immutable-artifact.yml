@@ -1,0 +1,73 @@
+name: Staging Web Immutable Artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Full SHA of the Staging-only source and runner candidate to package
+        required: true
+        type: string
+
+# This workflow only constructs a downloadable artifact. It holds no deployment
+# credentials and has no access to Staging or Production hosts.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build immutable Staging Web artifact
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Validate requested SHA
+        env:
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
+
+      - name: Check out the exact Staging candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_commit }}
+          path: source
+          fetch-depth: 1
+
+      - name: Build Linux runtime and immutable evidence
+        id: build
+        env:
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+        run: |
+          set -euo pipefail
+          actual_commit="$(git -C source rev-parse HEAD)"
+          test "$actual_commit" = "$SOURCE_COMMIT"
+          test -z "$(git -C source status --porcelain)"
+          source_tree="$(git -C source write-tree)"
+
+          mkdir build-context
+          mv source build-context/source
+          cp -a build-context/source/scripts build-context/scripts
+          mkdir -p "artifacts/staging-web-immutable-${SOURCE_COMMIT}"
+
+          docker buildx build \
+            --platform linux/amd64 \
+            --target export \
+            --build-arg "STAGING_WEB_ARTIFACT_SOURCE_COMMIT=${SOURCE_COMMIT}" \
+            --build-arg "STAGING_WEB_ARTIFACT_SOURCE_TREE=${source_tree}" \
+            --build-arg "STAGING_WEB_ARTIFACT_RUNNER_COMMIT=${actual_commit}" \
+            --file build-context/scripts/ops/Dockerfile.staging-web-artifact \
+            --output "type=local,dest=artifacts/staging-web-immutable-${SOURCE_COMMIT}" \
+            build-context
+
+          (
+            cd "artifacts/staging-web-immutable-${SOURCE_COMMIT}"
+            sha256sum --check "memoryai-staging-web-${SOURCE_COMMIT}.tar.gz.sha256"
+          )
+
+      - name: Upload immutable Staging artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-web-immutable-${{ inputs.source_commit }}
+          if-no-files-found: error
+          retention-days: 14
+          path: artifacts/staging-web-immutable-${{ inputs.source_commit }}
