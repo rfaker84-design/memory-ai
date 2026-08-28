@@ -52,13 +52,26 @@ function writeJson(file, value) {
 function clientFeatureProof(buildRoot) {
   const staticDirectory = path.join(buildRoot, ".next", "static");
   if (!existsSync(staticDirectory)) fail("STAGING_WEB_ARTIFACT_CLIENT_OUTPUT_MISSING");
-  const candidates = files(staticDirectory).filter((file) => file.path.endsWith(".js"));
-  const soundscapeChunks = candidates.filter((file) => readFileSync(path.join(staticDirectory, file.path), "utf8").includes("memoryai.soundscape.v1"));
-  if (soundscapeChunks.length === 0) fail("STAGING_WEB_ARTIFACT_SOUNDSCAPE_CLIENT_CHUNK_MISSING");
-  if (soundscapeChunks.some((file) => readFileSync(path.join(staticDirectory, file.path), "utf8").includes("NEXT_PUBLIC_SOUNDSCAPE_ENABLED"))) {
+  const candidates = files(staticDirectory)
+    .filter((file) => file.path.endsWith(".js"))
+    .map((file) => ({ ...file, source: readFileSync(path.join(staticDirectory, file.path), "utf8") }));
+  const select = (marker, code) => {
+    const selected = candidates.filter((file) => file.source.includes(marker));
+    if (selected.length === 0) fail(code);
+    return selected.map(({ path: file, sha256 }) => ({ path: `.next/static/${file}`, sha256 }));
+  };
+  const qwenVoiceCloneCompiledClientChunks = select(
+    "Qwen-Audio-3.0-TTS-Flash",
+    "STAGING_WEB_ARTIFACT_QWEN_VOICE_CLONE_CLIENT_CHUNK_MISSING",
+  );
+  const soundscapeCompiledClientChunks = select(
+    "memoryai.soundscape.v1",
+    "STAGING_WEB_ARTIFACT_SOUNDSCAPE_CLIENT_CHUNK_MISSING",
+  );
+  if (candidates.some((file) => file.source.includes("memoryai.soundscape.v1") && file.source.includes("NEXT_PUBLIC_SOUNDSCAPE_ENABLED"))) {
     fail("STAGING_WEB_ARTIFACT_FEATURE_FLAG_NOT_BAKED");
   }
-  return soundscapeChunks.map(({ path: file, sha256 }) => ({ path: `.next/static/${file}`, sha256 }));
+  return { qwenVoiceCloneCompiledClientChunks, soundscapeCompiledClientChunks };
 }
 
 if (process.platform !== "linux") fail("STAGING_WEB_ARTIFACT_LINUX_REQUIRED", process.platform);
@@ -105,8 +118,11 @@ const manifest = {
     node: nodeVersion.slice(1),
     npm: npmVersion,
     baseImage,
-    featureFlags: { NEXT_PUBLIC_SOUNDSCAPE_ENABLED: true },
-    featureProof: { compiledClientChunks: featureProof, environmentReferenceAbsent: true },
+    featureFlags: {
+      qwenAudioTtsFlashVoiceClone: true,
+      NEXT_PUBLIC_SOUNDSCAPE_ENABLED: true,
+    },
+    featureProof: { ...featureProof, environmentReferenceAbsent: true },
   },
   inputs: { packageLockSha256: hashFile(lockfile), buildRecipeSha256: hashFile(recipe) },
   runtime: {
@@ -124,7 +140,11 @@ const provenance = {
   predicate: {
     buildDefinition: {
       buildType: "https://memoryai.example/build/staging-web-immutable/v1",
-      externalParameters: { target: "staging-web-artifact-export", featureFlag: "NEXT_PUBLIC_SOUNDSCAPE_ENABLED=true" },
+      externalParameters: {
+        target: "staging-web-artifact-export",
+        capabilities: ["qwen-audio-3.0-tts-flash-voice-clone", "procedural-soundscape"],
+        featureFlags: { NEXT_PUBLIC_SOUNDSCAPE_ENABLED: true },
+      },
       internalParameters: { node: nodeVersion.slice(1), npm: npmVersion, platform: "linux/amd64" },
       resolvedDependencies: [
         { uri: "git+repository", digest: { sha1: expectedCommit }, annotations: { gitTree: expectedTree } },
