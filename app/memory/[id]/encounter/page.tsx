@@ -14,6 +14,7 @@ import {
   authorizeCompanionMotionPlayback,
   loadCompanionMotionPack,
 } from "@/src/components/companion/companionMotionClient";
+import { SoundscapeEncounterPhaseAdapter } from "@/src/features/soundscape/SoundscapeEncounterPhaseAdapter";
 
 type VideoJob = {
   id: string;
@@ -163,7 +164,14 @@ function EncounterPageContent({ params }: { params: Promise<{ id: string }> }) {
   if (state.status === "timeout") return <main><p role="alert">读取等待过久，尚未创建或修改任何内容。</p><button type="button" style={{ minHeight: 44 }} onClick={() => void load()}>重新读取</button><button type="button" style={{ minHeight: 44 }} onClick={continueToChat}>直接进入相伴</button></main>;
   if (state.status === "error") return <main><p role="alert">暂时无法打开遇见页面。</p><button type="button" style={{ minHeight: 44 }} onClick={() => void load()}>重新读取</button><button type="button" style={{ minHeight: 44 }} onClick={continueToChat}>直接进入相伴</button></main>;
 
+  // This reads presentation state only. It never drives encounter media, data,
+  // metrics, or navigation.
+  const soundscapePhase = state.playbackUrl && !useStaticEncounter
+    ? playbackComplete ? "settling" : encounterViewed ? "off" : "preparing"
+    : "off";
+
   return <main style={{ minHeight: "100dvh", display: "grid", placeItems: "center", padding: "24px 16px", background: "#f4ede2", color: "#2f2821" }}>
+    <SoundscapeEncounterPhaseAdapter phase={soundscapePhase} />
     <section style={{ width: "min(100%, 520px)", display: "grid", gap: 16 }}>
       <p style={{ margin: 0, color: "#8b6537" }}>AI生成 · 基于你确认的信息</p>
       <AiGeneratedLabel confirmedSources />
