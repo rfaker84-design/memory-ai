@@ -2,7 +2,7 @@
   --home-warm-black: #0d0a07;
   --home-soft-white: #f8f3ea;
   --home-pale-gold: #c9ad7a;
-  --home-transition: 1s cubic-bezier(0.22, 1, 0.36, 1);
+  --home-transition: var(--home-transition-duration, 1s) cubic-bezier(0.22, 1, 0.36, 1);
   position: fixed;
   inset: 0;
   z-index: 60;

@@ -16,15 +16,27 @@ test("the approved homepage carousel keeps the five existing, separate synthetic
   assert.match(experience, /const firstVideoRef = useRef<HTMLVideoElement>\(null\)/);
   assert.match(experience, /const secondVideoRef = useRef<HTMLVideoElement>\(null\)/);
   assert.match(experience, /const \[slotStories, setSlotStories\] = useState<\[number, number\]>\(\[0, 1\]\)/);
-  assert.match(experience, /preparedVideo\.load\(\)/);
-  assert.match(experience, /video\.duration - video\.currentTime <= TRANSITION_START_REMAINING_SECONDS/);
+  assert.match(experience, /preload="auto"/);
+  assert.match(experience, /video\.load\(\)/);
+  assert.match(experience, /video\.duration - video\.currentTime > TRANSITION_START_REMAINING_SECONDS/);
   assert.match(experience, /nextVideo\.readyState < HTMLMediaElement\.HAVE_CURRENT_DATA/);
-  assert.match(experience, /freezeCurrentFrame\(\)/);
-  assert.match(experience, /onCanPlay=\{\(\) => \{/);
+  assert.match(experience, /loop=\{isFront\}/);
   assert.match(styles, /\.videoFront/);
   assert.match(styles, /\.videoIncomingVisible/);
   assert.match(styles, /@keyframes homeCrossfadeVeil/);
   assert.match(styles, /50% \{ opacity: 0\.12; \}/);
+});
+
+test("the carousel cannot recycle an outgoing source before its opacity transition ends", () => {
+  assert.match(experience, /type CarouselPhase = "idle" \| "preparing" \| "crossfading" \| "settling"/);
+  assert.match(experience, /requestVideoFrameCallback/);
+  assert.match(experience, /waitForPlaybackProgress/);
+  assert.match(experience, /onTransitionEnd=\{\(event\) => handleTransitionEnd\(slot, event\)\}/);
+  assert.match(experience, /setCarouselPhase\("settling"\)[\s\S]*?setFrontSlot\(incoming\)[\s\S]*?window\.requestAnimationFrame/);
+  assert.match(experience, /window\.requestAnimationFrame\([\s\S]*?setSlotStoryAfterSettling\(outgoing, followingStoryIndex\)/);
+  assert.match(experience, /phaseRef\.current === "crossfading"[\s\S]*?transitionRef\.current = null[\s\S]*?setCarouselPhase\("idle"\)/);
+  assert.doesNotMatch(experience, /setSlotStories\(\(current\) =>[\s\S]*?setFrontSlot\(/);
+  assert.doesNotMatch(experience, /freezeCurrentFrame|holdingLastFrame|onEnded=/);
 });
 
 test("the homepage contains no rejected photo landing page, public demo flow, or marketing copy", () => {
