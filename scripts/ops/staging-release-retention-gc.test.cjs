@@ -10,6 +10,7 @@ const {
   TRIGGER_BYTES,
   buildExecutionPlan,
   candidateIsSafe,
+  existingSystemdTargetReferencesCandidate,
   exclusiveBlocksForSet,
   selectMinimalReleaseSet,
 } = require("./staging-release-retention-gc.cjs");
@@ -55,6 +56,13 @@ test("symlink, mount, open-FD, journal, and lock checks fail closed", () => {
   for (const field of ["symlink", "mountpoint", "externalSymlink", "externalHardlink", "forbiddenPersistentFile", "openFileDescriptor", "journalReference", "lockReference"]) {
     assert.equal(candidateIsSafe({ ...base, [field]: true }), false, field);
   }
+});
+
+test("only existing systemd symlink targets can retain a release", () => {
+  const candidatePath = "/home/ubuntu/memoryai-staging/releases/0000000000000000000000000000000000000002";
+  assert.equal(existingSystemdTargetReferencesCandidate({ candidatePath, targetExists: false, targetPath: candidatePath }), false);
+  assert.equal(existingSystemdTargetReferencesCandidate({ candidatePath, targetExists: true, targetPath: `${candidatePath}/memoryai.service` }), true);
+  assert.equal(existingSystemdTargetReferencesCandidate({ candidatePath, targetExists: true, targetPath: "/etc/systemd/system/memoryai.service" }), false);
 });
 
 test("only inode blocks whose every link is selected count as reclaimable", () => {

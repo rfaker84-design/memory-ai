@@ -27,6 +27,17 @@ function toBytes(blocks) {
   return assertSafeInteger(blocks, "RELEASE_GC_BLOCKS_INVALID") * 512;
 }
 
+function pathIsWithin(candidatePath, targetPath) {
+  return targetPath === candidatePath || targetPath.startsWith(`${candidatePath}${path.posix.sep}`);
+}
+
+// A dangling unit symlink cannot make a release live: it has no readable unit
+// file or executable target.  Existing targets remain protected when they
+// resolve into a candidate release.
+function existingSystemdTargetReferencesCandidate({ candidatePath, targetExists, targetPath }) {
+  return targetExists === true && typeof targetPath === "string" && pathIsWithin(candidatePath, targetPath);
+}
+
 function exclusiveBlocksForSet(inodes, selectedPaths) {
   const selected = new Set(selectedPaths);
   let blocks = 0;
@@ -206,13 +217,61 @@ function grepReference(candidatePath, roots, code) {
   }
   return false;
 }
-function rootConfigReference(candidatePath, code) {
+function inspectSystemdEntries(code) {
+  const directories = ["/etc/systemd/system", "/lib/systemd/system"];
+  const entries = [];
+  const brokenLinks = [];
+  const visit = (entryPath) => {
+    let stat;
+    try { stat = fs.lstatSync(entryPath); } catch (error) { fail(code, "lstat:" + entryPath + ":" + (error.code || "unknown")); }
+    if (stat.isDirectory()) {
+      let children;
+      try { children = fs.readdirSync(entryPath); } catch (error) { fail(code, "readdir:" + entryPath + ":" + (error.code || "unknown")); }
+      for (const child of children) visit(path.join(entryPath, child));
+      return;
+    }
+    if (stat.isFile()) {
+      entries.push({ path: entryPath, contentPath: entryPath });
+      return;
+    }
+    if (!stat.isSymbolicLink()) fail(code, "entry:" + entryPath);
+    let target;
+    let resolvedTarget;
+    try {
+      target = fs.readlinkSync(entryPath);
+      resolvedTarget = path.resolve(path.dirname(entryPath), target);
+    } catch (error) {
+      fail(code, "readlink:" + entryPath + ":" + (error.code || "unknown"));
+    }
+    try {
+      const targetStat = fs.statSync(resolvedTarget);
+      if (!targetStat.isFile()) fail(code, "target-not-file:" + entryPath);
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        brokenLinks.push({ path: entryPath, target, resolvedTarget });
+        return;
+      }
+      fail(code, "target:" + entryPath + ":" + (error.code || "unknown"));
+    }
+    entries.push({ path: entryPath, contentPath: resolvedTarget, target });
+  };
+  for (const directory of directories) visit(directory);
+  return { entries, brokenLinks };
+}
+function systemdReference(candidatePath, inspection, code) {
+  for (const entry of inspection.entries) {
+    if (inside(candidatePath, entry.path) || inside(candidatePath, entry.contentPath)) return true;
+    let content;
+    try { content = fs.readFileSync(entry.contentPath, "utf8"); } catch (error) { fail(code, "read:" + entry.contentPath + ":" + (error.code || "unknown")); }
+    if (content.includes(candidatePath)) return true;
+  }
+  return false;
+}
+function rootConfigReference(candidatePath, code, systemdInspection) {
   const nginx = command("sudo", ["-n", "--", "nginx", "-T"]);
   if (nginx.status !== 0 || nginx.error) fail(code, "nginx");
   if ((nginx.stdout + nginx.stderr).includes(candidatePath)) return { nginxReference: true, systemdReference: false };
-  const systemd = command("sudo", ["-n", "--", "grep", "-R", "-l", "--binary-files=without-match", "--fixed-strings", "--", candidatePath, "/etc/systemd/system", "/lib/systemd/system"]);
-  if (systemd.error || ![0, 1].includes(systemd.status)) fail(code, "systemd");
-  return { nginxReference: false, systemdReference: systemd.status === 0 };
+  return { nginxReference: false, systemdReference: systemdReference(candidatePath, systemdInspection, code) };
 }
 function mountSafe(candidatePath) {
   const result = mustCommand("findmnt", ["-R", "-n", "-o", "TARGET", "--target", candidatePath], "RELEASE_GC_MOUNT_CHECK_FAILED");
@@ -288,7 +347,7 @@ function manifest(candidatePath, sha) {
   const checksumsVerified = command("bash", ["-lc", "cd -- \"$1\" && sha256sum --check SHA256SUMS >/dev/null", "release-gc", candidatePath]).status === 0;
   return { manifestVerified, checksumsVerified, immutable: manifestVerified && checksumsVerified, rebuildable: manifestVerified && checksumsVerified, sourceSha: parsed?.sourceSha || null };
 }
-function inspectCandidate(entry, protectedShas) {
+function inspectCandidate(entry, protectedShas, systemdInspection) {
   const stat = fs.lstatSync(entry.path);
   const candidate = { sha: entry.sha, path: entry.path, directory: stat.isDirectory(), symlink: stat.isSymbolicLink(), mountpoint: false, externalSymlink: false, externalHardlink: false, forbiddenPersistentFile: false, openFileDescriptor: false, processReference: protectedShas.has(entry.sha), pm2Reference: protectedShas.has(entry.sha), systemdReference: false, nginxReference: false, journalReference: false, lockReference: false, manifestVerified: false, checksumsVerified: false, immutable: false, rebuildable: false, gitCommitVerified: config.gitApprovedShas.includes(entry.sha), exclusiveBytes: 0, reasons: [] };
   if (!candidate.directory || candidate.symlink) { candidate.reasons.push("NOT_PLAIN_DIRECTORY"); return candidate; }
@@ -309,7 +368,7 @@ function inspectCandidate(entry, protectedShas) {
   const locks = mustCommand("find", [root, "-xdev", "-maxdepth", "3", "-type", "f", "-name", "*.lock", "-print"], "RELEASE_GC_LOCK_CHECK_FAILED").trim();
   candidate.lockReference = Boolean(locks);
   if (candidate.lockReference) candidate.reasons.push("LOCK_PRESENT");
-  const serviceReferences = rootConfigReference(entry.path, "RELEASE_GC_SERVICE_REFERENCE_CHECK_FAILED");
+  const serviceReferences = rootConfigReference(entry.path, "RELEASE_GC_SERVICE_REFERENCE_CHECK_FAILED", systemdInspection);
   candidate.systemdReference = serviceReferences.systemdReference;
   candidate.nginxReference = serviceReferences.nginxReference;
   if (candidate.systemdReference) candidate.reasons.push("SYSTEM_REFERENCE");
@@ -354,24 +413,26 @@ function main() {
   const beforeBytes = availableBytes();
   const protectedShas = pm2References();
   protectedShas.add(baseline.current.sha); protectedShas.add(baseline.rollback.sha);
+  const systemdInspection = inspectSystemdEntries("RELEASE_GC_SERVICE_REFERENCE_CHECK_FAILED");
+  const systemd = { scannedEntries: systemdInspection.entries.length, brokenLinks: systemdInspection.brokenLinks };
   if (beforeBytes >= TRIGGER_BYTES) {
-    return { version: 1, mode: config.mode, state: "no_op", beforeBytes, afterBytes: beforeBytes, actualFreedBytes: 0, expectedFreedBytes: 0, current: baseline.current.sha, rollback: baseline.rollback.sha, protectedShas: [...protectedShas].sort(), candidates: [], deletedPaths: [] };
+    return { version: 1, mode: config.mode, state: "no_op", beforeBytes, afterBytes: beforeBytes, actualFreedBytes: 0, expectedFreedBytes: 0, current: baseline.current.sha, rollback: baseline.rollback.sha, protectedShas: [...protectedShas].sort(), systemd, candidates: [], deletedPaths: [] };
   }
-  const candidates = releaseEntries().map((entry) => inspectCandidate(entry, protectedShas));
+  const candidates = releaseEntries().map((entry) => inspectCandidate(entry, protectedShas, systemdInspection));
   const plan = select(beforeBytes, candidates);
-  if (!plan.targetReached) return { version: 1, mode: config.mode, state: "blocked", beforeBytes, afterBytes: beforeBytes, actualFreedBytes: 0, current: baseline.current.sha, rollback: baseline.rollback.sha, protectedShas: [...protectedShas].sort(), candidates, deletedPaths: [], plan };
+  if (!plan.targetReached) return { version: 1, mode: config.mode, state: "blocked", beforeBytes, afterBytes: beforeBytes, actualFreedBytes: 0, current: baseline.current.sha, rollback: baseline.rollback.sha, protectedShas: [...protectedShas].sort(), systemd, candidates, deletedPaths: [], plan };
   const selected = plan.selected;
   const selectedShas = selected.map((item) => item.sha).sort();
-  if (config.mode === "dry-run") return { version: 1, mode: config.mode, state: "dry_run", beforeBytes, afterBytes: beforeBytes, actualFreedBytes: 0, expectedFreedBytes: plan.expectedFreedBytes, current: baseline.current.sha, rollback: baseline.rollback.sha, protectedShas: [...protectedShas].sort(), candidates, deletedPaths: [], plan: { ...plan, selected: selectedShas } };
+  if (config.mode === "dry-run") return { version: 1, mode: config.mode, state: "dry_run", beforeBytes, afterBytes: beforeBytes, actualFreedBytes: 0, expectedFreedBytes: plan.expectedFreedBytes, current: baseline.current.sha, rollback: baseline.rollback.sha, protectedShas: [...protectedShas].sort(), systemd, candidates, deletedPaths: [], plan: { ...plan, selected: selectedShas } };
   if (JSON.stringify(selectedShas) !== JSON.stringify([...config.plannedDeleteShas].sort())) fail("RELEASE_GC_PLAN_CHANGED");
   for (const candidate of selected) {
-    const latest = inspectCandidate({ sha: candidate.sha, path: candidate.path }, protectedShas);
+    const latest = inspectCandidate({ sha: candidate.sha, path: candidate.path }, protectedShas, systemdInspection);
     if (!candidateSafe(latest)) fail("RELEASE_GC_CANDIDATE_CHANGED", candidate.sha);
     if (fs.realpathSync(latest.path) !== latest.path || path.dirname(latest.path) !== releases || !fs.lstatSync(latest.path).isDirectory() || fs.lstatSync(latest.path).isSymbolicLink()) fail("RELEASE_GC_DELETE_TARGET_INVALID", latest.path);
     fs.rmSync(latest.path, { recursive: true, force: false, maxRetries: 0 });
   }
   const afterBytes = availableBytes();
-  return { version: 1, mode: config.mode, state: "applied", beforeBytes, afterBytes, actualFreedBytes: afterBytes - beforeBytes, expectedFreedBytes: plan.expectedFreedBytes, current: baseline.current.sha, rollback: baseline.rollback.sha, protectedShas: [...protectedShas].sort(), candidates, deletedPaths: selected.map((candidate) => candidate.path), plan: { ...plan, selected: selectedShas } };
+  return { version: 1, mode: config.mode, state: "applied", beforeBytes, afterBytes, actualFreedBytes: afterBytes - beforeBytes, expectedFreedBytes: plan.expectedFreedBytes, current: baseline.current.sha, rollback: baseline.rollback.sha, protectedShas: [...protectedShas].sort(), systemd, candidates, deletedPaths: selected.map((candidate) => candidate.path), plan: { ...plan, selected: selectedShas } };
 }
 try { console.log(JSON.stringify(main())); } catch (error) { console.log(JSON.stringify({ version: 1, mode: config.mode, state: "blocked", error: error && error.message ? error.message : "RELEASE_GC_FAILED" })); process.exitCode = 64; }
 `;
@@ -468,6 +529,7 @@ module.exports = {
   TRIGGER_BYTES,
   buildExecutionPlan,
   candidateIsSafe,
+  existingSystemdTargetReferencesCandidate,
   exclusiveBlocksForSet,
   runReleaseRetentionGc,
   selectMinimalReleaseSet,
