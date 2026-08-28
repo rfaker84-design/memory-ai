@@ -46,6 +46,7 @@ jobs:
 
           mkdir build-context
           mv source build-context/source
+          rm -rf build-context/source/.git
           cp -a build-context/source/scripts build-context/scripts
           mkdir -p "artifacts/staging-web-immutable-${SOURCE_COMMIT}"
 
