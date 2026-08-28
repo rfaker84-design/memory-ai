@@ -100,6 +100,25 @@ test("at or above 10 GiB is a true no-op", () => {
   assert.deepEqual(plan.deletePaths, []);
 });
 
+test("a promotion target selects only the minimum set needed to clear its exact 8 GiB-plus target", () => {
+  const availableBytes = 8 * GIB + 16 * 1024 ** 2;
+  const targetBytes = 8 * GIB + 96 * 1024 ** 2;
+  const smallestEnough = safeCandidate(61, 80 * 1024 ** 2);
+  const larger = safeCandidate(62, 200 * 1024 ** 2);
+  const plan = selectMinimalReleaseSet({ availableBytes, candidates: [smallestEnough, larger], targetBytes });
+  assert.equal(plan.triggered, true);
+  assert.equal(plan.targetReached, true);
+  assert.deepEqual(plan.selected.map((candidate) => candidate.sha), [smallestEnough.sha]);
+  assert.equal(plan.expectedFreedBytes, 80 * 1024 ** 2);
+});
+
+test("a promotion target cannot be lowered below the formal 8 GiB gate", () => {
+  assert.throws(
+    () => selectMinimalReleaseSet({ availableBytes: 7 * GIB, candidates: [], targetBytes: CAPACITY_FLOOR_BYTES - 1 }),
+    /RELEASE_GC_TARGET_BELOW_CAPACITY_FLOOR/,
+  );
+});
+
 test("dry-run plans paths but never requests deletion", () => {
   const plan = buildExecutionPlan({ availableBytes: 9 * GIB, candidates: [safeCandidate(7, 3 * GIB)], apply: false });
   assert.equal(plan.state, "dry_run");

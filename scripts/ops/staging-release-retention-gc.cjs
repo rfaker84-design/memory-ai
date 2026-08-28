@@ -69,13 +69,21 @@ function candidateIsSafe(candidate, protectedShas = new Set()) {
   return true;
 }
 
-function selectMinimalReleaseSet({ availableBytes, candidates }) {
+function selectMinimalReleaseSet({ availableBytes, candidates, targetBytes = TARGET_BYTES }) {
   assertSafeInteger(availableBytes, "RELEASE_GC_AVAILABLE_INVALID");
-  if (availableBytes >= TRIGGER_BYTES) {
+  assertSafeInteger(targetBytes, "RELEASE_GC_TARGET_INVALID");
+  if (targetBytes < CAPACITY_FLOOR_BYTES) fail("RELEASE_GC_TARGET_BELOW_CAPACITY_FLOOR", targetBytes);
+  // The scheduled retention policy begins below 10 GiB and restores 12 GiB.
+  // A promotion may ask for a narrower, still-at-least-8-GiB target so it
+  // removes only the exact reclaimable release set needed for that promotion.
+  const triggered = targetBytes === TARGET_BYTES
+    ? availableBytes < TRIGGER_BYTES
+    : availableBytes < targetBytes;
+  if (!triggered) {
     return { triggered: false, targetReached: true, selected: [], expectedFreedBytes: 0 };
   }
   const safe = candidates.filter((candidate) => candidateIsSafe(candidate));
-  const needed = Math.max(0, TARGET_BYTES - availableBytes);
+  const needed = Math.max(0, targetBytes - availableBytes);
   let best = null;
   for (let count = 1; count <= safe.length; count += 1) {
     const choose = (start, selected, total) => {
@@ -105,14 +113,14 @@ function selectMinimalReleaseSet({ availableBytes, candidates }) {
       selected: [],
       expectedFreedBytes: 0,
       maximumFreedBytes,
-      capacityFloorReached: availableBytes + maximumFreedBytes >= CAPACITY_FLOOR_BYTES,
+      capacityFloorReached: availableBytes + maximumFreedBytes >= targetBytes,
     };
   }
   return { triggered: true, targetReached: true, selected: best.selected, expectedFreedBytes: best.total };
 }
 
-function buildExecutionPlan({ availableBytes, candidates, apply }) {
-  const selection = selectMinimalReleaseSet({ availableBytes, candidates });
+function buildExecutionPlan({ availableBytes, candidates, apply, targetBytes = TARGET_BYTES }) {
+  const selection = selectMinimalReleaseSet({ availableBytes, candidates, targetBytes });
   if (!selection.triggered) return { state: "no_op", deletePaths: [], ...selection };
   if (!selection.targetReached) return { state: "blocked", deletePaths: [], ...selection };
   return {
@@ -147,12 +155,13 @@ function remoteProgram(config) {
   return String.raw`
 const fs = require("node:fs");
 const path = require("node:path");
+const zlib = require("node:zlib");
 const { spawnSync } = require("node:child_process");
 
 const config = JSON.parse(Buffer.from("${Buffer.from(JSON.stringify(config)).toString("base64")}", "base64").toString("utf8"));
 const GIB = 1024 ** 3;
 const TRIGGER_BYTES = 10 * GIB;
-const TARGET_BYTES = 12 * GIB;
+const TARGET_BYTES = config.targetFreeBytes;
 const CAPACITY_FLOOR_BYTES = 8 * GIB;
 const SHA = /^[0-9a-f]{40}$/;
 const root = "/home/ubuntu/memoryai-staging";
@@ -173,6 +182,14 @@ function sudoCommand(commandName, args, code, options = {}) {
   const result = command("sudo", ["-n", "--", commandName, ...args], options);
   if (result.error || result.status !== 0) fail(code, result.error || result.stderr.trim() || String(result.status));
   return result.stdout;
+}
+function sudoBufferCommand(commandName, args, code, options = {}) {
+  const result = spawnSync("sudo", ["-n", "--", commandName, ...args], {
+    timeout: options.timeout || 120000,
+    maxBuffer: options.maxBuffer || 64 * 1024 * 1024,
+  });
+  if (result.error || result.status !== 0) fail(code, result.error || (result.stderr || "").toString("utf8").trim() || String(result.status));
+  return Buffer.isBuffer(result.stdout) ? result.stdout : Buffer.from(result.stdout || "");
 }
 function shaFromRelease(value, code) {
   const resolved = fs.realpathSync(value);
@@ -303,7 +320,19 @@ function noOpenDescriptors(candidatePath) {
 function hardlinkIndex() {
   const mountRoot = mustCommand("findmnt", ["-n", "-o", "TARGET", "--target", releases], "RELEASE_GC_FILESYSTEM_ROOT_UNREADABLE").trim();
   if (!mountRoot.startsWith("/")) fail("RELEASE_GC_FILESYSTEM_ROOT_INVALID", mountRoot);
-  const output = sudoCommand("find", [mountRoot, "-xdev", "-type", "f", "-links", "+1", "-printf", "%D\\t%i\\t%n\\t%b\\t%p\\0"], "RELEASE_GC_HARDLINK_INDEX_FAILED", { timeout: 600000, maxBuffer: 64 * 1024 * 1024 });
+  // The complete, same-filesystem inode index is required to prove that an
+  // inode has no links outside a release candidate.  Stream it through gzip
+  // so a large but valid index does not fail merely on child-process stdout
+  // buffering; decompression remains bounded and any failure is fail-closed.
+  const compressed = sudoBufferCommand("sh", [
+    "-c",
+    "find \"$1\" -xdev -type f -links +1 -printf '%D\\t%i\\t%n\\t%b\\t%p\\0' | gzip -c",
+    "release-gc-hardlink-index",
+    mountRoot,
+  ], "RELEASE_GC_HARDLINK_INDEX_FAILED", { timeout: 600000, maxBuffer: 64 * 1024 * 1024 });
+  let output;
+  try { output = zlib.gunzipSync(compressed, { maxOutputLength: 512 * 1024 * 1024 }).toString("utf8"); }
+  catch (error) { fail("RELEASE_GC_HARDLINK_INDEX_DECOMPRESS_FAILED", error.code || "invalid-gzip"); }
   const inodes = new Map();
   for (const record of output.split("\0")) {
     if (!record) continue;
@@ -424,7 +453,9 @@ function candidateSafe(candidate) {
   return candidate.directory && !candidate.symlink && !candidate.mountpoint && !candidate.externalSymlink && !candidate.externalHardlink && !candidate.forbiddenPersistentFile && !candidate.openFileDescriptor && !candidate.processReference && !candidate.pm2Reference && !candidate.systemdReference && !candidate.nginxReference && !candidate.journalReference && !candidate.lockReference && candidate.manifestVerified && candidate.checksumsVerified && candidate.immutable && candidate.rebuildable && candidate.gitCommitVerified;
 }
 function select(available, candidates) {
-  if (available >= TRIGGER_BYTES) return { triggered: false, targetReached: true, selected: [], expectedFreedBytes: 0 };
+  if (!Number.isSafeInteger(TARGET_BYTES) || TARGET_BYTES < CAPACITY_FLOOR_BYTES) fail("RELEASE_GC_TARGET_INVALID");
+  const triggered = TARGET_BYTES === 12 * GIB ? available < TRIGGER_BYTES : available < TARGET_BYTES;
+  if (!triggered) return { triggered: false, targetReached: true, selected: [], expectedFreedBytes: 0 };
   const safe = candidates.filter(candidateSafe);
   const needed = TARGET_BYTES - available;
   let best = null;
@@ -456,7 +487,7 @@ function main() {
   const systemdInspection = inspectSystemdEntries("RELEASE_GC_SERVICE_REFERENCE_CHECK_FAILED");
   const hardlinks = hardlinkIndex();
   const systemd = { scannedEntries: systemdInspection.entries.length, brokenLinks: systemdInspection.brokenLinks, maskedLinks: systemdInspection.maskedLinks };
-  if (beforeBytes >= TRIGGER_BYTES) {
+  if ((TARGET_BYTES === 12 * GIB && beforeBytes >= TRIGGER_BYTES) || (TARGET_BYTES !== 12 * GIB && beforeBytes >= TARGET_BYTES)) {
     return { version: 1, mode: config.mode, state: "no_op", beforeBytes, afterBytes: beforeBytes, actualFreedBytes: 0, expectedFreedBytes: 0, current: baseline.current.sha, rollback: baseline.rollback.sha, protectedShas: [...protectedShas].sort(), systemd, candidates: [], deletedPaths: [] };
   }
   const candidates = releaseEntries().map((entry) => inspectCandidate(entry, protectedShas, systemdInspection, hardlinks));
@@ -479,8 +510,8 @@ try { console.log(JSON.stringify(main())); } catch (error) { console.log(JSON.st
 `;
 }
 
-function executeRemote({ sshTarget, mode, gitApprovedShas, plannedDeleteShas }) {
-  const program = remoteProgram({ remoteRoot: STAGING_ROOT, mode, gitApprovedShas, plannedDeleteShas });
+function executeRemote({ sshTarget, mode, gitApprovedShas, plannedDeleteShas, targetFreeBytes }) {
+  const program = remoteProgram({ remoteRoot: STAGING_ROOT, mode, gitApprovedShas, plannedDeleteShas, targetFreeBytes });
   const result = spawnSync("ssh", [sshTarget, "node", "-"], { input: program, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
   if (result.error) fail("RELEASE_GC_SSH_FAILED", result.error.message);
   let audit;
@@ -505,6 +536,14 @@ function parseArgs(args) {
   const auditOutput = option(args, "--audit-output", true);
   const pipelineId = option(args, "--pipeline-id", false);
   const releaseSha = option(args, "--release-sha", false);
+  const targetFreeBytesValue = option(args, "--target-free-bytes", false);
+  let targetFreeBytes = TARGET_BYTES;
+  if (targetFreeBytesValue !== null) {
+    if (!/^\d+$/.test(targetFreeBytesValue)) fail("RELEASE_GC_TARGET_INVALID", targetFreeBytesValue);
+    targetFreeBytes = Number(targetFreeBytesValue);
+    assertSafeInteger(targetFreeBytes, "RELEASE_GC_TARGET_INVALID");
+    if (targetFreeBytes < CAPACITY_FLOOR_BYTES) fail("RELEASE_GC_TARGET_BELOW_CAPACITY_FLOOR", targetFreeBytes);
+  }
   if (!existsSync(sourceRoot)) fail("RELEASE_GC_SOURCE_ROOT_MISSING", sourceRoot);
   if (releaseSha && !SHA_PATTERN.test(releaseSha)) fail("RELEASE_GC_RELEASE_SHA_INVALID", releaseSha);
   if (mode === "apply") {
@@ -512,25 +551,26 @@ function parseArgs(args) {
       fail("RELEASE_GC_APPLY_REQUIRES_STAGING_IMMUTABLE_PROMOTION");
     }
   }
-  return { mode, sshTarget, remoteRoot, sourceRoot, auditOutput, releaseSha: releaseSha?.toLowerCase() ?? null };
+  return { mode, sshTarget, remoteRoot, sourceRoot, auditOutput, targetFreeBytes, releaseSha: releaseSha?.toLowerCase() ?? null };
 }
 
 function runReleaseRetentionGc(input) {
-  const initial = executeRemote({ sshTarget: input.sshTarget, mode: "dry-run", gitApprovedShas: [], plannedDeleteShas: [] });
+  const remoteInput = { sshTarget: input.sshTarget, targetFreeBytes: input.targetFreeBytes };
+  const initial = executeRemote({ ...remoteInput, mode: "dry-run", gitApprovedShas: [], plannedDeleteShas: [] });
   if (initial.state === "no_op") return initial;
   const gitApprovedShas = initial.candidates
     .filter((candidate) => candidate.manifestVerified && candidate.checksumsVerified)
     .filter((candidate) => verifyGitCommit(input.sourceRoot, candidate.sha))
     .map((candidate) => candidate.sha);
-  const planned = executeRemote({ sshTarget: input.sshTarget, mode: "dry-run", gitApprovedShas, plannedDeleteShas: [] });
+  const planned = executeRemote({ ...remoteInput, mode: "dry-run", gitApprovedShas, plannedDeleteShas: [] });
   if (input.mode === "dry-run" || planned.state !== "dry_run") return planned;
   const applied = executeRemote({
-    sshTarget: input.sshTarget,
+    ...remoteInput,
     mode: "apply",
     gitApprovedShas,
     plannedDeleteShas: planned.plan.selected,
   });
-  if (applied.afterBytes < TARGET_BYTES || applied.afterBytes < CAPACITY_FLOOR_BYTES) fail("RELEASE_GC_POST_APPLY_CAPACITY_INVALID");
+  if (applied.afterBytes < input.targetFreeBytes || applied.afterBytes < CAPACITY_FLOOR_BYTES) fail("RELEASE_GC_POST_APPLY_CAPACITY_INVALID");
   return applied;
 }
 
@@ -547,6 +587,7 @@ function main(args) {
     sourceRoot: input.sourceRoot,
     toolSourceSha,
     publicationSha: input.releaseSha ?? toolSourceSha,
+    targetFreeBytes: input.targetFreeBytes,
     releasePipeline: input.mode === "apply" ? PIPELINE_ID : null,
   });
   console.log(`STAGING_RELEASE_RETENTION_${audit.state.toUpperCase()} audit=${auditPath} availableBytes=${audit.afterBytes} deleted=${audit.deletedPaths.length}`);
