@@ -2,6 +2,7 @@
 
 const assert = require("node:assert/strict");
 const { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = require("node:fs");
+const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
@@ -13,6 +14,7 @@ const {
   assertArchiveInput,
   assertReconciliationInput,
   executeImmutableWebPromotion,
+  httpStatus,
   requiredPromotionBytes,
   runtimeIdentity,
   writeExclusiveJson,
@@ -152,6 +154,23 @@ test("capacity gate accounts for the real archive and unpacked runtime and the r
     assert.deepEqual(runtimeIdentity(directory), runtimeIdentity(directory));
   } finally {
     rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("health probes send the dedicated Staging access header", async () => {
+  const token = "a".repeat(48);
+  const server = http.createServer((request, response) => {
+    assert.equal(request.headers["x-memoryai-staging-access"], token);
+    assert.equal(request.headers.authorization, undefined);
+    response.writeHead(200).end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.equal(typeof address, "object");
+    assert.equal(await httpStatus(address.port, "/api/health", token), true);
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
 });
 

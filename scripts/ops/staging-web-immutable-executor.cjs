@@ -265,7 +265,9 @@ function currentSelections(root) {
 
 function httpStatus(port, pathname, token) {
   return new Promise((resolve) => {
-    const request = http.get({ host: "127.0.0.1", port, path: pathname, headers: token ? { Authorization: `Bearer ${token}` } : {} }, (response) => {
+    // Staging API middleware deliberately accepts only this dedicated header;
+    // a generic Authorization bearer is not a Staging access credential.
+    const request = http.get({ host: "127.0.0.1", port, path: pathname, headers: token ? { "X-MemoryAI-Staging-Access": token } : {} }, (response) => {
       response.resume();
       resolve(response.statusCode === 200);
     });
@@ -562,6 +564,7 @@ module.exports = {
   createHostOperations,
   executeImmutableWebPromotion,
   healthy,
+  httpStatus,
   requiredPromotionBytes,
   reconcileStagingWebHistory,
   runtimeIdentity,
