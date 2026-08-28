@@ -1,0 +1,278 @@
+const { existsSync, lstatSync, readdirSync, statSync, writeFileSync } = require("node:fs");
+const { spawnSync } = require("node:child_process");
+const path = require("node:path");
+
+const GIB = 1024 ** 3;
+const MINIMUM_PREFLIGHT_BYTES = 8 * GIB;
+const MINIMUM_POSTFLIGHT_BYTES = 5 * GIB;
+const RETENTION_BUFFER_BYTES = 5 * GIB;
+const COMPONENTS = new Set(["web", "worker"]);
+
+function fail(code, detail) {
+  throw new Error(code + (detail === undefined ? "" : ":" + detail));
+}
+
+function requiredFreeBytes(candidateUnpackedBytes) {
+  if (!Number.isSafeInteger(candidateUnpackedBytes) || candidateUnpackedBytes <= 0) {
+    fail("CANDIDATE_UNPACKED_SIZE_INVALID", candidateUnpackedBytes);
+  }
+  return Math.max(
+    MINIMUM_PREFLIGHT_BYTES,
+    (2 * candidateUnpackedBytes) + RETENTION_BUFFER_BYTES,
+  );
+}
+
+function byteSize(target) {
+  const stat = lstatSync(target);
+  if (!stat.isDirectory()) return stat.size;
+  let total = 0;
+  for (const entry of readdirSync(target, { withFileTypes: true })) {
+    total += byteSize(path.join(target, entry.name));
+  }
+  return total;
+}
+
+function positiveInteger(value, code) {
+  if (!/^[1-9]\d*$/.test(value ?? "")) fail(code, value);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) fail(code, value);
+  return parsed;
+}
+
+function option(args, name, options = {}) {
+  const index = args.indexOf(name);
+  if (index === -1) {
+    if (options.required) fail("CAPACITY_GATE_OPTION_MISSING", name);
+    return null;
+  }
+  const value = args[index + 1];
+  if (!value || value.startsWith("--")) fail("CAPACITY_GATE_OPTION_VALUE_MISSING", name);
+  return value;
+}
+
+function assertComponent(value) {
+  if (!COMPONENTS.has(value)) fail("CAPACITY_GATE_COMPONENT_INVALID", value);
+  return value;
+}
+
+function assertSafeRemotePath(value, code) {
+  if (!/^\/[A-Za-z0-9._/-]+$/.test(value) || value.includes("..")) fail(code, value);
+  return value;
+}
+
+function assertSha(value, code) {
+  if (!/^[0-9a-f]{40}$/i.test(value ?? "")) fail(code, value);
+  return value.toLowerCase();
+}
+
+function artifactBytes(artifact) {
+  if (!existsSync(artifact)) fail("CANDIDATE_ARTIFACT_MISSING", artifact);
+  const stat = statSync(artifact);
+  if (!stat.isFile()) fail("CANDIDATE_ARTIFACT_NOT_FILE", artifact);
+  return stat.size;
+}
+
+function writeReleaseCapacityMetadata({ outputDirectory, component }) {
+  const destination = path.join(outputDirectory, "release-capacity.json");
+  const safeComponent = assertComponent(component);
+  const existingMetadataBytes = existsSync(destination) ? statSync(destination).size : 0;
+  const payloadBytes = byteSize(outputDirectory) - existingMetadataBytes;
+  let candidateUnpackedBytes = payloadBytes;
+  let serialized = "";
+
+  // The metadata is part of the artifact too. Iterate until its own encoded
+  // length is included, rather than understating the exact unpacked payload.
+  for (;;) {
+    const payload = {
+      version: 1,
+      component: safeComponent,
+      candidateUnpackedBytes,
+      requiredFreeBytes: requiredFreeBytes(candidateUnpackedBytes),
+      minimumPostflightBytes: MINIMUM_POSTFLIGHT_BYTES,
+    };
+    serialized = JSON.stringify(payload, null, 2) + "\n";
+    const nextCandidateUnpackedBytes = payloadBytes + Buffer.byteLength(serialized);
+    if (nextCandidateUnpackedBytes === candidateUnpackedBytes) {
+      writeFileSync(destination, serialized);
+      return { destination, ...payload };
+    }
+    candidateUnpackedBytes = nextCandidateUnpackedBytes;
+  }
+}
+
+function candidateSizing(args) {
+  const artifact = option(args, "--candidate-artifact", { required: true });
+  const unpackedDirectory = option(args, "--candidate-unpacked");
+  const unpackedBytesText = option(args, "--candidate-unpacked-bytes");
+  if (unpackedDirectory && unpackedBytesText) fail("CANDIDATE_UNPACKED_SIZE_AMBIGUOUS");
+
+  const candidateArtifactBytes = artifactBytes(path.resolve(artifact));
+  let candidateUnpackedBytes;
+  if (unpackedDirectory) {
+    const resolved = path.resolve(unpackedDirectory);
+    if (!existsSync(resolved) || !lstatSync(resolved).isDirectory()) {
+      fail("CANDIDATE_UNPACKED_DIRECTORY_MISSING", resolved);
+    }
+    candidateUnpackedBytes = byteSize(resolved);
+  } else {
+    candidateUnpackedBytes = positiveInteger(unpackedBytesText, "CANDIDATE_UNPACKED_SIZE_INVALID");
+  }
+
+  return {
+    candidateArtifactBytes,
+    candidateUnpackedBytes,
+    requiredFreeBytes: requiredFreeBytes(candidateUnpackedBytes),
+  };
+}
+
+function runRetentionGcIfRequested(args, { sshTarget, remoteRoot }) {
+  const auditOutput = option(args, "--retention-gc-audit");
+  const apply = args.includes("--retention-gc-apply");
+  if (!auditOutput && !apply) return;
+  if (!auditOutput) fail("CAPACITY_GATE_RETENTION_AUDIT_REQUIRED");
+  const gcScript = path.join(__dirname, "staging-release-retention-gc.cjs");
+  const gcArgs = [
+    gcScript,
+    apply ? "apply" : "dry-run",
+    "--ssh-target", sshTarget,
+    "--remote-root", remoteRoot,
+    "--source-root", path.resolve(__dirname, "../.."),
+    "--audit-output", path.resolve(auditOutput),
+  ];
+  if (apply) gcArgs.push("--pipeline-id", "staging-immutable-promotion");
+  const result = spawnSync(process.execPath, gcArgs, { encoding: "utf8", env: process.env });
+  if (result.error || result.status !== 0) {
+    fail("CAPACITY_GATE_RETENTION_GC_BLOCKED", (result.stderr || result.stdout || result.error?.message || String(result.status)).trim());
+  }
+}
+
+function remoteInspection({ sshTarget, remoteRoot, component, rollbackSha = null, candidateTempPath = null }) {
+  const remoteScript = [
+    "set -euo pipefail",
+    'root="$1"',
+    'component="$2"',
+    'rollback_sha="$3"',
+    'candidate_temp="$' + '{4:-}"',
+    '[ "$rollback_sha" = "-" ] && rollback_sha=""',
+    '[ "$candidate_temp" = "-" ] && candidate_temp=""',
+    'release_root="$root/releases"',
+    '[ -d "$release_root" ] || { echo "CAPACITY_GATE_REMOTE_ROOT_MISSING:$release_root" >&2; exit 61; }',
+    'if [ -n "$rollback_sha" ]; then [ -d "$release_root/$rollback_sha" ] || { echo "CAPACITY_GATE_ROLLBACK_MISSING:$release_root/$rollback_sha" >&2; exit 62; }; fi',
+    'if [ "$component" = web ]; then app=memoryai-staging; active_release=$(readlink -f "$root/current"); [ -d "$active_release/runtime" ] || { echo "CAPACITY_GATE_WEB_CURRENT_INVALID:$active_release" >&2; exit 63; }; else app=memoryai-staging-video-worker; active_release=""; fi',
+    'pid=$(pm2 pid "$app" | tail -n 1 | tr -d "[:space:]")',
+    'case "$pid" in ""|0|*[!0-9]*) echo "CAPACITY_GATE_PM2_PID_MISSING:$app" >&2; exit 64;; esac',
+    'cwd=$(readlink -f "/proc/$pid/cwd")',
+    'case "$cwd" in "$release_root"/*) ;; *) echo "CAPACITY_GATE_PM2_CWD_OUTSIDE_RELEASES:$cwd" >&2; exit 65;; esac',
+    'if [ "$component" = worker ]; then active_release=$(dirname "$cwd"); fi',
+    'if [ -n "$rollback_sha" ]; then [ "$active_release" != "$release_root/$rollback_sha" ] || { echo "CAPACITY_GATE_DISTINCT_ROLLBACK_REQUIRED:$rollback_sha" >&2; exit 66; }; fi',
+    'if [ "$component" = web ]; then [ "$cwd" = "$active_release/runtime" ] || { echo "CAPACITY_GATE_WEB_CWD_MISMATCH:$cwd" >&2; exit 67; }; else [ "$cwd" = "$active_release/worker" ] || { echo "CAPACITY_GATE_WORKER_CWD_MISMATCH:$cwd" >&2; exit 68; }; fi',
+    String.raw`if [ "$component" = worker ]; then active_sha=$(basename "$active_release"); printf "%s" "$active_sha" | grep -Eq "^[0-9a-f]{40}$" || { echo "CAPACITY_GATE_WORKER_RELEASE_NOT_IMMUTABLE:$active_release" >&2; exit 70; }; [ -f "$active_release/SHA256SUMS" ] || { echo "CAPACITY_GATE_WORKER_CHECKSUM_MISSING:$active_release" >&2; exit 71; }; (cd "$active_release" && sha256sum --check SHA256SUMS >/dev/null) || { echo "CAPACITY_GATE_WORKER_CHECKSUM_FAILED:$active_release" >&2; exit 72; }; pm2_health=$(pm2 jlist | node -e 'let input = ""; process.stdin.on("data", (chunk) => input += chunk).on("end", () => { const app = JSON.parse(input).find((item) => item.name === process.argv[1]); if (!app) process.exit(2); const env = app.pm2_env || {}; process.stdout.write(String(env.status) + ":" + String(env.unstable_restarts)); });' "$app") || { echo "CAPACITY_GATE_WORKER_PM2_STATE_UNREADABLE:$app" >&2; exit 73; }; [ "$pm2_health" = "online:0" ] || { echo "CAPACITY_GATE_WORKER_PM2_UNHEALTHY:$pm2_health" >&2; exit 74; }; test -f "$cwd/video-worker.cjs" || { echo "CAPACITY_GATE_WORKER_ENTRY_MISSING:$cwd" >&2; exit 75; }; node --check "$cwd/video-worker.cjs" || { echo "CAPACITY_GATE_WORKER_SYNTAX_FAILED:$cwd" >&2; exit 76; }; (cd "$cwd" && node -e 'require("sharp");') || { echo "CAPACITY_GATE_WORKER_RUNTIME_DEPENDENCY_FAILED:$cwd" >&2; exit 77; }; fi`,
+    String.raw`if [ "$component" = worker ] && [ -n "$rollback_sha" ]; then rollback_worker="$release_root/$rollback_sha/worker"; test -f "$rollback_worker/video-worker.cjs" || { echo "CAPACITY_GATE_WORKER_ROLLBACK_ENTRY_MISSING:$rollback_worker" >&2; exit 78; }; (cd "$release_root/$rollback_sha" && sha256sum --check SHA256SUMS >/dev/null) || { echo "CAPACITY_GATE_WORKER_ROLLBACK_CHECKSUM_FAILED:$rollback_sha" >&2; exit 79; }; node --check "$rollback_worker/video-worker.cjs" || { echo "CAPACITY_GATE_WORKER_ROLLBACK_SYNTAX_FAILED:$rollback_worker" >&2; exit 80; }; (cd "$rollback_worker" && node -e 'require("sharp");') || { echo "CAPACITY_GATE_WORKER_ROLLBACK_RUNTIME_DEPENDENCY_FAILED:$rollback_worker" >&2; exit 81; }; fi`,
+    'if [ -n "$candidate_temp" ] && [ -e "$candidate_temp" ]; then echo "CAPACITY_GATE_TEMP_NOT_CLEANED:$candidate_temp" >&2; exit 69; fi',
+    'available=$(df -B1 --output=avail "$root" | tail -n 1 | tr -d "[:space:]")',
+    'echo "availableBytes=$available"',
+    'echo "activeRelease=$active_release"',
+    'echo "activeCwd=$cwd"',
+    'echo "rollbackRelease=${rollback_sha:+$release_root/$rollback_sha}"',
+    'if [ "$component" = worker ]; then echo "currentRuntimeSmoke=pass"; fi',
+  ].join("\n");
+
+  const result = spawnSync("ssh", [
+    sshTarget,
+    "bash",
+    "-s",
+    "--",
+    remoteRoot,
+    component,
+    rollbackSha ?? "-",
+    candidateTempPath ?? "-",
+  ], { input: remoteScript, encoding: "utf8" });
+  if (result.error) fail("CAPACITY_GATE_SSH_FAILED", result.error.message);
+  if (result.status !== 0) {
+    fail("CAPACITY_GATE_REMOTE_FAILED", (result.stderr || result.stdout || ("exit=" + result.status)).trim());
+  }
+  const values = Object.fromEntries((result.stdout || "").trim().split("\n").filter(Boolean).map((line) => {
+    const index = line.indexOf("=");
+    return [line.slice(0, index), line.slice(index + 1)];
+  }));
+  return {
+    availableBytes: positiveInteger(values.availableBytes, "CAPACITY_GATE_REMOTE_AVAILABLE_INVALID"),
+    activeRelease: values.activeRelease,
+    activeCwd: values.activeCwd,
+    rollbackRelease: values.rollbackRelease,
+  };
+}
+
+function printPreflight({ component, sizing, remote }) {
+  const state = remote.availableBytes >= sizing.requiredFreeBytes ? "PASS" : "BLOCKED";
+  console.log([
+    "STAGING_RELEASE_CAPACITY_" + state,
+    "component=" + component,
+    "artifactBytes=" + sizing.candidateArtifactBytes,
+    "candidateUnpackedBytes=" + sizing.candidateUnpackedBytes,
+    "availableBytes=" + remote.availableBytes,
+    "requiredBytes=" + sizing.requiredFreeBytes,
+    "activeRelease=" + remote.activeRelease,
+    component === "worker" ? "previousRelease=" + remote.activeRelease : "rollbackRelease=" + remote.rollbackRelease,
+  ].join(" "));
+  if (state !== "PASS") process.exitCode = 10;
+}
+
+function preflight(args) {
+  const component = assertComponent(option(args, "--component", { required: true }));
+  const sshTarget = option(args, "--ssh-target", { required: true });
+  const remoteRoot = assertSafeRemotePath(option(args, "--remote-root", { required: true }), "CAPACITY_GATE_REMOTE_ROOT_INVALID");
+  const rollbackSha = component === "web"
+    ? assertSha(option(args, "--rollback-sha", { required: true }), "CAPACITY_GATE_ROLLBACK_SHA_INVALID")
+    : null;
+  const sizing = candidateSizing(args);
+  runRetentionGcIfRequested(args, { sshTarget, remoteRoot });
+  const remote = remoteInspection({ sshTarget, remoteRoot, component, rollbackSha });
+  printPreflight({ component, sizing, remote });
+}
+
+function postflight(args) {
+  const component = assertComponent(option(args, "--component", { required: true }));
+  const sshTarget = option(args, "--ssh-target", { required: true });
+  const remoteRoot = assertSafeRemotePath(option(args, "--remote-root", { required: true }), "CAPACITY_GATE_REMOTE_ROOT_INVALID");
+  const rollbackSha = assertSha(option(args, "--rollback-sha", { required: true }), "CAPACITY_GATE_ROLLBACK_SHA_INVALID");
+  const candidateTempPath = assertSafeRemotePath(option(args, "--candidate-temp-path", { required: true }), "CAPACITY_GATE_TEMP_PATH_INVALID");
+  const remote = remoteInspection({ sshTarget, remoteRoot, component, rollbackSha, candidateTempPath });
+  const state = remote.availableBytes >= MINIMUM_POSTFLIGHT_BYTES ? "PASS" : "BLOCKED";
+  console.log([
+    "STAGING_RELEASE_POSTFLIGHT_" + state,
+    "component=" + component,
+    "availableBytes=" + remote.availableBytes,
+    "minimumBytes=" + MINIMUM_POSTFLIGHT_BYTES,
+    "activeRelease=" + remote.activeRelease,
+    "rollbackRelease=" + remote.rollbackRelease,
+    "candidateTempPath=" + candidateTempPath,
+  ].join(" "));
+  if (state !== "PASS") process.exitCode = 11;
+}
+
+function main(args) {
+  const command = args.shift();
+  if (command === "preflight") return preflight(args);
+  if (command === "postflight") return postflight(args);
+  fail("CAPACITY_GATE_COMMAND_INVALID", command ?? "missing");
+}
+
+if (require.main === module) {
+  try {
+    main(process.argv.slice(2));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "CAPACITY_GATE_FAILED");
+    process.exitCode = 64;
+  }
+}
+
+module.exports = {
+  GIB,
+  MINIMUM_POSTFLIGHT_BYTES,
+  MINIMUM_PREFLIGHT_BYTES,
+  RETENTION_BUFFER_BYTES,
+  byteSize,
+  requiredFreeBytes,
+  writeReleaseCapacityMetadata,
+};

@@ -1,0 +1,49 @@
+FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS builder
+WORKDIR /app
+
+ARG STAGING_WEB_ARTIFACT_SOURCE_COMMIT
+ARG STAGING_WEB_ARTIFACT_SOURCE_TREE
+ARG STAGING_WEB_ARTIFACT_RUNNER_COMMIT
+RUN apk add --no-cache git libc6-compat && test "$(node --version)" = "v20.20.2" && test "$(npm --version)" = "10.8.2"
+
+COPY source/package.json source/package-lock.json ./
+RUN npm ci
+COPY source/. ./
+COPY scripts/ops/generate-staging-web-artifact-evidence.cjs /tools/generate-staging-web-artifact-evidence.cjs
+COPY scripts/ops/Dockerfile.staging-web-artifact /build-recipe/Dockerfile.staging-web-artifact
+
+# package:standalone-rc requires a clean Git worktree for the runtime manifest.
+# The original source SHA/tree are independently checked by the Action and are
+# rewritten and attested below; this temporary local repository is never an
+# artifact input or release identity.
+RUN git init --quiet && git config user.email buildkit@memoryai.invalid && git config user.name buildkit && git add -A && git commit --quiet -m build-input && test "$(git write-tree)" = "$STAGING_WEB_ARTIFACT_SOURCE_TREE"
+
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PUBLIC_SOUNDSCAPE_ENABLED=true
+RUN npm run test:soundscape && npm run build && npm run package:standalone-rc
+
+RUN mkdir -p /bundle && cp -aL .next/standalone-rc /bundle/runtime && \
+    test -z "$(find /bundle/runtime -type l -print -quit)" && \
+    STAGING_WEB_ARTIFACT_SOURCE_COMMIT="$STAGING_WEB_ARTIFACT_SOURCE_COMMIT" \
+    STAGING_WEB_ARTIFACT_SOURCE_TREE="$STAGING_WEB_ARTIFACT_SOURCE_TREE" \
+    STAGING_WEB_ARTIFACT_RUNNER_COMMIT="$STAGING_WEB_ARTIFACT_RUNNER_COMMIT" \
+    STAGING_WEB_ARTIFACT_BUILD_ROOT=/app \
+    STAGING_WEB_ARTIFACT_RECIPE=/build-recipe/Dockerfile.staging-web-artifact \
+    NEXT_PUBLIC_SOUNDSCAPE_ENABLED=true \
+    node /tools/generate-staging-web-artifact-evidence.cjs /bundle/runtime /bundle && \
+    npm sbom --sbom-format=spdx --sbom-type=application > /bundle/sbom.spdx.json && \
+    cd /bundle && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS && \
+    sha256sum --check SHA256SUMS
+
+FROM alpine:3.21@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1 AS staging-web-artifact-export
+ARG STAGING_WEB_ARTIFACT_SOURCE_COMMIT
+ARG STAGING_WEB_ARTIFACT_RUNNER_COMMIT
+RUN apk add --no-cache tar
+COPY --from=builder /bundle /bundle
+RUN mkdir -p /export && \
+    tar --dereference -C /bundle -czf "/export/memoryai-staging-web-${STAGING_WEB_ARTIFACT_SOURCE_COMMIT}.tar.gz" . && \
+    cd /export && sha256sum "memoryai-staging-web-${STAGING_WEB_ARTIFACT_SOURCE_COMMIT}.tar.gz" > "memoryai-staging-web-${STAGING_WEB_ARTIFACT_SOURCE_COMMIT}.tar.gz.sha256" && \
+    cp /bundle/release-manifest.json /bundle/manifest.json /bundle/provenance.intoto.json /bundle/sbom.spdx.json /bundle/SHA256SUMS /export/
+
+FROM scratch AS export
+COPY --from=staging-web-artifact-export /export /

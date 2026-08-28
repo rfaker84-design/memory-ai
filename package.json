@@ -6,6 +6,8 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
+    "staging:web-promotion:dry-run": "node scripts/ops/staging-web-immutable-promotion.cjs dry-run",
+    "test:staging-web-immutable-runner": "node --test scripts/ops/staging-release-capacity-gate.test.cjs scripts/ops/staging-web-immutable-promotion.test.cjs scripts/ops/staging-web-immutable-executor.test.cjs scripts/ops/staging-web-immutable-artifact.test.cjs",
     "lint": "next lint"
   },
   "dependencies": {
