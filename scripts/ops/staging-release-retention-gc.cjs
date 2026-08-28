@@ -169,8 +169,10 @@ function mustCommand(commandName, args, code) {
   if (result.error || result.status !== 0) fail(code, result.error || result.stderr.trim() || String(result.status));
   return result.stdout;
 }
-function sudoCommand(commandName, args, code) {
-  return mustCommand("sudo", ["-n", "--", commandName, ...args], code);
+function sudoCommand(commandName, args, code, options = {}) {
+  const result = command("sudo", ["-n", "--", commandName, ...args], options);
+  if (result.error || result.status !== 0) fail(code, result.error || result.stderr.trim() || String(result.status));
+  return result.stdout;
 }
 function shaFromRelease(value, code) {
   const resolved = fs.realpathSync(value);
@@ -338,7 +340,7 @@ function walk(candidatePath) {
       blocks += inode.blocks * 512;
       continue;
     }
-    const links = sudoCommand("find", [mountRoot, "-xdev", "-inum", String(inode.ino), "-printf", "%p\\n"], "RELEASE_GC_HARDLINK_CHECK_FAILED")
+    const links = sudoCommand("find", [mountRoot, "-xdev", "-inum", String(inode.ino), "-printf", "%p\\n"], "RELEASE_GC_HARDLINK_CHECK_FAILED", { timeout: 600000 })
       .split(/\n/).filter(Boolean);
     if (links.length !== inode.nlink || links.some((link) => !inside(candidateReal, link))) externalHardlink = true;
     else blocks += inode.blocks * 512;
