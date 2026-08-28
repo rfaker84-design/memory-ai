@@ -29,10 +29,13 @@ test("immutable Staging Web artifact workflow checks out an exact source commit 
     component: "web",
     environment: "staging",
     sourceCommit: "e9a2d5a7c6cf3a86784ba4ccd28ee26c7a747632",
-    attempt: 3,
+    attempt: 4,
   });
   assert.doesNotMatch(dockerignore, /(?:^|\n)(?:source\/)?\.env\*/);
   assert.match(dockerignore, /(?:^|\n)source\/\.git(?:\n|$)/);
+  assert.match(workflow, /verify_dir="\$\(mktemp -d\)"/);
+  assert.match(workflow, /rm -rf "\$verify_dir"/);
+  assert.doesNotMatch(workflow, /mkdir verify/);
 });
 
 test("BuildKit recipe locks Linux Node/npm, bakes the feature flag, and exports no source tree", () => {
