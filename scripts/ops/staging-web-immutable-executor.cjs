@@ -186,6 +186,16 @@ function verifyChecksums(directory, commandRunner = command) {
   });
 }
 
+function servingPm2Actions(pm2Config) {
+  // `startOrReload` can retain PM2's prior cwd, environment, and restart
+  // history.  A serving cutover must instead create one fresh process from the
+  // release-local manifest after the already-healthy candidate is available.
+  return [
+    ["delete", "memoryai-staging"],
+    ["start", pm2Config, "--only", "memoryai-staging", "--update-env"],
+  ];
+}
+
 function parseJson(file, code) {
   try { return JSON.parse(readFileSync(file, "utf8")); } catch { fail(code, file); }
 }
@@ -421,7 +431,8 @@ function createHostOperations(plan) {
     switchSelections: (current, rollback) => { atomicSelectionPair(root, current, rollback); },
     restoreSelections: (current, rollback) => { atomicSelectionPair(root, current, rollback); },
     startServing: async (release) => {
-      pm2(["startOrReload", pm2Config, "--only", "memoryai-staging", "--update-env"], pm2Environment(release, 3100, "memoryai-staging"));
+      const environment = pm2Environment(release, 3100, "memoryai-staging");
+      for (const args of servingPm2Actions(pm2Config)) pm2(args, environment);
       for (let attempt = 0; attempt < 8; attempt += 1) {
         await sleep(1000);
         const result = await health(release, 3100, "memoryai-staging");
@@ -579,6 +590,7 @@ module.exports = {
   requiredPromotionBytes,
   reconcileStagingWebHistory,
   runtimeIdentity,
+  servingPm2Actions,
   verifyChecksums,
   writeExclusiveJson,
 };

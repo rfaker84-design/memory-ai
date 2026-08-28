@@ -17,6 +17,7 @@ const {
   httpStatus,
   requiredPromotionBytes,
   runtimeIdentity,
+  servingPm2Actions,
   verifyChecksums,
   writeExclusiveJson,
 } = require("./staging-web-immutable-executor.cjs");
@@ -166,6 +167,13 @@ test("checksum verification is status-only so a large valid artifact cannot over
     ["--check", "--status", "SHA256SUMS"],
     { cwd: "/candidate", stdio: ["ignore", "ignore", "pipe"] },
   ]]);
+});
+
+test("serving cutover replaces the previous PM2 record with the release-local manifest", () => {
+  assert.deepEqual(servingPm2Actions("/runner/staging-web-pm2-manifest.config.cjs"), [
+    ["delete", "memoryai-staging"],
+    ["start", "/runner/staging-web-pm2-manifest.config.cjs", "--only", "memoryai-staging", "--update-env"],
+  ]);
 });
 
 test("health probes send the dedicated Staging access header", async () => {
