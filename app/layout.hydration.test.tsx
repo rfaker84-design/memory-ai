@@ -153,6 +153,15 @@ test("ordinary browser hydration emits no root mismatch warning", async () => {
   assert.deepEqual(result.recoverableErrors.filter((message) => hydrationWarning.test(message)), []);
 });
 
+test("soundscape restores browser preference only after hydration", () => {
+  const provider = read("src/features/soundscape/SoundscapeProvider.tsx");
+
+  assert.match(provider, /useState<SoundscapePreference>\(\(\) => \(\{ \.\.\.DEFAULT_SOUNDSCAPE_PREFERENCE \}\)\)/);
+  assert.match(provider, /useEffect\(\(\) => \{\s*setPreference\(readSoundscapePreference\(window\.localStorage\)\);\s*setHydrated\(true\);\s*\}, \[\]\);/);
+  assert.match(provider, /hydrated && decision\.soundscape \? <SoundscapeControl/);
+  assert.doesNotMatch(provider, /useState<SoundscapePreference>\(\(\) => \([\s\S]*typeof window/);
+});
+
 test("iPhone WeChat root injection hydrates without an attribute mismatch warning", async () => {
   const result = await hydrateDocument({
     userAgent:

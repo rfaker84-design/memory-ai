@@ -53,6 +53,17 @@ test("encounter reunion is explicitly gated by existing read-only presentation p
   assert.match(encounterPage, /<SoundscapeEncounterPhaseAdapter phase=\{soundscapePhase\} \/>/);
   const phaseBlock = encounterPage.slice(encounterPage.indexOf("const soundscapePhase"), encounterPage.indexOf("return <main"));
   assert.doesNotMatch(phaseBlock, /setTimeout|setInterval|setState/u);
+  assert.match(encounterPage, /<video[^>]+data-soundscape-priority="true"/);
+});
+
+test("soundscape control clears the fixed navigation and hydration is deterministic", () => {
+  const control = readFileSync(path.join(soundscapeRoot, "SoundscapeControl.tsx"), "utf8");
+  const provider = readFileSync(path.join(soundscapeRoot, "SoundscapeProvider.tsx"), "utf8");
+  assert.match(control, /zIndex:\s*60/);
+  assert.match(control, /var\(--nav-height, 64px\)[^\n]+\+ 12px/);
+  assert.match(provider, /DEFAULT_SOUNDSCAPE_PREFERENCE/);
+  assert.match(provider, /setPreference\(readSoundscapePreference\(window\.localStorage\)\)/);
+  assert.match(provider, /hydrated && decision\.soundscape/);
 });
 
 test("the only enabled non-HTML voice producer is bridged without changing chat", () => {

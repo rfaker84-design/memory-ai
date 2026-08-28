@@ -7,7 +7,7 @@ import { SoundscapeControl } from "./SoundscapeControl";
 import { SoundscapeEngine } from "./SoundscapeEngine";
 import { attachSoundscapeEncounterPhaseBridge, attachSoundscapeMediaBridge } from "./SoundscapeMediaBridge";
 import { isSoundscapeFeatureEnabled, resolveSoundscapeRoute } from "./SoundscapePolicy";
-import { readSoundscapePreference, withSoundscapeEnabled, withSoundscapeVolume, writeSoundscapePreference } from "./SoundscapePreference";
+import { DEFAULT_SOUNDSCAPE_PREFERENCE, readSoundscapePreference, withSoundscapeEnabled, withSoundscapeVolume, writeSoundscapePreference } from "./SoundscapePreference";
 import type { SoundscapeEncounterPhase, SoundscapePreference } from "./types";
 
 // Next.js replaces this value at the production build boundary.
@@ -24,11 +24,18 @@ function SoundscapeRuntime({ children }: Props) {
   const pathname = usePathname();
   const [encounterPhase, setEncounterPhase] = useState<SoundscapeEncounterPhase>("off");
   const decision = resolveSoundscapeRoute(pathname, encounterPhase);
-  const [preference, setPreference] = useState<SoundscapePreference>(() => (
-    typeof window === "undefined" ? { version: 1, enabled: false, volume: 0.22 } : readSoundscapePreference(window.localStorage)
-  ));
+  // Keep the server render and first browser render identical. The persisted
+  // preference is intentionally restored only after hydration and never starts
+  // an AudioContext without a fresh user gesture.
+  const [preference, setPreference] = useState<SoundscapePreference>(() => ({ ...DEFAULT_SOUNDSCAPE_PREFERENCE }));
+  const [hydrated, setHydrated] = useState(false);
   const [sessionActivated, setSessionActivated] = useState(false);
   const engineRef = useRef<SoundscapeEngine | null>(null);
+
+  useEffect(() => {
+    setPreference(readSoundscapePreference(window.localStorage));
+    setHydrated(true);
+  }, []);
 
   const persist = useCallback((next: SoundscapePreference) => {
     setPreference(next);
@@ -100,6 +107,6 @@ function SoundscapeRuntime({ children }: Props) {
 
   return <>
     {children}
-    {decision.soundscape ? <SoundscapeControl preference={preference} awaitingActivation={preference.enabled && !sessionActivated} onPrimaryAction={onPrimaryAction} onVolumeChange={onVolumeChange} /> : null}
+    {hydrated && decision.soundscape ? <SoundscapeControl preference={preference} awaitingActivation={preference.enabled && !sessionActivated} onPrimaryAction={onPrimaryAction} onVolumeChange={onVolumeChange} /> : null}
   </>;
 }

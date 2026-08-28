@@ -12,7 +12,10 @@ type Props = {
 };
 
 const shellStyle: CSSProperties = {
-  position: "fixed", zIndex: 40, right: "max(16px, env(safe-area-inset-right))", bottom: "calc(18px + env(safe-area-inset-bottom))",
+  position: "fixed",
+  zIndex: 60,
+  right: "max(16px, env(safe-area-inset-right))",
+  bottom: "calc(var(--nav-height, 64px) + env(safe-area-inset-bottom, 0px) + 12px)",
   display: "grid", gap: 8, minWidth: 126, padding: 8, border: "1px solid rgba(224, 195, 137, 0.26)", borderRadius: 16,
   background: "rgba(18, 15, 12, 0.8)", boxShadow: "0 8px 28px rgba(0, 0, 0, 0.24)", backdropFilter: "blur(12px)",
 };
@@ -20,7 +23,7 @@ const shellStyle: CSSProperties = {
 export function SoundscapeControl({ preference, awaitingActivation, onPrimaryAction, onVolumeChange }: Props) {
   const primaryLabel = preference.enabled ? awaitingActivation ? "轻触继续" : "关闭" : "开启";
   return (
-    <aside aria-label="环境声" style={shellStyle}>
+    <aside aria-label="环境声" data-soundscape-control="true" style={shellStyle}>
       <button type="button" aria-pressed={preference.enabled} onClick={onPrimaryAction} style={{ minHeight: 40, border: 0, borderRadius: 11, color: "#fff8ec", background: "rgba(213, 170, 97, 0.2)", cursor: "pointer", fontSize: 13 }}>
         环境声 · {primaryLabel}
       </button>
