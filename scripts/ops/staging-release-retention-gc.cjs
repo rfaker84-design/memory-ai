@@ -317,6 +317,23 @@ function noOpenDescriptors(candidatePath) {
   if (result.error || ![0, 1].includes(result.status)) fail("RELEASE_GC_OPEN_FD_CHECK_FAILED", candidatePath);
   return result.status === 1 && result.stdout.trim() === "";
 }
+function promotionLockPresent() {
+  const lockRoot = path.join(root, ".promotion", "locks");
+  if (!fs.existsSync(lockRoot)) return false;
+  const regular = mustCommand("find", [lockRoot, "-xdev", "-type", "f", "-name", "*.lock", "-print"], "RELEASE_GC_PROMOTION_LOCK_CHECK_FAILED").trim();
+  const irregular = mustCommand("find", [lockRoot, "-xdev", "!", "-type", "d", "!", "-type", "f", "-print"], "RELEASE_GC_PROMOTION_LOCK_CHECK_FAILED").trim();
+  // A promotion lock is global to Staging release mutation.  An unknown entry
+  // in this directory is treated the same way rather than being ignored.
+  return Boolean(regular || irregular);
+}
+function candidateLockReference(candidatePath, code) {
+  const localLocks = mustCommand("find", [candidatePath, "-xdev", "-type", "f", "-name", "*.lock", "-print"], "RELEASE_GC_LOCK_CHECK_FAILED").trim();
+  if (localLocks) return true;
+  // History locks outside the release tree are relevant only when their text
+  // names this exact candidate.  Review-submission locks live elsewhere and
+  // must not block unrelated immutable release retention.
+  return grepReference(candidatePath, [path.join(root, ".promotion"), path.join(root, "operations"), path.join(root, "rollbacks")], code);
+}
 function hardlinkIndex() {
   const mountRoot = mustCommand("findmnt", ["-n", "-o", "TARGET", "--target", releases], "RELEASE_GC_FILESYSTEM_ROOT_UNREADABLE").trim();
   if (!mountRoot.startsWith("/")) fail("RELEASE_GC_FILESYSTEM_ROOT_INVALID", mountRoot);
@@ -424,7 +441,7 @@ function manifest(candidatePath, sha) {
   const checksumsVerified = command("bash", ["-lc", "cd -- \"$1\" && sha256sum --check SHA256SUMS >/dev/null", "release-gc", candidatePath]).status === 0;
   return { manifestVerified, checksumsVerified, immutable: manifestVerified && checksumsVerified, rebuildable: manifestVerified && checksumsVerified, sourceSha: parsed?.sourceSha || null };
 }
-function inspectCandidate(entry, protectedShas, systemdInspection, hardlinks) {
+function inspectCandidate(entry, protectedShas, systemdInspection, hardlinks, hasPromotionLock) {
   const stat = fs.lstatSync(entry.path);
   const candidate = { sha: entry.sha, path: entry.path, directory: stat.isDirectory(), symlink: stat.isSymbolicLink(), mountpoint: false, externalSymlink: false, externalHardlink: false, forbiddenPersistentFile: false, openFileDescriptor: false, processReference: protectedShas.has(entry.sha), pm2Reference: protectedShas.has(entry.sha), systemdReference: false, nginxReference: false, journalReference: false, lockReference: false, manifestVerified: false, checksumsVerified: false, immutable: false, rebuildable: false, gitCommitVerified: config.gitApprovedShas.includes(entry.sha), exclusiveBytes: 0, reasons: [] };
   if (!candidate.directory || candidate.symlink) { candidate.reasons.push("NOT_PLAIN_DIRECTORY"); return candidate; }
@@ -440,10 +457,9 @@ function inspectCandidate(entry, protectedShas, systemdInspection, hardlinks) {
   if (candidate.forbiddenPersistentFile) candidate.reasons.push("PERSISTENT_OR_SECRET_FILE");
   candidate.openFileDescriptor = !noOpenDescriptors(entry.path);
   if (candidate.openFileDescriptor) candidate.reasons.push("OPEN_FD");
-  candidate.journalReference = grepReference(entry.path, [path.join(root, "operations"), path.join(root, ".promotion")], "RELEASE_GC_JOURNAL_CHECK_FAILED");
+  candidate.journalReference = grepReference(entry.path, [path.join(root, "operations"), path.join(root, ".promotion"), path.join(root, "rollbacks")], "RELEASE_GC_JOURNAL_CHECK_FAILED");
   if (candidate.journalReference) candidate.reasons.push("JOURNAL_REFERENCE");
-  const locks = mustCommand("find", [root, "-xdev", "-maxdepth", "3", "-type", "f", "-name", "*.lock", "-print"], "RELEASE_GC_LOCK_CHECK_FAILED").trim();
-  candidate.lockReference = Boolean(locks);
+  candidate.lockReference = hasPromotionLock || candidateLockReference(entry.path, "RELEASE_GC_LOCK_CHECK_FAILED");
   if (candidate.lockReference) candidate.reasons.push("LOCK_PRESENT");
   const serviceReferences = rootConfigReference(entry.path, "RELEASE_GC_SERVICE_REFERENCE_CHECK_FAILED", systemdInspection);
   candidate.systemdReference = serviceReferences.systemdReference;
@@ -493,12 +509,13 @@ function main() {
   const protectedShas = pm2References();
   protectedShas.add(baseline.current.sha); protectedShas.add(baseline.rollback.sha);
   const systemdInspection = inspectSystemdEntries("RELEASE_GC_SERVICE_REFERENCE_CHECK_FAILED");
+  const hasPromotionLock = promotionLockPresent();
   const hardlinks = hardlinkIndex();
   const systemd = { scannedEntries: systemdInspection.entries.length, brokenLinks: systemdInspection.brokenLinks, maskedLinks: systemdInspection.maskedLinks };
   if ((TARGET_BYTES === 12 * GIB && beforeBytes >= TRIGGER_BYTES) || (TARGET_BYTES !== 12 * GIB && beforeBytes >= TARGET_BYTES)) {
     return { version: 1, mode: config.mode, state: "no_op", beforeBytes, afterBytes: beforeBytes, actualFreedBytes: 0, expectedFreedBytes: 0, current: baseline.current.sha, rollback: baseline.rollback.sha, protectedShas: [...protectedShas].sort(), systemd, candidates: [], deletedPaths: [] };
   }
-  const candidates = releaseEntries().map((entry) => inspectCandidate(entry, protectedShas, systemdInspection, hardlinks));
+  const candidates = releaseEntries().map((entry) => inspectCandidate(entry, protectedShas, systemdInspection, hardlinks, hasPromotionLock));
   const plan = select(beforeBytes, candidates);
   if (!plan.targetReached) return { version: 1, mode: config.mode, state: "blocked", beforeBytes, afterBytes: beforeBytes, actualFreedBytes: 0, current: baseline.current.sha, rollback: baseline.rollback.sha, protectedShas: [...protectedShas].sort(), systemd, candidates, deletedPaths: [], plan };
   const selected = plan.selected;
@@ -506,7 +523,7 @@ function main() {
   if (config.mode === "dry-run") return { version: 1, mode: config.mode, state: "dry_run", beforeBytes, afterBytes: beforeBytes, actualFreedBytes: 0, expectedFreedBytes: plan.expectedFreedBytes, current: baseline.current.sha, rollback: baseline.rollback.sha, protectedShas: [...protectedShas].sort(), systemd, candidates, deletedPaths: [], plan: { ...plan, selected: selectedShas } };
   if (JSON.stringify(selectedShas) !== JSON.stringify([...config.plannedDeleteShas].sort())) fail("RELEASE_GC_PLAN_CHANGED");
   for (const candidate of selected) {
-    const latest = inspectCandidate({ sha: candidate.sha, path: candidate.path }, protectedShas, systemdInspection, hardlinks);
+    const latest = inspectCandidate({ sha: candidate.sha, path: candidate.path }, protectedShas, systemdInspection, hardlinks, hasPromotionLock);
     if (!candidateSafe(latest)) fail("RELEASE_GC_CANDIDATE_CHANGED", candidate.sha);
     if (fs.realpathSync(latest.path) !== latest.path || path.dirname(latest.path) !== releases || !fs.lstatSync(latest.path).isDirectory() || fs.lstatSync(latest.path).isSymbolicLink()) fail("RELEASE_GC_DELETE_TARGET_INVALID", latest.path);
     fs.rmSync(latest.path, { recursive: true, force: false, maxRetries: 0 });
