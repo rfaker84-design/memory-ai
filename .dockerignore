@@ -8,5 +8,6 @@ source/.git
 source/node_modules
 source/.next
 source/.env*
+!source/.env.example
 source/artifacts
 source/coverage
