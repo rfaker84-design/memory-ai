@@ -7,6 +7,11 @@ on:
         description: Exact immutable 40-character application source commit
         required: true
         type: string
+  push:
+    branches:
+      - main
+    paths:
+      - .github/staging-web-artifact-request.json
 
 permissions:
   contents: read
@@ -17,7 +22,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     concurrency:
-      group: staging-web-immutable-artifact-${{ inputs.source_commit }}
+      group: staging-web-immutable-artifact-${{ inputs.source_commit || github.sha }}
       cancel-in-progress: false
     steps:
       - name: Check out the versioned runner
@@ -32,10 +37,26 @@ jobs:
           set -euo pipefail
           echo "RUNNER_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
+      - name: Resolve exact application source
+        id: request
+        shell: bash
+        env:
+          DISPATCH_SOURCE_COMMIT: ${{ inputs.source_commit || '' }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            source_commit="$DISPATCH_SOURCE_COMMIT"
+          else
+            source_commit="$(node -e 'const request=require("./.github/staging-web-artifact-request.json"); if (request.schemaVersion !== 1 || request.component !== "web" || request.environment !== "staging") process.exit(2); process.stdout.write(request.sourceCommit)' )"
+          fi
+          printf '%s\n' "$source_commit" | grep -Eq '^[0-9a-f]{40}$'
+          echo "SOURCE_COMMIT=$source_commit" >> "$GITHUB_ENV"
+          echo "source_commit=$source_commit" >> "$GITHUB_OUTPUT"
+
       - name: Check out the exact application source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ inputs.source_commit }}
+          ref: ${{ steps.request.outputs.source_commit }}
           path: source
           fetch-depth: 1
           persist-credentials: false
@@ -44,7 +65,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "${{ inputs.source_commit }}" = "$(git -C source rev-parse HEAD)"
+          test "$SOURCE_COMMIT" = "$(git -C source rev-parse HEAD)"
           test -z "$(git -C source status --porcelain)"
           git -C source rev-parse HEAD
           git -C source rev-parse HEAD^{tree}
@@ -73,7 +94,7 @@ jobs:
       - name: Upload immutable archive and evidence
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
-          name: staging-web-immutable-${{ inputs.source_commit }}
-          path: artifacts/staging-web-immutable-${{ inputs.source_commit }}
+          name: staging-web-immutable-${{ steps.request.outputs.source_commit }}
+          path: artifacts/staging-web-immutable-${{ steps.request.outputs.source_commit }}
           if-no-files-found: error
           retention-days: 90

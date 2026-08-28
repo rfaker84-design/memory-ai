@@ -9,8 +9,11 @@ application APIs, Nginx traffic, chat flow, or PM2 Worker processes.
 
 ## Immutable Linux artifact
 
-`.github/workflows/staging-web-immutable-artifact.yml` is a manually dispatched
-Linux BuildKit-only workflow. It checks out the supplied full source commit
+`.github/workflows/staging-web-immutable-artifact.yml` is a Linux BuildKit-only
+workflow. It is either manually dispatched with a full source commit or
+triggered on `main` only when `.github/staging-web-artifact-request.json`
+changes. The versioned request is schema checked and limited to the Web
+component in Staging. The workflow checks out the supplied full source commit
 into a clean `source` directory, confirms its exact SHA and tree, and builds
 only a downloadable artifact. The workflow has `contents: read` permission and
 contains no Staging/Production host credential, SSH, PM2, or promotion step.
