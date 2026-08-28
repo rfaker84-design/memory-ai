@@ -20,6 +20,7 @@ const HOME_STORIES: readonly HomeStory[] = [
 const CROSSFADE_MS = 1_000;
 const TRANSITION_START_REMAINING_SECONDS = 1.1;
 const PLAYBACK_PROGRESS_TIMEOUT_MS = 1_200;
+const MEDIA_READY_TIMEOUT_MS = 3_000;
 const DISCLOSURE = "AI生成示例 · 使用虚构示例资料 · 不代表真实人物或其真实表达";
 
 type PerformanceNavigator = Navigator & { connection?: { saveData?: boolean }; deviceMemory?: number };
@@ -44,16 +45,15 @@ function assetPath(story: HomeStory, extension: "mp4" | "poster.webp") {
 
 function otherSlot(slot: VideoSlot): VideoSlot { return slot === 0 ? 1 : 0; }
 
-function waitForDecodedFirstFrame(video: HTMLVideoElement, signal: AbortSignal) {
+function waitForMediaReady(video: HTMLVideoElement, signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
-    let frameHandle: number | undefined;
+    let timeoutId: number | undefined;
     let settled = false;
-    const frameVideo = video as VideoFrameCapable;
     const cleanup = () => {
       video.removeEventListener("loadeddata", confirm);
       video.removeEventListener("canplay", confirm);
       signal.removeEventListener("abort", abort);
-      if (frameHandle !== undefined) frameVideo.cancelVideoFrameCallback?.(frameHandle);
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     };
     const finish = () => {
       if (settled) return;
@@ -65,25 +65,67 @@ function waitForDecodedFirstFrame(video: HTMLVideoElement, signal: AbortSignal) 
       if (settled) return;
       settled = true;
       cleanup();
-      reject(new DOMException("Carousel preparation cancelled", "AbortError"));
+      reject(new DOMException("Carousel media preparation cancelled", "AbortError"));
     };
     const confirm = () => {
       if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
-      // `loadeddata` is the compatibility fallback. Where the browser offers
-      // video frame callbacks, a decoded frame is required before preparing.
-      if (!frameVideo.requestVideoFrameCallback) {
-        if (Number.isFinite(video.currentTime)) finish();
-        return;
-      }
-      if (frameHandle !== undefined) frameVideo.cancelVideoFrameCallback?.(frameHandle);
-      frameHandle = frameVideo.requestVideoFrameCallback(() => finish());
+      finish();
     };
 
     if (signal.aborted) { abort(); return; }
     signal.addEventListener("abort", abort, { once: true });
     video.addEventListener("loadeddata", confirm);
     video.addEventListener("canplay", confirm);
+    timeoutId = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error("Hidden carousel video did not become ready"));
+    }, MEDIA_READY_TIMEOUT_MS);
     confirm();
+  });
+}
+
+function waitForDecodedFirstFrame(video: HTMLVideoElement, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    let frameHandle: number | undefined;
+    let timeoutId: number | undefined;
+    let settled = false;
+    const frameVideo = video as VideoFrameCapable;
+    const cleanup = () => {
+      signal.removeEventListener("abort", abort);
+      if (frameHandle !== undefined) frameVideo.cancelVideoFrameCallback?.(frameHandle);
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    };
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+    const abort = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new DOMException("Carousel frame confirmation cancelled", "AbortError"));
+    };
+    if (signal.aborted) { abort(); return; }
+    signal.addEventListener("abort", abort, { once: true });
+    if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      abort();
+      return;
+    }
+    if (!frameVideo.requestVideoFrameCallback) {
+      finish();
+      return;
+    }
+    frameHandle = frameVideo.requestVideoFrameCallback(() => finish());
+    timeoutId = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error("Hidden carousel video did not decode a frame"));
+    }, PLAYBACK_PROGRESS_TIMEOUT_MS);
   });
 }
 
@@ -222,16 +264,19 @@ export function GuestExperience({ onLogin, onStart, showLogin = true }: GuestExp
         video.load();
       }
 
-      await waitForDecodedFirstFrame(video, controller.signal);
+      await waitForMediaReady(video, controller.signal);
       if (operation !== operationRef.current || controller.signal.aborted) return;
 
-      // A poster or readyState alone is insufficient. Verify that the hidden
-      // element advances, then park it back at the decoded first frame.
+      // A poster or readyState alone is insufficient. Start the hidden stream
+      // first, then use a decoded frame and currentTime progress as proof.
       await video.play();
-      await waitForPlaybackProgress(video, controller.signal);
+      await Promise.all([
+        waitForDecodedFirstFrame(video, controller.signal),
+        waitForPlaybackProgress(video, controller.signal),
+      ]);
       video.pause();
       video.currentTime = 0;
-      await waitForDecodedFirstFrame(video, controller.signal);
+      await waitForMediaReady(video, controller.signal);
       if (operation !== operationRef.current || controller.signal.aborted) return;
 
       preparedRef.current = { slot, storyIndex, operation };

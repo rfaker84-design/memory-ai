@@ -30,7 +30,9 @@ test("the approved homepage carousel keeps the five existing, separate synthetic
 test("the carousel cannot recycle an outgoing source before its opacity transition ends", () => {
   assert.match(experience, /type CarouselPhase = "idle" \| "preparing" \| "crossfading" \| "settling"/);
   assert.match(experience, /requestVideoFrameCallback/);
+  assert.match(experience, /function waitForMediaReady/);
   assert.match(experience, /waitForPlaybackProgress/);
+  assert.match(experience, /await video\.play\(\);[\s\S]*?Promise\.all\(\[[\s\S]*?waitForDecodedFirstFrame[\s\S]*?waitForPlaybackProgress/);
   assert.match(experience, /onTransitionEnd=\{\(event\) => handleTransitionEnd\(slot, event\)\}/);
   assert.match(experience, /setCarouselPhase\("settling"\)[\s\S]*?setFrontSlot\(incoming\)[\s\S]*?window\.requestAnimationFrame/);
   assert.match(experience, /window\.requestAnimationFrame\([\s\S]*?setSlotStoryAfterSettling\(outgoing, followingStoryIndex\)/);
