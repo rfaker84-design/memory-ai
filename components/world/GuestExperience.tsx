@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useReducedMotion } from "../../src/motion";
 import { PublicProductNavigation } from "./PublicProductNavigation";
@@ -21,12 +21,15 @@ const HOME_STORIES: readonly HomeStory[] = [
 ];
 
 const CROSSFADE_MS = 1_000;
+const TRANSITION_START_REMAINING_SECONDS = 1.1;
 const DISCLOSURE = "AI生成示例 · 使用虚构示例资料 · 不代表真实人物或其真实表达";
 
 type PerformanceNavigator = Navigator & {
   connection?: { saveData?: boolean };
   deviceMemory?: number;
 };
+
+type VideoSlot = 0 | 1;
 
 function shouldUseStaticHero() {
   const hints = navigator as PerformanceNavigator;
@@ -39,6 +42,10 @@ function assetPath(story: HomeStory, extension: "mp4" | "poster.webp") {
   return `/home-hero-assets/${story.slug}.${extension}`;
 }
 
+function otherSlot(slot: VideoSlot): VideoSlot {
+  return slot === 0 ? 1 : 0;
+}
+
 type GuestExperienceProps = {
   onLogin: () => void;
   onStart: () => void;
@@ -47,113 +54,201 @@ type GuestExperienceProps = {
 
 /**
  * The approved public homepage: five separate synthetic people, one at a
- * time, quietly crossfading. It is intentionally presentation-only: no
- * session storage, Owner reads, analytics write, or public demo flow.
+ * time. Two persistent video slots keep the next film decoded off-screen
+ * before a restrained dissolve begins. This surface never reads Owner data.
  */
 export function GuestExperience({ onLogin, onStart, showLogin = true }: GuestExperienceProps) {
   const reducedMotion = useReducedMotion();
   const [videoEnabled, setVideoEnabled] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [incomingIndex, setIncomingIndex] = useState<number | null>(null);
+  const [frontSlot, setFrontSlot] = useState<VideoSlot>(0);
+  const [slotStories, setSlotStories] = useState<[number, number]>([0, 1]);
   const [crossfading, setCrossfading] = useState(false);
-  const incomingVideoRef = useRef<HTMLVideoElement>(null);
+  const [holdingLastFrame, setHoldingLastFrame] = useState(false);
+  const firstVideoRef = useRef<HTMLVideoElement>(null);
+  const secondVideoRef = useRef<HTMLVideoElement>(null);
+  const transitionTimerRef = useRef<number | null>(null);
+  const transitionFrameRef = useRef<number | null>(null);
+  const transitioningRef = useRef(false);
+  const nextVideoFailedRef = useRef(false);
+
+  const videoRefs = useMemo(() => [firstVideoRef, secondVideoRef] as const, []);
+  const backSlot = otherSlot(frontSlot);
+  const activeStory = HOME_STORIES[slotStories[frontSlot]];
 
   useEffect(() => {
     setVideoEnabled(!reducedMotion && !shouldUseStaticHero());
   }, [reducedMotion]);
 
-  const advanceStory = useCallback(() => {
+  const clearTransitionTimers = useCallback(() => {
+    if (transitionTimerRef.current !== null) {
+      window.clearTimeout(transitionTimerRef.current);
+      transitionTimerRef.current = null;
+    }
+    if (transitionFrameRef.current !== null) {
+      window.cancelAnimationFrame(transitionFrameRef.current);
+      transitionFrameRef.current = null;
+    }
+  }, []);
+
+  const freezeCurrentFrame = useCallback(() => {
+    const currentVideo = videoRefs[frontSlot].current;
+    if (!currentVideo) return;
+
+    currentVideo.pause();
+    if (Number.isFinite(currentVideo.duration) && currentVideo.duration > 0) {
+      currentVideo.currentTime = Math.max(0, currentVideo.duration - 0.04);
+    }
+    setHoldingLastFrame(true);
+  }, [frontSlot, videoRefs]);
+
+  const beginCrossfade = useCallback(async (holdIfNotReady = false) => {
+    if (!videoEnabled || transitioningRef.current) return;
+
+    const nextSlot = otherSlot(frontSlot);
+    const nextVideo = videoRefs[nextSlot].current;
+    if (nextVideoFailedRef.current || !nextVideo || nextVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      if (holdIfNotReady) freezeCurrentFrame();
+      return;
+    }
+
+    transitioningRef.current = true;
+    clearTransitionTimers();
+    try {
+      nextVideo.pause();
+      nextVideo.currentTime = 0;
+      await nextVideo.play();
+    } catch {
+      transitioningRef.current = false;
+      if (holdIfNotReady) freezeCurrentFrame();
+      return;
+    }
+
+    transitionFrameRef.current = window.requestAnimationFrame(() => {
+      setHoldingLastFrame(false);
+      setCrossfading(true);
+    });
+
+    const followingIndex = (slotStories[nextSlot] + 1) % HOME_STORIES.length;
+    transitionTimerRef.current = window.setTimeout(() => {
+      const oldVideo = videoRefs[frontSlot].current;
+      oldVideo?.pause();
+      if (oldVideo) oldVideo.currentTime = 0;
+
+      setSlotStories((current) => {
+        const next = [...current] as [number, number];
+        next[frontSlot] = followingIndex;
+        return next;
+      });
+      setFrontSlot(nextSlot);
+      setCrossfading(false);
+      setHoldingLastFrame(false);
+      transitioningRef.current = false;
+      transitionTimerRef.current = null;
+    }, CROSSFADE_MS);
+  }, [clearTransitionTimers, freezeCurrentFrame, frontSlot, slotStories, videoEnabled, videoRefs]);
+
+  // The hidden slot is deliberately loaded as soon as its source changes, not
+  // at the end of the current movie. This keeps mobile bandwidth to two files.
+  useEffect(() => {
     if (!videoEnabled) return;
-    setIncomingIndex((current) => current === null
-      ? (activeIndex + 1) % HOME_STORIES.length
-      : current);
-  }, [activeIndex, videoEnabled]);
+    const preparedVideo = videoRefs[backSlot].current;
+    if (!preparedVideo) return;
+    nextVideoFailedRef.current = false;
+    preparedVideo.pause();
+    preparedVideo.currentTime = 0;
+    preparedVideo.load();
+  }, [backSlot, slotStories, videoEnabled, videoRefs]);
 
   useEffect(() => {
-    if (incomingIndex === null) return;
-
-    let active = true;
-    let settleTimer = 0;
-    let frame = 0;
-    const incomingVideo = incomingVideoRef.current;
-
-    const settleToStatic = () => {
-      if (!active) return;
-      setActiveIndex(incomingIndex);
-      setIncomingIndex(null);
-      setCrossfading(false);
-      setVideoEnabled(false);
-    };
-
-    const begin = async () => {
-      if (!incomingVideo) {
-        settleToStatic();
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        clearTransitionTimers();
+        if (crossfading) {
+          videoRefs[backSlot].current?.pause();
+          setCrossfading(false);
+          transitioningRef.current = false;
+        }
         return;
       }
-      incomingVideo.currentTime = 0;
-      try {
-        await incomingVideo.play();
-      } catch {
-        settleToStatic();
-        return;
-      }
-      if (!active) return;
-      frame = window.requestAnimationFrame(() => setCrossfading(true));
-      settleTimer = window.setTimeout(() => {
-        if (!active) return;
-        setActiveIndex(incomingIndex);
-        setIncomingIndex(null);
-        setCrossfading(false);
-      }, CROSSFADE_MS);
+
+      const currentVideo = videoRefs[frontSlot].current;
+      if (!currentVideo || !videoEnabled) return;
+      if (currentVideo.ended) freezeCurrentFrame();
+      else void currentVideo.play().catch(() => undefined);
+      videoRefs[backSlot].current?.load();
     };
 
-    void begin();
-    return () => {
-      active = false;
-      window.cancelAnimationFrame(frame);
-      window.clearTimeout(settleTimer);
-    };
-  }, [incomingIndex]);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [backSlot, clearTransitionTimers, crossfading, freezeCurrentFrame, frontSlot, videoEnabled, videoRefs]);
 
-  const activeStory = HOME_STORIES[activeIndex];
-  const incomingStory = incomingIndex === null ? null : HOME_STORIES[incomingIndex];
+  useEffect(() => () => clearTransitionTimers(), [clearTransitionTimers]);
+
+  const handleCurrentTimeUpdate = useCallback((video: HTMLVideoElement) => {
+    if (!Number.isFinite(video.duration) || video.duration <= 0 || crossfading || holdingLastFrame) return;
+    if (video.duration - video.currentTime <= TRANSITION_START_REMAINING_SECONDS) {
+      void beginCrossfade();
+    }
+  }, [beginCrossfade, crossfading, holdingLastFrame]);
 
   return (
     <main className={styles.experience} data-reduced-motion={reducedMotion ? "true" : "false"}>
       <div className={styles.media} aria-hidden="true">
         <img className={styles.poster} src={assetPath(activeStory, "poster.webp")} alt="" />
-        {videoEnabled && (
-          <video
-            key={`active-${activeStory.slug}`}
-            className={`${styles.video} ${crossfading ? styles.videoOutgoing : ""}`}
-            src={assetPath(activeStory, "mp4")}
-            poster={assetPath(activeStory, "poster.webp")}
-            autoPlay
-            muted
-            playsInline
-            preload={activeIndex === 0 ? "auto" : "metadata"}
-            disablePictureInPicture
-            onTimeUpdate={(event) => {
-              const video = event.currentTarget;
-              if (incomingIndex === null && video.duration - video.currentTime <= 1.05) advanceStory();
-            }}
-            onEnded={() => incomingIndex === null && advanceStory()}
-            onError={() => setVideoEnabled(false)}
-          />
-        )}
-        {videoEnabled && incomingStory && (
-          <video
-            key={`incoming-${incomingStory.slug}`}
-            ref={incomingVideoRef}
-            className={`${styles.video} ${styles.videoIncoming} ${crossfading ? styles.videoIncomingVisible : ""}`}
-            src={assetPath(incomingStory, "mp4")}
-            poster={assetPath(incomingStory, "poster.webp")}
-            muted
-            playsInline
-            preload="auto"
-            disablePictureInPicture
-          />
-        )}
+        {videoEnabled && ([0, 1] as const).map((slot) => {
+          const isFront = slot === frontSlot;
+          const isIncoming = crossfading && slot === backSlot;
+          const story = HOME_STORIES[slotStories[slot]];
+          const videoClass = [
+            styles.video,
+            isFront ? styles.videoFront : styles.videoBack,
+            crossfading && isFront ? styles.videoOutgoing : "",
+            isIncoming ? styles.videoIncomingVisible : "",
+          ].filter(Boolean).join(" ");
+
+          return (
+            <video
+              key={`slot-${slot}`}
+              ref={videoRefs[slot]}
+              className={videoClass}
+              src={assetPath(story, "mp4")}
+              poster={assetPath(story, "poster.webp")}
+              autoPlay={isFront}
+              muted
+              playsInline
+              preload="auto"
+              disablePictureInPicture
+              onCanPlay={() => {
+                if (slot === backSlot && holdingLastFrame) void beginCrossfade(true);
+              }}
+              onLoadedData={() => {
+                if (slot === backSlot && holdingLastFrame) void beginCrossfade(true);
+              }}
+              onTimeUpdate={(event) => {
+                if (slot === frontSlot) handleCurrentTimeUpdate(event.currentTarget);
+              }}
+              onEnded={() => {
+                if (slot !== frontSlot || crossfading) return;
+                freezeCurrentFrame();
+                void beginCrossfade(true);
+              }}
+              onError={() => {
+                if (slot === frontSlot) setVideoEnabled(false);
+                else {
+                  nextVideoFailedRef.current = true;
+                  if (crossfading) {
+                    clearTransitionTimers();
+                    const currentVideo = videoRefs[frontSlot].current;
+                    if (currentVideo) void currentVideo.play().catch(() => undefined);
+                    setCrossfading(false);
+                    transitioningRef.current = false;
+                  }
+                }
+              }}
+            />
+          );
+        })}
+        <span className={`${styles.crossfadeVeil} ${crossfading ? styles.crossfadeVeilVisible : ""}`} />
         <span className={styles.mediaVeil} />
       </div>
 

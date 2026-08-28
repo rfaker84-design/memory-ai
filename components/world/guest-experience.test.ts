@@ -11,9 +11,20 @@ test("the approved homepage carousel keeps the five existing, separate synthetic
   }
   assert.match(experience, /\/home-hero-assets\/\$\{story\.slug\}\.\$\{extension\}/);
   assert.match(experience, /CROSSFADE_MS = 1_000/);
+  assert.match(experience, /TRANSITION_START_REMAINING_SECONDS = 1\.1/);
   assert.match(experience, /autoPlay[\s\S]*?muted[\s\S]*?playsInline/);
-  assert.match(experience, /onEnded=\{\(\) => incomingIndex === null && advanceStory\(\)\}/);
-  assert.match(experience, /onError=\{\(\) => setVideoEnabled\(false\)\}/);
+  assert.match(experience, /const firstVideoRef = useRef<HTMLVideoElement>\(null\)/);
+  assert.match(experience, /const secondVideoRef = useRef<HTMLVideoElement>\(null\)/);
+  assert.match(experience, /const \[slotStories, setSlotStories\] = useState<\[number, number\]>\(\[0, 1\]\)/);
+  assert.match(experience, /preparedVideo\.load\(\)/);
+  assert.match(experience, /video\.duration - video\.currentTime <= TRANSITION_START_REMAINING_SECONDS/);
+  assert.match(experience, /nextVideo\.readyState < HTMLMediaElement\.HAVE_CURRENT_DATA/);
+  assert.match(experience, /freezeCurrentFrame\(\)/);
+  assert.match(experience, /onCanPlay=\{\(\) => \{/);
+  assert.match(styles, /\.videoFront/);
+  assert.match(styles, /\.videoIncomingVisible/);
+  assert.match(styles, /@keyframes homeCrossfadeVeil/);
+  assert.match(styles, /50% \{ opacity: 0\.12; \}/);
 });
 
 test("the homepage contains no rejected photo landing page, public demo flow, or marketing copy", () => {
@@ -29,7 +40,7 @@ test("the homepage contains no rejected photo landing page, public demo flow, or
 test("the public carousel is read-only, privacy-safe, and falls back to its approved posters", () => {
   assert.doesNotMatch(experience, /fetch\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon|localStorage|sessionStorage|indexedDB|\/api\//);
   assert.doesNotMatch(experience, /method:\s*"(?:POST|PATCH|PUT|DELETE)"/);
-  assert.match(experience, /poster=\{assetPath\(activeStory, "poster\.webp"\)\}/);
+  assert.match(experience, /src=\{assetPath\(activeStory, "poster\.webp"\)\}/);
   assert.match(experience, /shouldUseStaticHero/);
   assert.match(experience, /useReducedMotion/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
