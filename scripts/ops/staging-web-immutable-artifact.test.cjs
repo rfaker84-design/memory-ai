@@ -30,6 +30,7 @@ test("BuildKit recipe locks Linux Node/npm, bakes the feature flag, and exports 
   assert.match(dockerfile, /npm run test:qwen-voice-clone-beta && npm run build && npm run package:standalone-rc/);
   assert.match(dockerfile, /tar --dereference -C \/bundle -czf/);
   assert.match(dockerfile, /find \. -type f ! -name SHA256SUMS/);
+  assert.match(dockerfile, /sha256sum -c SHA256SUMS/);
   assert.doesNotMatch(dockerfile, /COPY --from=builder \/app(\s|$)/);
 });
 
