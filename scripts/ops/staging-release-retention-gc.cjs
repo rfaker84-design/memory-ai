@@ -11,6 +11,7 @@ const TRIGGER_BYTES = 10 * GIB;
 const TARGET_BYTES = 12 * GIB;
 const CAPACITY_FLOOR_BYTES = 8 * GIB;
 const PIPELINE_ID = "staging-immutable-promotion";
+const RETENTION_RECONCILIATION_AUTHORIZATION = "STAGING_RELEASE_RETENTION_RECONCILIATION_AUTHORIZED_2026-08-29";
 
 function fail(code, detail) {
   const error = new Error(`${code}${detail === undefined ? "" : `:${detail}`}`);
@@ -421,7 +422,7 @@ function historicalRollbackLocks(baseline, journal) {
     let reconciliationSha256 = null;
     if (fs.existsSync(reconciliationPath)) {
       const reconciliation = readJson(reconciliationPath, "RELEASE_GC_RETENTION_RECONCILIATION_INVALID");
-      if (reconciliation.schemaVersion !== 1 || reconciliation.type !== "staging_release_retention_lock_reconciliation" || reconciliation.authorization !== RETENTION_RECONCILIATION_AUTHORIZATION || reconciliation.legacyLock?.path !== legacyPath || reconciliation.legacyLock?.sha256 !== legacySha256 || reconciliation.legacyLock?.pid !== legacy.pid || reconciliation.journal?.path !== journal.eventFile || reconciliation.journal?.sha256 !== journal.eventSha256 || reconciliation.selection?.current !== baseline.current.sha || reconciliation.selection?.rollback !== baseline.rollback.sha || reconciliation.decision !== "inactive_historical_lock" || reconciliation.reason !== "legacy_pid_not_running") fail("RELEASE_GC_RETENTION_RECONCILIATION_INVALID", entry.name);
+      if (reconciliation.schemaVersion !== 1 || reconciliation.type !== "staging_release_retention_lock_reconciliation" || reconciliation.authorization !== RETENTION_RECONCILIATION_AUTHORIZATION || reconciliation.legacyLock?.path !== legacyPath || reconciliation.legacyLock?.sha256 !== legacySha256 || reconciliation.legacyLock?.pid !== legacy.pid || reconciliation.journal?.path !== journal.eventFile || reconciliation.journal?.sha256 !== journal.eventSha256 || !SHA.test(reconciliation.selection?.current) || !SHA.test(reconciliation.selection?.rollback) || reconciliation.decision !== "inactive_historical_lock" || reconciliation.reason !== "legacy_pid_not_running") fail("RELEASE_GC_RETENTION_RECONCILIATION_INVALID", entry.name);
       status = "reconciled";
       reconciliationSha256 = fileHash(reconciliationPath);
     }
@@ -751,6 +752,16 @@ function inspectionEvidence(inspected) {
     historicalLocks: inspected.historicalLocks,
   };
 }
+function reconciliationInspection() {
+  const baseline = rootState();
+  const journal = journalAudit(baseline);
+  const pins = retentionPins();
+  const historicalLocks = historicalRollbackLocks(baseline, journal);
+  const locks = activePromotionLockPaths();
+  if (locks.length !== 0) fail("RELEASE_GC_LOCK_PRESENT");
+  const protectedShas = [...new Set([...pm2References(), ...journal.activeShas, ...pins.map((pin) => pin.sourceSha), baseline.current.sha, baseline.rollback.sha])].sort();
+  return { baseline, protectedShas, locks, journal, pins, historicalLocks, candidates: [], inodes: [], inodeIndexDigest: null, hardlinkIndex: { filesystems: [], scanCount: 0 } };
+}
 function inventory() {
   const baseline = rootState();
   const protectedShas = [...new Set([...pm2References(), baseline.current.sha, baseline.rollback.sha])].sort();
@@ -759,6 +770,11 @@ function inventory() {
 function main() {
   if (config.remoteRoot !== root) fail("RELEASE_GC_STAGING_ROOT_REQUIRED", config.remoteRoot);
   if (config.mode === "inventory") return inventory();
+  if (config.mode === "reconcile") {
+    const inspected = reconciliationInspection();
+    const reconciliations = appendHistoricalLockReconciliations(inspected);
+    return { version: 3, mode: config.mode, state: "reconciled", current: inspected.baseline.current.sha, rollback: inspected.baseline.rollback.sha, protectedShas: inspected.protectedShas, locks: inspected.locks, reconciliations, ...inspectionEvidence(inspected) };
+  }
   let releaseApplyLock = null;
   try {
     if (config.mode === "apply") releaseApplyLock = acquireApplyLock();
@@ -802,16 +818,18 @@ function writeAudit(file, audit) {
 
 function parseArgs(args) {
   const mode = args.shift() ?? "dry-run";
-  if (mode !== "dry-run" && mode !== "apply") fail("RELEASE_GC_MODE_INVALID", mode);
+  if (mode !== "dry-run" && mode !== "apply" && mode !== "reconcile") fail("RELEASE_GC_MODE_INVALID", mode);
   const sshTarget = option(args, "--ssh-target", true);
   const remoteRoot = assertStagingRoot(option(args, "--remote-root", true));
   const sourceRoot = path.resolve(option(args, "--source-root", false) ?? path.resolve(__dirname, "../.."));
   const auditOutput = option(args, "--audit-output", true);
   const pipelineId = option(args, "--pipeline-id", false);
+  const authorization = option(args, "--authorization", false);
   const releaseSha = option(args, "--release-sha", false);
   if (!existsSync(sourceRoot)) fail("RELEASE_GC_SOURCE_ROOT_MISSING", sourceRoot);
   if (releaseSha && !SHA_PATTERN.test(releaseSha)) fail("RELEASE_GC_RELEASE_SHA_INVALID", releaseSha);
   if (mode === "apply" && (pipelineId !== PIPELINE_ID || process.env.STAGING_IMMUTABLE_PROMOTION !== "1")) fail("RELEASE_GC_APPLY_REQUIRES_STAGING_IMMUTABLE_PROMOTION");
+  if (mode === "reconcile" && (pipelineId !== PIPELINE_ID || authorization !== RETENTION_RECONCILIATION_AUTHORIZATION || process.env.STAGING_RELEASE_RETENTION_RECONCILIATION !== "1")) fail("RELEASE_GC_RECONCILIATION_AUTHORIZATION_REQUIRED");
   return { mode, sshTarget, remoteRoot, sourceRoot, auditOutput, releaseSha: releaseSha?.toLowerCase() ?? null };
 }
 
@@ -835,12 +853,16 @@ function runReleaseRetentionGc(input) {
   return applied;
 }
 
+function runRetentionReconciliation(input) {
+  return executeRemote({ sshTarget: input.sshTarget, mode: "reconcile" });
+}
+
 function main(args) {
   const input = parseArgs(args);
   const toolSourceSha = sourceCommitSha(input.sourceRoot);
   if (input.releaseSha && !verifyGitCommit(input.sourceRoot, input.releaseSha)) fail("RELEASE_GC_RELEASE_SHA_UNVERIFIED", input.releaseSha);
-  const audit = runReleaseRetentionGc(input);
-  const auditPath = writeAudit(input.auditOutput, { ...audit, recordedAt: new Date().toISOString(), sourceRoot: input.sourceRoot, toolSourceSha, publicationSha: input.releaseSha ?? toolSourceSha, releasePipeline: input.mode === "apply" ? PIPELINE_ID : null });
+  const audit = input.mode === "reconcile" ? runRetentionReconciliation(input) : runReleaseRetentionGc(input);
+  const auditPath = writeAudit(input.auditOutput, { ...audit, recordedAt: new Date().toISOString(), sourceRoot: input.sourceRoot, toolSourceSha, publicationSha: input.releaseSha ?? toolSourceSha, releasePipeline: ["apply", "reconcile"].includes(input.mode) ? PIPELINE_ID : null });
   console.log(`STAGING_RELEASE_RETENTION_${audit.state.toUpperCase()} audit=${auditPath} availableBytes=${audit.afterBytes ?? "n/a"} deleted=${audit.deletedPaths?.length ?? 0}`);
 }
 
@@ -848,4 +870,4 @@ if (require.main === module) {
   try { main(process.argv.slice(2)); } catch (error) { console.error(error instanceof Error ? error.message : "RELEASE_GC_FAILED"); process.exitCode = 64; }
 }
 
-module.exports = { CAPACITY_FLOOR_BYTES, GIB, PIPELINE_ID, STAGING_ROOT, TARGET_BYTES, TRIGGER_BYTES, buildExecutionPlan, candidateIsSafe, exclusiveBlocksForSet, freedBytesForSet, hardlinkFilesystemScanPlan, parseLegacyPromotionJournal, parseWebImmutableEventJournal, remoteProgram, runReleaseRetentionGc, selectMinimalReleaseSet };
+module.exports = { CAPACITY_FLOOR_BYTES, GIB, PIPELINE_ID, RETENTION_RECONCILIATION_AUTHORIZATION, STAGING_ROOT, TARGET_BYTES, TRIGGER_BYTES, buildExecutionPlan, candidateIsSafe, exclusiveBlocksForSet, freedBytesForSet, hardlinkFilesystemScanPlan, parseLegacyPromotionJournal, parseWebImmutableEventJournal, remoteProgram, runReleaseRetentionGc, runRetentionReconciliation, selectMinimalReleaseSet };

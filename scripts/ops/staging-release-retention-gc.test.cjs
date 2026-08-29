@@ -211,6 +211,19 @@ test("apply is unavailable outside the formal immutable Staging promotion contra
   assert.match(result.stderr, /RELEASE_GC_APPLY_REQUIRES_STAGING_IMMUTABLE_PROMOTION/);
 });
 
+test("historical-lock reconciliation requires the dedicated Owner authorization contract", () => {
+  const result = spawnSync(process.execPath, [
+    path.join(__dirname, "staging-release-retention-gc.cjs"),
+    "reconcile",
+    "--pipeline-id", "staging-immutable-promotion",
+    "--ssh-target", "not-contacted.invalid",
+    "--remote-root", "/home/ubuntu/memoryai-staging",
+    "--audit-output", path.join(__dirname, "not-created-reconciliation.json"),
+  ], { encoding: "utf8", env: { ...process.env, STAGING_RELEASE_RETENTION_RECONCILIATION: "" } });
+  assert.equal(result.status, 64);
+  assert.match(result.stderr, /RELEASE_GC_RECONCILIATION_AUTHORIZATION_REQUIRED/);
+});
+
 test("missing manifest or Git evidence fails closed", () => {
   const base = safeCandidate(10);
   assert.equal(candidateIsSafe({ ...base, manifestVerified: false }), false);
