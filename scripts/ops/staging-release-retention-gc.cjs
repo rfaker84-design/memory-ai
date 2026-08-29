@@ -241,9 +241,25 @@ function rootConfigReference(candidatePath, code) {
   const nginx = command("sudo", ["-n", "--", "nginx", "-T"]);
   if (nginx.status !== 0 || nginx.error || nginx.signal) fail(code, "nginx");
   if ((nginx.stdout + nginx.stderr).includes(candidatePath)) return { nginxReference: true, systemdReference: false };
-  const systemd = command("sudo", ["-n", "--", "grep", "-R", "-l", "--binary-files=without-match", "--fixed-strings", "--", candidatePath, "/etc/systemd/system", "/lib/systemd/system"]);
+  const systemdRoots = ["/etc/systemd/system", "/lib/systemd/system", "/usr/lib/systemd/system"].filter((directory) => {
+    const result = command("sudo", ["-n", "--", "test", "-d", directory]);
+    if (result.error || result.signal || ![0, 1].includes(result.status)) fail(code, "systemd-root:" + directory);
+    return result.status === 0;
+  });
+  if (systemdRoots.length === 0) fail(code, "systemd-roots-missing");
+  // Lower-case -r deliberately does not dereference unit symlinks. Broken
+  // unit links therefore cannot turn an otherwise complete reference scan
+  // into a false "unknown" result; their targets are checked separately.
+  const systemd = command("sudo", ["-n", "--", "grep", "-r", "-l", "--binary-files=without-match", "--fixed-strings", "--", candidatePath, ...systemdRoots]);
   if (systemd.error || systemd.signal || ![0, 1].includes(systemd.status)) fail(code, "systemd");
-  return { nginxReference: false, systemdReference: systemd.status === 0 };
+  const links = parseNulRecords(mustBinary("sudo", ["-n", "--", "find", "-P", ...systemdRoots, "-type", "l", "-print0"], code, { timeout: 120000, maxBuffer: 16 * 1024 * 1024 }), 1, "RELEASE_GC_SYSTEMD_LINK_OUTPUT_INVALID").map((record) => record[0]);
+  const systemdLinkReference = links.some((link) => {
+    const target = parseNulRecords(mustBinary("sudo", ["-n", "--", "readlink", "-z", "--", link], code), 1, "RELEASE_GC_SYSTEMD_LINK_TARGET_INVALID")[0]?.[0];
+    if (typeof target !== "string" || target.length === 0) fail(code, "systemd-link:" + link);
+    const resolved = path.isAbsolute(target) ? path.normalize(target) : path.resolve(path.dirname(link), target);
+    return inside(candidatePath, resolved);
+  });
+  return { nginxReference: false, systemdReference: systemd.status === 0 || systemdLinkReference };
 }
 function mountInfo(candidatePath) {
   const recursive = mustCommand("findmnt", ["-R", "-n", "-o", "TARGET", "--target", candidatePath], "RELEASE_GC_MOUNT_CHECK_FAILED").trim().split(/\n/).map((item) => item.trim()).filter(Boolean);

@@ -86,6 +86,8 @@ test("12,597 hardlinked files require one NUL-safe index scan per filesystem", (
   assert.match(remote, /function hardlinkFilesystemScanPlan\(candidates\)/);
   assert.match(remote, /new Map\(filesystemPlan\.map\(\(\{ mountRoot \}\) => \[mountRoot, scanHardlinkFilesystem\(mountRoot\)\]\)\)/);
   assert.match(remote, /%D\\\\0%i\\\\0%n\\\\0%b\\\\0%p\\\\0/);
+  assert.match(remote, /"grep", "-r", "-l"/);
+  assert.match(remote, /"readlink", "-z", "--", link/);
 });
 
 test("below 10 GiB selects the fewest releases needed to return to 12 GiB", () => {
