@@ -504,6 +504,7 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
       data-carousel-visible-index={slotStories[visibleSlot] + 1}
       data-carousel-next-ready={nextReady ? "true" : "false"}
       data-carousel-prewarm-window-ms={PREPARE_WINDOW_MS}
+      data-video-enabled={videoEnabled ? "true" : "false"}
     >
       <img className={styles.poster} style={focalStyle(posterStory)} src={assetPath(posterStory, "poster.webp")} alt="" />
       {videoEnabled && ([0, 1] as const).map((slot) => {
