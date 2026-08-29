@@ -41,6 +41,8 @@ test("the handoff cannot put two faces on screen or recycle the outgoing source 
   assert.match(carousel, /setOpacityForSlot\(incoming, VISIBLE_OPACITY\);[\s\S]*?setVeil\(0\)/);
   assert.match(carousel, /data-carousel-layer=\{slot === visibleSlot \? "visible" : "hidden"\}/);
   assert.doesNotMatch(styles, /videoIncomingVisible|videoOutgoing|homeCrossfadeVeil/);
+  assert.match(carousel, /data-video-enabled=\{videoEnabled \? "true" : "false"\}/);
+  assert.match(styles, /\[data-home-carousel\]\[data-video-enabled="true"\] \.poster \{ opacity: 0; \}/);
 });
 
 test("a missing next asset never pauses or freezes the visible person", () => {
