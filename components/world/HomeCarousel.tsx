@@ -239,6 +239,7 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
   const warmAbortRef = useRef<AbortController | null>(null);
   const transitionAbortRef = useRef<AbortController | null>(null);
   const retryTimerRef = useRef<number | null>(null);
+  const nextPreloadRef = useRef<HTMLLinkElement | null>(null);
   const runRef = useRef(0);
   const mountedRef = useRef(true);
 
@@ -268,6 +269,27 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
       window.clearTimeout(retryTimerRef.current);
       retryTimerRef.current = null;
     }
+  }, []);
+
+  // A hidden video alone is deliberately not the only network hint. Safari
+  // and Chromium are both allowed to deprioritise an invisible media element;
+  // this one explicit preload keeps the *next* (and only the next) story in
+  // the high-priority media queue from the moment the current story starts.
+  const preloadNextStory = useCallback((storyIndex: number) => {
+    const story = HOME_STORIES[storyIndex];
+    let link = nextPreloadRef.current;
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "preload";
+      link.as = "video";
+      link.type = "video/mp4";
+      link.setAttribute("data-home-carousel-next-preload", "true");
+      link.setAttribute("fetchpriority", "high");
+      document.head.appendChild(link);
+      nextPreloadRef.current = link;
+    }
+    const href = assetPath(story, "mp4");
+    if (link.getAttribute("href") !== href) link.setAttribute("href", href);
   }, []);
 
   const assignSource = useCallback((slot: VideoSlot, storyIndex: number) => {
@@ -303,6 +325,7 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
     if (!video) return;
 
     try {
+      preloadNextStory(storyIndex);
       if (slotStoriesRef.current[slot] !== storyIndex) assignSource(slot, storyIndex);
       else {
         video.pause();
@@ -337,7 +360,7 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
     } finally {
       if (warmAbortRef.current === controller) warmAbortRef.current = null;
     }
-  }, [assignSource, cancelWarm, setPhaseSafe, videoEnabled]);
+  }, [assignSource, cancelWarm, preloadNextStory, setPhaseSafe, videoEnabled]);
 
   const warmFollowingStory = useCallback(() => {
     const current = visibleSlotRef.current;
@@ -454,10 +477,11 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
       first.load();
       void first.play().catch(() => undefined);
       // First playback and next-video preheat begin together, not at the end.
+      preloadNextStory(1);
       void warmSlot(1, 1);
     });
     return () => window.cancelAnimationFrame(startFrame);
-  }, [videoEnabled, warmSlot]);
+  }, [preloadNextStory, videoEnabled, warmSlot]);
 
   useEffect(() => {
     const onVisibilityChange = () => {
@@ -491,6 +515,8 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
       mountedRef.current = false;
       cancelWarm();
       transitionAbortRef.current?.abort();
+      nextPreloadRef.current?.remove();
+      nextPreloadRef.current = null;
     };
   }, [cancelWarm]);
 
@@ -506,6 +532,8 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
       data-carousel-prewarm-window-ms={PREPARE_WINDOW_MS}
       data-video-enabled={videoEnabled ? "true" : "false"}
     >
+      <link rel="preload" as="video" type="video/mp4" href={assetPath(HOME_STORIES[0], "mp4")} fetchPriority="high" />
+      <link rel="preload" as="video" type="video/mp4" href={assetPath(HOME_STORIES[1], "mp4")} fetchPriority="high" />
       <img className={styles.poster} style={focalStyle(posterStory)} src={assetPath(posterStory, "poster.webp")} alt="" />
       {videoEnabled && ([0, 1] as const).map((slot) => {
         const story = HOME_STORIES[slotStories[slot]];
