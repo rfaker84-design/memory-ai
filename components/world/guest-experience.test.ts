@@ -21,11 +21,13 @@ test("the approved homepage keeps the five existing, separate synthetic stories 
   assert.match(carousel, /data-carousel-phase/);
 });
 
-test("the second video is preheated when the first starts and remains paused at its real first frame", () => {
-  assert.match(carousel, /first\.load\(\);[\s\S]*?void first\.play\(\)[\s\S]*?preloadNextStory\(1\);[\s\S]*?void warmSlot\(1, 1\)/);
+test("the current and next native video tags preload before hydration and the next remains paused at its real first frame", () => {
+  assert.match(carousel, /\{\(\[0, 1\] as const\)\.map\(\(slot\) => \{/);
+  assert.match(carousel, /src=\{assetPath\(story, "mp4"\)\}[\s\S]*?preload="auto"/);
+  assert.match(carousel, /void first\.play\(\)\.catch\(\(\) => undefined\);[\s\S]*?void warmSlot\(1, 1\)/);
   assert.match(carousel, /video\.src = assetPath\(story, "mp4"\);[\s\S]*?video\.load\(\)/);
-  assert.match(carousel, /link\.rel = "preload";[\s\S]*?link\.as = "video";[\s\S]*?data-home-carousel-next-preload/);
-  assert.match(carousel, /<link rel="preload" as="video" type="video\/mp4" href=\{assetPath\(HOME_STORIES\[0\], "mp4"\)\}/);
+  assert.match(carousel, /if \(video\.networkState === HTMLMediaElement\.NETWORK_EMPTY\) video\.load\(\);/);
+  assert.doesNotMatch(carousel, /as="video"|preloadNextStory|data-home-carousel-next-preload/);
   assert.match(carousel, /await waitForCurrentData\(video, controller\.signal\);[\s\S]*?await seek\(video, 0\.05, controller\.signal\);[\s\S]*?await video\.play\(\);[\s\S]*?await waitForDecodedFrame\(video, controller\.signal\);[\s\S]*?video\.pause\(\);[\s\S]*?await seek\(video, 0, controller\.signal\)/);
   assert.match(carousel, /requestVideoFrameCallback/);
   assert.doesNotMatch(carousel, /canplaythrough/);
