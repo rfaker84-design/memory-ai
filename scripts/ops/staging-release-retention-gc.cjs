@@ -78,9 +78,10 @@ function parseWebImmutableEventJournal({ text, fileSha256, currentSha, rollbackS
     try { return JSON.parse(line); } catch { return journalFailure(failJournal, "RELEASE_GC_JOURNAL_JSON_INVALID", index); }
   });
   const assertTransaction = (record, index) => {
-    if (record?.schemaVersion !== 1 || record?.component !== "web" || !journalSha(record?.sourceSha) || !journalSha(record?.previousCurrent) || !journalSha(record?.rollbackBefore) || typeof record?.at !== "string") {
+    if (record?.schemaVersion !== 1 || record?.component !== "web" || !journalSha(record?.sourceSha) || typeof record?.at !== "string") {
       journalFailure(failJournal, "RELEASE_GC_JOURNAL_SCHEMA_INVALID", index);
     }
+    if ((record.previousCurrent !== undefined && !journalSha(record.previousCurrent)) || (record.rollbackBefore !== undefined && !journalSha(record.rollbackBefore))) journalFailure(failJournal, "RELEASE_GC_JOURNAL_SCHEMA_INVALID", index);
     if (Object.keys(record).some((key) => /(?:^|_)(?:previous)?hash$/iu.test(key) || /^entryhash$/iu.test(key))) journalFailure(failJournal, "RELEASE_GC_JOURNAL_HASH_CHAIN_UNSUPPORTED", index);
     const timestamp = Date.parse(record.at);
     if (!Number.isFinite(timestamp) || timestamp < lastTimestamp) journalFailure(failJournal, "RELEASE_GC_JOURNAL_TIMESTAMP_INVALID", index);
@@ -94,6 +95,7 @@ function parseWebImmutableEventJournal({ text, fileSha256, currentSha, rollbackS
     }
     const transaction = active.get(record.sourceSha);
     if (event === "prepared") {
+      if (!journalSha(record.previousCurrent) || !journalSha(record.rollbackBefore)) journalFailure(failJournal, "RELEASE_GC_JOURNAL_SCHEMA_INVALID", index);
       if (transaction) journalFailure(failJournal, "RELEASE_GC_JOURNAL_TRANSACTION_DUPLICATE", record.sourceSha);
       if (observedSelection && (observedSelection.current !== record.previousCurrent || observedSelection.rollback !== record.rollbackBefore)) {
         journalFailure(failJournal, "RELEASE_GC_JOURNAL_SELECTION_CHAIN_INVALID", record.sourceSha);
@@ -102,7 +104,7 @@ function parseWebImmutableEventJournal({ text, fileSha256, currentSha, rollbackS
       continue;
     }
     if (!transaction) journalFailure(failJournal, "RELEASE_GC_JOURNAL_TRANSACTION_MISSING", record.sourceSha);
-    if (transaction.previousCurrent !== record.previousCurrent || transaction.rollbackBefore !== record.rollbackBefore) {
+    if ((record.previousCurrent !== undefined && transaction.previousCurrent !== record.previousCurrent) || (record.rollbackBefore !== undefined && transaction.rollbackBefore !== record.rollbackBefore)) {
       journalFailure(failJournal, "RELEASE_GC_JOURNAL_TRANSACTION_DRIFT", record.sourceSha);
     }
     if (event === "candidate_materialized") continue;

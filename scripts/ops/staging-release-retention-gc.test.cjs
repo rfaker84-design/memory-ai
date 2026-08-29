@@ -130,7 +130,7 @@ test("a prior auto-rollback failure must be proven recovered and legacy terminal
   const laterCandidate = sha(10);
   const parsed = parseJournal([
     journalRow("prepared", failedCandidate, previous, rollback, { tick: 0 }),
-    journalRow("auto_rollback_failed", failedCandidate, previous, rollback, { tick: 1 }),
+    { schemaVersion: 1, component: "web", event: "auto_rollback_failed", sourceSha: failedCandidate, at: "2026-08-29T00:00:01.000Z" },
     journalRow("prepared", laterCandidate, previous, rollback, { tick: 2 }),
     journalRow("promoted", laterCandidate, previous, rollback, { current: laterCandidate, rollback: previous, tick: 3 }),
   ], laterCandidate, previous);
