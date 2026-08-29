@@ -3,61 +3,68 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const experience = readFileSync(new URL("./GuestExperience.tsx", import.meta.url), "utf8");
+const carousel = readFileSync(new URL("./HomeCarousel.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("./GuestExperience.module.css", import.meta.url), "utf8");
 
-test("the approved homepage carousel keeps the five existing, separate synthetic stories", () => {
-  for (const slug of ["elderly-woman", "elderly-man", "child-drawing", "young-woman", "younger-man"]) {
-    assert.match(experience, new RegExp(`slug: "${slug}"`));
+test("the approved homepage keeps the five existing, separate synthetic stories in fixed order", () => {
+  const expected = ["elderly-woman", "elderly-man", "child-drawing", "young-woman", "younger-man"];
+  let previous = -1;
+  for (const slug of expected) {
+    const position = carousel.indexOf(`slug: "${slug}"`);
+    assert.ok(position > previous, `${slug} must retain its approved carousel order`);
+    previous = position;
   }
-  assert.match(experience, /\/home-hero-assets\/\$\{story\.slug\}\.\$\{extension\}/);
-  assert.match(experience, /CROSSFADE_MS = 1_000/);
-  assert.match(experience, /TRANSITION_START_REMAINING_SECONDS = 1\.1/);
-  assert.match(experience, /autoPlay[\s\S]*?muted[\s\S]*?playsInline/);
-  assert.match(experience, /const firstVideoRef = useRef<HTMLVideoElement>\(null\)/);
-  assert.match(experience, /const secondVideoRef = useRef<HTMLVideoElement>\(null\)/);
-  assert.match(experience, /const \[slotStories, setSlotStories\] = useState<\[number, number\]>\(\[0, 1\]\)/);
-  assert.match(experience, /preload="auto"/);
-  assert.match(experience, /video\.load\(\)/);
-  assert.match(experience, /video\.duration - video\.currentTime > TRANSITION_START_REMAINING_SECONDS/);
-  assert.match(experience, /nextVideo\.readyState < HTMLMediaElement\.HAVE_CURRENT_DATA/);
-  assert.match(experience, /loop=\{isFront\}/);
-  assert.match(styles, /\.videoFront/);
-  assert.match(styles, /\.videoIncomingVisible/);
-  assert.match(styles, /@keyframes homeCrossfadeVeil/);
-  assert.match(styles, /50% \{ opacity: 0\.12; \}/);
+  assert.match(carousel, /desktopPosition:/);
+  assert.match(carousel, /mobilePosition:/);
+  assert.match(carousel, /const \[slotStories, setSlotStories\] = useState<\[number, number\]>\(\[0, 1\]\)/);
+  assert.match(carousel, /data-carousel-visible-index/);
+  assert.match(carousel, /data-carousel-phase/);
 });
 
-test("the carousel cannot recycle an outgoing source before its opacity transition ends", () => {
-  assert.match(experience, /type CarouselPhase = "idle" \| "preparing" \| "crossfading" \| "settling"/);
-  assert.match(experience, /requestVideoFrameCallback/);
-  assert.match(experience, /function waitForMediaReady/);
-  assert.match(experience, /waitForPlaybackProgress/);
-  assert.match(experience, /await video\.play\(\);[\s\S]*?Promise\.all\(\[[\s\S]*?waitForDecodedFirstFrame[\s\S]*?waitForPlaybackProgress/);
-  assert.match(experience, /onTransitionEnd=\{\(event\) => handleTransitionEnd\(slot, event\)\}/);
-  assert.match(experience, /setCarouselPhase\("settling"\)[\s\S]*?setFrontSlot\(incoming\)[\s\S]*?window\.requestAnimationFrame/);
-  assert.match(experience, /window\.requestAnimationFrame\([\s\S]*?setSlotStoryAfterSettling\(outgoing, followingStoryIndex\)/);
-  assert.match(experience, /phaseRef\.current === "crossfading"[\s\S]*?transitionRef\.current = null[\s\S]*?setCarouselPhase\("idle"\)/);
-  assert.doesNotMatch(experience, /setSlotStories\(\(current\) =>[\s\S]*?setFrontSlot\(/);
-  assert.doesNotMatch(experience, /freezeCurrentFrame|holdingLastFrame|onEnded=/);
+test("the second video is preheated when the first starts and remains paused at its real first frame", () => {
+  assert.match(carousel, /first\.load\(\);[\s\S]*?void first\.play\(\)[\s\S]*?void warmSlot\(1, 1\)/);
+  assert.match(carousel, /video\.src = assetPath\(story, "mp4"\);[\s\S]*?video\.load\(\)/);
+  assert.match(carousel, /await waitForCurrentData\(video, controller\.signal\);[\s\S]*?await seek\(video, 0\.05, controller\.signal\);[\s\S]*?await video\.play\(\);[\s\S]*?await waitForDecodedFrame\(video, controller\.signal\);[\s\S]*?video\.pause\(\);[\s\S]*?await seek\(video, 0, controller\.signal\)/);
+  assert.match(carousel, /requestVideoFrameCallback/);
+  assert.doesNotMatch(carousel, /canplaythrough/);
+  assert.match(carousel, /PREPARE_WINDOW_MS = 2_000/);
 });
 
-test("the homepage contains no rejected photo landing page, public demo flow, or marketing copy", () => {
-  for (const rejected of ["从一张照片开始", "一张照片，一个称呼", "体验一次遇见", "family-frame-hero-v2", "awakening", "guest-experience"]) {
+test("the handoff cannot put two faces on screen or recycle the outgoing source early", () => {
+  const fadeOutEnd = carousel.indexOf("await waitForOpacity(outgoingVideo, 0");
+  const incomingPlay = carousel.indexOf("await incomingVideo.play()");
+  const incomingFadeEnd = carousel.indexOf("await waitForOpacity(incomingVideo, VISIBLE_OPACITY");
+  const recycle = carousel.indexOf("assignSource(outgoing, followingIndex)");
+  assert.ok(fadeOutEnd >= 0 && incomingPlay > fadeOutEnd, "the incoming video starts only after outgoing opacity is zero");
+  assert.ok(incomingFadeEnd >= 0 && recycle > incomingFadeEnd, "the old source is stable through both transitionend boundaries");
+  assert.match(carousel, /setOpacityForSlot\(outgoing, 0\);[\s\S]*?setVeil\(VEIL_OPACITY\)/);
+  assert.match(carousel, /setOpacityForSlot\(incoming, VISIBLE_OPACITY\);[\s\S]*?setVeil\(0\)/);
+  assert.match(carousel, /data-carousel-layer=\{slot === visibleSlot \? "visible" : "hidden"\}/);
+  assert.doesNotMatch(styles, /videoIncomingVisible|videoOutgoing|homeCrossfadeVeil/);
+});
+
+test("a missing next asset never pauses or freezes the visible person", () => {
+  assert.match(carousel, /if \(incomingVideo\.readyState < HTMLMediaElement\.HAVE_CURRENT_DATA \|\| incomingVideo\.currentTime >= 0\.2\)/);
+  assert.match(carousel, /outgoingVideo\.loop = true;[\s\S]*?void outgoingVideo\.play\(\)/);
+  assert.match(carousel, /slow next asset never freezes the visible person/);
+  assert.match(carousel, /retryTimerRef\.current = window\.setTimeout/);
+  assert.doesNotMatch(carousel, /onEnded=/);
+});
+
+test("mobile uses per-story focal metadata rather than one centered crop", () => {
+  assert.match(styles, /object-position: var\(--story-desktop-position/);
+  assert.match(styles, /@media \(max-aspect-ratio: 3 \/ 4\)[\s\S]*?object-position: var\(--story-mobile-position/);
+  assert.doesNotMatch(styles, /object-position:\s*center/);
+  assert.match(styles, /100dvh/);
+});
+
+test("the public homepage remains minimal and does not read private data or write business data", () => {
+  assert.match(experience, /<HomeCarousel reducedMotion=\{reducedMotion\} onActiveStoryChange=\{setActiveStory\} \/>/);
+  assert.match(experience, /<PublicProductNavigation active="home" overMedia \/>/);
+  for (const rejected of ["从一张照片开始", "一张照片，一个称呼", "体验一次遇见", "<h1", "<h2"]) {
     assert.doesNotMatch(experience, new RegExp(rejected));
   }
-  assert.match(experience, />创建 TA</);
-  assert.match(experience, /showLogin && <button className=\{styles\.loginAction\}[^>]*>登录/);
-  assert.match(experience, /<PublicProductNavigation active="home" overMedia \/>/);
-  assert.doesNotMatch(experience, /<h1|<h2|invitationLine|heroSecondaryAction/);
+  assert.doesNotMatch(carousel, /fetch\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon|localStorage|sessionStorage|indexedDB|\/api\//);
+  assert.doesNotMatch(carousel, /method:\s*"(?:POST|PATCH|PUT|DELETE)"/);
 });
 
-test("the public carousel is read-only, privacy-safe, and falls back to its approved posters", () => {
-  assert.doesNotMatch(experience, /fetch\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon|localStorage|sessionStorage|indexedDB|\/api\//);
-  assert.doesNotMatch(experience, /method:\s*"(?:POST|PATCH|PUT|DELETE)"/);
-  assert.match(experience, /src=\{assetPath\(activeStory, "poster\.webp"\)\}/);
-  assert.match(experience, /shouldUseStaticHero/);
-  assert.match(experience, /useReducedMotion/);
-  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(styles, /safe-area-inset-top/);
-  assert.match(styles, /safe-area-inset-bottom/);
-});
