@@ -11,6 +11,9 @@ const {
   buildExecutionPlan,
   candidateIsSafe,
   exclusiveBlocksForSet,
+  freedBytesForSet,
+  hardlinkFilesystemScanPlan,
+  remoteProgram,
   selectMinimalReleaseSet,
 } = require("./staging-release-retention-gc.cjs");
 
@@ -66,6 +69,23 @@ test("only inode blocks whose every link is selected count as reclaimable", () =
   ];
   assert.equal(exclusiveBlocksForSet(inodes, selected), 30);
   assert.equal(exclusiveBlocksForSet(inodes, ["release-a"]), 10);
+});
+
+test("a shared hardlink contributes blocks only after every release link is selected", () => {
+  const first = safeCandidate(11, 0);
+  const second = safeCandidate(12, 0);
+  const inodes = [{ blocks: 8, locations: [first.path, second.path] }];
+  assert.equal(freedBytesForSet([first], inodes), 0);
+  assert.equal(freedBytesForSet([first, second], inodes), 8 * 512);
+});
+
+test("12,597 hardlinked files require one NUL-safe index scan per filesystem", () => {
+  const records = Array.from({ length: 12_597 }, (_, index) => ({ mountRoot: "/", inode: index, path: `/release/${index}\nwith spaces` }));
+  assert.deepEqual(hardlinkFilesystemScanPlan(records), [{ mountRoot: "/", scans: 1 }]);
+  const remote = remoteProgram({ remoteRoot: "/home/ubuntu/memoryai-staging", mode: "dry-run", gitApprovedShas: [], plannedDeleteShas: [] });
+  assert.match(remote, /function hardlinkFilesystemScanPlan\(candidates\)/);
+  assert.match(remote, /new Map\(filesystemPlan\.map\(\(\{ mountRoot \}\) => \[mountRoot, scanHardlinkFilesystem\(mountRoot\)\]\)\)/);
+  assert.match(remote, /%D\\\\0%i\\\\0%n\\\\0%b\\\\0%p\\\\0/);
 });
 
 test("below 10 GiB selects the fewest releases needed to return to 12 GiB", () => {

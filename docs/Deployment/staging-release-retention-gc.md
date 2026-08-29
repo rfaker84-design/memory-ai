@@ -20,6 +20,12 @@ traffic, or a release that is already serving.
   least 12 GiB.
 - The block estimate is based on `device + inode + nlink + st_blocks`. A block
   counts only when every hard link is inside the exact selected set.
+- Every relevant mount is indexed once per audit with a NUL-delimited inode
+  scan. The index checks each `(device,inode,nlink)` against every discovered
+  link location; malformed, truncated, timed-out, or externally linked entries
+  fail closed. `apply` obtains its own GC lock, then repeats the full index and
+  requires the current/rollback, PM2 references, lock state, and inode-index
+  digest to match the approved dry-run before any release directory is removed.
 - A candidate must have a verified checksum bundle and `release-manifest.json`
   that binds its immutable package to the exact Git commit. A clean source
   checkout is required to build that manifest.
