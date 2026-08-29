@@ -21,7 +21,8 @@
   object-fit: cover;
   object-position: var(--story-desktop-position, 50% 50%);
 }
-.poster { z-index: 0; }
+.poster { z-index: 0; opacity: 0.92; }
+[data-home-carousel][data-video-enabled="true"] .poster { opacity: 0; }
 .video { z-index: 1; opacity: 0; transition: opacity var(--home-transition); will-change: opacity; }
 .crossfadeVeil {
   z-index: 2;
