@@ -29,6 +29,19 @@ traffic, or a release that is already serving.
 - A candidate must have a verified checksum bundle and `release-manifest.json`
   that binds its immutable package to the exact Git commit. A clean source
   checkout is required to build that manifest.
+- The v1 immutable Web event journal is parsed as a transaction state machine,
+  not searched for SHA text. Its complete-file SHA-256 is captured as the
+  legacy integrity anchor; unknown schemas, malformed rows, unexpected hash
+  fields, invalid state transitions, or unfinished transactions stop GC.
+  Historical `promoted`, `failed`, `rolled_back`, and `reconciled` records are
+  retained as evidence but do not pin their old releases. Only an active
+  transaction, an active promotion lock, or an explicit non-expired retention
+  pin protects a release through the journal layer.
+- A dead pre-runner rollback-lock record is never edited or removed. During an
+  approved `apply`, the runner first writes one exclusive, fsynced retention
+  reconciliation record that binds the legacy lock SHA-256, journal SHA-256,
+  and observed current/rollback. A live PID, malformed lock, or changed
+  evidence stops before deletion.
 - Current, rollback, all PM2 references (including the Worker), systemd and
   Nginx references, promotion-journal references, locks, open file descriptors,
   mountpoints, external symlinks, external hard links, secrets, and persistent

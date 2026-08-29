@@ -1,3 +1,4 @@
+const crypto = require("node:crypto");
 const { existsSync, mkdirSync, writeFileSync } = require("node:fs");
 const { spawnSync } = require("node:child_process");
 const path = require("node:path");
@@ -45,6 +46,116 @@ function hardlinkFilesystemScanPlan(records) {
   return [...new Set(records.filter((record) => typeof record.mountRoot === "string" && record.mountRoot.startsWith("/")).map((record) => record.mountRoot))]
     .sort()
     .map((mountRoot) => ({ mountRoot, scans: 1 }));
+}
+
+function journalSha(value) {
+  return typeof value === "string" && /^[0-9a-f]{40}$/iu.test(value);
+}
+
+function journalHash(value) {
+  return typeof value === "string" && /^[0-9a-f]{64}$/iu.test(value);
+}
+
+function journalFailure(failJournal, code, detail) {
+  if (typeof failJournal === "function") return failJournal(code, detail);
+  throw new Error(`${code}${detail === undefined ? "" : `:${detail}`}`);
+}
+
+// The installed v1 JSONL journal predates per-entry hashes. Its immutable
+// integrity anchor is the complete-file SHA-256 captured by each audit. This
+// parser deliberately rejects an unexpected hash-chain field rather than
+// guessing a future schema, and validates every state transition.
+function parseWebImmutableEventJournal({ text, fileSha256, currentSha, rollbackSha, failJournal }) {
+  if (typeof text !== "string" || text.length === 0 || !text.endsWith("\n")) journalFailure(failJournal, "RELEASE_GC_JOURNAL_FORMAT_INVALID");
+  if (!journalHash(fileSha256) || !journalSha(currentSha) || !journalSha(rollbackSha)) journalFailure(failJournal, "RELEASE_GC_JOURNAL_IDENTITY_INVALID");
+  const active = new Map();
+  const terminal = [];
+  const unresolvedRollbackFailures = [];
+  let observedSelection = null;
+  let lastTimestamp = -Infinity;
+  const rows = text.slice(0, -1).split("\n").map((line, index) => {
+    if (line.length === 0) journalFailure(failJournal, "RELEASE_GC_JOURNAL_FORMAT_INVALID", index);
+    try { return JSON.parse(line); } catch { return journalFailure(failJournal, "RELEASE_GC_JOURNAL_JSON_INVALID", index); }
+  });
+  const assertTransaction = (record, index) => {
+    if (record?.schemaVersion !== 1 || record?.component !== "web" || !journalSha(record?.sourceSha) || !journalSha(record?.previousCurrent) || !journalSha(record?.rollbackBefore) || typeof record?.at !== "string") {
+      journalFailure(failJournal, "RELEASE_GC_JOURNAL_SCHEMA_INVALID", index);
+    }
+    if (Object.keys(record).some((key) => /(?:^|_)(?:previous)?hash$/iu.test(key) || /^entryhash$/iu.test(key))) journalFailure(failJournal, "RELEASE_GC_JOURNAL_HASH_CHAIN_UNSUPPORTED", index);
+    const timestamp = Date.parse(record.at);
+    if (!Number.isFinite(timestamp) || timestamp < lastTimestamp) journalFailure(failJournal, "RELEASE_GC_JOURNAL_TIMESTAMP_INVALID", index);
+    lastTimestamp = timestamp;
+  };
+  for (const [index, record] of rows.entries()) {
+    assertTransaction(record, index);
+    const event = record.event;
+    if (!["prepared", "candidate_materialized", "promoted", "failed", "rolled_back", "reconciled", "auto_rollback_failed"].includes(event)) {
+      journalFailure(failJournal, "RELEASE_GC_JOURNAL_EVENT_UNKNOWN", event);
+    }
+    const transaction = active.get(record.sourceSha);
+    if (event === "prepared") {
+      if (transaction) journalFailure(failJournal, "RELEASE_GC_JOURNAL_TRANSACTION_DUPLICATE", record.sourceSha);
+      if (observedSelection && (observedSelection.current !== record.previousCurrent || observedSelection.rollback !== record.rollbackBefore)) {
+        journalFailure(failJournal, "RELEASE_GC_JOURNAL_SELECTION_CHAIN_INVALID", record.sourceSha);
+      }
+      active.set(record.sourceSha, { sourceSha: record.sourceSha, previousCurrent: record.previousCurrent, rollbackBefore: record.rollbackBefore, preparedIndex: index });
+      continue;
+    }
+    if (!transaction) journalFailure(failJournal, "RELEASE_GC_JOURNAL_TRANSACTION_MISSING", record.sourceSha);
+    if (transaction.previousCurrent !== record.previousCurrent || transaction.rollbackBefore !== record.rollbackBefore) {
+      journalFailure(failJournal, "RELEASE_GC_JOURNAL_TRANSACTION_DRIFT", record.sourceSha);
+    }
+    if (event === "candidate_materialized") continue;
+    active.delete(record.sourceSha);
+    if (event === "promoted") {
+      if (record.current !== record.sourceSha || record.rollback !== record.previousCurrent) journalFailure(failJournal, "RELEASE_GC_JOURNAL_PROMOTION_INVALID", record.sourceSha);
+      observedSelection = { current: record.sourceSha, rollback: record.previousCurrent };
+    } else if (event === "auto_rollback_failed") {
+      observedSelection = null;
+      unresolvedRollbackFailures.push({ ...transaction, failedIndex: index });
+    } else {
+      observedSelection = { current: transaction.previousCurrent, rollback: transaction.rollbackBefore };
+    }
+    terminal.push({ sourceSha: record.sourceSha, event, at: record.at });
+  }
+  for (const unresolved of unresolvedRollbackFailures) {
+    const recovered = rows.slice(unresolved.failedIndex + 1).some((record) => record.event === "prepared" && record.previousCurrent === unresolved.previousCurrent && record.rollbackBefore === unresolved.rollbackBefore)
+      || (currentSha === unresolved.previousCurrent && rollbackSha === unresolved.rollbackBefore);
+    if (!recovered) journalFailure(failJournal, "RELEASE_GC_JOURNAL_AUTO_ROLLBACK_UNRESOLVED", unresolved.sourceSha);
+  }
+  if (active.size !== 0) journalFailure(failJournal, "RELEASE_GC_JOURNAL_TRANSACTION_UNTERMINATED", [...active.keys()].sort().join(","));
+  if (observedSelection && (observedSelection.current !== currentSha || observedSelection.rollback !== rollbackSha)) {
+    journalFailure(failJournal, "RELEASE_GC_JOURNAL_SELECTION_DRIFT", `${observedSelection.current}:${observedSelection.rollback}`);
+  }
+  return {
+    schema: "web-immutable-events-v1",
+    fileSha256: fileSha256.toLowerCase(),
+    hashChain: { mode: "legacy-file-sha256-anchor", valid: true, entryHashChain: false },
+    terminal,
+    activeTransactions: [],
+    activeShas: [],
+    recoveredAutoRollbackFailures: unresolvedRollbackFailures.map((entry) => entry.sourceSha).sort(),
+  };
+}
+
+function parseLegacyPromotionJournal({ name, record, fileSha256, failJournal }) {
+  if (typeof name !== "string" || !name.endsWith(".json") || !journalHash(fileSha256) || !record || typeof record !== "object" || Array.isArray(record)) {
+    journalFailure(failJournal, "RELEASE_GC_LEGACY_JOURNAL_INVALID", name);
+  }
+  const terminalStatus = new Set(["promoted", "failed", "rolled_back", "reconciled"]);
+  if (record.version === 1 && journalSha(record.sourceSha) && terminalStatus.has(record.status) && journalSha(record.previous) && journalSha(record.rollback)) {
+    return { name, fileSha256: fileSha256.toLowerCase(), schema: "legacy-source-status-v1", status: record.status, shas: [record.sourceSha, record.previous, record.rollback].sort() };
+  }
+  if (record.version === 1 && journalSha(record.candidateRelease) && journalSha(record.previousRelease) && typeof record.promotedAt === "string") {
+    return { name, fileSha256: fileSha256.toLowerCase(), schema: "legacy-release-pair-v1", status: "promoted", shas: [record.candidateRelease, record.previousRelease].sort() };
+  }
+  if (record.version === 1 && record.pipeline === PIPELINE_ID && terminalStatus.has(record.state) && journalSha(record.candidate) && journalSha(record.previous) && journalSha(record.current) && journalSha(record.rollback) && typeof record.finishedAt === "string") {
+    return { name, fileSha256: fileSha256.toLowerCase(), schema: "legacy-web-transaction-v1", status: record.state, shas: [record.candidate, record.previous, record.current, record.rollback].sort() };
+  }
+  if (record.schemaVersion === 1 && record.type === "staging_web_immutable_bootstrap" && journalSha(record.runnerSourceSha) && journalSha(record.currentSha) && journalSha(record.rollbackSha) && typeof record.recordedAt === "string") {
+    return { name, fileSha256: fileSha256.toLowerCase(), schema: "staging-web-bootstrap-v1", status: "reconciled", shas: [record.currentSha, record.rollbackSha].sort() };
+  }
+  journalFailure(failJournal, "RELEASE_GC_LEGACY_JOURNAL_UNKNOWN", name);
 }
 
 function candidateIsSafe(candidate, protectedShas = new Set()) {
@@ -143,8 +254,16 @@ const SHA = /^[0-9a-f]{40}$/;
 const root = "/home/ubuntu/memoryai-staging";
 const releases = path.join(root, "releases");
 const gcLock = path.join(root, ".promotion", "release-retention-gc.lock");
+const PIPELINE_ID = "staging-immutable-promotion";
+const RETENTION_RECONCILIATION_AUTHORIZATION = "STAGING_RELEASE_RETENTION_RECONCILIATION_AUTHORIZED_2026-08-29";
 const INDEX_TIMEOUT_MS = 10 * 60 * 1000;
 const INDEX_MAX_BYTES = 512 * 1024 * 1024;
+
+${journalSha.toString()}
+${journalHash.toString()}
+${journalFailure.toString()}
+${parseWebImmutableEventJournal.toString()}
+${parseLegacyPromotionJournal.toString()}
 
 function fail(code, detail) { const error = new Error(code + (detail === undefined ? "" : ":" + detail)); error.code = code; throw error; }
 function inside(base, target) { const relative = path.relative(base, target); return relative === "" || (!relative.startsWith(".." + path.sep) && relative !== ".." && !path.isAbsolute(relative)); }
@@ -221,9 +340,92 @@ function parseNulRecords(buffer, fieldsPerRecord, code) {
   for (let index = 0; index < fields.length; index += fieldsPerRecord) records.push(fields.slice(index, index + fieldsPerRecord));
   return records;
 }
-function lockPaths() {
-  const output = mustBinary("find", [root, "-xdev", "-maxdepth", "3", "-type", "f", "-name", "*.lock", "-print0"], "RELEASE_GC_LOCK_CHECK_FAILED", { timeout: 120000, maxBuffer: 4 * 1024 * 1024 });
+function fileHash(file) { return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex"); }
+function regularFile(file, code) {
+  const stat = fs.lstatSync(file);
+  if (!stat.isFile() || stat.isSymbolicLink()) fail(code, file);
+  return stat;
+}
+function activePromotionLockPaths() {
+  const directory = path.join(root, ".promotion", "locks");
+  if (!fs.existsSync(directory)) return [];
+  const stat = fs.lstatSync(directory);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) fail("RELEASE_GC_LOCK_DIRECTORY_INVALID", directory);
+  const output = mustBinary("find", [directory, "-xdev", "-type", "f", "-name", "*.lock", "-print0"], "RELEASE_GC_LOCK_CHECK_FAILED", { timeout: 120000, maxBuffer: 4 * 1024 * 1024 });
   return parseNulRecords(output, 1, "RELEASE_GC_LOCK_OUTPUT_INVALID").map((record) => record[0]).sort();
+}
+function readJson(file, code) {
+  regularFile(file, code);
+  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { fail(code, file); }
+}
+function journalAudit(baseline) {
+  const directory = path.join(root, ".promotion");
+  const eventFile = path.join(directory, "web-immutable-events.jsonl");
+  const eventText = fs.readFileSync(eventFile, "utf8");
+  regularFile(eventFile, "RELEASE_GC_JOURNAL_FILE_INVALID");
+  const eventSha256 = fileHash(eventFile);
+  const events = parseWebImmutableEventJournal({ text: eventText, fileSha256: eventSha256, currentSha: baseline.current.sha, rollbackSha: baseline.rollback.sha, failJournal: fail });
+  const legacy = fs.readdirSync(directory, { withFileTypes: true }).filter((entry) => entry.name.endsWith(".json")).sort((left, right) => left.name.localeCompare(right.name)).map((entry) => {
+    const file = path.join(directory, entry.name);
+    if (!entry.isFile() || entry.isSymbolicLink()) fail("RELEASE_GC_LEGACY_JOURNAL_INVALID", entry.name);
+    return parseLegacyPromotionJournal({ name: entry.name, record: readJson(file, "RELEASE_GC_LEGACY_JOURNAL_INVALID"), fileSha256: fileHash(file), failJournal: fail });
+  });
+  const digest = crypto.createHash("sha256").update(JSON.stringify({ eventSha256, legacy })).digest("hex");
+  return { eventFile, eventSha256, events, legacy, activeShas: events.activeShas, digest };
+}
+function retentionPins() {
+  const directory = path.join(root, ".promotion", "retention-pins");
+  if (!fs.existsSync(directory)) return [];
+  const stat = fs.lstatSync(directory);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) fail("RELEASE_GC_RETENTION_PIN_DIRECTORY_INVALID", directory);
+  const pins = [];
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
+    if (!entry.isFile() || entry.isSymbolicLink() || !entry.name.endsWith(".json")) fail("RELEASE_GC_RETENTION_PIN_INVALID", entry.name);
+    const file = path.join(directory, entry.name);
+    const pin = readJson(file, "RELEASE_GC_RETENTION_PIN_INVALID");
+    if (pin.schemaVersion !== 1 || pin.type !== "staging_release_retention_pin" || pin.active !== true || !SHA.test(pin.sourceSha) || typeof pin.reason !== "string" || pin.reason.trim() === "" || typeof pin.createdAt !== "string" || !Number.isFinite(Date.parse(pin.createdAt))) fail("RELEASE_GC_RETENTION_PIN_INVALID", entry.name);
+    if (pin.expiresAt !== undefined && (typeof pin.expiresAt !== "string" || !Number.isFinite(Date.parse(pin.expiresAt)))) fail("RELEASE_GC_RETENTION_PIN_INVALID", entry.name);
+    if (pin.expiresAt && Date.parse(pin.expiresAt) <= Date.now()) continue;
+    pins.push({ path: file, sha256: fileHash(file), sourceSha: pin.sourceSha });
+  }
+  return pins;
+}
+function releaseShaFromPath(value, code) {
+  if (typeof value !== "string" || !value.startsWith(releases + "/")) fail(code, value);
+  const relative = value.slice(releases.length + 1).split("/");
+  if (relative.length !== 1 || !SHA.test(relative[0])) fail(code, value);
+  return relative[0];
+}
+function historicalRollbackLocks(baseline, journal) {
+  const directory = path.join(root, "rollbacks");
+  if (!fs.existsSync(directory)) return [];
+  const stat = fs.lstatSync(directory);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) fail("RELEASE_GC_HISTORICAL_LOCK_DIRECTORY_INVALID", directory);
+  const results = [];
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true }).filter((item) => item.name.endsWith(".lock")).sort((left, right) => left.name.localeCompare(right.name))) {
+    if (!entry.isFile() || entry.isSymbolicLink()) fail("RELEASE_GC_HISTORICAL_LOCK_INVALID", entry.name);
+    const legacyPath = path.join(directory, entry.name);
+    const legacy = readJson(legacyPath, "RELEASE_GC_HISTORICAL_LOCK_INVALID");
+    const legacySha256 = fileHash(legacyPath);
+    if (legacy.name !== "memoryai-staging" || !Number.isSafeInteger(legacy.pid) || legacy.pid <= 0 || !Number.isSafeInteger(legacy.restart_time) || !journalHash(legacy.ecosystem_sha)) fail("RELEASE_GC_HISTORICAL_LOCK_INVALID", entry.name);
+    const releaseSha = releaseShaFromPath(legacy.cwd, "RELEASE_GC_HISTORICAL_LOCK_INVALID");
+    if (typeof legacy.script !== "string" || !legacy.script.startsWith(legacy.cwd + "/")) fail("RELEASE_GC_HISTORICAL_LOCK_INVALID", entry.name);
+    const pid = command("kill", ["-0", String(legacy.pid)]);
+    if (pid.error || pid.signal || ![0, 1].includes(pid.status)) fail("RELEASE_GC_HISTORICAL_LOCK_CHECK_FAILED", entry.name);
+    if (pid.status === 0) fail("RELEASE_GC_HISTORICAL_LOCK_ACTIVE", entry.name);
+    const reconciliationDirectory = path.join(root, ".promotion", "reconciliations");
+    const reconciliationPath = path.join(reconciliationDirectory, "release-retention-lock-" + legacySha256 + ".json");
+    let status = "needs_append";
+    let reconciliationSha256 = null;
+    if (fs.existsSync(reconciliationPath)) {
+      const reconciliation = readJson(reconciliationPath, "RELEASE_GC_RETENTION_RECONCILIATION_INVALID");
+      if (reconciliation.schemaVersion !== 1 || reconciliation.type !== "staging_release_retention_lock_reconciliation" || reconciliation.authorization !== RETENTION_RECONCILIATION_AUTHORIZATION || reconciliation.legacyLock?.path !== legacyPath || reconciliation.legacyLock?.sha256 !== legacySha256 || reconciliation.legacyLock?.pid !== legacy.pid || reconciliation.journal?.path !== journal.eventFile || reconciliation.journal?.sha256 !== journal.eventSha256 || reconciliation.selection?.current !== baseline.current.sha || reconciliation.selection?.rollback !== baseline.rollback.sha || reconciliation.decision !== "inactive_historical_lock" || reconciliation.reason !== "legacy_pid_not_running") fail("RELEASE_GC_RETENTION_RECONCILIATION_INVALID", entry.name);
+      status = "reconciled";
+      reconciliationSha256 = fileHash(reconciliationPath);
+    }
+    results.push({ legacyPath, legacySha256, legacyPid: legacy.pid, releaseSha, reconciliationPath, reconciliationSha256, status });
+  }
+  return results;
 }
 function releaseEntries() {
   return fs.readdirSync(releases, { withFileTypes: true }).filter((entry) => SHA.test(entry.name)).map((entry) => ({ sha: entry.name, path: path.join(releases, entry.name) })).sort((left, right) => left.sha.localeCompare(right.sha));
@@ -385,9 +587,9 @@ function manifest(candidatePath, sha) {
   const checksumsVerified = command("bash", ["-lc", "cd -- \"$1\" && sha256sum --check SHA256SUMS >/dev/null", "release-gc", candidatePath], { timeout: INDEX_TIMEOUT_MS }).status === 0;
   return { manifestVerified, checksumsVerified, immutable: manifestVerified && checksumsVerified, rebuildable: manifestVerified && checksumsVerified, sourceSha: parsed?.sourceSha || null };
 }
-function inspectCandidate(entry, protectedShas, locks) {
+function inspectCandidate(entry, protectedShas, activeJournalShas, activeLocks) {
   const stat = fs.lstatSync(entry.path);
-  const candidate = { sha: entry.sha, path: entry.path, directory: stat.isDirectory(), symlink: stat.isSymbolicLink(), mountpoint: false, mountRoot: null, externalSymlink: false, externalHardlink: false, forbiddenPersistentFile: false, openFileDescriptor: false, processReference: protectedShas.includes(entry.sha), pm2Reference: protectedShas.includes(entry.sha), systemdReference: false, nginxReference: false, journalReference: false, lockReference: locks.length > 0, manifestVerified: false, checksumsVerified: false, immutable: false, rebuildable: false, gitCommitVerified: config.gitApprovedShas.includes(entry.sha), exclusiveBytes: 0, reasons: [] };
+  const candidate = { sha: entry.sha, path: entry.path, directory: stat.isDirectory(), symlink: stat.isSymbolicLink(), mountpoint: false, mountRoot: null, externalSymlink: false, externalHardlink: false, forbiddenPersistentFile: false, openFileDescriptor: false, processReference: protectedShas.includes(entry.sha), pm2Reference: protectedShas.includes(entry.sha), systemdReference: false, nginxReference: false, journalReference: activeJournalShas.includes(entry.sha), lockReference: activeLocks.length > 0, manifestVerified: false, checksumsVerified: false, immutable: false, rebuildable: false, gitCommitVerified: config.gitApprovedShas.includes(entry.sha), exclusiveBytes: 0, reasons: [] };
   if (!candidate.directory || candidate.symlink) { candidate.reasons.push("NOT_PLAIN_DIRECTORY"); return candidate; }
   const mounted = mountInfo(entry.path);
   candidate.mountpoint = mounted.mountpoint;
@@ -401,7 +603,6 @@ function inspectCandidate(entry, protectedShas, locks) {
   if (candidate.forbiddenPersistentFile) candidate.reasons.push("PERSISTENT_OR_SECRET_FILE");
   candidate.openFileDescriptor = !noOpenDescriptors(entry.path);
   if (candidate.openFileDescriptor) candidate.reasons.push("OPEN_FD");
-  candidate.journalReference = grepReference(entry.path, [path.join(root, "operations"), path.join(root, ".promotion")], "RELEASE_GC_JOURNAL_CHECK_FAILED");
   if (candidate.journalReference) candidate.reasons.push("JOURNAL_REFERENCE");
   if (candidate.lockReference) candidate.reasons.push("LOCK_PRESENT");
   const serviceReferences = rootConfigReference(entry.path, "RELEASE_GC_SERVICE_REFERENCE_CHECK_FAILED");
@@ -453,13 +654,15 @@ function select(available, candidates, inodes) {
   return { triggered: true, targetReached: true, selected: best.selected, expectedFreedBytes: best.total };
 }
 function sameArray(left, right) { return JSON.stringify([...left].sort()) === JSON.stringify([...right].sort()); }
-function assertExpectedSnapshot(baseline, protectedShas, locks) {
+function historicalLockDigest(locks) { return crypto.createHash("sha256").update(JSON.stringify(locks)).digest("hex"); }
+function assertExpectedSnapshot(baseline, protectedShas, locks, journal, pins, historicalLocks) {
   if (config.mode !== "apply") return;
   if (config.expectedCurrent !== baseline.current.sha || config.expectedRollback !== baseline.rollback.sha) fail("RELEASE_GC_SELECTION_DRIFT");
   if (!sameArray(config.expectedProtectedShas || [], protectedShas) || !sameArray(config.expectedLocks || [], locks)) fail("RELEASE_GC_SELECTION_DRIFT");
+  if (config.expectedJournalDigest !== journal.digest || config.expectedHistoricalLockDigest !== historicalLockDigest(historicalLocks) || !sameArray(config.expectedRetentionPins || [], pins.map((pin) => pin.sourceSha))) fail("RELEASE_GC_SELECTION_DRIFT");
 }
 function acquireApplyLock() {
-  if (lockPaths().length !== 0) fail("RELEASE_GC_LOCK_PRESENT");
+  if (activePromotionLockPaths().length !== 0) fail("RELEASE_GC_LOCK_PRESENT");
   let descriptor;
   try { descriptor = fs.openSync(gcLock, "wx", 0o600); fs.writeFileSync(descriptor, String(process.pid) + "\n"); }
   catch (error) { fail("RELEASE_GC_LOCK_ACQUIRE_FAILED", error && error.code ? error.code : "UNKNOWN"); }
@@ -467,13 +670,16 @@ function acquireApplyLock() {
 }
 function runInspection() {
   const baseline = rootState();
-  const protectedShas = pm2References();
+  const journal = journalAudit(baseline);
+  const pins = retentionPins();
+  const historicalLocks = historicalRollbackLocks(baseline, journal);
+  const protectedShas = pm2References().concat(journal.activeShas, pins.map((pin) => pin.sourceSha));
   protectedShas.push(baseline.current.sha, baseline.rollback.sha);
   const uniqueProtectedShas = [...new Set(protectedShas)].sort();
-  const locks = lockPaths().filter((lock) => lock !== gcLock);
-  assertExpectedSnapshot(baseline, uniqueProtectedShas, locks);
+  const locks = activePromotionLockPaths();
+  assertExpectedSnapshot(baseline, uniqueProtectedShas, locks, journal, pins, historicalLocks);
   const entries = releaseEntries();
-  const candidates = entries.map((entry) => inspectCandidate(entry, uniqueProtectedShas, locks));
+  const candidates = entries.map((entry) => inspectCandidate(entry, uniqueProtectedShas, journal.activeShas, locks));
   const filesystemPlan = hardlinkFilesystemScanPlan(candidates);
   const indexes = new Map(filesystemPlan.map(({ mountRoot }) => [mountRoot, scanHardlinkFilesystem(mountRoot)]));
   const inodes = finaliseHardlinkAccounting(candidates, indexes);
@@ -483,12 +689,70 @@ function runInspection() {
     if (candidate.externalHardlink) candidate.reasons.push("EXTERNAL_HARDLINK");
     delete candidate.mountRoot;
   }
-  return { baseline, protectedShas: uniqueProtectedShas, locks, candidates, inodes, inodeIndexDigest, hardlinkIndex: { filesystems: filesystemPlan.map(({ mountRoot, scans }) => ({ mountRoot, scans, entries: indexes.get(mountRoot).entries.size })), scanCount: filesystemPlan.length } };
+  return { baseline, protectedShas: uniqueProtectedShas, locks, journal, pins, historicalLocks, candidates, inodes, inodeIndexDigest, hardlinkIndex: { filesystems: filesystemPlan.map(({ mountRoot, scans }) => ({ mountRoot, scans, entries: indexes.get(mountRoot).entries.size })), scanCount: filesystemPlan.length } };
+}
+function syncDirectory(directory) {
+  const descriptor = fs.openSync(directory, "r");
+  try { fs.fsyncSync(descriptor); } finally { fs.closeSync(descriptor); }
+}
+function appendHistoricalLockReconciliations(inspected) {
+  const before = rootState();
+  if (before.current.sha !== inspected.baseline.current.sha || before.rollback.sha !== inspected.baseline.rollback.sha || activePromotionLockPaths().length !== 0) fail("RELEASE_GC_SELECTION_DRIFT");
+  const journal = journalAudit(before);
+  if (journal.digest !== inspected.journal.digest) fail("RELEASE_GC_JOURNAL_DRIFT");
+  const directory = path.join(root, ".promotion", "reconciliations");
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const appended = [];
+  for (const lock of inspected.historicalLocks) {
+    if (lock.status === "reconciled") continue;
+    const record = {
+      schemaVersion: 1,
+      type: "staging_release_retention_lock_reconciliation",
+      authorization: RETENTION_RECONCILIATION_AUTHORIZATION,
+      legacyLock: { path: lock.legacyPath, sha256: lock.legacySha256, pid: lock.legacyPid, releaseSha: lock.releaseSha },
+      journal: { path: journal.eventFile, sha256: journal.eventSha256 },
+      selection: { current: before.current.sha, rollback: before.rollback.sha },
+      decision: "inactive_historical_lock",
+      reason: "legacy_pid_not_running",
+      recordedAt: new Date().toISOString(),
+    };
+    let descriptor;
+    try {
+      descriptor = fs.openSync(lock.reconciliationPath, "wx", 0o600);
+      const text = JSON.stringify(record) + "\n";
+      if (fs.writeSync(descriptor, text) !== Buffer.byteLength(text)) fail("RELEASE_GC_RETENTION_RECONCILIATION_WRITE_INCOMPLETE", lock.reconciliationPath);
+      fs.fsyncSync(descriptor);
+    } catch (error) {
+      if (error && error.code === "EEXIST") fail("RELEASE_GC_RETENTION_RECONCILIATION_DRIFT", lock.reconciliationPath);
+      throw error;
+    } finally { if (descriptor !== undefined) fs.closeSync(descriptor); }
+    syncDirectory(directory);
+    appended.push({ path: lock.reconciliationPath, sha256: fileHash(lock.reconciliationPath), bytes: fs.statSync(lock.reconciliationPath).size });
+  }
+  const after = rootState();
+  if (after.current.sha !== before.current.sha || after.rollback.sha !== before.rollback.sha || activePromotionLockPaths().length !== 0) fail("RELEASE_GC_SELECTION_DRIFT");
+  return appended;
+}
+function inspectionEvidence(inspected) {
+  return {
+    journal: {
+      digest: inspected.journal.digest,
+      eventPath: inspected.journal.eventFile,
+      eventSha256: inspected.journal.eventSha256,
+      hashChain: inspected.journal.events.hashChain,
+      terminal: inspected.journal.events.terminal,
+      activeTransactions: inspected.journal.events.activeTransactions,
+      activeShas: inspected.journal.activeShas,
+      legacy: inspected.journal.legacy,
+    },
+    retentionPins: inspected.pins,
+    historicalLocks: inspected.historicalLocks,
+  };
 }
 function inventory() {
   const baseline = rootState();
   const protectedShas = [...new Set([...pm2References(), baseline.current.sha, baseline.rollback.sha])].sort();
-  return { version: 2, mode: "inventory", state: "inventory", current: baseline.current.sha, rollback: baseline.rollback.sha, protectedShas, locks: lockPaths(), releaseShas: releaseEntries().map((entry) => entry.sha) };
+  return { version: 2, mode: "inventory", state: "inventory", current: baseline.current.sha, rollback: baseline.rollback.sha, protectedShas, locks: activePromotionLockPaths(), releaseShas: releaseEntries().map((entry) => entry.sha) };
 }
 function main() {
   if (config.remoteRoot !== root) fail("RELEASE_GC_STAGING_ROOT_REQUIRED", config.remoteRoot);
@@ -498,19 +762,20 @@ function main() {
     if (config.mode === "apply") releaseApplyLock = acquireApplyLock();
     const inspected = runInspection();
     const beforeBytes = availableBytes();
-    if (beforeBytes >= TRIGGER_BYTES) return { version: 2, mode: config.mode, state: "no_op", beforeBytes, afterBytes: beforeBytes, actualFreedBytes: 0, expectedFreedBytes: 0, current: inspected.baseline.current.sha, rollback: inspected.baseline.rollback.sha, protectedShas: inspected.protectedShas, locks: inspected.locks, candidates: [], deletedPaths: [], inodeIndexDigest: inspected.inodeIndexDigest, hardlinkIndex: inspected.hardlinkIndex };
+    if (beforeBytes >= TRIGGER_BYTES) return { version: 3, mode: config.mode, state: "no_op", beforeBytes, afterBytes: beforeBytes, actualFreedBytes: 0, expectedFreedBytes: 0, current: inspected.baseline.current.sha, rollback: inspected.baseline.rollback.sha, protectedShas: inspected.protectedShas, locks: inspected.locks, candidates: [], deletedPaths: [], inodeIndexDigest: inspected.inodeIndexDigest, hardlinkIndex: inspected.hardlinkIndex, ...inspectionEvidence(inspected) };
     const plan = select(beforeBytes, inspected.candidates, inspected.inodes);
-    if (!plan.targetReached) return { version: 2, mode: config.mode, state: "blocked", beforeBytes, afterBytes: beforeBytes, actualFreedBytes: 0, current: inspected.baseline.current.sha, rollback: inspected.baseline.rollback.sha, protectedShas: inspected.protectedShas, locks: inspected.locks, candidates: inspected.candidates, deletedPaths: [], plan, inodeIndexDigest: inspected.inodeIndexDigest, hardlinkIndex: inspected.hardlinkIndex };
+    if (!plan.targetReached) return { version: 3, mode: config.mode, state: "blocked", beforeBytes, afterBytes: beforeBytes, actualFreedBytes: 0, current: inspected.baseline.current.sha, rollback: inspected.baseline.rollback.sha, protectedShas: inspected.protectedShas, locks: inspected.locks, candidates: inspected.candidates, deletedPaths: [], plan, inodeIndexDigest: inspected.inodeIndexDigest, hardlinkIndex: inspected.hardlinkIndex, ...inspectionEvidence(inspected) };
     const selected = plan.selected;
     const selectedShas = selected.map((item) => item.sha).sort();
-    if (config.mode === "dry-run") return { version: 2, mode: config.mode, state: "dry_run", beforeBytes, afterBytes: beforeBytes, actualFreedBytes: 0, expectedFreedBytes: plan.expectedFreedBytes, current: inspected.baseline.current.sha, rollback: inspected.baseline.rollback.sha, protectedShas: inspected.protectedShas, locks: inspected.locks, candidates: inspected.candidates, deletedPaths: [], plan: { ...plan, selected: selectedShas }, inodeIndexDigest: inspected.inodeIndexDigest, hardlinkIndex: inspected.hardlinkIndex };
+    if (config.mode === "dry-run") return { version: 3, mode: config.mode, state: "dry_run", beforeBytes, afterBytes: beforeBytes, actualFreedBytes: 0, expectedFreedBytes: plan.expectedFreedBytes, current: inspected.baseline.current.sha, rollback: inspected.baseline.rollback.sha, protectedShas: inspected.protectedShas, locks: inspected.locks, candidates: inspected.candidates, deletedPaths: [], plan: { ...plan, selected: selectedShas }, inodeIndexDigest: inspected.inodeIndexDigest, hardlinkIndex: inspected.hardlinkIndex, ...inspectionEvidence(inspected) };
     if (JSON.stringify(selectedShas) !== JSON.stringify([...(config.plannedDeleteShas || [])].sort())) fail("RELEASE_GC_PLAN_CHANGED");
+    const reconciliations = appendHistoricalLockReconciliations(inspected);
     for (const candidate of selected) {
       if (!candidateSafe(candidate) || fs.realpathSync(candidate.path) !== candidate.path || path.dirname(candidate.path) !== releases || !fs.lstatSync(candidate.path).isDirectory() || fs.lstatSync(candidate.path).isSymbolicLink()) fail("RELEASE_GC_DELETE_TARGET_INVALID", candidate.sha);
       fs.rmSync(candidate.path, { recursive: true, force: false, maxRetries: 0 });
     }
     const afterBytes = availableBytes();
-    return { version: 2, mode: config.mode, state: "applied", beforeBytes, afterBytes, actualFreedBytes: afterBytes - beforeBytes, expectedFreedBytes: plan.expectedFreedBytes, current: inspected.baseline.current.sha, rollback: inspected.baseline.rollback.sha, protectedShas: inspected.protectedShas, locks: inspected.locks, candidates: inspected.candidates, deletedPaths: selected.map((candidate) => candidate.path), plan: { ...plan, selected: selectedShas }, inodeIndexDigest: inspected.inodeIndexDigest, hardlinkIndex: inspected.hardlinkIndex };
+    return { version: 3, mode: config.mode, state: "applied", beforeBytes, afterBytes, actualFreedBytes: afterBytes - beforeBytes, expectedFreedBytes: plan.expectedFreedBytes, current: inspected.baseline.current.sha, rollback: inspected.baseline.rollback.sha, protectedShas: inspected.protectedShas, locks: inspected.locks, candidates: inspected.candidates, deletedPaths: selected.map((candidate) => candidate.path), plan: { ...plan, selected: selectedShas }, inodeIndexDigest: inspected.inodeIndexDigest, hardlinkIndex: inspected.hardlinkIndex, reconciliations, ...inspectionEvidence(inspected) };
   } finally { if (releaseApplyLock) releaseApplyLock(); }
 }
 try { console.log(JSON.stringify(main())); } catch (error) { console.log(JSON.stringify({ version: 2, mode: config.mode, state: "blocked", error: error && error.message ? error.message : "RELEASE_GC_FAILED" })); process.exitCode = 64; }
@@ -553,7 +818,16 @@ function runReleaseRetentionGc(input) {
   const gitApprovedShas = inventory.releaseShas.filter((sha) => verifyGitCommit(input.sourceRoot, sha));
   const planned = executeRemote({ sshTarget: input.sshTarget, mode: "dry-run", gitApprovedShas });
   if (input.mode === "dry-run" || planned.state !== "dry_run") return planned;
-  const expectedSnapshot = { expectedCurrent: planned.current, expectedRollback: planned.rollback, expectedProtectedShas: planned.protectedShas, expectedLocks: planned.locks, expectedInodeIndexDigest: planned.inodeIndexDigest };
+  const expectedSnapshot = {
+    expectedCurrent: planned.current,
+    expectedRollback: planned.rollback,
+    expectedProtectedShas: planned.protectedShas,
+    expectedLocks: planned.locks,
+    expectedInodeIndexDigest: planned.inodeIndexDigest,
+    expectedJournalDigest: planned.journal?.digest,
+    expectedHistoricalLockDigest: crypto.createHash("sha256").update(JSON.stringify(planned.historicalLocks)).digest("hex"),
+    expectedRetentionPins: planned.retentionPins?.map((pin) => pin.sourceSha) ?? [],
+  };
   const applied = executeRemote({ sshTarget: input.sshTarget, mode: "apply", gitApprovedShas, plannedDeleteShas: planned.plan.selected, expectedSnapshot });
   if (applied.afterBytes < TARGET_BYTES || applied.afterBytes < CAPACITY_FLOOR_BYTES) fail("RELEASE_GC_POST_APPLY_CAPACITY_INVALID");
   return applied;
@@ -572,4 +846,4 @@ if (require.main === module) {
   try { main(process.argv.slice(2)); } catch (error) { console.error(error instanceof Error ? error.message : "RELEASE_GC_FAILED"); process.exitCode = 64; }
 }
 
-module.exports = { CAPACITY_FLOOR_BYTES, GIB, PIPELINE_ID, STAGING_ROOT, TARGET_BYTES, TRIGGER_BYTES, buildExecutionPlan, candidateIsSafe, exclusiveBlocksForSet, freedBytesForSet, hardlinkFilesystemScanPlan, remoteProgram, runReleaseRetentionGc, selectMinimalReleaseSet };
+module.exports = { CAPACITY_FLOOR_BYTES, GIB, PIPELINE_ID, STAGING_ROOT, TARGET_BYTES, TRIGGER_BYTES, buildExecutionPlan, candidateIsSafe, exclusiveBlocksForSet, freedBytesForSet, hardlinkFilesystemScanPlan, parseLegacyPromotionJournal, parseWebImmutableEventJournal, remoteProgram, runReleaseRetentionGc, selectMinimalReleaseSet };

@@ -13,6 +13,8 @@ const {
   exclusiveBlocksForSet,
   freedBytesForSet,
   hardlinkFilesystemScanPlan,
+  parseLegacyPromotionJournal,
+  parseWebImmutableEventJournal,
   remoteProgram,
   selectMinimalReleaseSet,
 } = require("./staging-release-retention-gc.cjs");
@@ -46,6 +48,29 @@ function safeCandidate(value, bytes = GIB) {
   };
 }
 
+function journalRow(event, sourceSha, previousCurrent, rollbackBefore, extra = {}) {
+  return {
+    schemaVersion: 1,
+    component: "web",
+    event,
+    sourceSha,
+    previousCurrent,
+    rollbackBefore,
+    at: `2026-08-29T00:00:0${extra.tick ?? 0}.000Z`,
+    ...extra,
+  };
+}
+
+function parseJournal(rows, currentSha, rollbackSha) {
+  return parseWebImmutableEventJournal({
+    text: `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`,
+    fileSha256: "a".repeat(64),
+    currentSha,
+    rollbackSha,
+    failJournal: (code, detail) => { throw new Error(`${code}${detail === undefined ? "" : `:${detail}`}`); },
+  });
+}
+
 test("current, rollback, and Worker references are never eligible", () => {
   const candidate = safeCandidate(1);
   assert.equal(candidateIsSafe(candidate, new Set([candidate.sha])), false);
@@ -71,6 +96,50 @@ test("only inode blocks whose every link is selected count as reclaimable", () =
   assert.equal(exclusiveBlocksForSet(inodes, ["release-a"]), 10);
 });
 
+test("terminal journal evidence does not permanently retain a release", () => {
+  const previous = sha(1);
+  const rollback = sha(2);
+  const candidate = sha(3);
+  const parsed = parseJournal([
+    journalRow("prepared", candidate, previous, rollback, { tick: 0 }),
+    journalRow("candidate_materialized", candidate, previous, rollback, { tick: 1 }),
+    journalRow("promoted", candidate, previous, rollback, { current: candidate, rollback: previous, tick: 2 }),
+  ], candidate, previous);
+  assert.deepEqual(parsed.activeShas, []);
+  assert.equal(parsed.terminal.at(-1).event, "promoted");
+  assert.deepEqual(parsed.hashChain, { mode: "legacy-file-sha256-anchor", valid: true, entryHashChain: false });
+});
+
+test("journal unknown event, tampered transition, and unfinished transaction fail closed", () => {
+  const previous = sha(4);
+  const rollback = sha(5);
+  const candidate = sha(6);
+  assert.throws(() => parseJournal([journalRow("prepared", candidate, previous, rollback)], previous, rollback), /RELEASE_GC_JOURNAL_TRANSACTION_UNTERMINATED/);
+  assert.throws(() => parseJournal([journalRow("mystery", candidate, previous, rollback)], previous, rollback), /RELEASE_GC_JOURNAL_EVENT_UNKNOWN/);
+  assert.throws(() => parseJournal([
+    journalRow("prepared", candidate, previous, rollback, { tick: 0 }),
+    journalRow("promoted", candidate, previous, rollback, { current: rollback, rollback: previous, tick: 1 }),
+  ], candidate, previous), /RELEASE_GC_JOURNAL_PROMOTION_INVALID/);
+  assert.throws(() => parseJournal([journalRow("prepared", candidate, previous, rollback, { entryHash: "f".repeat(64) })], previous, rollback), /RELEASE_GC_JOURNAL_HASH_CHAIN_UNSUPPORTED/);
+});
+
+test("a prior auto-rollback failure must be proven recovered and legacy terminal records parse", () => {
+  const previous = sha(7);
+  const rollback = sha(8);
+  const failedCandidate = sha(9);
+  const laterCandidate = sha(10);
+  const parsed = parseJournal([
+    journalRow("prepared", failedCandidate, previous, rollback, { tick: 0 }),
+    journalRow("auto_rollback_failed", failedCandidate, previous, rollback, { tick: 1 }),
+    journalRow("prepared", laterCandidate, previous, rollback, { tick: 2 }),
+    journalRow("promoted", laterCandidate, previous, rollback, { current: laterCandidate, rollback: previous, tick: 3 }),
+  ], laterCandidate, previous);
+  assert.deepEqual(parsed.recoveredAutoRollbackFailures, [failedCandidate]);
+  const legacy = parseLegacyPromotionJournal({ name: `${laterCandidate}.json`, fileSha256: "b".repeat(64), record: { version: 1, sourceSha: laterCandidate, previous, rollback, status: "promoted" }, failJournal: (code) => { throw new Error(code); } });
+  assert.equal(legacy.status, "promoted");
+  assert.throws(() => parseLegacyPromotionJournal({ name: "unknown.json", fileSha256: "c".repeat(64), record: { version: 1 }, failJournal: (code) => { throw new Error(code); } }), /RELEASE_GC_LEGACY_JOURNAL_UNKNOWN/);
+});
+
 test("a shared hardlink contributes blocks only after every release link is selected", () => {
   const first = safeCandidate(11, 0);
   const second = safeCandidate(12, 0);
@@ -88,6 +157,10 @@ test("12,597 hardlinked files require one NUL-safe index scan per filesystem", (
   assert.match(remote, /%D\\\\0%i\\\\0%n\\\\0%b\\\\0%p\\\\0/);
   assert.match(remote, /"grep", "-r", "-l"/);
   assert.match(remote, /"readlink", "-z", "--", link/);
+  assert.match(remote, /function activePromotionLockPaths\(\)/);
+  assert.match(remote, /"kill", \["-0", String\(legacy\.pid\)\]/);
+  assert.match(remote, /RELEASE_GC_HISTORICAL_LOCK_ACTIVE/);
+  assert.match(remote, /staging_release_retention_lock_reconciliation/);
 });
 
 test("below 10 GiB selects the fewest releases needed to return to 12 GiB", () => {
