@@ -239,6 +239,10 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
   const warmAbortRef = useRef<AbortController | null>(null);
   const transitionAbortRef = useRef<AbortController | null>(null);
   const retryTimerRef = useRef<number | null>(null);
+  // If preparation misses the visible clip's first ending window, remember it.
+  // A prepared next clip then takes over in the opening beat of the loop
+  // instead of making the same person play another complete story.
+  const missedEndWindowRef = useRef(false);
   const runRef = useRef(0);
   const mountedRef = useRef(true);
 
@@ -389,6 +393,7 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
 
       // Only after the outgoing layer is fully transparent may the incoming
       // person start. This prevents a Safari double-face dissolve.
+      missedEndWindowRef.current = false;
       visibleSlotRef.current = incoming;
       if (mountedRef.current) {
         setVisibleSlot(incoming);
@@ -397,8 +402,10 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
       onActiveStoryChange(HOME_STORIES[incomingStoryIndex]);
       incomingVideo.currentTime = 0;
       incomingVideo.loop = true;
-      await incomingVideo.play();
-      if (controller.signal.aborted || run !== runRef.current) return;
+      // Start playback and the opacity transition in the same paint cycle.
+      // Waiting for play() before making the layer visible lets some browsers
+      // advance the hidden film far enough to lose the opening beat.
+      const incomingPlayback = incomingVideo.play();
       setPhaseSafe("fading-in");
       window.requestAnimationFrame(() => {
         if (!controller.signal.aborted && run === runRef.current) {
@@ -406,6 +413,8 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
           setVeil(0);
         }
       });
+      await incomingPlayback;
+      if (controller.signal.aborted || run !== runRef.current) return;
       await waitForOpacity(incomingVideo, VISIBLE_OPACITY, controller.signal, FADE_IN_MS);
       if (controller.signal.aborted || run !== runRef.current) return;
 
@@ -433,9 +442,20 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
   }, [assignSource, cancelWarm, onActiveStoryChange, setOpacityForSlot, setPhaseSafe, setVeil, videoEnabled, warmFollowingStory, warmSlot]);
 
   const onTimeUpdate = useCallback((slot: VideoSlot, video: HTMLVideoElement) => {
-    if (slot !== visibleSlotRef.current || phaseRef.current !== "idle") return;
+    if (slot !== visibleSlotRef.current) return;
     if (!Number.isFinite(video.duration) || video.duration <= 0) return;
-    if (video.duration - video.currentTime <= END_WINDOW_SECONDS) void startTransition();
+    const inEndWindow = video.duration - video.currentTime <= END_WINDOW_SECONDS;
+    if (inEndWindow) missedEndWindowRef.current = true;
+    if (phaseRef.current !== "idle") return;
+
+    const next = otherSlot(slot);
+    const prepared = preparedRef.current;
+    const readyAfterMissedEnd = missedEndWindowRef.current
+      && prepared?.slot === next
+      && prepared.storyIndex === slotStoriesRef.current[next]
+      && video.currentTime > 0.05
+      && video.currentTime < 1;
+    if (inEndWindow || readyAfterMissedEnd) void startTransition();
   }, [startTransition]);
 
   useEffect(() => {

@@ -37,6 +37,17 @@
 }
 
 @media (max-aspect-ratio: 3 / 4) {
+  /*
+   * The approved stories are 16:9 films. Filling a portrait viewport with a
+   * cover crop turns every person into a face close-up and lets the CTA cover
+   * the gesture. Keep the film in its own upper scene on phones instead: the
+   * per-story focal point now has enough width to keep a face, shoulders and
+   * the single wave in the same composition.
+   */
+  .media {
+    inset: 0 0 auto;
+    height: min(58dvh, 490px);
+  }
   .poster, .video { object-position: var(--story-mobile-position, 50% 50%); }
 }
 
