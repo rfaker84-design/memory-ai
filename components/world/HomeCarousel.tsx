@@ -1,6 +1,6 @@
 "use client";
 
-import { type CSSProperties, type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import styles from "./GuestExperience.module.css";
 
@@ -20,31 +20,19 @@ export const HOME_STORIES: readonly HomeStory[] = [
   { slug: "younger-man", label: "记忆里的家人或朋友", desktopPosition: "67% 50%", mobilePosition: "67% 48%" },
 ];
 
-// This is intentionally just long enough to soften a source swap.  It is not
-// a visual effect: no colour layer, motion, blur, or hold is introduced.
-const NEUTRAL_CUT_MS = 100;
-const PREPARE_TIMEOUT_MS = 8_000;
-const END_WINDOW_SECONDS = 0.82;
-const VISIBLE_OPACITY = 0.92;
-
-type VideoSlot = 0 | 1;
-type CarouselPhase = "idle" | "preparing-next" | "next-frame-ready" | "neutral-fade" | "atomic-layer-swap" | "committed";
-type VideoFrameCapable = HTMLVideoElement & {
-  requestVideoFrameCallback?: (callback: (now: number, metadata: unknown) => number) => number;
-  cancelVideoFrameCallback?: (handle: number) => void;
-};
+// This is the approved original homepage dissolve: no veil, no cut, and no
+// extra stage between two people.
+const CROSSFADE_MS = 1_000;
+const END_WINDOW_SECONDS = 1.05;
+const HOME_ASSET_VERSION = "home-v2";
 
 type HomeCarouselProps = {
   reducedMotion: boolean;
   onActiveStoryChange: (story: HomeStory) => void;
 };
 
-function otherSlot(slot: VideoSlot): VideoSlot {
-  return slot === 0 ? 1 : 0;
-}
-
 function assetPath(story: HomeStory, extension: "mp4" | "poster.webp") {
-  return `/home-hero-assets/${story.slug}.${extension}`;
+  return `/home-hero-assets/${story.slug}.${HOME_ASSET_VERSION}.${extension}`;
 }
 
 function shouldUseStaticHero() {
@@ -61,476 +49,179 @@ function focalStyle(story: HomeStory): CSSProperties {
   } as CSSProperties;
 }
 
-function waitForCurrentData(video: HTMLVideoElement, signal: AbortSignal) {
-  return new Promise<void>((resolve, reject) => {
-    let timer: number | undefined;
-    let settled = false;
-    const clean = () => {
-      video.removeEventListener("loadeddata", ready);
-      video.removeEventListener("canplay", ready);
-      signal.removeEventListener("abort", aborted);
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      clean();
-      resolve();
-    };
-    const aborted = () => {
-      if (settled) return;
-      settled = true;
-      clean();
-      reject(new DOMException("Carousel preparation cancelled", "AbortError"));
-    };
-    const ready = () => {
-      if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) finish();
-    };
-
-    if (signal.aborted) { aborted(); return; }
-    signal.addEventListener("abort", aborted, { once: true });
-    video.addEventListener("loadeddata", ready);
-    video.addEventListener("canplay", ready);
-    timer = window.setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      clean();
-      reject(new Error("Carousel next video was not ready"));
-    }, PREPARE_TIMEOUT_MS);
-    ready();
-  });
-}
-
-function seek(video: HTMLVideoElement, time: number, signal: AbortSignal) {
-  return new Promise<void>((resolve, reject) => {
-    let timer: number | undefined;
-    let settled = false;
-    const clean = () => {
-      video.removeEventListener("seeked", done);
-      signal.removeEventListener("abort", aborted);
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-    const done = () => {
-      if (settled) return;
-      settled = true;
-      clean();
-      resolve();
-    };
-    const aborted = () => {
-      if (settled) return;
-      settled = true;
-      clean();
-      reject(new DOMException("Carousel seek cancelled", "AbortError"));
-    };
-    if (signal.aborted) { aborted(); return; }
-    signal.addEventListener("abort", aborted, { once: true });
-    video.addEventListener("seeked", done, { once: true });
-    timer = window.setTimeout(done, 700);
-    video.currentTime = time;
-    if (Math.abs(video.currentTime - time) < 0.01) window.requestAnimationFrame(done);
-  });
-}
-
-function waitForDecodedFrame(video: HTMLVideoElement, signal: AbortSignal) {
-  return new Promise<void>((resolve, reject) => {
-    const frameVideo = video as VideoFrameCapable;
-    let frameHandle: number | undefined;
-    let timer: number | undefined;
-    let settled = false;
-    const clean = () => {
-      signal.removeEventListener("abort", aborted);
-      if (frameHandle !== undefined) frameVideo.cancelVideoFrameCallback?.(frameHandle);
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-    const done = () => {
-      if (settled) return;
-      settled = true;
-      clean();
-      resolve();
-    };
-    const aborted = () => {
-      if (settled) return;
-      settled = true;
-      clean();
-      reject(new DOMException("Carousel frame decoding cancelled", "AbortError"));
-    };
-    if (signal.aborted) { aborted(); return; }
-    signal.addEventListener("abort", aborted, { once: true });
-    if (frameVideo.requestVideoFrameCallback) {
-      frameHandle = frameVideo.requestVideoFrameCallback(() => done());
-    } else {
-      window.requestAnimationFrame(() => {
-        if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.currentTime >= 0.04) done();
-      });
-    }
-    timer = window.setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      clean();
-      reject(new Error("Carousel next video did not decode a frame"));
-    }, 1_200);
-  });
-}
-
-function waitForOpacity(video: HTMLVideoElement, signal: AbortSignal, duration: number) {
-  return new Promise<void>((resolve, reject) => {
-    let timer: number | undefined;
-    let settled = false;
-    const clean = () => {
-      video.removeEventListener("transitionend", ended);
-      signal.removeEventListener("abort", aborted);
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-    const done = () => {
-      if (settled) return;
-      settled = true;
-      clean();
-      resolve();
-    };
-    const aborted = () => {
-      if (settled) return;
-      settled = true;
-      clean();
-      reject(new DOMException("Carousel opacity transition cancelled", "AbortError"));
-    };
-    const ended = (event: TransitionEvent) => {
-      if (event.target === video && event.propertyName === "opacity") done();
-    };
-    if (signal.aborted) { aborted(); return; }
-    signal.addEventListener("abort", aborted, { once: true });
-    video.addEventListener("transitionend", ended);
-    timer = window.setTimeout(done, duration + 80);
-  });
-}
-
 /**
- * There are always two physical media layers: one playing person and one
- * paused, decoded next person. The only transition is a neutral 100 ms
- * opacity soften; no overlay is ever inserted between people.
+ * The original approved dissolve, with one safety addition: the hidden video
+ * is only ever preloaded at time zero. A transition is not allowed until it
+ * reports that it can play, so a slow network simply lets the current person
+ * continue looping rather than exposing an empty layer.
  */
 export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouselProps) {
   const [videoEnabled, setVideoEnabled] = useState(false);
-  const [slotStories, setSlotStories] = useState<[number, number]>([0, 1]);
-  const [visibleSlot, setVisibleSlot] = useState<VideoSlot>(0);
-  const [posterStoryIndex, setPosterStoryIndex] = useState(0);
-  const [phase, setPhase] = useState<CarouselPhase>("idle");
-  const [opacity, setOpacity] = useState<[number, number]>([VISIBLE_OPACITY, 0]);
-  const [nextReady, setNextReady] = useState(false);
-  const firstVideoRef = useRef<HTMLVideoElement>(null);
-  const secondVideoRef = useRef<HTMLVideoElement>(null);
-  const videoRefs = useRef<[RefObject<HTMLVideoElement | null>, RefObject<HTMLVideoElement | null>]>([firstVideoRef, secondVideoRef]);
-  const slotStoriesRef = useRef<[number, number]>([0, 1]);
-  const visibleSlotRef = useRef<VideoSlot>(0);
-  const phaseRef = useRef<CarouselPhase>("idle");
-  const opacityRef = useRef<[number, number]>([VISIBLE_OPACITY, 0]);
-  const preparedRef = useRef<{ slot: VideoSlot; storyIndex: number; run: number } | null>(null);
-  const warmAbortRef = useRef<AbortController | null>(null);
-  const transitionAbortRef = useRef<AbortController | null>(null);
-  const retryTimerRef = useRef<number | null>(null);
-  const missedEndWindowRef = useRef(false);
-  const runRef = useRef(0);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [incomingIndex, setIncomingIndex] = useState<number | null>(1);
+  const [incomingReady, setIncomingReady] = useState(false);
+  const [crossfading, setCrossfading] = useState(false);
+  const activeVideoRef = useRef<HTMLVideoElement>(null);
+  const incomingVideoRef = useRef<HTMLVideoElement>(null);
+  const settleTimerRef = useRef<number | null>(null);
+  const transitionInFlightRef = useRef(false);
   const mountedRef = useRef(true);
 
-  const setPhaseSafe = useCallback((next: CarouselPhase) => {
-    phaseRef.current = next;
-    if (mountedRef.current) setPhase(next);
-  }, []);
+  useEffect(() => {
+    setVideoEnabled(!reducedMotion && !shouldUseStaticHero());
+  }, [reducedMotion]);
 
-  const setOpacityForSlot = useCallback((slot: VideoSlot, value: number) => {
-    const next = [...opacityRef.current] as [number, number];
-    next[slot] = value;
-    opacityRef.current = next;
-    const video = videoRefs.current[slot].current;
-    if (video) video.style.opacity = String(value);
-    if (mountedRef.current) setOpacity(next);
-  }, []);
-
-  const cancelWarm = useCallback(() => {
-    warmAbortRef.current?.abort();
-    warmAbortRef.current = null;
-    if (retryTimerRef.current !== null) {
-      window.clearTimeout(retryTimerRef.current);
-      retryTimerRef.current = null;
-    }
-  }, []);
-
-  const assignSource = useCallback((slot: VideoSlot, storyIndex: number) => {
-    const story = HOME_STORIES[storyIndex];
-    const video = videoRefs.current[slot].current;
-    const nextStories = [...slotStoriesRef.current] as [number, number];
-    nextStories[slot] = storyIndex;
-    slotStoriesRef.current = nextStories;
-    if (mountedRef.current) setSlotStories(nextStories);
+  useLayoutEffect(() => {
+    if (!videoEnabled) return;
+    const video = activeVideoRef.current;
     if (!video) return;
-    video.pause();
     video.muted = true;
     video.playsInline = true;
-    video.preload = "auto";
-    video.loop = false;
-    video.src = assetPath(story, "mp4");
-    video.poster = assetPath(story, "poster.webp");
-    video.load();
-  }, []);
+    video.loop = true;
+    void video.play().catch(() => undefined);
+  }, [activeIndex, videoEnabled]);
 
-  const warmSlot = useCallback(async (slot: VideoSlot, storyIndex: number) => {
-    if (!videoEnabled || phaseRef.current === "neutral-fade" || phaseRef.current === "atomic-layer-swap") return;
-    const currentPrepared = preparedRef.current;
-    if (currentPrepared?.slot === slot && currentPrepared.storyIndex === storyIndex) return;
-    cancelWarm();
-    const controller = new AbortController();
-    const run = ++runRef.current;
-    warmAbortRef.current = controller;
-    preparedRef.current = null;
-    if (mountedRef.current) setNextReady(false);
-    setPhaseSafe("preparing-next");
-    const video = videoRefs.current[slot].current;
+  useEffect(() => {
+    if (!videoEnabled || incomingIndex === null) return;
+    const video = incomingVideoRef.current;
     if (!video) return;
 
-    try {
-      if (slotStoriesRef.current[slot] !== storyIndex) {
-        assignSource(slot, storyIndex);
-      } else {
-        video.pause();
-        video.muted = true;
-        video.playsInline = true;
-        video.preload = "auto";
-        // Browsers may defer a visually hidden preload even after SSR has
-        // emitted the tag. An explicit load only when no fetch is active makes
-        // the next frame request deterministic without aborting a transfer.
-        if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA && video.networkState !== HTMLMediaElement.NETWORK_LOADING) video.load();
-      }
-      await waitForCurrentData(video, controller.signal);
-      if (controller.signal.aborted || run !== runRef.current) return;
-      await seek(video, 0.05, controller.signal);
-      await video.play();
-      await waitForDecodedFrame(video, controller.signal);
-      video.pause();
-      await seek(video, 0, controller.signal);
-      if (controller.signal.aborted || run !== runRef.current) return;
-      preparedRef.current = { slot, storyIndex, run };
-      if (mountedRef.current) setNextReady(true);
-      setPhaseSafe("next-frame-ready");
-    } catch {
-      if (controller.signal.aborted || run !== runRef.current) return;
-      preparedRef.current = null;
-      if (mountedRef.current) setNextReady(false);
-      setPhaseSafe("idle");
-      // A slow next asset is retried in the background while the visible
-      // person keeps looping. No transition is allowed on this path.
-      retryTimerRef.current = window.setTimeout(() => {
-        retryTimerRef.current = null;
-        void warmSlot(slot, storyIndex);
-      }, 900);
-    } finally {
-      if (warmAbortRef.current === controller) warmAbortRef.current = null;
-    }
-  }, [assignSource, cancelWarm, setPhaseSafe, videoEnabled]);
+    // This is preload only. The incoming film never plays while hidden.
+    setIncomingReady(false);
+    video.pause();
+    video.currentTime = 0;
+    video.preload = "auto";
+    video.load();
 
-  const warmFollowingStory = useCallback(() => {
-    const current = visibleSlotRef.current;
-    const hidden = otherSlot(current);
-    const followingIndex = (slotStoriesRef.current[current] + 1) % HOME_STORIES.length;
-    void warmSlot(hidden, followingIndex);
-  }, [warmSlot]);
-
-  const commitAtomicSwap = useCallback((outgoing: VideoSlot, incoming: VideoSlot, incomingStoryIndex: number) => {
-    const outgoingVideo = videoRefs.current[outgoing].current;
-    if (!outgoingVideo) throw new Error("Carousel media layer disappeared");
-    setPhaseSafe("atomic-layer-swap");
-    outgoingVideo.loop = false;
-    visibleSlotRef.current = incoming;
-    if (mountedRef.current) {
-      setVisibleSlot(incoming);
-      setPosterStoryIndex(incomingStoryIndex);
-    }
-    onActiveStoryChange(HOME_STORIES[incomingStoryIndex]);
-  }, [onActiveStoryChange, setPhaseSafe]);
-
-  const startTransition = useCallback(async () => {
-    if (!videoEnabled || phaseRef.current !== "next-frame-ready") return;
-    const outgoing = visibleSlotRef.current;
-    const incoming = otherSlot(outgoing);
-    const incomingStoryIndex = slotStoriesRef.current[incoming];
-    const outgoingVideo = videoRefs.current[outgoing].current;
-    const prepared = preparedRef.current;
-    const incomingVideo = videoRefs.current[incoming].current;
-    if (!outgoingVideo || !incomingVideo || prepared?.slot !== incoming || prepared.storyIndex !== incomingStoryIndex || incomingVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || incomingVideo.currentTime >= 0.2) {
-      warmFollowingStory();
-      return;
-    }
-
-    const controller = new AbortController();
-    transitionAbortRef.current?.abort();
-    transitionAbortRef.current = controller;
-    const run = ++runRef.current;
-    cancelWarm();
-    preparedRef.current = null;
-    if (mountedRef.current) setNextReady(false);
-
-    try {
-      if (reducedMotion) {
-        incomingVideo.currentTime = 0;
-        incomingVideo.loop = true;
-        await incomingVideo.play();
-        if (controller.signal.aborted || run !== runRef.current || incomingVideo.currentTime >= 0.2) throw new Error("Carousel incoming opening beat was lost");
-        setOpacityForSlot(outgoing, 0);
-        setOpacityForSlot(incoming, VISIBLE_OPACITY);
-        commitAtomicSwap(outgoing, incoming, incomingStoryIndex);
-      } else {
-        incomingVideo.currentTime = 0;
-        incomingVideo.loop = true;
-        await incomingVideo.play();
-        if (controller.signal.aborted || run !== runRef.current || incomingVideo.currentTime >= 0.2) throw new Error("Carousel incoming opening beat was lost");
-        setPhaseSafe("neutral-fade");
-        // The two native layers cover the entire scene throughout this single,
-        // neutral 100 ms source soften. There is no intermediary background or
-        // overlay, and the old source is not recycled until it has completed.
-        const outgoingFade = waitForOpacity(outgoingVideo, controller.signal, NEUTRAL_CUT_MS);
-        const incomingFade = waitForOpacity(incomingVideo, controller.signal, NEUTRAL_CUT_MS);
-        outgoingVideo.loop = false;
-        setOpacityForSlot(outgoing, 0);
-        setOpacityForSlot(incoming, VISIBLE_OPACITY);
-        await Promise.all([outgoingFade, incomingFade]);
-        if (controller.signal.aborted || run !== runRef.current) return;
-        commitAtomicSwap(outgoing, incoming, incomingStoryIndex);
-      }
-
-      missedEndWindowRef.current = false;
-      setPhaseSafe("committed");
-      // The old layer becomes reusable only after the opacity transition ends.
-      const followingIndex = (incomingStoryIndex + 1) % HOME_STORIES.length;
-      assignSource(outgoing, followingIndex);
-      setOpacityForSlot(outgoing, 0);
-      void warmSlot(outgoing, followingIndex);
-    } catch {
-      if (controller.signal.aborted || run !== runRef.current) return;
-      // A failure never starts a dark transition. Keep the established person
-      // moving, restore its cover layer, and resume background preparation.
-      const outgoingVideo = videoRefs.current[outgoing].current;
-      setOpacityForSlot(outgoing, VISIBLE_OPACITY);
-      setOpacityForSlot(incoming, 0);
-      if (outgoingVideo) {
-        outgoingVideo.loop = true;
-        void outgoingVideo.play().catch(() => undefined);
-      }
-      setPhaseSafe("idle");
-      warmFollowingStory();
-    } finally {
-      if (transitionAbortRef.current === controller) transitionAbortRef.current = null;
-    }
-  }, [assignSource, cancelWarm, commitAtomicSwap, reducedMotion, setOpacityForSlot, setPhaseSafe, videoEnabled, warmFollowingStory, warmSlot]);
-
-  const onTimeUpdate = useCallback((slot: VideoSlot, video: HTMLVideoElement) => {
-    if (slot !== visibleSlotRef.current || !Number.isFinite(video.duration) || video.duration <= 0) return;
-    const inEndWindow = video.duration - video.currentTime <= END_WINDOW_SECONDS;
-    if (inEndWindow) missedEndWindowRef.current = true;
-    if (phaseRef.current !== "next-frame-ready") return;
-    const prepared = preparedRef.current;
-    const next = otherSlot(slot);
-    const readyAfterMissedEnd = missedEndWindowRef.current
-      && prepared?.slot === next
-      && prepared.storyIndex === slotStoriesRef.current[next]
-      && video.currentTime > 0.05
-      && video.currentTime < 1;
-    if (inEndWindow || readyAfterMissedEnd) void startTransition();
-  }, [startTransition]);
-
-  useEffect(() => {
-    setVideoEnabled(!shouldUseStaticHero());
-  }, []);
-
-  useEffect(() => {
-    if (!videoEnabled) return;
-    const startFrame = window.requestAnimationFrame(() => {
-      const first = videoRefs.current[0].current;
-      if (!first) return;
-      first.muted = true;
-      first.playsInline = true;
-      first.preload = "auto";
-      first.loop = true;
-      void first.play().catch(() => undefined);
-      // First playback and second-story decoding start together.
-      void warmSlot(1, 1);
-    });
-    return () => window.cancelAnimationFrame(startFrame);
-  }, [videoEnabled, warmSlot]);
-
-  useEffect(() => {
-    const onVisibilityChange = () => {
-      if (document.hidden) {
-        cancelWarm();
-        transitionAbortRef.current?.abort();
-        videoRefs.current[0].current?.pause();
-        videoRefs.current[1].current?.pause();
-        return;
-      }
-      const visible = visibleSlotRef.current;
-      const hidden = otherSlot(visible);
-      setOpacityForSlot(visible, VISIBLE_OPACITY);
-      setOpacityForSlot(hidden, 0);
-      setPhaseSafe("idle");
-      const current = videoRefs.current[visible].current;
-      if (current && videoEnabled) {
-        current.loop = true;
-        void current.play().catch(() => undefined);
-        warmFollowingStory();
-      }
+    let prepared = false;
+    const detachReadyListeners = () => {
+      video.removeEventListener("loadeddata", markReadyAtOpening);
+      video.removeEventListener("canplay", markReadyAtOpening);
     };
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, [cancelWarm, setOpacityForSlot, setPhaseSafe, videoEnabled, warmFollowingStory]);
+    const markReadyAtOpening = () => {
+      if (prepared || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+      prepared = true;
+      video.pause();
+      video.currentTime = 0;
+      setIncomingReady(true);
+      detachReadyListeners();
+    };
+
+    video.addEventListener("loadeddata", markReadyAtOpening);
+    video.addEventListener("canplay", markReadyAtOpening);
+    markReadyAtOpening();
+    return () => {
+      detachReadyListeners();
+    };
+  }, [incomingIndex, videoEnabled]);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      cancelWarm();
-      transitionAbortRef.current?.abort();
+      if (settleTimerRef.current !== null) window.clearTimeout(settleTimerRef.current);
     };
-  }, [cancelWarm]);
+  }, []);
 
-  const posterStory = HOME_STORIES[posterStoryIndex];
+  const completeTransition = useCallback((nextIndex: number) => {
+    if (!mountedRef.current) return;
+    setActiveIndex(nextIndex);
+    onActiveStoryChange(HOME_STORIES[nextIndex]);
+    setIncomingIndex((nextIndex + 1) % HOME_STORIES.length);
+    setIncomingReady(false);
+    setCrossfading(false);
+    transitionInFlightRef.current = false;
+  }, [onActiveStoryChange]);
+
+  const beginTransition = useCallback(async () => {
+    if (!videoEnabled || !incomingReady || crossfading || transitionInFlightRef.current || incomingIndex === null) return;
+    const incomingVideo = incomingVideoRef.current;
+    if (!incomingVideo || incomingVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+
+    // Set the opening beat immediately before visibility changes. There is no
+    // hidden playback, seeking to a later frame, or pre-transition text swap.
+    transitionInFlightRef.current = true;
+    incomingVideo.currentTime = 0;
+    incomingVideo.loop = true;
+    try {
+      await incomingVideo.play();
+    } catch {
+      incomingVideo.pause();
+      incomingVideo.currentTime = 0;
+      setIncomingReady(false);
+      transitionInFlightRef.current = false;
+      return;
+    }
+    if (!mountedRef.current) return;
+
+    if (reducedMotion) {
+      completeTransition(incomingIndex);
+      return;
+    }
+
+    setCrossfading(true);
+    settleTimerRef.current = window.setTimeout(() => {
+      settleTimerRef.current = null;
+      completeTransition(incomingIndex);
+    }, CROSSFADE_MS);
+  }, [completeTransition, crossfading, incomingIndex, incomingReady, reducedMotion, videoEnabled]);
+
+  const onActiveTimeUpdate = useCallback((video: HTMLVideoElement) => {
+    if (crossfading || !incomingReady || !Number.isFinite(video.duration) || video.duration <= 0) return;
+    if (video.duration - video.currentTime <= END_WINDOW_SECONDS) void beginTransition();
+  }, [beginTransition, crossfading, incomingReady]);
+
+  const activeStory = HOME_STORIES[activeIndex];
+  const incomingStory = incomingIndex === null ? null : HOME_STORIES[incomingIndex];
+
   return (
     <div
       className={styles.media}
       aria-hidden="true"
       data-home-carousel="true"
-      data-carousel-phase={phase}
-      data-carousel-visible-index={slotStories[visibleSlot] + 1}
-      data-carousel-next-ready={nextReady ? "true" : "false"}
+      data-carousel-phase={crossfading ? "dissolving" : incomingReady ? "ready" : "preloading"}
+      data-carousel-visible-index={activeIndex + 1}
+      data-carousel-next-ready={incomingReady ? "true" : "false"}
       data-video-enabled={videoEnabled ? "true" : "false"}
     >
-      <img className={styles.poster} style={focalStyle(posterStory)} src={assetPath(posterStory, "poster.webp")} alt="" />
-      {([0, 1] as const).map((slot) => {
-        const story = HOME_STORIES[slotStories[slot]];
-        return (
-          <video
-            key={`home-carousel-slot-${slot}`}
-            ref={videoRefs.current[slot]}
-            className={styles.video}
-            style={{ ...focalStyle(story), opacity: videoEnabled ? opacity[slot] : 0 }}
-            data-carousel-slot={slot}
-            data-carousel-story={story.slug}
-            data-carousel-layer={slot === visibleSlot ? "visible" : "hidden"}
-            src={assetPath(story, "mp4")}
-            poster={assetPath(story, "poster.webp")}
-            autoPlay={slot === 0 && videoEnabled}
-            loop={slot === visibleSlot && videoEnabled}
-            muted
-            playsInline
-            preload="auto"
-            disablePictureInPicture
-            onTimeUpdate={(event) => onTimeUpdate(slot, event.currentTarget)}
-            onError={() => {
-              if (slot === visibleSlotRef.current) setVideoEnabled(false);
-              else {
-                preparedRef.current = null;
-                if (mountedRef.current) setNextReady(false);
-              }
-            }}
-          />
-        );
-      })}
+      <img className={styles.poster} style={focalStyle(activeStory)} src={assetPath(activeStory, "poster.webp")} alt="" />
+      {videoEnabled && (
+        <video
+          key={`active-${activeStory.slug}`}
+          ref={activeVideoRef}
+          className={`${styles.video} ${crossfading ? styles.videoOutgoing : ""}`}
+          style={focalStyle(activeStory)}
+          data-carousel-layer="active"
+          data-carousel-story={activeStory.slug}
+          src={assetPath(activeStory, "mp4")}
+          poster={assetPath(activeStory, "poster.webp")}
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="auto"
+          disablePictureInPicture
+          onTimeUpdate={(event) => onActiveTimeUpdate(event.currentTarget)}
+          onError={() => setVideoEnabled(false)}
+        />
+      )}
+      {videoEnabled && incomingStory && (
+        <video
+          key={`incoming-${incomingStory.slug}`}
+          ref={incomingVideoRef}
+          className={`${styles.video} ${styles.videoIncoming} ${crossfading ? styles.videoIncomingVisible : ""}`}
+          style={focalStyle(incomingStory)}
+          data-carousel-layer="incoming"
+          data-carousel-story={incomingStory.slug}
+          src={assetPath(incomingStory, "mp4")}
+          poster={assetPath(incomingStory, "poster.webp")}
+          muted
+          playsInline
+          preload="auto"
+          disablePictureInPicture
+          onError={() => setIncomingReady(false)}
+        />
+      )}
       <span className={styles.mediaVeil} />
     </div>
   );
