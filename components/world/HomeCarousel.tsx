@@ -20,16 +20,16 @@ export const HOME_STORIES: readonly HomeStory[] = [
   { slug: "younger-man", label: "记忆里的家人或朋友", desktopPosition: "67% 50%", mobilePosition: "67% 48%" },
 ];
 
-const FADE_OUT_MS = 340;
-const FADE_IN_MS = 440;
-const PREPARE_WINDOW_MS = 2_000;
+const VEIL_IN_MS = 390;
+const VEIL_SWAP_DELAY_MS = 330;
+const VEIL_OUT_MS = 500;
 const PREPARE_TIMEOUT_MS = 8_000;
 const END_WINDOW_SECONDS = 0.82;
 const VISIBLE_OPACITY = 0.92;
-const VEIL_OPACITY = 0.4;
 
 type VideoSlot = 0 | 1;
-type CarouselPhase = "idle" | "preparing" | "fading-out" | "fading-in" | "settling";
+type CarouselPhase = "idle" | "preparing-next" | "next-frame-ready" | "light-veil-in" | "atomic-layer-swap" | "light-veil-out" | "committed";
+type VeilStage = "idle" | "in" | "out";
 type VideoFrameCapable = HTMLVideoElement & {
   requestVideoFrameCallback?: (callback: (now: number, metadata: unknown) => number) => number;
   cancelVideoFrameCallback?: (handle: number) => void;
@@ -160,8 +160,6 @@ function waitForDecodedFrame(video: HTMLVideoElement, signal: AbortSignal) {
     if (frameVideo.requestVideoFrameCallback) {
       frameHandle = frameVideo.requestVideoFrameCallback(() => done());
     } else {
-      // The fallback is deliberately not a guessed timer: loaded data plus a
-      // completed seek establishes a decoded frame for browsers without rVFC.
       window.requestAnimationFrame(() => {
         if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.currentTime >= 0.04) done();
       });
@@ -175,12 +173,12 @@ function waitForDecodedFrame(video: HTMLVideoElement, signal: AbortSignal) {
   });
 }
 
-function waitForOpacity(video: HTMLVideoElement, targetOpacity: number, signal: AbortSignal, duration: number) {
+function waitForVeilTransform(veil: HTMLSpanElement, signal: AbortSignal, duration: number) {
   return new Promise<void>((resolve, reject) => {
     let timer: number | undefined;
     let settled = false;
     const clean = () => {
-      video.removeEventListener("transitionend", ended);
+      veil.removeEventListener("transitionend", ended);
       signal.removeEventListener("abort", aborted);
       if (timer !== undefined) window.clearTimeout(timer);
     };
@@ -194,29 +192,42 @@ function waitForOpacity(video: HTMLVideoElement, targetOpacity: number, signal: 
       if (settled) return;
       settled = true;
       clean();
-      reject(new DOMException("Carousel opacity transition cancelled", "AbortError"));
+      reject(new DOMException("Carousel veil cancelled", "AbortError"));
     };
     const ended = (event: TransitionEvent) => {
-      if (event.target !== video || event.propertyName !== "opacity") return;
-      done();
+      if (event.target === veil && event.propertyName === "transform") done();
     };
     if (signal.aborted) { aborted(); return; }
     signal.addEventListener("abort", aborted, { once: true });
-    video.addEventListener("transitionend", ended);
-    // The timeout is a guarded browser fallback; it is only accepted once the
-    // actual computed value has reached the requested opacity.
-    timer = window.setTimeout(() => {
-      const computed = Number.parseFloat(window.getComputedStyle(video).opacity);
-      if (Math.abs(computed - targetOpacity) <= 0.02) done();
-      else aborted();
-    }, duration + 220);
+    veil.addEventListener("transitionend", ended);
+    timer = window.setTimeout(done, duration + 180);
+  });
+}
+
+function wait(duration: number, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    let timer: number | undefined;
+    const done = () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      signal.removeEventListener("abort", aborted);
+      resolve();
+    };
+    const aborted = () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      signal.removeEventListener("abort", aborted);
+      reject(new DOMException("Carousel wait cancelled", "AbortError"));
+    };
+    if (signal.aborted) { aborted(); return; }
+    signal.addEventListener("abort", aborted, { once: true });
+    timer = window.setTimeout(done, duration);
   });
 }
 
 /**
- * The homepage keeps exactly two physical videos: the visible person and the
- * fully paused, decoded next person. The controller never replaces the
- * outgoing source while either fade is active.
+ * There are always two physical media layers: one playing person and one
+ * paused, decoded next person. They never crossfade. A narrow warm window-light
+ * veil moves left-to-right, and the layers swap only while that light covers
+ * the primary subject.
  */
 export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouselProps) {
   const [videoEnabled, setVideoEnabled] = useState(false);
@@ -225,7 +236,7 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
   const [posterStoryIndex, setPosterStoryIndex] = useState(0);
   const [phase, setPhase] = useState<CarouselPhase>("idle");
   const [opacity, setOpacity] = useState<[number, number]>([VISIBLE_OPACITY, 0]);
-  const [veilOpacity, setVeilOpacity] = useState(0);
+  const [veilStage, setVeilStage] = useState<VeilStage>("idle");
   const [nextReady, setNextReady] = useState(false);
   const firstVideoRef = useRef<HTMLVideoElement>(null);
   const secondVideoRef = useRef<HTMLVideoElement>(null);
@@ -239,9 +250,6 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
   const warmAbortRef = useRef<AbortController | null>(null);
   const transitionAbortRef = useRef<AbortController | null>(null);
   const retryTimerRef = useRef<number | null>(null);
-  // If preparation misses the visible clip's first ending window, remember it.
-  // A prepared next clip then takes over in the opening beat of the loop
-  // instead of making the same person play another complete story.
   const missedEndWindowRef = useRef(false);
   const runRef = useRef(0);
   const mountedRef = useRef(true);
@@ -258,11 +266,6 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
     const video = videoRefs.current[slot].current;
     if (video) video.style.opacity = String(value);
     if (mountedRef.current) setOpacity(next);
-  }, []);
-
-  const setVeil = useCallback((value: number) => {
-    if (veilRef.current) veilRef.current.style.opacity = String(value);
-    if (mountedRef.current) setVeilOpacity(value);
   }, []);
 
   const cancelWarm = useCallback(() => {
@@ -293,7 +296,7 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
   }, []);
 
   const warmSlot = useCallback(async (slot: VideoSlot, storyIndex: number) => {
-    if (!videoEnabled || phaseRef.current === "fading-out" || phaseRef.current === "fading-in") return;
+    if (!videoEnabled || phaseRef.current === "light-veil-in" || phaseRef.current === "atomic-layer-swap" || phaseRef.current === "light-veil-out") return;
     const currentPrepared = preparedRef.current;
     if (currentPrepared?.slot === slot && currentPrepared.storyIndex === storyIndex) return;
     cancelWarm();
@@ -301,22 +304,23 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
     const run = ++runRef.current;
     warmAbortRef.current = controller;
     preparedRef.current = null;
-    setNextReady(false);
-    setPhaseSafe("preparing");
+    if (mountedRef.current) setNextReady(false);
+    setPhaseSafe("preparing-next");
     const video = videoRefs.current[slot].current;
     if (!video) return;
 
     try {
-      if (slotStoriesRef.current[slot] !== storyIndex) assignSource(slot, storyIndex);
-      else {
+      if (slotStoriesRef.current[slot] !== storyIndex) {
+        assignSource(slot, storyIndex);
+      } else {
         video.pause();
         video.muted = true;
         video.playsInline = true;
         video.preload = "auto";
-        // The server-rendered current+next tags have already asked the
-        // browser to preload. Calling load() here would abort that early
-        // transfer, so only create a request when there is none at all.
-        if (video.networkState === HTMLMediaElement.NETWORK_EMPTY) video.load();
+        // Browsers may defer a visually hidden preload even after SSR has
+        // emitted the tag. An explicit load only when no fetch is active makes
+        // the next frame request deterministic without aborting a transfer.
+        if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA && video.networkState !== HTMLMediaElement.NETWORK_LOADING) video.load();
       }
       await waitForCurrentData(video, controller.signal);
       if (controller.signal.aborted || run !== runRef.current) return;
@@ -328,14 +332,14 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
       if (controller.signal.aborted || run !== runRef.current) return;
       preparedRef.current = { slot, storyIndex, run };
       if (mountedRef.current) setNextReady(true);
-      setPhaseSafe("idle");
+      setPhaseSafe("next-frame-ready");
     } catch {
       if (controller.signal.aborted || run !== runRef.current) return;
       preparedRef.current = null;
       if (mountedRef.current) setNextReady(false);
       setPhaseSafe("idle");
-      // A slow next asset never freezes the visible person. Retry preparation
-      // in the background; the visible video stays looping until it is ready.
+      // A slow next asset is retried in the background while the visible
+      // person keeps looping. No veil or dimming is allowed on this path.
       retryTimerRef.current = window.setTimeout(() => {
         retryTimerRef.current = null;
         void warmSlot(slot, storyIndex);
@@ -352,21 +356,38 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
     void warmSlot(hidden, followingIndex);
   }, [warmSlot]);
 
+  const commitAtomicSwap = useCallback(async (outgoing: VideoSlot, incoming: VideoSlot, incomingStoryIndex: number, controller: AbortController, run: number) => {
+    const outgoingVideo = videoRefs.current[outgoing].current;
+    const incomingVideo = videoRefs.current[incoming].current;
+    if (!outgoingVideo || !incomingVideo) throw new Error("Carousel media layer disappeared");
+    setPhaseSafe("atomic-layer-swap");
+    incomingVideo.currentTime = 0;
+    incomingVideo.loop = true;
+    await incomingVideo.play();
+    if (controller.signal.aborted || run !== runRef.current || incomingVideo.currentTime >= 0.2) throw new Error("Carousel incoming opening beat was lost");
+
+    // Both opacity writes occur in the same task, with no CSS opacity
+    // transition. The warm veil is the only visual transition, so two faces
+    // can never remain visibly blended.
+    outgoingVideo.loop = false;
+    setOpacityForSlot(outgoing, 0);
+    setOpacityForSlot(incoming, VISIBLE_OPACITY);
+    visibleSlotRef.current = incoming;
+    if (mountedRef.current) {
+      setVisibleSlot(incoming);
+      setPosterStoryIndex(incomingStoryIndex);
+    }
+    onActiveStoryChange(HOME_STORIES[incomingStoryIndex]);
+  }, [onActiveStoryChange, setOpacityForSlot, setPhaseSafe]);
+
   const startTransition = useCallback(async () => {
-    if (!videoEnabled || phaseRef.current !== "idle") return;
+    if (!videoEnabled || phaseRef.current !== "next-frame-ready") return;
     const outgoing = visibleSlotRef.current;
     const incoming = otherSlot(outgoing);
     const incomingStoryIndex = slotStoriesRef.current[incoming];
     const prepared = preparedRef.current;
-    const outgoingVideo = videoRefs.current[outgoing].current;
     const incomingVideo = videoRefs.current[incoming].current;
-    if (!outgoingVideo || !incomingVideo || prepared?.slot !== incoming || prepared.storyIndex !== incomingStoryIndex) {
-      warmFollowingStory();
-      return;
-    }
-    if (incomingVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || incomingVideo.currentTime >= 0.2) {
-      preparedRef.current = null;
-      if (mountedRef.current) setNextReady(false);
+    if (!incomingVideo || prepared?.slot !== incoming || prepared.storyIndex !== incomingStoryIndex || incomingVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || incomingVideo.currentTime >= 0.2) {
       warmFollowingStory();
       return;
     }
@@ -378,78 +399,59 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
     cancelWarm();
     preparedRef.current = null;
     if (mountedRef.current) setNextReady(false);
-    setPhaseSafe("fading-out");
-    outgoingVideo.loop = false;
-    window.requestAnimationFrame(() => {
-      if (!controller.signal.aborted && run === runRef.current) {
-        setOpacityForSlot(outgoing, 0);
-        setVeil(VEIL_OPACITY);
-      }
-    });
 
     try {
-      await waitForOpacity(outgoingVideo, 0, controller.signal, FADE_OUT_MS);
-      if (controller.signal.aborted || run !== runRef.current) return;
-
-      // Only after the outgoing layer is fully transparent may the incoming
-      // person start. This prevents a Safari double-face dissolve.
-      missedEndWindowRef.current = false;
-      visibleSlotRef.current = incoming;
-      if (mountedRef.current) {
-        setVisibleSlot(incoming);
-        setPosterStoryIndex(incomingStoryIndex);
+      if (reducedMotion) {
+        await commitAtomicSwap(outgoing, incoming, incomingStoryIndex, controller, run);
+      } else {
+        const veil = veilRef.current;
+        if (!veil) throw new Error("Carousel light veil disappeared");
+        setPhaseSafe("light-veil-in");
+        if (mountedRef.current) setVeilStage("in");
+        await wait(VEIL_SWAP_DELAY_MS, controller.signal);
+        if (controller.signal.aborted || run !== runRef.current) return;
+        await commitAtomicSwap(outgoing, incoming, incomingStoryIndex, controller, run);
+        if (controller.signal.aborted || run !== runRef.current) return;
+        setPhaseSafe("light-veil-out");
+        if (mountedRef.current) setVeilStage("out");
+        await waitForVeilTransform(veil, controller.signal, VEIL_OUT_MS);
+        if (controller.signal.aborted || run !== runRef.current) return;
+        if (mountedRef.current) setVeilStage("idle");
       }
-      onActiveStoryChange(HOME_STORIES[incomingStoryIndex]);
-      incomingVideo.currentTime = 0;
-      incomingVideo.loop = true;
-      // Start playback and the opacity transition in the same paint cycle.
-      // Waiting for play() before making the layer visible lets some browsers
-      // advance the hidden film far enough to lose the opening beat.
-      const incomingPlayback = incomingVideo.play();
-      setPhaseSafe("fading-in");
-      window.requestAnimationFrame(() => {
-        if (!controller.signal.aborted && run === runRef.current) {
-          setOpacityForSlot(incoming, VISIBLE_OPACITY);
-          setVeil(0);
-        }
-      });
-      await incomingPlayback;
-      if (controller.signal.aborted || run !== runRef.current) return;
-      await waitForOpacity(incomingVideo, VISIBLE_OPACITY, controller.signal, FADE_IN_MS);
-      if (controller.signal.aborted || run !== runRef.current) return;
 
-      // This is deliberately after both transitionend boundaries. The old
-      // layer has remained source-stable through the entire visual handoff.
-      setPhaseSafe("settling");
+      missedEndWindowRef.current = false;
+      setPhaseSafe("committed");
+      // The old layer becomes reusable only after the veil is fully gone.
       const followingIndex = (incomingStoryIndex + 1) % HOME_STORIES.length;
       assignSource(outgoing, followingIndex);
       setOpacityForSlot(outgoing, 0);
-      setPhaseSafe("idle");
       void warmSlot(outgoing, followingIndex);
     } catch {
       if (controller.signal.aborted || run !== runRef.current) return;
-      // Preserve the visible person instead of holding a failed handoff frame.
+      // A failure never starts a dark transition. Keep the established person
+      // moving, restore its cover layer, and resume background preparation.
+      const outgoingVideo = videoRefs.current[outgoing].current;
       setOpacityForSlot(outgoing, VISIBLE_OPACITY);
       setOpacityForSlot(incoming, 0);
-      setVeil(0);
-      outgoingVideo.loop = true;
-      void outgoingVideo.play().catch(() => undefined);
+      if (mountedRef.current) setVeilStage("idle");
+      if (outgoingVideo) {
+        outgoingVideo.loop = true;
+        void outgoingVideo.play().catch(() => undefined);
+      }
       setPhaseSafe("idle");
       warmFollowingStory();
     } finally {
       if (transitionAbortRef.current === controller) transitionAbortRef.current = null;
     }
-  }, [assignSource, cancelWarm, onActiveStoryChange, setOpacityForSlot, setPhaseSafe, setVeil, videoEnabled, warmFollowingStory, warmSlot]);
+  }, [assignSource, cancelWarm, commitAtomicSwap, reducedMotion, setOpacityForSlot, setPhaseSafe, videoEnabled, warmFollowingStory, warmSlot]);
 
   const onTimeUpdate = useCallback((slot: VideoSlot, video: HTMLVideoElement) => {
-    if (slot !== visibleSlotRef.current) return;
-    if (!Number.isFinite(video.duration) || video.duration <= 0) return;
+    if (slot !== visibleSlotRef.current || !Number.isFinite(video.duration) || video.duration <= 0) return;
     const inEndWindow = video.duration - video.currentTime <= END_WINDOW_SECONDS;
     if (inEndWindow) missedEndWindowRef.current = true;
-    if (phaseRef.current !== "idle") return;
-
-    const next = otherSlot(slot);
+    if (phaseRef.current !== "next-frame-ready") return;
     const prepared = preparedRef.current;
+    const next = otherSlot(slot);
     const readyAfterMissedEnd = missedEndWindowRef.current
       && prepared?.slot === next
       && prepared.storyIndex === slotStoriesRef.current[next]
@@ -459,9 +461,8 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
   }, [startTransition]);
 
   useEffect(() => {
-    const enabled = !reducedMotion && !shouldUseStaticHero();
-    setVideoEnabled(enabled);
-  }, [reducedMotion]);
+    setVideoEnabled(!shouldUseStaticHero());
+  }, []);
 
   useEffect(() => {
     if (!videoEnabled) return;
@@ -473,7 +474,7 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
       first.preload = "auto";
       first.loop = true;
       void first.play().catch(() => undefined);
-      // First playback and next-video preheat begin together, not at the end.
+      // First playback and second-story decoding start together.
       void warmSlot(1, 1);
     });
     return () => window.cancelAnimationFrame(startFrame);
@@ -492,7 +493,7 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
       const hidden = otherSlot(visible);
       setOpacityForSlot(visible, VISIBLE_OPACITY);
       setOpacityForSlot(hidden, 0);
-      setVeil(0);
+      if (mountedRef.current) setVeilStage("idle");
       setPhaseSafe("idle");
       const current = videoRefs.current[visible].current;
       if (current && videoEnabled) {
@@ -503,7 +504,7 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, [cancelWarm, setOpacityForSlot, setPhaseSafe, setVeil, videoEnabled, warmFollowingStory]);
+  }, [cancelWarm, setOpacityForSlot, setPhaseSafe, videoEnabled, warmFollowingStory]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -523,7 +524,7 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
       data-carousel-phase={phase}
       data-carousel-visible-index={slotStories[visibleSlot] + 1}
       data-carousel-next-ready={nextReady ? "true" : "false"}
-      data-carousel-prewarm-window-ms={PREPARE_WINDOW_MS}
+      data-light-veil={veilStage}
       data-video-enabled={videoEnabled ? "true" : "false"}
     >
       <img className={styles.poster} style={focalStyle(posterStory)} src={assetPath(posterStory, "poster.webp")} alt="" />
@@ -534,11 +535,7 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
             key={`home-carousel-slot-${slot}`}
             ref={videoRefs.current[slot]}
             className={styles.video}
-            style={{
-              ...focalStyle(story),
-              opacity: videoEnabled ? opacity[slot] : 0,
-              transitionDuration: `${phase === "fading-in" && slot === visibleSlot ? FADE_IN_MS : FADE_OUT_MS}ms`,
-            }}
+            style={{ ...focalStyle(story), opacity: videoEnabled ? opacity[slot] : 0 }}
             data-carousel-slot={slot}
             data-carousel-story={story.slug}
             data-carousel-layer={slot === visibleSlot ? "visible" : "hidden"}
@@ -561,9 +558,8 @@ export function HomeCarousel({ reducedMotion, onActiveStoryChange }: HomeCarouse
           />
         );
       })}
-      <span ref={veilRef} className={styles.crossfadeVeil} style={{ opacity: veilOpacity, transitionDuration: `${phase === "fading-in" ? FADE_IN_MS : FADE_OUT_MS}ms` }} />
+      <span ref={veilRef} className={styles.lightVeil} />
       <span className={styles.mediaVeil} />
     </div>
   );
 }
-
