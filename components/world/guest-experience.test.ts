@@ -32,43 +32,43 @@ test("the next native video is explicitly decoded at its real opening frame befo
   assert.doesNotMatch(carousel, /canplaythrough/);
 });
 
-test("the light-veil state machine cannot enter the transition without a decoded next frame", () => {
-  for (const phase of ["idle", "preparing-next", "next-frame-ready", "light-veil-in", "atomic-layer-swap", "light-veil-out", "committed"]) {
+test("the neutral source cut cannot enter the transition without a decoded next frame", () => {
+  for (const phase of ["idle", "preparing-next", "next-frame-ready", "neutral-fade", "atomic-layer-swap", "committed"]) {
     assert.match(carousel, new RegExp(`"${phase}"`));
   }
   assert.match(carousel, /if \(!videoEnabled \|\| phaseRef\.current !== "next-frame-ready"\) return;/);
   assert.match(carousel, /prepared\?\.slot !== incoming[\s\S]*?incomingVideo\.readyState < HTMLMediaElement\.HAVE_CURRENT_DATA[\s\S]*?incomingVideo\.currentTime >= 0\.2/);
-  assert.match(carousel, /A slow next asset is retried in the background[\s\S]*?No veil or dimming is allowed on this path/);
+  assert.match(carousel, /A slow next asset is retried in the background[\s\S]*?No transition is allowed on this path/);
   assert.match(carousel, /outgoingVideo\.loop = true;[\s\S]*?void outgoingVideo\.play\(\)/);
 });
 
 test("the person index changes only inside the atomic swap and the old source is recycled after commit", () => {
+  const neutralFade = carousel.indexOf('setPhaseSafe("neutral-fade")');
+  const outgoingHidden = carousel.indexOf("setOpacityForSlot(outgoing, 0)", neutralFade);
+  const incomingVisible = carousel.indexOf("setOpacityForSlot(incoming, VISIBLE_OPACITY)", neutralFade);
+  const fadesFinished = carousel.indexOf("await Promise.all([outgoingFade, incomingFade])", neutralFade);
   const atomic = carousel.indexOf('setPhaseSafe("atomic-layer-swap")');
-  const outgoingHidden = carousel.indexOf("setOpacityForSlot(outgoing, 0)", atomic);
-  const incomingVisible = carousel.indexOf("setOpacityForSlot(incoming, VISIBLE_OPACITY)", atomic);
   const indexUpdate = carousel.indexOf("visibleSlotRef.current = incoming", atomic);
   const committed = carousel.indexOf('setPhaseSafe("committed")', atomic);
   const recycle = carousel.indexOf("assignSource(outgoing, followingIndex)", committed);
-  assert.ok(atomic >= 0 && outgoingHidden > atomic && incomingVisible > outgoingHidden && indexUpdate > incomingVisible, "visible person changes only as the two video layers swap");
-  assert.ok(committed > indexUpdate && recycle > committed, "next-next prewarm waits until the veil transition has committed");
+  assert.ok(neutralFade >= 0 && outgoingHidden > neutralFade && incomingVisible > outgoingHidden && fadesFinished > incomingVisible && atomic >= 0 && indexUpdate > atomic, "visible person changes only after the neutral source cut is complete");
+  assert.match(carousel, /await Promise\.all\(\[outgoingFade, incomingFade\]\)[\s\S]*?commitAtomicSwap\(outgoing, incoming, incomingStoryIndex\)/);
+  assert.ok(committed > indexUpdate && recycle > committed, "next-next prewarm waits until the neutral source cut has committed");
   assert.match(carousel, /if \(!videoEnabled \|\| phaseRef\.current !== "next-frame-ready"\) return;/);
 });
 
-test("the light veil is warm, covers the atomic swap, and never uses a black fade or visible face crossfade", () => {
-  assert.match(carousel, /setPhaseSafe\("light-veil-in"\)[\s\S]*?setVeilStage\("in"\)[\s\S]*?await wait\(VEIL_SWAP_DELAY_MS[\s\S]*?await commitAtomicSwap[\s\S]*?setPhaseSafe\("light-veil-out"\)[\s\S]*?setVeilStage\("out"\)/);
-  assert.match(styles, /\.lightVeil[\s\S]*?linear-gradient\(90deg, rgba\(248, 231, 200, 0\)/);
-  assert.match(styles, /transform: translate3d\(/);
-  assert.match(styles, /\[data-home-carousel\]\[data-light-veil="in"\] \.lightVeil/);
-  assert.match(styles, /\[data-home-carousel\]\[data-light-veil="out"\] \.lightVeil/);
+test("the source cut is only a 100 ms neutral opacity soften with no overlay or visible effect", () => {
+  assert.match(carousel, /const NEUTRAL_CUT_MS = 100/);
+  assert.match(carousel, /setPhaseSafe\("neutral-fade"\)[\s\S]*?const outgoingFade = waitForOpacity\(outgoingVideo, controller\.signal, NEUTRAL_CUT_MS\)[\s\S]*?const incomingFade = waitForOpacity\(incomingVideo, controller\.signal, NEUTRAL_CUT_MS\)[\s\S]*?setOpacityForSlot\(outgoing, 0\)[\s\S]*?setOpacityForSlot\(incoming, VISIBLE_OPACITY\)[\s\S]*?await Promise\.all\(\[outgoingFade, incomingFade\]\)[\s\S]*?commitAtomicSwap/);
   assert.match(styles, /\[data-home-carousel\]\[data-video-enabled="true"\] \.poster \{ opacity: 0; \}/);
-  assert.match(styles, /\.video \{ z-index: 1; opacity: 0; transition: none;/);
-  assert.doesNotMatch(styles, /crossfadeVeil|videoIncomingVisible|videoOutgoing/);
-  assert.doesNotMatch(carousel, /setVeil\(VEIL_OPACITY\)|waitForOpacity/);
+  assert.match(styles, /\.video \{ z-index: 1; opacity: 0; transition: opacity 100ms linear;/);
+  assert.doesNotMatch(carousel, /lightVeil|veilStage|VEIL_|waitForVeilTransform|translate3d/);
+  assert.doesNotMatch(styles, /lightVeil|data-light-veil|translate3d|filter:|blur\(/);
 });
 
 test("reduced motion uses the already-decoded next opening frame and swaps directly", () => {
-  assert.match(carousel, /if \(reducedMotion\) \{[\s\S]*?await commitAtomicSwap\(outgoing, incoming, incomingStoryIndex, controller, run\);/);
-  assert.match(styles, /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.video \{ transition: none; \}[\s\S]*?\.lightVeil \{ display: none; \}/);
+  assert.match(carousel, /if \(reducedMotion\) \{[\s\S]*?await incomingVideo\.play\(\);[\s\S]*?setOpacityForSlot\(outgoing, 0\);[\s\S]*?setOpacityForSlot\(incoming, VISIBLE_OPACITY\);[\s\S]*?commitAtomicSwap\(outgoing, incoming, incomingStoryIndex\);/);
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.video \{ transition: none; \}/);
   assert.doesNotMatch(styles, /\.video \{ display: none;/);
 });
 
