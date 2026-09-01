@@ -20,12 +20,13 @@ export const HOME_STORIES: readonly HomeStory[] = [
   { slug: "younger-man", label: "记忆里的家人或朋友", desktopPosition: "67% 50%", mobilePosition: "67% 48%" },
 ];
 
-const DISSOLVE_MS = 1_000;
-const HANDOFF_LEAD_SECONDS = 1.05;
+const FADE_MS = 450;
+const HANDOFF_LEAD_SECONDS = 0.85;
 const HOME_ASSET_VERSION = "home-v2";
 
 type Layer = "a" | "b";
 type LayerStories = Record<Layer, number>;
+type TransitionPhase = "steady" | "fade-out" | "waiting" | "fade-in";
 
 type HomeCarouselProps = {
   reducedMotion: boolean;
@@ -34,7 +35,7 @@ type HomeCarouselProps = {
 };
 
 function assetPath(story: HomeStory, extension: "mp4" | "poster.webp") {
-  return `/home-hero-assets/${story.slug}.${HOME_ASSET_VERSION}.${extension}`;
+  return \`/home-hero-assets/\${story.slug}.\${HOME_ASSET_VERSION}.\${extension}\`;
 }
 
 function otherLayer(layer: Layer): Layer {
@@ -56,21 +57,23 @@ function focalStyle(story: HomeStory): CSSProperties {
 }
 
 /**
- * This deliberately keeps the pre-interaction-video homepage dissolve small:
- * two fixed media elements, one current film and one paused next film. A layer
- * is never remounted while it is becoming visible, so its first frame flows
- * straight into playback instead of restarting at the end of the dissolve.
+ * Two fixed video elements are retained for cheap preloading, but only one is
+ * ever playing. The current person fades completely into a person-free warm
+ * plate before the next person starts and fades in. Videos never loop.
  */
 export function HomeCarousel({ reducedMotion, playbackActive, onActiveStoryChange }: HomeCarouselProps) {
   const [videoEnabled, setVideoEnabled] = useState(false);
   const [activeLayer, setActiveLayer] = useState<Layer>("a");
   const [layerStories, setLayerStories] = useState<LayerStories>({ a: 0, b: 1 });
-  const [nextReady, setNextReady] = useState(false);
-  const [dissolving, setDissolving] = useState(false);
+  const [nextReady, setNextReadyState] = useState(false);
+  const [phase, setPhaseState] = useState<TransitionPhase>("steady");
   const videoARef = useRef<HTMLVideoElement>(null);
   const videoBRef = useRef<HTMLVideoElement>(null);
   const mountedRef = useRef(true);
   const handoffRef = useRef(false);
+  const phaseRef = useRef<TransitionPhase>("steady");
+  const nextReadyRef = useRef(false);
+  const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const nextLayer = otherLayer(activeLayer);
   const activeIndex = layerStories[activeLayer];
@@ -81,37 +84,59 @@ export function HomeCarousel({ reducedMotion, playbackActive, onActiveStoryChang
     layer === "a" ? videoARef.current : videoBRef.current
   ), []);
 
+  const setPhase = useCallback((value: TransitionPhase) => {
+    phaseRef.current = value;
+    setPhaseState(value);
+  }, []);
+
+  const setNextReady = useCallback((value: boolean) => {
+    nextReadyRef.current = value;
+    setNextReadyState(value);
+  }, []);
+
+  const clearTransitionTimer = useCallback(() => {
+    if (transitionTimerRef.current) {
+      clearTimeout(transitionTimerRef.current);
+      transitionTimerRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     setVideoEnabled(!reducedMotion && !shouldUseStaticHero());
   }, [reducedMotion]);
 
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
+    return () => {
+      mountedRef.current = false;
+      clearTransitionTimer();
+    };
+  }, [clearTransitionTimer]);
 
-  // Start the opening film and immediately prepare the second one. This runs
-  // while the brand launch is still above the page, not at the last second.
+  // The visible film is the only film allowed to play. It never loops.
   useEffect(() => {
     if (!videoEnabled) return;
     const current = videoForLayer(activeLayer);
     if (!current) return;
     current.muted = true;
     current.playsInline = true;
-    current.loop = true;
+    current.loop = false;
     current.preload = "auto";
+
     if (!playbackActive) {
+      clearTransitionTimer();
+      handoffRef.current = false;
+      setPhase("steady");
       current.pause();
       current.currentTime = 0;
       current.load();
       return;
     }
-    void current.play().catch(() => undefined);
-  }, [activeLayer, playbackActive, videoEnabled, videoForLayer]);
 
-  // The hidden layer must stay at frame zero. `loadeddata` is enough for an
-  // opening frame; waiting for a fully buffered film is unnecessary and slow
-  // on mobile Safari.
+    if (phaseRef.current === "steady") void current.play().catch(() => undefined);
+  }, [activeLayer, clearTransitionTimer, playbackActive, setPhase, videoEnabled, videoForLayer]);
+
+  // The hidden layer may buffer its opening frame, but it remains paused at 0.
   useEffect(() => {
     if (!videoEnabled) return;
     const next = videoForLayer(nextLayer);
@@ -132,7 +157,7 @@ export function HomeCarousel({ reducedMotion, playbackActive, onActiveStoryChang
     next.currentTime = 0;
     next.muted = true;
     next.playsInline = true;
-    next.loop = true;
+    next.loop = false;
     next.preload = "auto";
     next.addEventListener("loadeddata", markReady);
     next.addEventListener("canplay", markReady);
@@ -144,32 +169,49 @@ export function HomeCarousel({ reducedMotion, playbackActive, onActiveStoryChang
       next.removeEventListener("loadeddata", markReady);
       next.removeEventListener("canplay", markReady);
     };
-  }, [nextIndex, nextLayer, videoEnabled, videoForLayer]);
+  }, [nextIndex, nextLayer, setNextReady, videoEnabled, videoForLayer]);
 
-  const finishDissolve = useCallback(() => {
-    if (!mountedRef.current || !handoffRef.current) return;
+  const finishFadeOut = useCallback(() => {
+    if (!mountedRef.current || phaseRef.current !== "fade-out") return;
+    clearTransitionTimer();
+    const current = videoForLayer(activeLayer);
+    current?.pause();
+    if (current && Number.isFinite(current.duration) && current.duration > 0) {
+      current.currentTime = Math.min(current.currentTime, Math.max(0, current.duration - 0.04));
+    }
+    setPhase("waiting");
+  }, [activeLayer, clearTransitionTimer, setPhase, videoForLayer]);
+
+  const finishFadeIn = useCallback(() => {
+    if (!mountedRef.current || phaseRef.current !== "fade-in" || !handoffRef.current) return;
+    clearTransitionTimer();
+
     const previousLayer = activeLayer;
     const promotedLayer = otherLayer(previousLayer);
     const previousVideo = videoForLayer(previousLayer);
-
     previousVideo?.pause();
     if (previousVideo) previousVideo.currentTime = 0;
 
-    // The already-playing next layer becomes current before the hidden old
-    // layer receives the following film. The visible film is never rebuilt.
     setActiveLayer(promotedLayer);
     setLayerStories((current) => ({
       ...current,
       [previousLayer]: (nextIndex + 1) % HOME_STORIES.length,
     }));
     setNextReady(false);
-    setDissolving(false);
+    setPhase("steady");
     handoffRef.current = false;
     onActiveStoryChange(HOME_STORIES[nextIndex]);
-  }, [activeLayer, nextIndex, onActiveStoryChange, videoForLayer]);
+  }, [activeLayer, clearTransitionTimer, nextIndex, onActiveStoryChange, setNextReady, setPhase, videoForLayer]);
 
-  const beginDissolve = useCallback(async () => {
-    if (!videoEnabled || !nextReady || dissolving || handoffRef.current) return;
+  const beginFadeOut = useCallback(() => {
+    if (!videoEnabled || !playbackActive || phaseRef.current !== "steady") return;
+    setPhase("fade-out");
+    clearTransitionTimer();
+    transitionTimerRef.current = setTimeout(finishFadeOut, FADE_MS + 120);
+  }, [clearTransitionTimer, finishFadeOut, playbackActive, setPhase, videoEnabled]);
+
+  const startIncoming = useCallback(async () => {
+    if (!mountedRef.current || phaseRef.current !== "waiting" || handoffRef.current || !nextReadyRef.current) return;
     const next = videoForLayer(nextLayer);
     if (!next || next.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
 
@@ -179,33 +221,41 @@ export function HomeCarousel({ reducedMotion, playbackActive, onActiveStoryChang
     try {
       await next.play();
     } catch {
+      handoffRef.current = false;
+      setNextReady(false);
       next.pause();
       next.currentTime = 0;
-      setNextReady(false);
+      next.load();
+      return;
+    }
+    if (!mountedRef.current || phaseRef.current !== "waiting") {
+      next.pause();
       handoffRef.current = false;
       return;
     }
-    if (!mountedRef.current) return;
 
-    if (reducedMotion) {
-      finishDissolve();
-      return;
-    }
-    setDissolving(true);
-  }, [dissolving, finishDissolve, nextLayer, nextReady, reducedMotion, videoEnabled, videoForLayer]);
+    // The outgoing film is already fully transparent and paused here.
+    setPhase("fade-in");
+    clearTransitionTimer();
+    transitionTimerRef.current = setTimeout(finishFadeIn, FADE_MS + 120);
+  }, [clearTransitionTimer, finishFadeIn, nextLayer, setNextReady, setPhase, videoForLayer]);
+
+  useEffect(() => {
+    if (phase === "waiting" && nextReady) void startIncoming();
+  }, [nextReady, phase, startIncoming]);
 
   const onCurrentTimeUpdate = useCallback((layer: Layer, video: HTMLVideoElement) => {
-    if (!playbackActive || layer !== activeLayer || dissolving || !nextReady || !Number.isFinite(video.duration) || video.duration <= 0) return;
-    if (video.duration - video.currentTime <= HANDOFF_LEAD_SECONDS) void beginDissolve();
-  }, [activeLayer, beginDissolve, dissolving, nextReady, playbackActive]);
+    if (!playbackActive || layer !== activeLayer || phaseRef.current !== "steady" || !Number.isFinite(video.duration) || video.duration <= 0) return;
+    if (video.duration - video.currentTime <= HANDOFF_LEAD_SECONDS) beginFadeOut();
+  }, [activeLayer, beginFadeOut, playbackActive]);
 
   const videoClassName = (layer: Layer) => {
     const current = layer === activeLayer;
     return [
       styles.video,
-      !current ? styles.videoIncoming : "",
-      dissolving && current ? styles.videoOutgoing : "",
-      dissolving && !current ? styles.videoIncomingVisible : "",
+      current ? styles.videoCurrent : styles.videoNext,
+      current && phase !== "steady" ? styles.videoOutgoing : "",
+      !current && phase === "fade-in" ? styles.videoIncomingVisible : "",
     ].filter(Boolean).join(" ");
   };
 
@@ -219,14 +269,19 @@ export function HomeCarousel({ reducedMotion, playbackActive, onActiveStoryChang
       data-carousel-story={story.slug}
       src={assetPath(story, "mp4")}
       poster={assetPath(story, "poster.webp")}
-      loop
       muted
       playsInline
       preload="auto"
       disablePictureInPicture
+      disableRemotePlayback
       onTimeUpdate={(event) => onCurrentTimeUpdate(layer, event.currentTarget)}
+      onEnded={() => {
+        if (layer === activeLayer) beginFadeOut();
+      }}
       onTransitionEnd={(event) => {
-        if (layer === nextLayer && event.propertyName === "opacity" && dissolving) finishDissolve();
+        if (event.propertyName !== "opacity") return;
+        if (layer === activeLayer && phaseRef.current === "fade-out") finishFadeOut();
+        if (layer === nextLayer && phaseRef.current === "fade-in") finishFadeIn();
       }}
       onError={() => {
         if (layer === activeLayer) setVideoEnabled(false);
@@ -243,9 +298,9 @@ export function HomeCarousel({ reducedMotion, playbackActive, onActiveStoryChang
       data-carousel-visible-index={activeIndex + 1}
       data-carousel-active-layer={activeLayer}
       data-carousel-next-ready={nextReady ? "true" : "false"}
-      data-carousel-dissolving={dissolving ? "true" : "false"}
+      data-carousel-phase={phase}
       data-video-enabled={videoEnabled ? "true" : "false"}
-      data-dissolve-duration-ms={DISSOLVE_MS}
+      data-fade-duration-ms={FADE_MS}
     >
       <img
         className={styles.poster}
@@ -256,6 +311,7 @@ export function HomeCarousel({ reducedMotion, playbackActive, onActiveStoryChang
         fetchPriority="high"
         decoding="async"
       />
+      <span className={styles.transitionPlate} />
       {videoEnabled && renderVideo("a", HOME_STORIES[layerStories.a])}
       {videoEnabled && renderVideo("b", HOME_STORIES[layerStories.b])}
       <span className={styles.mediaVeil} />
