@@ -7,9 +7,15 @@ on:
         description: Exact immutable 40-character application source commit
         required: true
         type: string
+  push:
+    branches:
+      - codex/one-time-dispatch-carousel-no-loop-20260901
 
 permissions:
   contents: read
+
+env:
+  SOURCE_COMMIT: ${{ github.event_name == 'workflow_dispatch' && inputs.source_commit || 'f49f8ff4ebb289b02fe51697c4e58369360b753e' }}
 
 jobs:
   export:
@@ -17,7 +23,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     concurrency:
-      group: staging-web-immutable-artifact-${{ inputs.source_commit }}
+      group: staging-web-immutable-artifact-${{ env.SOURCE_COMMIT }}
       cancel-in-progress: false
     steps:
       - name: Check out the versioned runner
@@ -35,7 +41,7 @@ jobs:
       - name: Check out the exact application source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ inputs.source_commit }}
+          ref: ${{ env.SOURCE_COMMIT }}
           path: source
           fetch-depth: 1
           persist-credentials: false
@@ -44,18 +50,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "${{ inputs.source_commit }}" = "$(git -C source rev-parse HEAD)"
+          verified_source_commit=$(git -C source rev-parse HEAD)
+          verified_source_tree=$(git -C source rev-parse HEAD^{tree})
+          test "$SOURCE_COMMIT" = "$verified_source_commit"
           test -z "$(git -C source status --porcelain)"
-          git -C source rev-parse HEAD
-          git -C source rev-parse HEAD^{tree}
+          echo "VERIFIED_SOURCE_COMMIT=$verified_source_commit" >> "$GITHUB_ENV"
+          echo "VERIFIED_SOURCE_TREE=$verified_source_tree" >> "$GITHUB_ENV"
+          printf '%s\n' "$verified_source_commit" "$verified_source_tree"
           rm -rf source/.git
 
       - name: Export immutable Linux BuildKit archive
         shell: bash
         run: |
           set -euo pipefail
-          source_commit=$(git -C source rev-parse HEAD)
-          source_tree=$(git -C source rev-parse HEAD^{tree})
+          test "$VERIFIED_SOURCE_COMMIT" = "f49f8ff4ebb289b02fe51697c4e58369360b753e"
+          source_commit=$VERIFIED_SOURCE_COMMIT
+          source_tree=$VERIFIED_SOURCE_TREE
           docker buildx version
           docker buildx build --pull=false \
             --build-arg "STAGING_WEB_ARTIFACT_SOURCE_COMMIT=$source_commit" \
@@ -74,7 +84,7 @@ jobs:
       - name: Upload immutable archive and evidence
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
-          name: staging-web-immutable-${{ inputs.source_commit }}
-          path: artifacts/staging-web-immutable-${{ inputs.source_commit }}
+          name: staging-web-immutable-${{ env.SOURCE_COMMIT }}
+          path: artifacts/staging-web-immutable-${{ env.SOURCE_COMMIT }}
           if-no-files-found: error
           retention-days: 90
