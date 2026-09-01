@@ -1,58 +1,82 @@
-name: One-time optimize approved home carousel media
+name: Staging Web immutable BuildKit artifact
 
 on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Exact immutable 40-character application source commit
+        required: true
+        type: string
   push:
     branches:
       - codex/one-time-dispatch-carousel-no-loop-20260901
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  SOURCE_COMMIT: ${{ github.event_name == 'workflow_dispatch' && inputs.source_commit || '9ac305dce3a42457a15bb09bdeec97e6a24d4048' }}
 
 jobs:
-  optimize:
+  export:
+    name: Build Linux standalone artifact only
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 60
+    concurrency:
+      group: staging-web-immutable-artifact-${{ github.event_name == 'workflow_dispatch' && inputs.source_commit || '9ac305dce3a42457a15bb09bdeec97e6a24d4048' }}
+      cancel-in-progress: false
     steps:
-      - name: Check out exact reviewed source
+      - name: Check out the versioned runner
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: 4af4f4caa0ce49443ad7beb77bef8b0e0b066c8b
           fetch-depth: 1
-          persist-credentials: true
+          persist-credentials: false
 
-      - name: Install the pinned runner media toolchain
+      - name: Record runner identity
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
+          echo "RUNNER_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
-      - name: Verify and optimize the same five approved films
+      - name: Check out the exact application source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.SOURCE_COMMIT }}
+          path: source
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Refuse substituted or dirty source
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "4af4f4caa0ce49443ad7beb77bef8b0e0b066c8b"
-          mkdir -p /tmp/home-v2
-          for input in public/home-hero-assets/*.home-v2.mp4; do
-            output="/tmp/home-v2/$(basename "$input")"
-            ffmpeg -hide_banner -loglevel error -y -i "$input" -an               -c:v libx264 -preset slow -crf 22 -profile:v main -level 4.0               -pix_fmt yuv420p -movflags +faststart -g 48 -keyint_min 48               -sc_threshold 0 -bf 2 "$output"
-            test "$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of csv=p=0 "$output")" = "1920"
-            test "$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of csv=p=0 "$output")" = "1080"
-            duration="$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$output")"
-            awk -v value="$duration" 'BEGIN { exit !(value > 8.07 && value < 8.10) }'
-            mv "$output" "$input"
-          done
-          test "$(find public/home-hero-assets -maxdepth 1 -name '*.home-v2.mp4' | wc -l)" = "5"
-          git diff --stat -- public/home-hero-assets
-          test "$(git diff --name-only -- public/home-hero-assets | wc -l)" = "5"
-          test -z "$(git diff --name-only -- . ':!public/home-hero-assets/*.home-v2.mp4')"
+          verified_source_commit=$(git -C source rev-parse HEAD)
+          verified_source_tree=$(git -C source rev-parse HEAD^{tree})
+          test "$SOURCE_COMMIT" = "$verified_source_commit"
+          test -z "$(git -C source status --porcelain)"
+          echo "VERIFIED_SOURCE_COMMIT=$verified_source_commit" >> "$GITHUB_ENV"
+          echo "VERIFIED_SOURCE_TREE=$verified_source_tree" >> "$GITHUB_ENV"
+          rm -rf source/.git
 
-      - name: Commit optimized delivery assets to the candidate branch
+      - name: Export immutable Linux BuildKit archive
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name "yijian-ai"
-          git config user.email "rfaker84@gmail.com"
-          git add public/home-hero-assets/*.home-v2.mp4
-          git commit -m "perf(home): optimize approved carousel delivery"
-          git push origin HEAD:refs/heads/codex/home-carousel-no-loop-single-playback-20260901
+          test "$VERIFIED_SOURCE_COMMIT" = "9ac305dce3a42457a15bb09bdeec97e6a24d4048"
+          source_commit=$VERIFIED_SOURCE_COMMIT
+          source_tree=$VERIFIED_SOURCE_TREE
+          docker buildx build --pull=false             --build-arg "STAGING_WEB_ARTIFACT_SOURCE_COMMIT=$source_commit"             --build-arg "STAGING_WEB_ARTIFACT_SOURCE_TREE=$source_tree"             --build-arg "STAGING_WEB_ARTIFACT_RUNNER_COMMIT=$RUNNER_COMMIT"             --target export             --output "type=local,dest=artifacts/staging-web-immutable-$source_commit"             -f scripts/ops/Dockerfile.staging-web-artifact .
+          cd "artifacts/staging-web-immutable-$source_commit"
+          sha256sum --check "memoryai-staging-web-$source_commit.tar.gz.sha256"
+          mkdir verify
+          tar -xzf "memoryai-staging-web-$source_commit.tar.gz" -C verify
+          ( cd verify && sha256sum --check SHA256SUMS )
+          test "$(node -e 'const value=require("./manifest.json"); process.stdout.write(String(value.build.featureFlags.qwenAudioTtsFlashVoiceClone === true && value.source.commit === process.argv[1]))' "$source_commit")" = true
+
+      - name: Upload immutable archive and evidence
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+        with:
+          name: staging-web-immutable-${{ env.SOURCE_COMMIT }}
+          path: artifacts/staging-web-immutable-${{ env.SOURCE_COMMIT }}
+          if-no-files-found: error
+          retention-days: 90
