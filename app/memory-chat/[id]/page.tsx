@@ -4,7 +4,8 @@ import { use, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type { Memory } from "../../../features/memory/types";
-import { persistCompanionPrimaryPreference } from "../../../src/components/companion/companionHomeState";
+import { persistCompanionPrimaryPreference, persistFirstCreatedCompanion } from "../../../src/components/companion/companionHomeState";
+import { fetchCompanionHomeMemoriesJson } from "../../../src/components/companion/companionHomeRequest";
 import { CreationMediaRecoveryGate } from "../../../src/components/first-presence/CreationMediaRecoveryGate";
 import { MemoryConversationScene } from "../../../src/components/first-presence/MemoryConversationScene";
 import {
@@ -49,11 +50,25 @@ export default function MemoryChatPage({ params }: { params: Promise<{ id: strin
       if (signal?.aborted) return;
       const requiresMediaRecovery = readCreationRecovery()?.memoryId === memory.id;
       const creationChatHandoff = consumeCreationChatHandoff(memory.id);
-      // A direct chat entry is an explicit choice. Creation recovery is not:
-      // it must never replace an existing companion preference with a newly
-      // created person merely because its handoff opened this route.
-      if (!requiresMediaRecovery && !creationChatHandoff && memory.userId) {
-        persistCompanionPrimaryPreference(window.localStorage, memory.userId, memory.id);
+      if (!requiresMediaRecovery && memory.userId) {
+        if (creationChatHandoff) {
+          // A newly created first TA becomes current. The complete Owner list
+          // is checked before writing the presentation preference, so a later
+          // creation cannot silently take over an existing companion space.
+          try {
+            const { response, body } = await fetchCompanionHomeMemoriesJson(fetch, signal);
+            const ownedMemories = Array.isArray(body) ? body as Array<{ id: string }> : [];
+            if (!signal?.aborted && response.ok) {
+              persistFirstCreatedCompanion(window.localStorage, memory.userId, memory.id, ownedMemories);
+            }
+          } catch {
+            // The chat stays available when this optional presentation check
+            // is unavailable; it never guesses a different current person.
+          }
+        } else {
+          // A direct chat entry is an explicit Owner selection.
+          persistCompanionPrimaryPreference(window.localStorage, memory.userId, memory.id);
+        }
       }
       setState({
         status: "ready",

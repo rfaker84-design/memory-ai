@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, ReactNode, useState } from "react";
+import { type CSSProperties, FormEvent, ReactNode, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { GUEST_CREATE_CONTINUATION_URL, useGuestCreateContinuation } from "../../src/components/create-memory/GuestCreateContinuationProvider";
@@ -9,6 +9,16 @@ import { PublicProductNavigation, PublicProductTab } from "./PublicProductNaviga
 import styles from "./GuestPublicExperience.module.css";
 
 type PublicPageVariant = "account" | "companion" | "create" | "memories";
+
+function previewStyle(preview: string): CSSProperties {
+  return {
+    backgroundColor: "#e8decd",
+    backgroundImage: `url("${preview}")`,
+    backgroundPosition: "center",
+    backgroundRepeat: "no-repeat",
+    backgroundSize: "cover",
+  };
+}
 
 function PublicFrame({ active, children, variant }: { active: PublicProductTab | null; children: ReactNode; variant: PublicPageVariant }) {
   const className = variant === "companion"
@@ -40,8 +50,8 @@ export function GuestCompanionSurface() {
     <PublicFrame active="companion" variant="companion">
       <section className={styles.companionStage} aria-label="AI 合成相伴示例">
         <video
-          src="/home-hero-assets/elderly-woman.mp4"
-          poster="/home-hero-assets/elderly-woman.poster.webp"
+          src="/home-hero-assets/elderly-woman.home-v2.mp4"
+          poster="/home-hero-assets/elderly-woman.home-v2.poster.webp"
           autoPlay
           muted
           loop
@@ -68,9 +78,27 @@ export function GuestCompanionSurface() {
 }
 
 const DEMO_MEMORIES = [
-  { date: "春天", title: "窗边的一盆花", detail: "一张照片和一句话，留住当时的光。", image: "/guest-secondary-assets/memory-spring-approved.png" },
-  { date: "夏天", title: "那条熟悉的路", detail: "把一个真实片段慢慢写下来。", image: "/guest-secondary-assets/memory-summer-approved.png" },
-  { date: "今天", title: "想起的一件小事", detail: "每一次确认，都会成为可回看的记忆。", image: "/guest-secondary-assets/memory-today-approved.png" },
+  {
+    date: "春天",
+    title: "窗边的一盆花",
+    detail: "她每天早上把花盆转半圈，说这样每片叶子都能晒到太阳。",
+    image: "/guest-secondary-assets/memory-spring-approved.png",
+    preview: "/guest-secondary-assets/memory-spring-approved.preview.webp",
+  },
+  {
+    date: "夏天",
+    title: "那条熟悉的路",
+    detail: "傍晚买菜回来，他总把最重的袋子换到自己手里。",
+    image: "/guest-secondary-assets/memory-summer-approved.png",
+    preview: "/guest-secondary-assets/memory-summer-approved.preview.webp",
+  },
+  {
+    date: "今天",
+    title: "想起的一件小事",
+    detail: "那句“路上慢点”，以前天天听，后来才发现一直记得。",
+    image: "/guest-secondary-assets/memory-today-approved.png",
+    preview: "/guest-secondary-assets/memory-today-approved.preview.webp",
+  },
 ];
 
 export function GuestMemorySurface() {
@@ -79,7 +107,7 @@ export function GuestMemorySurface() {
   return (
     <PublicFrame active="memory" variant="memories">
       <section className={styles.memoriesHero}>
-        <img src="/guest-secondary-assets/memories-hero-approved.png" alt="公开合成示例：窗边的老人和一盆花" loading="eager" fetchPriority="high" decoding="async" />
+        <img src="/guest-secondary-assets/memories-hero-approved.png" alt="公开合成示例：窗边的老人和一盆花" style={previewStyle("/guest-secondary-assets/memories-hero-approved.preview.webp")} loading="eager" fetchPriority="high" decoding="async" />
         <SceneHeader marker="公开示例" tone="light" />
       </section>
       <section className={styles.memoriesBody} aria-label="公开拾忆示例">
@@ -88,7 +116,7 @@ export function GuestMemorySurface() {
           {DEMO_MEMORIES.map((item) => (
             <li key={item.title}>
               <span className={styles.timelineStem} aria-hidden="true" />
-              <img src={item.image} alt="" loading="lazy" fetchPriority="low" decoding="async" />
+              <img src={item.image} alt="" style={previewStyle(item.preview)} loading="lazy" fetchPriority="low" decoding="async" />
               <div>
                 <time>{item.date}</time>
                 <h2>{item.title}</h2>
@@ -111,7 +139,7 @@ export function GuestAccountSurface() {
   return (
     <PublicFrame active="account" variant="account">
       <section className={styles.accountHero}>
-        <img src="/guest-secondary-assets/account-album-approved.png" alt="窗边相册与信封" loading="eager" fetchPriority="high" decoding="async" />
+        <img src="/guest-secondary-assets/account-album-approved.png" alt="窗边相册与信封" style={previewStyle("/guest-secondary-assets/account-album-approved.preview.webp")} loading="eager" fetchPriority="high" decoding="async" />
         <SceneHeader tone="light" />
       </section>
       <section className={styles.accountBody}>
@@ -145,7 +173,7 @@ export function GuestCreateSurface() {
   return (
     <PublicFrame active={null} variant="create">
       <section className={styles.createHero}>
-        <img src="/guest-secondary-assets/create-empty-frame-approved.png" alt="普通家庭环境中的空相框与空白纸条" loading="eager" fetchPriority="high" decoding="async" />
+        <img src="/guest-secondary-assets/create-empty-frame-approved.png" alt="普通家庭环境中的空相框与空白纸条" style={previewStyle("/guest-secondary-assets/create-empty-frame-approved.preview.webp")} loading="eager" fetchPriority="high" decoding="async" />
         <SceneHeader marker="第一步" tone="light" />
       </section>
       <section className={styles.createBody} aria-labelledby="guest-create-title">

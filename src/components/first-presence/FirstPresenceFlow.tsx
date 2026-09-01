@@ -502,6 +502,7 @@ export function FirstPresenceFlow({
           await completeCreatedMemory(result.memoryId, result.record.idempotencyKey);
           return;
         }
+        markCreationChatHandoff(result.memoryId);
         router.replace(`/memory-chat/${encodeURIComponent(result.memoryId)}`);
         return;
       }
@@ -520,6 +521,7 @@ export function FirstPresenceFlow({
         setStage("network-failed");
         return;
       }
+      markCreationChatHandoff(result.memory.id);
       router.replace(`/memory-chat/${encodeURIComponent(result.memory.id)}`);
     } catch {
       setError("刚才的素材还没有得到服务端保存确认。系统不会重复创建人物资料；请稍后再次确认。");

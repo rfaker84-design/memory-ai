@@ -10,7 +10,7 @@
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
-.paperPage { padding-bottom: calc(100px + env(safe-area-inset-bottom)); }
+.paperPage { padding-bottom: calc(124px + env(safe-area-inset-bottom)); }
 .companionPage { overflow: hidden; color: #f5e6cf; background: #17100a; }
 
 .sceneHeader {
@@ -48,7 +48,7 @@
 .companionComposer input::placeholder { color: rgba(242, 222, 192, .48); }
 .companionComposer button { width: 68px; border: 0; color: #d5a66b; background: transparent; font: 600 15px/1 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; cursor: pointer; }
 
-.memoriesHero, .accountHero, .createHero { position: relative; overflow: hidden; background: #46311d; }
+.memoriesHero, .accountHero, .createHero { position: relative; overflow: hidden; background: #e8decd; }
 .memoriesHero { height: clamp(300px, 44vw, 500px); }
 .accountHero { height: clamp(250px, 35vw, 410px); }
 .createHero { height: 370px; }
@@ -135,7 +135,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .companionStage video { display: none; }
-  .companionStage { background: #1c1209 url("/home-hero-assets/elderly-woman.poster.webp") center/cover no-repeat; }
+  .companionStage { background: #1c1209 url("/home-hero-assets/elderly-woman.home-v2.poster.webp") center/cover no-repeat; }
 }
 
 @media (max-width: 374px) {

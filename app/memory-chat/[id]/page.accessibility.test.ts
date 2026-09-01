@@ -16,10 +16,11 @@ test("formal chat announces cold-start and recovery states without changing the 
   assert.match(page, /loadOwnedMemory\(id, signal\)/);
 });
 
-test("an explicit chat entry remembers its exact Owner-scoped person without letting a creation handoff replace it", () => {
+test("an explicit chat entry remembers its exact Owner-scoped person, while only a proven first creation may set it", () => {
   assert.match(page, /const requiresMediaRecovery = readCreationRecovery\(\)\?\.memoryId === memory\.id/);
   assert.match(page, /const creationChatHandoff = consumeCreationChatHandoff\(memory\.id\)/);
-  assert.match(page, /if \(!requiresMediaRecovery && !creationChatHandoff && memory\.userId\) \{[\s\S]*?persistCompanionPrimaryPreference\(window\.localStorage, memory\.userId, memory\.id\)/);
+  assert.match(page, /if \(!requiresMediaRecovery && memory\.userId\) \{[\s\S]*?if \(creationChatHandoff\) \{[\s\S]*?fetchCompanionHomeMemoriesJson\(fetch, signal\)[\s\S]*?persistFirstCreatedCompanion\(window\.localStorage, memory\.userId, memory\.id, ownedMemories\)/);
+  assert.match(page, /\} else \{[\s\S]*?persistCompanionPrimaryPreference\(window\.localStorage, memory\.userId, memory\.id\)/);
 });
 
 test("formal chat matches the restrained living-scene and warm-ivory composition", () => {

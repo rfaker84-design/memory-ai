@@ -9,16 +9,21 @@ import styles from "./GuestExperience.module.css";
 
 const DISCLOSURE = "AI生成示例 · 使用虚构示例资料 · 不代表真实人物或其真实表达";
 
-type GuestExperienceProps = { onLogin: () => void; onStart: () => void; showLogin?: boolean };
+type GuestExperienceProps = {
+  onLogin: () => void;
+  onStart: () => void;
+  playbackActive?: boolean;
+  showLogin?: boolean;
+};
 
 /** The approved public homepage shell. Carousel timing lives in HomeCarousel. */
-export function GuestExperience({ onLogin, onStart, showLogin = true }: GuestExperienceProps) {
+export function GuestExperience({ onLogin, onStart, playbackActive = true, showLogin = true }: GuestExperienceProps) {
   const reducedMotion = useReducedMotion();
   const [activeStory, setActiveStory] = useState<HomeStory>(HOME_STORIES[0]);
 
   return (
     <main className={styles.experience} data-reduced-motion={reducedMotion ? "true" : "false"}>
-      <HomeCarousel reducedMotion={reducedMotion} onActiveStoryChange={setActiveStory} />
+      <HomeCarousel reducedMotion={reducedMotion} playbackActive={playbackActive} onActiveStoryChange={setActiveStory} />
 
       <header className={styles.heroHeader}>
         <span className={styles.heroWordmark}>忆见</span>
