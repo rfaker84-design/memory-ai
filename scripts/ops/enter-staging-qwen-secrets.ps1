@@ -8,17 +8,10 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$WorkspaceApiKeyPattern = '^sk-ws-[A-Za-z0-9._-]{1,506}$'
+$WorkspaceApiKeyExactPattern = '^sk-ws-[A-Za-z0-9._-]{20,1024}$'
+$WorkspaceApiKeyCandidatePattern = '(?<![A-Za-z0-9._-])sk-ws-[A-Za-z0-9._-]{20,1024}(?![A-Za-z0-9._-])'
 $EdgeWhitespace = [char[]]@(' ', "`t", "`r", "`n")
-
-function Get-PlainSecret([Security.SecureString]$Value) {
-  $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Value)
-  try {
-    return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
-  } finally {
-    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)
-  }
-}
+$ConfirmedStagingWorkspaceHost = 'ws-cmmyzutudtc0w6kb.cn-beijing.maas.aliyuncs.com'
 
 function Normalize-CustomizationEndpoint([string]$InputValue) {
   $value = $InputValue.Trim().ToLowerInvariant()
@@ -37,9 +30,6 @@ function Normalize-CustomizationEndpoint([string]$InputValue) {
 function Remove-CopyPollutionEdges([string]$InputValue) {
   $value = $InputValue
   for ($pass = 0; $pass -lt 4; $pass += 1) {
-    # Trim first so a BOM copied after leading whitespace is reached on the
-    # next operation; repeat to cover either ordering without touching the
-    # key body.
     $value = $value.Trim($EdgeWhitespace)
     $value = $value -replace '^[\uFEFF\uFFFE]+', ''
   }
@@ -53,22 +43,24 @@ function Remove-OneMatchingQuoteLayer([string]$InputValue) {
   return $InputValue
 }
 
-function Normalize-WorkspaceApiKey([string]$InputValue) {
+function Normalize-ClipboardText([string]$InputValue) {
   $value = Remove-CopyPollutionEdges $InputValue
-  $wasQuoted = $value.Length -ge 2 -and (($value[0] -eq "'" -and $value[$value.Length - 1] -eq "'") -or ($value[0] -eq '"' -and $value[$value.Length - 1] -eq '"'))
-  if ($wasQuoted) { $value = Remove-OneMatchingQuoteLayer $value }
-  if ($value.StartsWith('api ', [System.StringComparison]::Ordinal)) {
-    $value = $value.Substring(4)
-  } elseif ($value.StartsWith('DASHSCOPE_API_KEY=', [System.StringComparison]::Ordinal)) {
-    $value = $value.Substring('DASHSCOPE_API_KEY='.Length)
-  }
-  $value = Remove-CopyPollutionEdges $value
-  if (-not $wasQuoted) { $value = Remove-OneMatchingQuoteLayer $value }
+  $value = Remove-OneMatchingQuoteLayer $value
   $value = Remove-CopyPollutionEdges $value
   return $value.Replace('\_', '_')
 }
 
-function Get-WorkspaceApiKeyDiagnostic([string]$RawValue, [string]$NormalizedValue) {
+function Find-UniqueWorkspaceApiKey([string]$InputValue) {
+  Set-Variable -Name matchCollection -Value ([regex]::Matches($InputValue, $WorkspaceApiKeyCandidatePattern)) -Scope Local
+  if ($matchCollection.Count -ne 1) { return $null }
+  return [string]$matchCollection[0].Value
+}
+
+function Test-WorkspaceApiKey([string]$InputValue) {
+  return $InputValue -match $WorkspaceApiKeyExactPattern
+}
+
+function Get-WorkspaceApiKeyDiagnostic([string]$RawValue, [string]$NormalizedValue, [string]$Candidate) {
   $leading = 0
   while ($leading -lt $RawValue.Length -and $RawValue[$leading] -in $EdgeWhitespace) { $leading += 1 }
   $trailing = 0
@@ -81,21 +73,22 @@ function Get-WorkspaceApiKeyDiagnostic([string]$RawValue, [string]$NormalizedVal
     if ([int][char]$character -eq 0) { $nul += 1; continue }
     if ([char]::GetUnicodeCategory($character) -eq [Globalization.UnicodeCategory]::Control) { $control += 1 }
   }
+  $inspectionTarget = if ([string]::IsNullOrEmpty($Candidate)) { $NormalizedValue } else { $Candidate }
   $invalid = [System.Collections.Generic.List[string]]::new()
-  for ($index = 0; $index -lt $NormalizedValue.Length; $index += 1) {
-    $character = $NormalizedValue[$index]
+  for ($index = 0; $index -lt $inspectionTarget.Length; $index += 1) {
+    $character = $inspectionTarget[$index]
     if (-not ([string]$character -match '^[A-Za-z0-9._-]$')) {
       $invalid.Add(('U+{0:X4}@{1}' -f [int][char]$character, ($index + 1)))
     }
   }
   $invalidText = if ($invalid.Count -eq 0) { 'none' } else { [string]::Join(',', $invalid) }
   $escapedUnderscores = [regex]::Matches($RawValue, '\\_').Count
-  $prefix = $NormalizedValue.StartsWith('sk-ws-', [System.StringComparison]::Ordinal).ToString().ToLowerInvariant()
+  $prefix = $inspectionTarget.StartsWith('sk-ws-', [System.StringComparison]::Ordinal).ToString().ToLowerInvariant()
   return "length=$($RawValue.Length) starts_with_sk_ws=$prefix leading_whitespace=$leading trailing_whitespace=$trailing bom=$bom nul=$nul control=$control invalid_unicode=$invalidText backslash_adjacent_underscore=$escapedUnderscores"
 }
 
-function Test-WorkspaceApiKey([string]$InputValue) {
-  return $InputValue -match $WorkspaceApiKeyPattern
+function Write-WorkspaceApiKeyDiagnostic([string]$Diagnostic) {
+  [Console]::Out.WriteLine("STAGING_QWEN_SECRET_INPUT_DIAGNOSTIC $Diagnostic")
 }
 
 function Invoke-SecretIngest([string]$RemoteTool, [string]$ApiKey, [string]$Endpoint, [switch]$ValidateOnly) {
@@ -130,31 +123,39 @@ function Invoke-SecretIngest([string]$RemoteTool, [string]$ApiKey, [string]$Endp
   }
 }
 
-if (-not $Library) {
-  if ([string]::IsNullOrWhiteSpace($IngestTool)) { throw 'STAGING_QWEN_SECRET_INGEST_TOOL_REQUIRED' }
-  $secureApiKey = Read-Host -Prompt 'DASHSCOPE_API_KEY (hidden)' -AsSecureString
-  $apiKey = $null
-  $normalizedApiKey = $null
+function Invoke-ClipboardSecretIngest([string]$RemoteTool, [switch]$ValidateOnly) {
+  $clipboard = $null
+  $normalized = $null
+  $candidate = $null
   try {
-    $workspaceOrHost = Read-Host -Prompt 'Workspace ID, host, or canonical customization endpoint'
-    $endpoint = Normalize-CustomizationEndpoint $workspaceOrHost
-    $apiKey = Get-PlainSecret $secureApiKey
-    $normalizedApiKey = Normalize-WorkspaceApiKey $apiKey
-    $diagnostic = Get-WorkspaceApiKeyDiagnostic $apiKey $normalizedApiKey
-    if (-not (Test-WorkspaceApiKey $normalizedApiKey)) {
-      Write-Output "STAGING_QWEN_SECRET_INPUT_DIAGNOSTIC $diagnostic"
-      throw 'STAGING_QWEN_SECRET_CLIENT_KEY_INVALID'
+    try {
+      $clipboard = [string](Get-Clipboard -Raw)
+    } catch {
+      Write-WorkspaceApiKeyDiagnostic (Get-WorkspaceApiKeyDiagnostic '' '' '')
+      throw 'STAGING_QWEN_SECRET_CLIPBOARD_READ_FAILED'
+    }
+    $normalized = Normalize-ClipboardText $clipboard
+    $candidate = Find-UniqueWorkspaceApiKey $normalized
+    $diagnostic = Get-WorkspaceApiKeyDiagnostic $clipboard $normalized $candidate
+    if ([string]::IsNullOrEmpty($candidate) -or -not (Test-WorkspaceApiKey $candidate)) {
+      Write-WorkspaceApiKeyDiagnostic $diagnostic
+      throw 'STAGING_QWEN_SECRET_CLIPBOARD_KEY_NOT_UNIQUE'
     }
     try {
-      Invoke-SecretIngest -RemoteTool $IngestTool -ApiKey $normalizedApiKey -Endpoint $endpoint
+      Invoke-SecretIngest -RemoteTool $RemoteTool -ApiKey $candidate -Endpoint (Normalize-CustomizationEndpoint $ConfirmedStagingWorkspaceHost) -ValidateOnly:$ValidateOnly
     } catch {
-      if ($_.Exception.Message -match 'KEY_INVALID') { Write-Output "STAGING_QWEN_SECRET_INPUT_DIAGNOSTIC $diagnostic" }
+      if ($_.Exception.Message -match 'KEY_INVALID') { Write-WorkspaceApiKeyDiagnostic $diagnostic }
       throw
     }
-    Write-Output 'STAGING_QWEN_SECRET_STORED mode=0600'
   } finally {
-    $normalizedApiKey = $null
-    $apiKey = $null
-    $secureApiKey.Dispose()
+    $candidate = $null
+    $normalized = $null
+    $clipboard = $null
   }
+}
+
+if (-not $Library) {
+  if ([string]::IsNullOrWhiteSpace($IngestTool)) { throw 'STAGING_QWEN_SECRET_INGEST_TOOL_REQUIRED' }
+  Invoke-ClipboardSecretIngest -RemoteTool $IngestTool
+  Write-Output 'STAGING_QWEN_SECRET_STORED mode=0600'
 }

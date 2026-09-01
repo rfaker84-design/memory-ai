@@ -10,10 +10,10 @@ const path = require("node:path");
 const STAGING_ROOT = "/home/ubuntu/memoryai-staging";
 const SECRET_FILE = `${STAGING_ROOT}/secrets/qwen-voice-clone.env`;
 const CUSTOMIZATION_PATH = "/api/v1/services/audio/tts/customization";
-// Workspace-scoped DashScope keys use `sk-ws-` and permit dotted, underscored,
-// and hyphenated opaque segments. Keep a finite total length and reject every
-// whitespace, newline, and control character before it can reach disk.
-const API_KEY = /^sk-ws-[A-Za-z0-9._-]{1,506}$/u;
+// Workspace-scoped DashScope keys are opaque `sk-ws-` credentials. The
+// operator-approved intake bound avoids an invented short limit while still
+// rejecting whitespace, newlines, controls, and overlong clipboard text.
+const API_KEY = /^sk-ws-[A-Za-z0-9._-]{20,1024}$/u;
 const ENDPOINT = /^https:\/\/[a-z0-9-]{1,63}\.cn-beijing\.maas\.aliyuncs\.com\/api\/v1\/services\/audio\/tts\/customization$/u;
 
 function fail(code) {

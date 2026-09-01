@@ -23,7 +23,7 @@ test("the secret serializer is strict and never accepts extra fields", () => {
   assert.throws(() => serializedSecretFile({ apiKey: "sk-ws-has\nnewline", endpoint }), { code: "STAGING_QWEN_SECRET_KEY_INVALID" });
   assert.throws(() => serializedSecretFile({ apiKey: "sk-ws-control\u0000byte", endpoint }), { code: "STAGING_QWEN_SECRET_KEY_INVALID" });
   assert.throws(() => serializedSecretFile({ apiKey: "sk-not-workspace", endpoint }), { code: "STAGING_QWEN_SECRET_KEY_INVALID" });
-  assert.throws(() => serializedSecretFile({ apiKey: `sk-ws-${"a".repeat(507)}`, endpoint }), { code: "STAGING_QWEN_SECRET_KEY_INVALID" });
+  assert.throws(() => serializedSecretFile({ apiKey: `sk-ws-${"a".repeat(1025)}`, endpoint }), { code: "STAGING_QWEN_SECRET_KEY_INVALID" });
 });
 
 test("a beta-disabled immutable promotion never requires or loads Qwen secrets", () => {
