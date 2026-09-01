@@ -31,40 +31,45 @@ test("every story uses its versioned home-v2 film and matching first-frame poste
   }
 });
 
-test("the launch preloads the opening pair while both films remain paused at frame zero", () => {
-  assert.match(carousel, /if \(!playbackActive\) \{[\s\S]*?current\.pause\(\);[\s\S]*?current\.currentTime = 0;[\s\S]*?current\.load\(\);/);
+test("the launch preloads the opening pair without ever allowing a person to loop", () => {
+  assert.match(carousel, /current\.loop = false/);
+  assert.match(carousel, /next\.loop = false/);
   assert.match(carousel, /next\.pause\(\);[\s\S]*?next\.currentTime = 0;[\s\S]*?next\.preload = "auto";[\s\S]*?next\.load\(\)/);
   assert.match(carousel, /next\.readyState < HTMLMediaElement\.HAVE_CURRENT_DATA/);
   assert.match(carousel, /next\.addEventListener\("loadeddata", markReady\)/);
   assert.match(carousel, /next\.addEventListener\("canplay", markReady\)/);
-  assert.match(carousel, /next\.pause\(\);[\s\S]*?next\.currentTime = 0;[\s\S]*?setNextReady\(true\)/);
-  assert.match(carousel, /if \(video\.duration - video\.currentTime <= HANDOFF_LEAD_SECONDS\) void beginDissolve\(\);/);
-  assert.match(carousel, /const videoARef = useRef<HTMLVideoElement>\(null\);/);
-  assert.match(carousel, /const videoBRef = useRef<HTMLVideoElement>\(null\);/);
-  assert.doesNotMatch(carousel, /canplaythrough|requestVideoFrameCallback|0\.05|lightVeil|veilStage|neutral-fade/);
+  assert.match(carousel, /if \(video\.duration - video\.currentTime <= HANDOFF_LEAD_SECONDS\) beginFadeOut\(\)/);
+  assert.match(carousel, /onEnded=\{\(\) => \{[\s\S]*?beginFadeOut\(\)/);
+  assert.doesNotMatch(carousel, /\n\s+loop(?:\s|\/?>)/);
+  assert.doesNotMatch(carousel, /\.loop = true/);
 });
 
-test("the original one-second dissolve promotes an existing DOM layer without restarting it", () => {
-  assert.match(carousel, /const DISSOLVE_MS = 1_000/);
-  assert.match(styles, /--home-transition: 1s cubic-bezier\(0\.22, 1, 0\.36, 1\)/);
-  assert.match(styles, /\.video \{ z-index: 1; opacity: 0\.92; transition: opacity var\(--home-transition\);/);
-  assert.match(styles, /\.videoOutgoing, \.videoIncoming \{ opacity: 0; \}/);
+test("the one-second handoff never plays or displays two people at the same time", () => {
+  assert.match(carousel, /const FADE_MS = 450/);
+  assert.match(carousel, /type TransitionPhase = "steady" \| "fade-out" \| "waiting" \| "fade-in"/);
+  assert.match(styles, /--home-transition: 450ms cubic-bezier\(0\.22, 1, 0\.36, 1\)/);
+  assert.match(styles, /\.transitionPlate \{[\s\S]*?radial-gradient[\s\S]*?linear-gradient/);
+  assert.match(styles, /\.videoCurrent \{ opacity: 0\.92; \}/);
+  assert.match(styles, /\.videoNext, \.videoOutgoing \{ opacity: 0; \}/);
   assert.match(styles, /\.videoIncomingVisible \{ opacity: 0\.92; \}/);
-  assert.match(carousel, /await next\.play\(\);[\s\S]*?setDissolving\(true\)/);
-  assert.match(carousel, /onTransitionEnd=\{\(event\) => \{[\s\S]*?event\.propertyName === "opacity"[\s\S]*?finishDissolve\(\)/);
-  const finish = carousel.indexOf("const finishDissolve");
-  const pause = carousel.indexOf("previousVideo?.pause()", finish);
-  const promote = carousel.indexOf("setActiveLayer(promotedLayer)", finish);
-  const recycle = carousel.indexOf("[previousLayer]: (nextIndex + 1) % HOME_STORIES.length", finish);
-  const label = carousel.indexOf("onActiveStoryChange(HOME_STORIES[nextIndex])", finish);
-  assert.ok(finish >= 0 && pause > finish && promote > pause && recycle > promote && label > recycle, "the incoming film is promoted before only the hidden layer is recycled and the label changes");
-  assert.doesNotMatch(carousel, /key=\{|setActiveIndex\(|hidden video.*play/i);
+
+  const fadeOut = carousel.indexOf("const finishFadeOut");
+  const stopOutgoing = carousel.indexOf("current?.pause()", fadeOut);
+  const startIncoming = carousel.indexOf("const startIncoming");
+  const playIncoming = carousel.indexOf("await next.play()", startIncoming);
+  assert.ok(fadeOut >= 0 && stopOutgoing > fadeOut && startIncoming > stopOutgoing && playIncoming > startIncoming,
+    "the outgoing film must be transparent and paused before the incoming film starts");
+
+  assert.match(carousel, /phase === "waiting" && nextReady[\s\S]*?startIncoming\(\)/);
+  assert.match(carousel, /setPhase\("fade-in"\)/);
+  assert.match(carousel, /data-carousel-phase=\{phase\}/);
+  assert.doesNotMatch(carousel, /await next\.play\(\);[\s\S]*?setPhase\("fade-out"\)/);
 });
 
 test("mobile retains per-story focal metadata and all media fill the full viewport", () => {
   assert.match(styles, /object-position: var\(--story-desktop-position/);
   assert.match(styles, /@media \(max-aspect-ratio: 3 \/ 4\)[\s\S]*?object-position: var\(--story-mobile-position/);
-  assert.match(styles, /\.media, \.poster, \.video, \.mediaVeil \{ position: absolute; inset: 0; width: 100%; height: 100%; \}/);
+  assert.match(styles, /\.media, \.poster, \.transitionPlate, \.video, \.mediaVeil \{ position: absolute; inset: 0; width: 100%; height: 100%; \}/);
   assert.doesNotMatch(styles, /height: min\(58dvh, 490px\)/);
 });
 
