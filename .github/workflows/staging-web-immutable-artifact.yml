@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     concurrency:
-      group: staging-web-immutable-artifact-${{ env.SOURCE_COMMIT }}
+      group: staging-web-immutable-artifact-${{ github.event_name == 'workflow_dispatch' && inputs.source_commit || 'f49f8ff4ebb289b02fe51697c4e58369360b753e' }}
       cancel-in-progress: false
     steps:
       - name: Check out the versioned runner
