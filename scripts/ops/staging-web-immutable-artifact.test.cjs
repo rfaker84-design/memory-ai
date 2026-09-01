@@ -31,6 +31,11 @@ test("BuildKit recipe locks Linux Node/npm, bakes the feature flag, and exports 
   assert.match(dockerfile, /node --version\)" = "v20\.20\.2"/);
   assert.match(dockerfile, /npm --version\)" = "10\.8\.2"/);
   assert.match(dockerfile, /npm run test:qwen-voice-clone-beta && npm run build && npm run package:standalone-rc/);
+  const sourceCopy = dockerfile.indexOf("COPY source/. ./");
+  const sourceAttestation = dockerfile.indexOf("test \"$(git write-tree)\" = \"$STAGING_WEB_ARTIFACT_SOURCE_TREE\"");
+  const dependencyInstall = dockerfile.indexOf("RUN npm ci");
+  assert.ok(sourceCopy >= 0 && sourceAttestation > sourceCopy && dependencyInstall > sourceAttestation,
+    "the source Git tree must be attested before npm ci adds node_modules");
   assert.match(dockerfile, /tar --dereference -C \/bundle -czf/);
   assert.match(dockerfile, /find \. -type f ! -name SHA256SUMS/);
   assert.match(dockerfile, /sha256sum -c SHA256SUMS/);

@@ -7,16 +7,19 @@ ARG STAGING_WEB_ARTIFACT_RUNNER_COMMIT
 RUN apk add --no-cache git libc6-compat && test "$(node --version)" = "v20.20.2" && test "$(npm --version)" = "10.8.2"
 
 COPY source/package.json source/package-lock.json ./
-RUN npm ci
 COPY source/. ./
+
+# Attest the pristine checked-out source before npm ci creates node_modules.
+# The source tree identity supplied by the workflow is a Git tree and must not
+# be affected by build-only dependencies.
+RUN git init --quiet && git config user.email buildkit@memoryai.invalid && git config user.name buildkit && git add -A && git commit --quiet -m build-input && test "$(git write-tree)" = "$STAGING_WEB_ARTIFACT_SOURCE_TREE"
+
+RUN npm ci
 COPY scripts/ops/generate-staging-web-artifact-evidence.cjs /tools/generate-staging-web-artifact-evidence.cjs
 COPY scripts/ops/Dockerfile.staging-web-artifact /build-recipe/Dockerfile.staging-web-artifact
 
 # package:standalone-rc requires a clean Git worktree for the runtime manifest.
-# The original source SHA/tree are independently checked by the Action and are
-# rewritten and attested below; this temporary local repository is never an
-# artifact input or release identity.
-RUN git init --quiet && git config user.email buildkit@memoryai.invalid && git config user.name buildkit && git add -A && git commit --quiet -m build-input && test "$(git write-tree)" = "$STAGING_WEB_ARTIFACT_SOURCE_TREE"
+# The temporary repository above is never an artifact input or release identity.
 
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run test:qwen-voice-clone-beta && npm run build && npm run package:standalone-rc
