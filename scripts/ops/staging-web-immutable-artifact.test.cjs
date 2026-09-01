@@ -20,6 +20,9 @@ test("immutable Staging Web artifact workflow checks out an exact source commit 
   assert.match(workflow, /--build-arg "STAGING_WEB_ARTIFACT_RUNNER_COMMIT=\$RUNNER_COMMIT"/);
   assert.match(workflow, /--target export/);
   assert.match(workflow, /actions\/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08/);
+  assert.match(workflow, /verify_directory="\$\(mktemp -d\)"/);
+  assert.match(workflow, /tar -xzf "memoryai-staging-web-\$source_commit\.tar\.gz" -C "\$verify_directory"/);
+  assert.doesNotMatch(workflow, /\bmkdir verify\b|\b-C verify\b/);
   assert.doesNotMatch(workflow, /\b(?:ssh|pm2|nginx|kubectl|helm|promotion|deploy)\b/i);
 });
 
