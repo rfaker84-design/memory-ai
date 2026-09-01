@@ -44,18 +44,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "${{ inputs.source_commit }}" = "$(git -C source rev-parse HEAD)"
+          source_commit="$(git -C source rev-parse HEAD)"
+          source_tree="$(git -C source rev-parse HEAD^{tree})"
+          test "${{ inputs.source_commit }}" = "$source_commit"
           test -z "$(git -C source status --porcelain)"
-          git -C source rev-parse HEAD
-          git -C source rev-parse HEAD^{tree}
+          printf 'SOURCE_COMMIT=%s\n' "$source_commit" >> "$GITHUB_ENV"
+          printf 'SOURCE_TREE=%s\n' "$source_tree" >> "$GITHUB_ENV"
+          printf '%s\n' "$source_commit"
+          printf '%s\n' "$source_tree"
           rm -rf source/.git
 
       - name: Export immutable Linux BuildKit archive
         shell: bash
         run: |
           set -euo pipefail
-          source_commit=$(git -C source rev-parse HEAD)
-          source_tree=$(git -C source rev-parse HEAD^{tree})
+          source_commit="$SOURCE_COMMIT"
+          source_tree="$SOURCE_TREE"
+          test "$source_commit" = "${{ inputs.source_commit }}"
+          test -n "$source_tree"
           docker buildx version
           docker buildx build --pull=false \
             --build-arg "STAGING_WEB_ARTIFACT_SOURCE_COMMIT=$source_commit" \

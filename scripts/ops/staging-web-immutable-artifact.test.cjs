@@ -14,7 +14,10 @@ test("immutable Staging Web artifact workflow checks out an exact source commit 
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /source_commit:\s*[\s\S]*?required: true/);
   assert.match(workflow, /ref: \$\{\{ inputs\.source_commit \}\}\s*[\s\S]*?path: source/);
-  assert.match(workflow, /test "\$\{\{ inputs\.source_commit \}\}" = "\$\(git -C source rev-parse HEAD\)"/);
+  assert.match(workflow, /source_commit="\$\(git -C source rev-parse HEAD\)"[\s\S]*?test "\$\{\{ inputs\.source_commit \}\}" = "\$source_commit"/);
+  assert.match(workflow, /SOURCE_COMMIT=%s\\n.*SOURCE_TREE=%s\\n/s);
+  assert.match(workflow, /rm -rf source\/.git[\s\S]*?source_commit="\$SOURCE_COMMIT"[\s\S]*?source_tree="\$SOURCE_TREE"/);
+  assert.doesNotMatch(workflow, /rm -rf source\/.git[\s\S]*?git -C source rev-parse/);
   assert.match(workflow, /rm -rf source\/.git/);
   assert.match(workflow, /docker buildx build --pull=false/);
   assert.match(workflow, /--build-arg "STAGING_WEB_ARTIFACT_RUNNER_COMMIT=\$RUNNER_COMMIT"/);
