@@ -1,8 +1,9 @@
 "use strict";
 
 // A versioned Staging runner wrapper.  PM2 receives only the path to the
-// private file; this process reads the two Qwen credentials after PM2 has
-// forked it, so `pm2 save` and `pm2 jlist` never contain the credential values.
+// private file; when (and only when) the Staging beta is enabled this process
+// reads the two Qwen credentials after PM2 has forked it, so `pm2 save` and
+// `pm2 jlist` never contain the credential values.
 const { closeSync, fsyncSync, lstatSync, openSync, readFileSync, renameSync, statSync, writeSync } = require("node:fs");
 const path = require("node:path");
 
@@ -108,13 +109,23 @@ function runtimeRoot() {
   return root;
 }
 
+function shouldLoadQwenSecrets(betaEnabled) {
+  if (betaEnabled === "true") return true;
+  if (betaEnabled === "false") return false;
+  fail("STAGING_WEB_SECRET_BETA_FLAG_INVALID");
+}
+
 function start() {
   if (process.env.DASHSCOPE_API_KEY || process.env.DASHSCOPE_VOICE_CLONE_ENDPOINT) {
     fail("STAGING_WEB_SECRET_PM2_ENV_FORBIDDEN");
   }
   const root = runtimeRoot();
-  const secrets = loadStagingQwenSecrets(process.env.MEMORYAI_STAGING_SECRET_FILE ?? SECRET_FILE);
-  Object.assign(process.env, secrets);
+  // A beta-disabled promotion is deliberately independent of the credential
+  // file. That allows the immutable candidate to prove app/database health and
+  // a 404 beta gate before the one-time secret ingest is permitted.
+  if (shouldLoadQwenSecrets(process.env.MEMORYAI_QWEN_AUDIO_TTS_FLASH_VOICE_CLONE_BETA_ENABLED)) {
+    Object.assign(process.env, loadStagingQwenSecrets(process.env.MEMORYAI_STAGING_SECRET_FILE ?? SECRET_FILE));
+  }
   const launcher = path.join(root, "run-standalone-from-manifest.cjs");
   try { require(launcher); } catch (error) {
     if (error?.code?.startsWith("STAGING_")) throw error;
@@ -133,5 +144,6 @@ module.exports = {
   loadStagingQwenSecrets,
   parseSecretText,
   serializedSecretFile,
+  shouldLoadQwenSecrets,
   writeStagingQwenSecrets,
 };

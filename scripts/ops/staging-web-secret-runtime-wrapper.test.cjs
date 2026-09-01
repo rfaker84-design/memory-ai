@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { canonicalEndpoint, parseSecretText, serializedSecretFile } = require("./staging-web-secret-runtime-wrapper.cjs");
+const { canonicalEndpoint, parseSecretText, serializedSecretFile, shouldLoadQwenSecrets } = require("./staging-web-secret-runtime-wrapper.cjs");
 
 const endpoint = "https://workspace-1.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/customization";
 const apiKey = "sk-ws-fictional.alpha_beta-123";
@@ -24,6 +24,13 @@ test("the secret serializer is strict and never accepts extra fields", () => {
   assert.throws(() => serializedSecretFile({ apiKey: "sk-ws-control\u0000byte", endpoint }), { code: "STAGING_QWEN_SECRET_KEY_INVALID" });
   assert.throws(() => serializedSecretFile({ apiKey: "sk-not-workspace", endpoint }), { code: "STAGING_QWEN_SECRET_KEY_INVALID" });
   assert.throws(() => serializedSecretFile({ apiKey: `sk-ws-${"a".repeat(507)}`, endpoint }), { code: "STAGING_QWEN_SECRET_KEY_INVALID" });
+});
+
+test("a beta-disabled immutable promotion never requires or loads Qwen secrets", () => {
+  assert.equal(shouldLoadQwenSecrets("false"), false);
+  assert.equal(shouldLoadQwenSecrets("true"), true);
+  assert.throws(() => shouldLoadQwenSecrets(undefined), { code: "STAGING_WEB_SECRET_BETA_FLAG_INVALID" });
+  assert.throws(() => shouldLoadQwenSecrets("FALSE"), { code: "STAGING_WEB_SECRET_BETA_FLAG_INVALID" });
 });
 
 test("the beta-disabled verifier accepts only the required external response", () => {
