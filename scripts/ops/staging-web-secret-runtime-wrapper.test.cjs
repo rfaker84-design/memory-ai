@@ -6,7 +6,7 @@ const test = require("node:test");
 const { canonicalEndpoint, parseSecretText, serializedSecretFile } = require("./staging-web-secret-runtime-wrapper.cjs");
 
 const endpoint = "https://workspace-1.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/customization";
-const apiKey = "k".repeat(32);
+const apiKey = "sk-ws-fictional.alpha_beta-123";
 
 test("Qwen secret file accepts only the canonical Beijing customization endpoint", () => {
   assert.equal(canonicalEndpoint(endpoint), endpoint);
@@ -18,8 +18,12 @@ test("the secret serializer is strict and never accepts extra fields", () => {
   const value = serializedSecretFile({ apiKey, endpoint });
   assert.deepEqual(parseSecretText(value), { DASHSCOPE_API_KEY: apiKey, DASHSCOPE_VOICE_CLONE_ENDPOINT: endpoint });
   assert.throws(() => parseSecretText(`${value}EXTRA=value\n`), { code: "STAGING_QWEN_SECRET_FILE_INVALID" });
-  assert.equal(parseSecretText(serializedSecretFile({ apiKey: "short", endpoint })).DASHSCOPE_API_KEY, "short");
-  assert.throws(() => serializedSecretFile({ apiKey: "has whitespace", endpoint }), { code: "STAGING_QWEN_SECRET_KEY_INVALID" });
+  assert.equal(parseSecretText(serializedSecretFile({ apiKey, endpoint })).DASHSCOPE_API_KEY, apiKey);
+  assert.throws(() => serializedSecretFile({ apiKey: "sk-ws-has whitespace", endpoint }), { code: "STAGING_QWEN_SECRET_KEY_INVALID" });
+  assert.throws(() => serializedSecretFile({ apiKey: "sk-ws-has\nnewline", endpoint }), { code: "STAGING_QWEN_SECRET_KEY_INVALID" });
+  assert.throws(() => serializedSecretFile({ apiKey: "sk-ws-control\u0000byte", endpoint }), { code: "STAGING_QWEN_SECRET_KEY_INVALID" });
+  assert.throws(() => serializedSecretFile({ apiKey: "sk-not-workspace", endpoint }), { code: "STAGING_QWEN_SECRET_KEY_INVALID" });
+  assert.throws(() => serializedSecretFile({ apiKey: `sk-ws-${"a".repeat(507)}`, endpoint }), { code: "STAGING_QWEN_SECRET_KEY_INVALID" });
 });
 
 test("the beta-disabled verifier accepts only the required external response", () => {
