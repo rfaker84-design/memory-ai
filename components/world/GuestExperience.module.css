@@ -26,8 +26,8 @@
 .transitionPlate {
   z-index: 1;
   background:
-    radial-gradient(circle at 18% 42%, rgba(233, 211, 178, 0.88), rgba(157, 119, 82, 0.72) 34%, transparent 58%),
-    linear-gradient(105deg, #987451 0%, #5f402b 52%, #241811 100%);
+    radial-gradient(circle at 24% 44%, rgba(211, 190, 164, 0.22), transparent 56%),
+    linear-gradient(105deg, #6a5140 0%, #3d2c23 52%, #201713 100%);
 }
 .video {
   z-index: 2;
