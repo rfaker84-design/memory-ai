@@ -9,7 +9,10 @@ const path = require("node:path");
 const STAGING_ROOT = "/home/ubuntu/memoryai-staging";
 const SECRET_FILE = `${STAGING_ROOT}/secrets/qwen-voice-clone.env`;
 const CUSTOMIZATION_PATH = "/api/v1/services/audio/tts/customization";
-const API_KEY = /^\S{16,512}$/u;
+// DashScope does not publish a fixed API-key length.  Enforce the safe syntax
+// (non-empty, no whitespace, bounded) and let the provider perform the only
+// authoritative credential validation.
+const API_KEY = /^\S{1,512}$/u;
 const ENDPOINT = /^https:\/\/[a-z0-9-]{1,63}\.cn-beijing\.maas\.aliyuncs\.com\/api\/v1\/services\/audio\/tts\/customization$/u;
 
 function fail(code) {

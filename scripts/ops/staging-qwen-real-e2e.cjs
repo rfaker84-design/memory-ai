@@ -5,7 +5,7 @@
 // run unless the existing one-account isolated beta gate is active.
 const crypto = require("node:crypto");
 const { execFileSync } = require("node:child_process");
-const { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } = require("node:fs");
+const { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } = require("node:fs");
 const path = require("node:path");
 const { loadStagingQwenSecrets } = require("./staging-web-secret-runtime-wrapper.cjs");
 
@@ -122,7 +122,11 @@ async function synthesize(endpoint, apiKey, voice, text) {
   if (!response.ok || body?.output?.finish_reason !== "stop" || typeof audioUrl !== "string") fail("STAGING_QWEN_E2E_SYNTHESIS_FAILED");
   let parsed;
   try { parsed = new URL(audioUrl); } catch { fail("STAGING_QWEN_E2E_AUDIO_URL_INVALID"); }
-  if (parsed.protocol !== "https:") fail("STAGING_QWEN_E2E_AUDIO_URL_INVALID");
+  // DashScope result objects can use an HTTP OSS URL.  Accept only Alibaba's
+  // result domain, never an arbitrary provider-controlled fetch target.
+  if (!new Set(["http:", "https:"]).has(parsed.protocol) || !/(?:^|\.)aliyuncs\.com$/iu.test(parsed.hostname)) {
+    fail("STAGING_QWEN_E2E_AUDIO_URL_INVALID");
+  }
   let audio;
   try {
     const audioResponse = await fetch(parsed, { redirect: "error" });
@@ -248,6 +252,24 @@ async function assertPermissionGate(environment, session) {
   if (response.status !== 403 || body?.error !== "VOICE_CLONE_CONSENT_REQUIRED") fail("STAGING_QWEN_E2E_PERMISSION_GATE_FAILED");
 }
 
+function isBetaDisabledResponse(response, body) {
+  return response.status === 404 && body?.error === "BETA_NOT_AVAILABLE";
+}
+
+async function assertBetaDisabled(environment, session) {
+  const response = await fetch(`http://127.0.0.1:3100/api/memories/${crypto.randomUUID()}/voice-clone`, {
+    method: "POST",
+    headers: {
+      Origin: ORIGIN,
+      "X-MemoryAI-Staging-Access": environment.STAGING_ACCESS_TOKEN,
+      Cookie: `${COOKIE}=${session}`,
+      "Idempotency-Key": `qwen-disabled-${crypto.randomUUID()}`,
+    },
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!isBetaDisabledResponse(response, body)) fail("STAGING_QWEN_E2E_BETA_DISABLE_NOT_ENFORCED");
+}
+
 async function createdJob(client, owner, idempotencyKey) {
   const result = await client.query(
     `SELECT job.id, job.user_id, job.memory_id, job.status, job.provider_request, job.provider_response,
@@ -369,6 +391,7 @@ async function run(runId) {
     const preview = await synthesize(tts, secret.DASHSCOPE_API_KEY, job.voiceId, "这是忆见 Staging 的内部试听。该声音仅用于合成测试，验证完成后已从供应商删除，并且不会在生产环境使用。");
     const target = previewPath(runId);
     if (existsSync(target)) fail("STAGING_QWEN_E2E_PREVIEW_COLLISION");
+    mkdirSync(PREVIEW_DIRECTORY, { recursive: true, mode: 0o700 });
     writeFileSync(target, preview.audio, { mode: 0o600, flag: "wx" });
     await deleteProviderVoice(secret.DASHSCOPE_VOICE_CLONE_ENDPOINT, secret.DASHSCOPE_API_KEY, job.voiceId);
     providerDeleted = true;
@@ -456,11 +479,30 @@ async function cleanup() {
   }
 }
 
+async function assertDisabled() {
+  const record = pm2Record();
+  const environment = preflight(record, false);
+  if (environment.MEMORYAI_QWEN_AUDIO_TTS_FLASH_VOICE_CLONE_BETA_ENABLED !== "false") {
+    fail("STAGING_QWEN_E2E_BETA_DISABLE_NOT_ENFORCED");
+  }
+  const runtime = currentRuntime(record);
+  const client = database(runtime, environment.DATABASE_URL);
+  try {
+    await client.connect();
+    const owner = await identity(client, environment.MEMORYAI_QWEN_AUDIO_TTS_FLASH_VOICE_CLONE_BETA_TEST_USER_IDS);
+    await assertBetaDisabled(environment, signedSession(environment, owner));
+    console.log("QWEN_BETA_DISABLED_VERIFIED external=404 code=BETA_NOT_AVAILABLE");
+  } finally {
+    await client.end().catch(() => undefined);
+  }
+}
+
 async function main() {
   const [mode, runId] = process.argv.slice(2);
   if (mode === "run" && runId) return run(runId);
   if (mode === "remove-preview" && runId) return removePreview(runId);
   if (mode === "cleanup" && runId === undefined) return cleanup();
+  if (mode === "assert-disabled" && runId === undefined) return assertDisabled();
   fail("STAGING_QWEN_E2E_USAGE_INVALID");
 }
 
@@ -471,4 +513,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { MODEL, ORIGIN, SYNTHETIC_ID, parseWav, previewPath, ttsEndpoint };
+module.exports = { MODEL, ORIGIN, SYNTHETIC_ID, isBetaDisabledResponse, parseWav, previewPath, ttsEndpoint };

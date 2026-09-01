@@ -18,5 +18,13 @@ test("the secret serializer is strict and never accepts extra fields", () => {
   const value = serializedSecretFile({ apiKey, endpoint });
   assert.deepEqual(parseSecretText(value), { DASHSCOPE_API_KEY: apiKey, DASHSCOPE_VOICE_CLONE_ENDPOINT: endpoint });
   assert.throws(() => parseSecretText(`${value}EXTRA=value\n`), { code: "STAGING_QWEN_SECRET_FILE_INVALID" });
-  assert.throws(() => serializedSecretFile({ apiKey: "too-short", endpoint }), { code: "STAGING_QWEN_SECRET_KEY_INVALID" });
+  assert.equal(parseSecretText(serializedSecretFile({ apiKey: "short", endpoint })).DASHSCOPE_API_KEY, "short");
+  assert.throws(() => serializedSecretFile({ apiKey: "has whitespace", endpoint }), { code: "STAGING_QWEN_SECRET_KEY_INVALID" });
+});
+
+test("the beta-disabled verifier accepts only the required external response", () => {
+  const { isBetaDisabledResponse } = require("./staging-qwen-real-e2e.cjs");
+  assert.equal(isBetaDisabledResponse({ status: 404 }, { error: "BETA_NOT_AVAILABLE" }), true);
+  assert.equal(isBetaDisabledResponse({ status: 401 }, { error: "BETA_NOT_AVAILABLE" }), false);
+  assert.equal(isBetaDisabledResponse({ status: 404 }, { error: "OTHER" }), false);
 });
