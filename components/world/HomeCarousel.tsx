@@ -22,6 +22,7 @@ export const HOME_STORIES: readonly HomeStory[] = [
 
 const FADE_MS = 450;
 const HANDOFF_LEAD_SECONDS = 0.85;
+const MINIMUM_PREBUFFER_SECONDS = 4;
 const HOME_ASSET_VERSION = "home-v2";
 
 type Layer = "a" | "b";
@@ -54,6 +55,17 @@ function focalStyle(story: HomeStory): CSSProperties {
     "--story-desktop-position": story.desktopPosition,
     "--story-mobile-position": story.mobilePosition,
   } as CSSProperties;
+}
+
+function isReadyForHandoff(video: HTMLVideoElement) {
+  if (video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) return false;
+  if (!Number.isFinite(video.duration) || video.duration <= 0) return false;
+
+  const requiredEnd = Math.min(MINIMUM_PREBUFFER_SECONDS, Math.max(0, video.duration - 0.15));
+  for (let index = 0; index < video.buffered.length; index += 1) {
+    if (video.buffered.start(index) <= 0.05 && video.buffered.end(index) >= requiredEnd) return true;
+  }
+  return video.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA;
 }
 
 /**
@@ -144,12 +156,14 @@ export function HomeCarousel({ reducedMotion, playbackActive, onActiveStoryChang
 
     let cancelled = false;
     const markReady = () => {
-      if (cancelled || next.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+      if (cancelled || !isReadyForHandoff(next)) return;
       next.pause();
       next.currentTime = 0;
       setNextReady(true);
       next.removeEventListener("loadeddata", markReady);
       next.removeEventListener("canplay", markReady);
+      next.removeEventListener("canplaythrough", markReady);
+      next.removeEventListener("progress", markReady);
     };
 
     setNextReady(false);
@@ -161,6 +175,8 @@ export function HomeCarousel({ reducedMotion, playbackActive, onActiveStoryChang
     next.preload = "auto";
     next.addEventListener("loadeddata", markReady);
     next.addEventListener("canplay", markReady);
+    next.addEventListener("canplaythrough", markReady);
+    next.addEventListener("progress", markReady);
     next.load();
     markReady();
 
@@ -168,6 +184,8 @@ export function HomeCarousel({ reducedMotion, playbackActive, onActiveStoryChang
       cancelled = true;
       next.removeEventListener("loadeddata", markReady);
       next.removeEventListener("canplay", markReady);
+      next.removeEventListener("canplaythrough", markReady);
+      next.removeEventListener("progress", markReady);
     };
   }, [nextIndex, nextLayer, setNextReady, videoEnabled, videoForLayer]);
 
@@ -213,7 +231,7 @@ export function HomeCarousel({ reducedMotion, playbackActive, onActiveStoryChang
   const startIncoming = useCallback(async () => {
     if (!mountedRef.current || phaseRef.current !== "waiting" || handoffRef.current || !nextReadyRef.current) return;
     const next = videoForLayer(nextLayer);
-    if (!next || next.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+    if (!next || !isReadyForHandoff(next)) return;
 
     handoffRef.current = true;
     next.pause();
@@ -275,6 +293,15 @@ export function HomeCarousel({ reducedMotion, playbackActive, onActiveStoryChang
       disablePictureInPicture
       disableRemotePlayback
       onTimeUpdate={(event) => onCurrentTimeUpdate(layer, event.currentTarget)}
+      onCanPlay={(event) => {
+        if (layer === nextLayer && isReadyForHandoff(event.currentTarget)) setNextReady(true);
+      }}
+      onCanPlayThrough={(event) => {
+        if (layer === nextLayer && isReadyForHandoff(event.currentTarget)) setNextReady(true);
+      }}
+      onProgress={(event) => {
+        if (layer === nextLayer && isReadyForHandoff(event.currentTarget)) setNextReady(true);
+      }}
       onEnded={() => {
         if (layer === activeLayer) beginFadeOut();
       }}
