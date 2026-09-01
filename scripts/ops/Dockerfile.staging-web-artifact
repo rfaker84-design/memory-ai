@@ -4,7 +4,10 @@ WORKDIR /app
 ARG STAGING_WEB_ARTIFACT_SOURCE_COMMIT
 ARG STAGING_WEB_ARTIFACT_SOURCE_TREE
 ARG STAGING_WEB_ARTIFACT_RUNNER_COMMIT
+ARG NEXT_PUBLIC_SOUNDSCAPE_ENABLED
 RUN apk add --no-cache git libc6-compat && test "$(node --version)" = "v20.20.2" && test "$(npm --version)" = "10.8.2"
+RUN test "$NEXT_PUBLIC_SOUNDSCAPE_ENABLED" = "true"
+ENV NEXT_PUBLIC_SOUNDSCAPE_ENABLED=$NEXT_PUBLIC_SOUNDSCAPE_ENABLED
 
 COPY source/package.json source/package-lock.json ./
 COPY source/. ./

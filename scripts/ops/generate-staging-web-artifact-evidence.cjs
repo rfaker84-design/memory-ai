@@ -49,18 +49,24 @@ function writeJson(file, value) {
   writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o644 });
 }
 
-function qwenVoiceCloneClientProof(buildRoot) {
+function compiledClientProof(buildRoot) {
   const staticDirectory = path.join(buildRoot, ".next", "static");
   if (!existsSync(staticDirectory)) fail("STAGING_WEB_ARTIFACT_CLIENT_OUTPUT_MISSING");
   const candidates = files(staticDirectory).filter((file) => file.path.endsWith(".js"));
-  const qwenVoiceCloneChunks = candidates.filter((file) => readFileSync(path.join(staticDirectory, file.path), "utf8").includes("Qwen-Audio-3.0-TTS-Flash"));
+  const contents = new Map(candidates.map((file) => [file.path, readFileSync(path.join(staticDirectory, file.path), "utf8")]));
+  const qwenVoiceCloneChunks = candidates.filter((file) => contents.get(file.path).includes("Qwen-Audio-3.0-TTS-Flash"));
   if (qwenVoiceCloneChunks.length === 0) fail("STAGING_WEB_ARTIFACT_QWEN_VOICE_CLONE_CLIENT_CHUNK_MISSING");
-  return qwenVoiceCloneChunks.map(({ path: file, sha256 }) => ({ path: `.next/static/${file}`, sha256 }));
+  const soundscapeChunks = candidates.filter((file) => contents.get(file.path).includes("memoryai.soundscape.v1"));
+  if (soundscapeChunks.length === 0) fail("STAGING_WEB_ARTIFACT_SOUNDSCAPE_CLIENT_CHUNK_MISSING");
+  if ([...contents.values()].some((content) => content.includes("NEXT_PUBLIC_SOUNDSCAPE_ENABLED"))) fail("STAGING_WEB_ARTIFACT_CLIENT_ENV_REFERENCE_PRESENT");
+  const proof = (items) => items.map(({ path: file, sha256 }) => ({ path: `.next/static/${file}`, sha256 }));
+  return { qwenAudioTtsFlashVoiceClone: proof(qwenVoiceCloneChunks), soundscape: proof(soundscapeChunks) };
 }
 
 if (process.platform !== "linux") fail("STAGING_WEB_ARTIFACT_LINUX_REQUIRED", process.platform);
 if (process.version !== nodeVersion) fail("STAGING_WEB_ARTIFACT_NODE_VERSION_INVALID", process.version);
 if (require("node:child_process").execFileSync("npm", ["--version"], { encoding: "utf8" }).trim() !== npmVersion) fail("STAGING_WEB_ARTIFACT_NPM_VERSION_INVALID");
+if (process.env.NEXT_PUBLIC_SOUNDSCAPE_ENABLED !== "true") fail("STAGING_WEB_ARTIFACT_SOUNDSCAPE_FLAG_UNBAKED");
 if (!runtimeDirectory || !outputDirectory || !existsSync(runtimeDirectory)) fail("STAGING_WEB_ARTIFACT_RUNTIME_MISSING");
 
 const expectedCommit = sha(sourceCommit, "STAGING_WEB_ARTIFACT_SOURCE_COMMIT_INVALID");
@@ -87,7 +93,7 @@ writeJson(path.join(runtime, "release-manifest.json"), releaseManifest);
 const runtimeFiles = files(runtime);
 if (runtimeFiles.length === 0) fail("STAGING_WEB_ARTIFACT_RUNTIME_EMPTY");
 const runtimeDigest = hash(runtimeFiles.map((file) => `${file.path}\0${file.bytes}\0${file.sha256}\n`).join(""));
-const featureProof = qwenVoiceCloneClientProof(buildRoot);
+const featureProof = compiledClientProof(buildRoot);
 const lockfile = path.join(buildRoot, "package-lock.json");
 if (!existsSync(lockfile)) fail("STAGING_WEB_ARTIFACT_LOCKFILE_MISSING");
 
@@ -101,7 +107,8 @@ const manifest = {
     node: nodeVersion.slice(1),
     npm: npmVersion,
     baseImage,
-    featureFlags: { qwenAudioTtsFlashVoiceClone: true },
+    featureFlags: { qwenAudioTtsFlashVoiceClone: true, NEXT_PUBLIC_SOUNDSCAPE_ENABLED: true },
+    environmentReferenceAbsent: true,
     featureProof: { compiledClientChunks: featureProof },
   },
   inputs: { packageLockSha256: hashFile(lockfile), buildRecipeSha256: hashFile(recipe) },

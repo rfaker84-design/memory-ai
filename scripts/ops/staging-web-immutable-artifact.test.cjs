@@ -21,6 +21,7 @@ test("immutable Staging Web artifact workflow checks out an exact source commit 
   assert.match(workflow, /rm -rf source\/.git/);
   assert.match(workflow, /docker buildx build --pull=false/);
   assert.match(workflow, /--build-arg "STAGING_WEB_ARTIFACT_RUNNER_COMMIT=\$RUNNER_COMMIT"/);
+  assert.match(workflow, /--build-arg "NEXT_PUBLIC_SOUNDSCAPE_ENABLED=true"/);
   assert.match(workflow, /--target export/);
   assert.match(workflow, /actions\/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08/);
   assert.match(workflow, /verify_directory="\$\(mktemp -d\)"/);
@@ -34,6 +35,7 @@ test("BuildKit recipe locks Linux Node/npm, bakes the feature flag, and exports 
   assert.match(dockerfile, /node --version\)" = "v20\.20\.2"/);
   assert.match(dockerfile, /npm --version\)" = "10\.8\.2"/);
   assert.match(dockerfile, /npm run test:qwen-voice-clone-beta && npm run build && npm run package:standalone-rc/);
+  assert.match(dockerfile, /ARG NEXT_PUBLIC_SOUNDSCAPE_ENABLED[\s\S]*?test "\$NEXT_PUBLIC_SOUNDSCAPE_ENABLED" = "true"[\s\S]*?ENV NEXT_PUBLIC_SOUNDSCAPE_ENABLED=\$NEXT_PUBLIC_SOUNDSCAPE_ENABLED/);
   const sourceCopy = dockerfile.indexOf("COPY source/. ./");
   const sourceRepository = dockerfile.indexOf("RUN git init --quiet");
   const dependencyInstall = dockerfile.indexOf("RUN npm ci");
@@ -51,6 +53,9 @@ test("evidence generator fails closed unless its client feature flag was baked b
   assert.match(generator, /process\.platform !== "linux"/);
   assert.match(generator, /Qwen-Audio-3\.0-TTS-Flash/);
   assert.match(generator, /STAGING_WEB_ARTIFACT_QWEN_VOICE_CLONE_CLIENT_CHUNK_MISSING/);
+  assert.match(generator, /STAGING_WEB_ARTIFACT_SOUNDSCAPE_CLIENT_CHUNK_MISSING/);
+  assert.match(generator, /STAGING_WEB_ARTIFACT_SOUNDSCAPE_FLAG_UNBAKED/);
+  assert.match(generator, /STAGING_WEB_ARTIFACT_CLIENT_ENV_REFERENCE_PRESENT/);
   assert.match(generator, /compiledClientChunks/);
   assert.match(generator, /runnerSourceCommit/);
   assert.match(generator, /STAGING_WEB_ARTIFACT_SYMLINK_FORBIDDEN/);
