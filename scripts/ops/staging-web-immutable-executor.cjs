@@ -264,7 +264,11 @@ function pm2Record(appName = "memoryai-staging") {
 }
 
 function usesVersionedSecretWrapper(release, execPath) {
-  return execPath === path.join(__dirname, "staging-web-secret-runtime-wrapper.cjs")
+  // The executor itself is versioned independently from the serving release.
+  // A healthy current release may therefore point at a prior immutable Qwen
+  // runner while a newer runner performs the next promotion.  Accept only the
+  // SHA-bound tool layout, never an arbitrary wrapper path.
+  return /^\/home\/ubuntu\/memoryai-staging\/tools\/qwen-e2e-[0-9a-f]{40}\/staging-web-secret-runtime-wrapper\.cjs$/iu.test(execPath ?? "")
     || execPath === `${release.path}/runtime/run-standalone-from-manifest.cjs`;
 }
 

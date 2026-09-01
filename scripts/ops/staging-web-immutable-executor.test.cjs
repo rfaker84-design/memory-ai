@@ -177,10 +177,12 @@ test("serving cutover replaces the previous PM2 record with the release-local ma
   ]);
 });
 
-test("a first secret-wrapper promotion accepts the legacy launcher, but candidates must use the versioned wrapper", () => {
+test("a promotion accepts a SHA-bound versioned wrapper from an earlier runner or the legacy launcher", () => {
   const release = { path: `${ROOT}/releases/${CURRENT}` };
   assert.equal(usesVersionedSecretWrapper(release, `${release.path}/runtime/run-standalone-from-manifest.cjs`), true);
+  assert.equal(usesVersionedSecretWrapper(release, `${ROOT}/tools/qwen-e2e-${ROLLBACK}/staging-web-secret-runtime-wrapper.cjs`), true);
   assert.equal(usesVersionedSecretWrapper(release, "/runner/staging-web-secret-runtime-wrapper.cjs"), false);
+  assert.equal(usesVersionedSecretWrapper(release, `${ROOT}/tools/qwen-e2e-not-a-sha/staging-web-secret-runtime-wrapper.cjs`), false);
 });
 
 test("health probes send the dedicated Staging access header", async () => {
