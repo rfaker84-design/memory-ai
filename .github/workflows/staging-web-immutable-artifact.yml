@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_COMMIT: ${{ github.event_name == 'workflow_dispatch' && inputs.source_commit || '9ac305dce3a42457a15bb09bdeec97e6a24d4048' }}
+  SOURCE_COMMIT: ${{ github.event_name == 'workflow_dispatch' && inputs.source_commit || '06f3e3daed07c102ef929c37cc1ed4102581b597' }}
 
 jobs:
   export:
@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     concurrency:
-      group: staging-web-immutable-artifact-${{ github.event_name == 'workflow_dispatch' && inputs.source_commit || '9ac305dce3a42457a15bb09bdeec97e6a24d4048' }}
+      group: staging-web-immutable-artifact-${{ github.event_name == 'workflow_dispatch' && inputs.source_commit || '06f3e3daed07c102ef929c37cc1ed4102581b597' }}
       cancel-in-progress: false
     steps:
       - name: Check out the versioned runner
@@ -62,7 +62,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$VERIFIED_SOURCE_COMMIT" = "9ac305dce3a42457a15bb09bdeec97e6a24d4048"
+          test "$VERIFIED_SOURCE_COMMIT" = "06f3e3daed07c102ef929c37cc1ed4102581b597"
           source_commit=$VERIFIED_SOURCE_COMMIT
           source_tree=$VERIFIED_SOURCE_TREE
           docker buildx build --pull=false             --build-arg "STAGING_WEB_ARTIFACT_SOURCE_COMMIT=$source_commit"             --build-arg "STAGING_WEB_ARTIFACT_SOURCE_TREE=$source_tree"             --build-arg "STAGING_WEB_ARTIFACT_RUNNER_COMMIT=$RUNNER_COMMIT"             --target export             --output "type=local,dest=artifacts/staging-web-immutable-$source_commit"             -f scripts/ops/Dockerfile.staging-web-artifact .
