@@ -35,13 +35,24 @@ test("the launch preloads the opening pair without ever allowing a person to loo
   assert.match(carousel, /current\.loop = false/);
   assert.match(carousel, /next\.loop = false/);
   assert.match(carousel, /next\.pause\(\);[\s\S]*?next\.currentTime = 0;[\s\S]*?next\.preload = "auto";[\s\S]*?next\.load\(\)/);
-  assert.match(carousel, /next\.readyState < HTMLMediaElement\.HAVE_CURRENT_DATA/);
+  assert.match(carousel, /const MINIMUM_PREBUFFER_SECONDS = 4/);
+  assert.match(carousel, /video\.readyState < HTMLMediaElement\.HAVE_FUTURE_DATA/);
+  assert.match(carousel, /video\.buffered\.end\(index\) >= requiredEnd/);
   assert.match(carousel, /next\.addEventListener\("loadeddata", markReady\)/);
   assert.match(carousel, /next\.addEventListener\("canplay", markReady\)/);
+  assert.match(carousel, /next\.addEventListener\("canplaythrough", markReady\)/);
+  assert.match(carousel, /next\.addEventListener\("progress", markReady\)/);
   assert.match(carousel, /if \(video\.duration - video\.currentTime <= HANDOFF_LEAD_SECONDS\) beginFadeOut\(\)/);
   assert.match(carousel, /onEnded=\{\(\) => \{[\s\S]*?beginFadeOut\(\)/);
   assert.doesNotMatch(carousel, /\n\s+loop(?:\s|\/?>)/);
   assert.doesNotMatch(carousel, /\.loop = true/);
+});
+
+test("a failed incoming autoplay rearms preloading instead of leaving a permanent warm plate", () => {
+  assert.match(carousel, /catch \{[\s\S]*?setNextReady\(false\);[\s\S]*?next\.load\(\)/);
+  assert.match(carousel, /onCanPlay=\{\(event\) => \{[\s\S]*?isReadyForHandoff/);
+  assert.match(carousel, /onCanPlayThrough=\{\(event\) => \{[\s\S]*?isReadyForHandoff/);
+  assert.match(carousel, /onProgress=\{\(event\) => \{[\s\S]*?isReadyForHandoff/);
 });
 
 test("the one-second handoff never plays or displays two people at the same time", () => {
