@@ -35,7 +35,7 @@ type HomeCarouselProps = {
 };
 
 function assetPath(story: HomeStory, extension: "mp4" | "poster.webp") {
-  return \`/home-hero-assets/\${story.slug}.\${HOME_ASSET_VERSION}.\${extension}\`;
+  return `/home-hero-assets/${story.slug}.${HOME_ASSET_VERSION}.${extension}`;
 }
 
 function otherLayer(layer: Layer): Layer {
