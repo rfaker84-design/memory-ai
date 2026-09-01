@@ -8,18 +8,20 @@ const path = require("node:path");
 const releaseRoot = process.env.MEMORYAI_RELEASE_ROOT;
 const appName = process.env.MEMORYAI_PM2_APP_NAME;
 const port = process.env.MEMORYAI_PORT;
-if (!releaseRoot || !path.isAbsolute(releaseRoot) || !appName || !/^memoryai-staging(?:-candidate-[a-z0-9-]+)?$/u.test(appName) || !/^(?:[1-9]\d{0,4})$/u.test(port ?? "") || Number(port) > 65535) {
+const secretFile = process.env.MEMORYAI_STAGING_SECRET_FILE;
+const wrapper = path.join(__dirname, "staging-web-secret-runtime-wrapper.cjs");
+if (!releaseRoot || !path.isAbsolute(releaseRoot) || !appName || !/^memoryai-staging(?:-candidate-[a-z0-9-]+)?$/u.test(appName) || !/^(?:[1-9]\d{0,4})$/u.test(port ?? "") || Number(port) > 65535 || secretFile !== "/home/ubuntu/memoryai-staging/secrets/qwen-voice-clone.env" || process.env.DASHSCOPE_API_KEY || process.env.DASHSCOPE_VOICE_CLONE_ENDPOINT) {
   throw new Error("STAGING_WEB_PM2_MANIFEST_INPUT_INVALID");
 }
-for (const file of ["standalone-manifest.json", "run-standalone-from-manifest.cjs"]) {
-  if (!existsSync(path.join(releaseRoot, file))) throw new Error("STAGING_WEB_PM2_MANIFEST_RUNTIME_INVALID");
+for (const file of ["standalone-manifest.json", "run-standalone-from-manifest.cjs", wrapper]) {
+  if (!existsSync(file === wrapper ? file : path.join(releaseRoot, file))) throw new Error("STAGING_WEB_PM2_MANIFEST_RUNTIME_INVALID");
 }
 
 module.exports = {
   apps: [{
     name: appName,
     cwd: releaseRoot,
-    script: "run-standalone-from-manifest.cjs",
+    script: wrapper,
     interpreter: "node",
     instances: 1,
     exec_mode: "fork",

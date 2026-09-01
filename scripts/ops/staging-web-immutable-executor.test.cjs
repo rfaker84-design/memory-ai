@@ -18,6 +18,7 @@ const {
   requiredPromotionBytes,
   runtimeIdentity,
   servingPm2Actions,
+  usesVersionedSecretWrapper,
   verifyChecksums,
   writeExclusiveJson,
 } = require("./staging-web-immutable-executor.cjs");
@@ -50,7 +51,7 @@ function input(overrides = {}) {
 }
 
 function healthy() {
-  return { pm2Online: true, pm2CwdMatchesManifest: true, manifestVerified: true, checksumsVerified: true, health200: true, databaseHealth200: true, unstableRestarts: 0 };
+  return { pm2Online: true, pm2CwdMatchesManifest: true, pm2ExecMatchesRunner: true, manifestVerified: true, checksumsVerified: true, health200: true, databaseHealth200: true, unstableRestarts: 0 };
 }
 
 function operations(calls, overrides = {}) {
@@ -174,6 +175,12 @@ test("serving cutover replaces the previous PM2 record with the release-local ma
     ["delete", "memoryai-staging"],
     ["start", "/runner/staging-web-pm2-manifest.config.cjs", "--only", "memoryai-staging", "--update-env"],
   ]);
+});
+
+test("a first secret-wrapper promotion accepts the legacy launcher, but candidates must use the versioned wrapper", () => {
+  const release = { path: `${ROOT}/releases/${CURRENT}` };
+  assert.equal(usesVersionedSecretWrapper(release, `${release.path}/runtime/run-standalone-from-manifest.cjs`), true);
+  assert.equal(usesVersionedSecretWrapper(release, "/runner/staging-web-secret-runtime-wrapper.cjs"), false);
 });
 
 test("health probes send the dedicated Staging access header", async () => {

@@ -263,6 +263,11 @@ function pm2Record(appName = "memoryai-staging") {
   };
 }
 
+function usesVersionedSecretWrapper(release, execPath) {
+  return execPath === path.join(__dirname, "staging-web-secret-runtime-wrapper.cjs")
+    || execPath === `${release.path}/runtime/run-standalone-from-manifest.cjs`;
+}
+
 function verifyInstalledRelease(release) {
   if (!existsSync(release.path)) fail("WEB_EXECUTOR_INSTALLED_RELEASE_MISSING", release.sha);
   verifyChecksums(release.path);
@@ -340,12 +345,16 @@ function createHostOperations(plan) {
   const pm2Config = path.join(__dirname, "staging-web-pm2-manifest.config.cjs");
 
   const pm2 = (args, environment) => command("pm2", args, { env: environment });
-  const pm2Environment = (release, port, appName) => ({
-    ...capturedPm2.environment,
-    MEMORYAI_RELEASE_ROOT: path.join(release.path, "runtime"),
-    MEMORYAI_PM2_APP_NAME: appName,
-    MEMORYAI_PORT: String(port),
-  });
+  const pm2Environment = (release, port, appName) => {
+    const { DASHSCOPE_API_KEY: _apiKey, DASHSCOPE_VOICE_CLONE_ENDPOINT: _endpoint, ...inherited } = capturedPm2.environment;
+    return {
+      ...inherited,
+      MEMORYAI_RELEASE_ROOT: path.join(release.path, "runtime"),
+      MEMORYAI_PM2_APP_NAME: appName,
+      MEMORYAI_PORT: String(port),
+      MEMORYAI_STAGING_SECRET_FILE: "/home/ubuntu/memoryai-staging/secrets/qwen-voice-clone.env",
+    };
+  };
   const health = async (release, port, appName) => {
     const token = capturedPm2.environment.STAGING_ACCESS_TOKEN;
     const [health200, databaseHealth200] = await Promise.all([
@@ -356,6 +365,7 @@ function createHostOperations(plan) {
     return {
       pm2Online: record.status === "online",
       pm2CwdMatchesManifest: record.cwd === path.join(release.path, "runtime"),
+      pm2ExecMatchesRunner: record.execPath === path.join(__dirname, "staging-web-secret-runtime-wrapper.cjs"),
       manifestVerified: existsSync(path.join(release.path, "runtime", "standalone-manifest.json")),
       checksumsVerified: true,
       health200,
@@ -370,7 +380,7 @@ function createHostOperations(plan) {
       verifyInstalledRelease(selections.current);
       verifyInstalledRelease(selections.rollback);
       capturedPm2 = pm2Record();
-      if (capturedPm2.status !== "online" || capturedPm2.unstableRestarts !== 0 || capturedPm2.execPath !== `${selections.current.path}/runtime/run-standalone-from-manifest.cjs`) {
+      if (capturedPm2.status !== "online" || capturedPm2.unstableRestarts !== 0 || !usesVersionedSecretWrapper(selections.current, capturedPm2.execPath)) {
         fail("WEB_EXECUTOR_CURRENT_PM2_INVALID");
       }
       return { ...selections, pm2: capturedPm2 };
@@ -446,7 +456,7 @@ function createHostOperations(plan) {
 }
 
 function healthy(checks) {
-  return checks?.pm2Online === true && checks?.pm2CwdMatchesManifest === true && checks?.manifestVerified === true && checks?.checksumsVerified === true && checks?.health200 === true && checks?.databaseHealth200 === true && checks?.unstableRestarts === 0;
+  return checks?.pm2Online === true && checks?.pm2CwdMatchesManifest === true && checks?.pm2ExecMatchesRunner === true && checks?.manifestVerified === true && checks?.checksumsVerified === true && checks?.health200 === true && checks?.databaseHealth200 === true && checks?.unstableRestarts === 0;
 }
 
 async function executeImmutableWebPromotion(input, operations = null) {
@@ -591,6 +601,7 @@ module.exports = {
   reconcileStagingWebHistory,
   runtimeIdentity,
   servingPm2Actions,
+  usesVersionedSecretWrapper,
   verifyChecksums,
   writeExclusiveJson,
 };
