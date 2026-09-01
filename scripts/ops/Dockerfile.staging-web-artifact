@@ -9,10 +9,11 @@ RUN apk add --no-cache git libc6-compat && test "$(node --version)" = "v20.20.2"
 COPY source/package.json source/package-lock.json ./
 COPY source/. ./
 
-# Attest the pristine checked-out source before npm ci creates node_modules.
-# The source tree identity supplied by the workflow is a Git tree and must not
-# be affected by build-only dependencies.
-RUN git init --quiet && git config user.email buildkit@memoryai.invalid && git config user.name buildkit && git add -A && git commit --quiet -m build-input && test "$(git write-tree)" = "$STAGING_WEB_ARTIFACT_SOURCE_TREE"
+# The workflow verifies the checked-out source commit/tree before it removes
+# source/.git and binds those exact values to these build arguments.  This
+# local repository only satisfies package:standalone-rc's clean-worktree
+# contract; it is not an independent source-identity calculation.
+RUN git init --quiet && git config user.email buildkit@memoryai.invalid && git config user.name buildkit && git add -A && git commit --quiet -m build-input
 
 RUN npm ci
 COPY scripts/ops/generate-staging-web-artifact-evidence.cjs /tools/generate-staging-web-artifact-evidence.cjs

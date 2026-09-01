@@ -35,10 +35,12 @@ test("BuildKit recipe locks Linux Node/npm, bakes the feature flag, and exports 
   assert.match(dockerfile, /npm --version\)" = "10\.8\.2"/);
   assert.match(dockerfile, /npm run test:qwen-voice-clone-beta && npm run build && npm run package:standalone-rc/);
   const sourceCopy = dockerfile.indexOf("COPY source/. ./");
-  const sourceAttestation = dockerfile.indexOf("test \"$(git write-tree)\" = \"$STAGING_WEB_ARTIFACT_SOURCE_TREE\"");
+  const sourceRepository = dockerfile.indexOf("RUN git init --quiet");
   const dependencyInstall = dockerfile.indexOf("RUN npm ci");
-  assert.ok(sourceCopy >= 0 && sourceAttestation > sourceCopy && dependencyInstall > sourceAttestation,
-    "the source Git tree must be attested before npm ci adds node_modules");
+  assert.ok(sourceCopy >= 0 && sourceRepository > sourceCopy && dependencyInstall > sourceRepository,
+    "the standalone manifest's temporary Git repository must be created before npm ci adds node_modules");
+  assert.doesNotMatch(dockerfile, /git write-tree/,
+    "source tree identity is verified from the checkout before source/.git is removed, not reconstructed in Docker");
   assert.match(dockerfile, /tar --dereference -C \/bundle -czf/);
   assert.match(dockerfile, /find \. -type f ! -name SHA256SUMS/);
   assert.match(dockerfile, /sha256sum -c SHA256SUMS/);
