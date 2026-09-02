@@ -29,6 +29,11 @@ const { requiredFreeBytes } = require("./staging-release-capacity-gate.cjs");
 const SHA = /^[0-9a-f]{40}$/iu;
 const SHA256 = /^[0-9a-f]{64}$/iu;
 const REQUIRED_EVIDENCE = ["release-manifest.json", "manifest.json", "provenance.intoto.json", "sbom.spdx.json", "SHA256SUMS"];
+const FORMAL_STAGING_RUNNER_WRAPPER_BLOBS = new Set([
+  // The installed 5a8 runner used by the serving Staging process. A formal
+  // runner may use this blob only from its SHA-named, private tool directory.
+  "e1f6b46df71a460d0afc6f18f709ea6fd22df71672a5992c4a1ed7ea10c46b16",
+]);
 const RECONCILIATION_AUTHORIZATION = "STAGING_WEB_RECONCILIATION_AUTHORIZED_2026-08-27";
 const RECONCILIATION_LINEAGE = [
   "219750eebd5bed2ef5243282be45ac0ca5220035",
@@ -244,15 +249,16 @@ function verifyBundle(directory, plan) {
   return { runtimeDigest, manifest, releaseManifest };
 }
 
-function pm2Record(appName = "memoryai-staging") {
-  const raw = command("pm2", ["jlist"]);
-  let record;
-  try { record = JSON.parse(raw).find((value) => value.name === appName); } catch { fail("WEB_EXECUTOR_PM2_JLIST_INVALID"); }
-  if (!record) fail("WEB_EXECUTOR_PM2_APP_MISSING");
+function parsePm2Record(raw, appName = "memoryai-staging") {
+  let records;
+  try { records = JSON.parse(raw).filter((value) => value?.name === appName); } catch { fail("WEB_EXECUTOR_PM2_JLIST_INVALID"); }
+  if (records.length !== 1) fail("WEB_EXECUTOR_PM2_APP_COUNT_INVALID", records.length);
+  const record = records[0];
   const env = record.pm2_env ?? {};
   const currentEnv = env.env;
   if (!currentEnv || typeof currentEnv !== "object") fail("WEB_EXECUTOR_PM2_ENV_MISSING");
   return {
+    name: record.name,
     pid: positive(record.pid, "WEB_EXECUTOR_PM2_PID_INVALID"),
     status: env.status,
     unstableRestarts: env.unstable_restarts,
@@ -263,13 +269,92 @@ function pm2Record(appName = "memoryai-staging") {
   };
 }
 
-function usesVersionedSecretWrapper(release, execPath) {
-  // The executor itself is versioned independently from the serving release.
-  // A healthy current release may therefore point at a prior immutable Qwen
-  // runner while a newer runner performs the next promotion.  Accept only the
-  // SHA-bound tool layout, never an arbitrary wrapper path.
-  return /^\/home\/ubuntu\/memoryai-staging\/tools\/qwen-e2e-[0-9a-f]{40}\/staging-web-secret-runtime-wrapper\.cjs$/iu.test(execPath ?? "")
-    || execPath === `${release.path}/runtime/run-standalone-from-manifest.cjs`;
+function pm2Record(appName = "memoryai-staging") {
+  return parsePm2Record(command("pm2", ["jlist"]), appName);
+}
+
+function lstatExact(file, expectedType, code, dependencies) {
+  let metadata;
+  try { metadata = dependencies.lstatSync(file); } catch { fail(code, file); }
+  if ((expectedType === "file" && !metadata.isFile()) || (expectedType === "directory" && !metadata.isDirectory()) || metadata.isSymbolicLink()) {
+    fail(code, file);
+  }
+  return metadata;
+}
+
+function assertExactRealPath(file, code, dependencies) {
+  let resolved;
+  try { resolved = dependencies.realpathSync(file); } catch { fail(code, file); }
+  if (resolved !== file) fail(code, file);
+}
+
+function assertPrivateRunnerEntry(file, expectedType, code, dependencies) {
+  const metadata = lstatExact(file, expectedType, code, dependencies);
+  if (metadata.uid !== dependencies.expectedUid || (metadata.mode & 0o077) !== 0 || metadata.nlink !== 1) fail(code, file);
+  assertExactRealPath(file, code, dependencies);
+  return metadata;
+}
+
+function assertReleaseLauncher(file, dependencies) {
+  const metadata = lstatExact(file, "file", "WEB_EXECUTOR_RELEASE_LAUNCHER_INVALID", dependencies);
+  if (metadata.uid !== dependencies.expectedUid || (metadata.mode & 0o022) !== 0 || metadata.nlink !== 1) fail("WEB_EXECUTOR_RELEASE_LAUNCHER_INVALID", file);
+  assertExactRealPath(file, "WEB_EXECUTOR_RELEASE_LAUNCHER_INVALID", dependencies);
+  return metadata;
+}
+
+function formalRunnerDependencies(overrides = {}) {
+  return {
+    root: "/home/ubuntu/memoryai-staging",
+    expectedUid: typeof process.getuid === "function" ? process.getuid() : null,
+    lstatSync,
+    realpathSync,
+    hashFile,
+    ...overrides,
+  };
+}
+
+function assertFormalStagingRunnerWrapper(release, execPath, overrides = {}) {
+  const dependencies = formalRunnerDependencies(overrides);
+  const root = dependencies.root;
+  const expected = new RegExp(`^${root.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}/tools/staging-web-immutable-runner-([0-9a-f]{40})/staging-web-secret-runtime-wrapper\\.cjs$`, "u");
+  const matched = typeof execPath === "string" ? execPath.match(expected) : null;
+  if (!matched || execPath.includes("..")) fail("WEB_EXECUTOR_FORMAL_WRAPPER_PATH_INVALID", execPath);
+  const tools = `${root}/tools`;
+  const runner = `${tools}/staging-web-immutable-runner-${matched[1]}`;
+  lstatExact(tools, "directory", "WEB_EXECUTOR_FORMAL_TOOLS_DIRECTORY_INVALID", dependencies);
+  assertExactRealPath(tools, "WEB_EXECUTOR_FORMAL_TOOLS_DIRECTORY_INVALID", dependencies);
+  assertPrivateRunnerEntry(runner, "directory", "WEB_EXECUTOR_FORMAL_WRAPPER_DIRECTORY_INVALID", dependencies);
+  assertPrivateRunnerEntry(execPath, "file", "WEB_EXECUTOR_FORMAL_WRAPPER_FILE_INVALID", dependencies);
+  if (!FORMAL_STAGING_RUNNER_WRAPPER_BLOBS.has(dependencies.hashFile(execPath))) fail("WEB_EXECUTOR_FORMAL_WRAPPER_IDENTITY_INVALID", runner);
+  const runtime = `${release.path}/runtime`;
+  const launcher = `${runtime}/run-standalone-from-manifest.cjs`;
+  assertReleaseLauncher(launcher, dependencies);
+  return { runnerSha: matched[1], runnerPath: runner, wrapperPath: execPath, launcherPath: launcher };
+}
+
+function usesVersionedSecretWrapper(release, execPath, dependencies = {}) {
+  if (execPath === `${release.path}/runtime/run-standalone-from-manifest.cjs`) return true;
+  try {
+    assertFormalStagingRunnerWrapper(release, execPath, dependencies);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function assertServingPm2Identity(release, record, dependencies = {}) {
+  const runtime = `${release.path}/runtime`;
+  if (record?.name !== "memoryai-staging" || record.status !== "online" || record.unstableRestarts !== 0 || record.cwd !== runtime || String(record.port) !== "3100") {
+    fail("WEB_EXECUTOR_CURRENT_PM2_INVALID");
+  }
+  if (record.environment?.MEMORYAI_RELEASE_ROOT !== runtime || record.environment?.MEMORYAI_PM2_APP_NAME !== "memoryai-staging" || String(record.environment?.MEMORYAI_PORT) !== "3100") {
+    fail("WEB_EXECUTOR_CURRENT_PM2_RELEASE_TARGET_INVALID");
+  }
+  if (!usesVersionedSecretWrapper(release, record.execPath, dependencies)) fail("WEB_EXECUTOR_CURRENT_PM2_INVALID");
+  const launcher = `${runtime}/run-standalone-from-manifest.cjs`;
+  const activeDependencies = formalRunnerDependencies(dependencies);
+  assertReleaseLauncher(launcher, activeDependencies);
+  return { runtime, launcher, wrapper: record.execPath };
 }
 
 function verifyInstalledRelease(release) {
@@ -369,7 +454,9 @@ function createHostOperations(plan) {
     return {
       pm2Online: record.status === "online",
       pm2CwdMatchesManifest: record.cwd === path.join(release.path, "runtime"),
-      pm2ExecMatchesRunner: record.execPath === path.join(__dirname, "staging-web-secret-runtime-wrapper.cjs"),
+      pm2ExecMatchesRunner: (() => {
+        try { assertServingPm2Identity(release, record); return true; } catch { return false; }
+      })(),
       manifestVerified: existsSync(path.join(release.path, "runtime", "standalone-manifest.json")),
       checksumsVerified: true,
       health200,
@@ -384,9 +471,7 @@ function createHostOperations(plan) {
       verifyInstalledRelease(selections.current);
       verifyInstalledRelease(selections.rollback);
       capturedPm2 = pm2Record();
-      if (capturedPm2.status !== "online" || capturedPm2.unstableRestarts !== 0 || !usesVersionedSecretWrapper(selections.current, capturedPm2.execPath)) {
-        fail("WEB_EXECUTOR_CURRENT_PM2_INVALID");
-      }
+      assertServingPm2Identity(selections.current, capturedPm2);
       return { ...selections, pm2: capturedPm2 };
     },
     acquireLock: () => {
@@ -595,12 +680,15 @@ module.exports = {
   RECONCILIATION_AUTHORIZATION,
   RECONCILIATION_LINEAGE,
   appendJsonLine,
+  assertFormalStagingRunnerWrapper,
   assertArchiveInput,
   assertReconciliationInput,
+  assertServingPm2Identity,
   createHostOperations,
   executeImmutableWebPromotion,
   healthy,
   httpStatus,
+  parsePm2Record,
   requiredPromotionBytes,
   reconcileStagingWebHistory,
   runtimeIdentity,

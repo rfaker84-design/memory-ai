@@ -11,12 +11,15 @@ const {
   RECONCILIATION_AUTHORIZATION,
   RECONCILIATION_LINEAGE,
   appendJsonLine,
+  assertFormalStagingRunnerWrapper,
   assertArchiveInput,
   assertReconciliationInput,
+  assertServingPm2Identity,
   executeImmutableWebPromotion,
   httpStatus,
   requiredPromotionBytes,
   runtimeIdentity,
+  parsePm2Record,
   servingPm2Actions,
   usesVersionedSecretWrapper,
   verifyChecksums,
@@ -28,6 +31,8 @@ const CURRENT = "1111111111111111111111111111111111111111";
 const ROLLBACK = "2222222222222222222222222222222222222222";
 const CANDIDATE = "3333333333333333333333333333333333333333";
 const HASH = "a".repeat(64);
+const FORMAL_RUNNER = "5a8ae44b4e066d5e624cb5ca142ff0339663aa2f";
+const FORMAL_WRAPPER_HASH = "e1f6b46df71a460d0afc6f18f709ea6fd22df71672a5992c4a1ed7ea10c46b16";
 
 function input(overrides = {}) {
   return {
@@ -177,12 +182,82 @@ test("serving cutover replaces the previous PM2 record with the release-local ma
   ]);
 });
 
-test("a promotion accepts a SHA-bound versioned wrapper from an earlier runner or the legacy launcher", () => {
+function privateMetadata(type = "file", overrides = {}) {
+  return {
+    uid: 1000,
+    mode: type === "directory" ? 0o40700 : 0o100600,
+    nlink: 1,
+    isFile: () => type === "file",
+    isDirectory: () => type === "directory",
+    isSymbolicLink: () => false,
+    ...overrides,
+  };
+}
+
+function formalWrapperFixture(release, overrides = {}) {
+  const runner = `${ROOT}/tools/staging-web-immutable-runner-${FORMAL_RUNNER}`;
+  const wrapper = `${runner}/staging-web-secret-runtime-wrapper.cjs`;
+  const launcher = `${release.path}/runtime/run-standalone-from-manifest.cjs`;
+  const metadata = new Map([
+    [`${ROOT}/tools`, privateMetadata("directory", { mode: 0o40755 })],
+    [runner, privateMetadata("directory")],
+    [wrapper, privateMetadata("file")],
+    [launcher, privateMetadata("file")],
+  ]);
+  return {
+    wrapper,
+    dependencies: {
+      root: ROOT,
+      expectedUid: 1000,
+      lstatSync: (target) => {
+        if (!metadata.has(target)) throw new Error("ENOENT");
+        return metadata.get(target);
+      },
+      realpathSync: (target) => target,
+      hashFile: (target) => target === wrapper ? FORMAL_WRAPPER_HASH : HASH,
+      ...overrides,
+    },
+  };
+}
+
+test("a promotion accepts only a private, hash-pinned formal Staging wrapper or the legacy launcher", () => {
   const release = { path: `${ROOT}/releases/${CURRENT}` };
   assert.equal(usesVersionedSecretWrapper(release, `${release.path}/runtime/run-standalone-from-manifest.cjs`), true);
-  assert.equal(usesVersionedSecretWrapper(release, `${ROOT}/tools/qwen-e2e-${ROLLBACK}/staging-web-secret-runtime-wrapper.cjs`), true);
+  const fixture = formalWrapperFixture(release);
+  assert.deepEqual(assertFormalStagingRunnerWrapper(release, fixture.wrapper, fixture.dependencies), {
+    runnerSha: FORMAL_RUNNER,
+    runnerPath: `${ROOT}/tools/staging-web-immutable-runner-${FORMAL_RUNNER}`,
+    wrapperPath: fixture.wrapper,
+    launcherPath: `${release.path}/runtime/run-standalone-from-manifest.cjs`,
+  });
+  assert.equal(usesVersionedSecretWrapper(release, fixture.wrapper, fixture.dependencies), true);
   assert.equal(usesVersionedSecretWrapper(release, "/runner/staging-web-secret-runtime-wrapper.cjs"), false);
-  assert.equal(usesVersionedSecretWrapper(release, `${ROOT}/tools/qwen-e2e-not-a-sha/staging-web-secret-runtime-wrapper.cjs`), false);
+  assert.equal(usesVersionedSecretWrapper(release, `${ROOT}/tools/staging-web-immutable-runner-not-a-sha/staging-web-secret-runtime-wrapper.cjs`), false);
+});
+
+test("formal wrapper validation rejects path escapes, links, weak permissions, unpinned content, and wrong launcher", () => {
+  const release = { path: `${ROOT}/releases/${CURRENT}` };
+  const fixture = formalWrapperFixture(release);
+  assert.throws(() => assertFormalStagingRunnerWrapper(release, `${ROOT}/tools/staging-web-immutable-runner-${FORMAL_RUNNER}/../staging-web-secret-runtime-wrapper.cjs`, fixture.dependencies), /WEB_EXECUTOR_FORMAL_WRAPPER_PATH_INVALID/);
+  assert.throws(() => assertFormalStagingRunnerWrapper(release, fixture.wrapper, { ...fixture.dependencies, hashFile: () => "b".repeat(64) }), /WEB_EXECUTOR_FORMAL_WRAPPER_IDENTITY_INVALID/);
+  assert.throws(() => assertFormalStagingRunnerWrapper(release, fixture.wrapper, { ...fixture.dependencies, lstatSync: (target) => target === fixture.wrapper ? privateMetadata("file", { isSymbolicLink: () => true }) : fixture.dependencies.lstatSync(target) }), /WEB_EXECUTOR_FORMAL_WRAPPER_FILE_INVALID/);
+  assert.throws(() => assertFormalStagingRunnerWrapper(release, fixture.wrapper, { ...fixture.dependencies, lstatSync: (target) => target === fixture.wrapper ? privateMetadata("file", { mode: 0o100640 }) : fixture.dependencies.lstatSync(target) }), /WEB_EXECUTOR_FORMAL_WRAPPER_FILE_INVALID/);
+  assert.throws(() => assertFormalStagingRunnerWrapper(release, fixture.wrapper, { ...fixture.dependencies, realpathSync: (target) => target === fixture.wrapper ? `${ROOT}/outside` : target }), /WEB_EXECUTOR_FORMAL_WRAPPER_FILE_INVALID/);
+});
+
+test("serving PM2 identity binds one app, port 3100, cwd, environment, formal wrapper, and release-local launcher", () => {
+  const release = { path: `${ROOT}/releases/${CURRENT}` };
+  const fixture = formalWrapperFixture(release);
+  const record = {
+    name: "memoryai-staging", status: "online", unstableRestarts: 0, cwd: `${release.path}/runtime`, port: "3100", execPath: fixture.wrapper,
+    environment: { MEMORYAI_RELEASE_ROOT: `${release.path}/runtime`, MEMORYAI_PM2_APP_NAME: "memoryai-staging", MEMORYAI_PORT: "3100" },
+  };
+  assert.equal(assertServingPm2Identity(release, record, fixture.dependencies).launcher, `${release.path}/runtime/run-standalone-from-manifest.cjs`);
+  assert.throws(() => assertServingPm2Identity(release, { ...record, cwd: `${ROOT}/releases/${ROLLBACK}/runtime` }, fixture.dependencies), /WEB_EXECUTOR_CURRENT_PM2_INVALID/);
+  assert.throws(() => assertServingPm2Identity(release, { ...record, port: "3110" }, fixture.dependencies), /WEB_EXECUTOR_CURRENT_PM2_INVALID/);
+  assert.throws(() => assertServingPm2Identity(release, { ...record, environment: { ...record.environment, MEMORYAI_RELEASE_ROOT: `${ROOT}/releases/${ROLLBACK}/runtime` } }, fixture.dependencies), /WEB_EXECUTOR_CURRENT_PM2_RELEASE_TARGET_INVALID/);
+  const raw = JSON.stringify([{ name: "memoryai-staging", pid: 1, pm2_env: { status: "online", unstable_restarts: 0, pm_cwd: record.cwd, pm_exec_path: record.execPath, env: record.environment } }, { name: "memoryai-staging", pid: 2, pm2_env: { status: "online", unstable_restarts: 0, pm_cwd: record.cwd, pm_exec_path: record.execPath, env: record.environment } }]);
+  assert.throws(() => parsePm2Record(raw), /WEB_EXECUTOR_PM2_APP_COUNT_INVALID/);
 });
 
 test("health probes send the dedicated Staging access header", async () => {
