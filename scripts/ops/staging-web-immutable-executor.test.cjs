@@ -33,6 +33,7 @@ const CANDIDATE = "3333333333333333333333333333333333333333";
 const HASH = "a".repeat(64);
 const FORMAL_RUNNER = "5a8ae44b4e066d5e624cb5ca142ff0339663aa2f";
 const FORMAL_WRAPPER_HASH = "e1f6b46df71a460d0afc6f18f709ea6fd22df71672a5992c4a1ed7ea10c46b16";
+const CURRENT_FORMAL_WRAPPER_HASH = "ee019e7d71b26935edf0123124072e5b207f1ea2066b967bbcfb1df6b2547529";
 
 function input(overrides = {}) {
   return {
@@ -236,6 +237,10 @@ test("a promotion accepts only a private, nlink=2 formal Staging runner wrapper 
     launcherPath: `${release.path}/runtime/run-standalone-from-manifest.cjs`,
   });
   assert.equal(usesVersionedSecretWrapper(release, fixture.wrapper, fixture.dependencies), true);
+  assert.equal(usesVersionedSecretWrapper(release, fixture.wrapper, {
+    ...fixture.dependencies,
+    hashFile: (target) => target === fixture.wrapper ? CURRENT_FORMAL_WRAPPER_HASH : HASH,
+  }), true);
   assert.equal(usesVersionedSecretWrapper(release, "/runner/staging-web-secret-runtime-wrapper.cjs"), false);
   assert.equal(usesVersionedSecretWrapper(release, `${ROOT}/tools/staging-web-immutable-runner-not-a-sha/staging-web-secret-runtime-wrapper.cjs`), false);
 });
