@@ -14,14 +14,15 @@ import type { SoundscapeEncounterPhase, SoundscapeId, SoundscapePreference } fro
 // Next.js replaces this value at the production build boundary.
 const SOUNDSCAPE_FEATURE_ENABLED = isSoundscapeFeatureEnabled(process.env.NEXT_PUBLIC_SOUNDSCAPE_ENABLED);
 type Props = Readonly<{ children: React.ReactNode }>;
+const SOUNDSCAPE_PRODUCT_PAUSED = true;
 
 export function SoundscapeProvider({ children }: Props) {
   // A disabled build mounts no Web Audio code, DOM control, or media listeners.
   if (!SOUNDSCAPE_FEATURE_ENABLED) return children;
-  return <SoundscapeRuntime>{children}</SoundscapeRuntime>;
+  return <SoundscapeRuntime paused={SOUNDSCAPE_PRODUCT_PAUSED}>{children}</SoundscapeRuntime>;
 }
 
-function SoundscapeRuntime({ children }: Props) {
+function SoundscapeRuntime({ children, paused }: Props & Readonly<{ paused: boolean }>) {
   const pathname = usePathname();
   const [encounterPhase, setEncounterPhase] = useState<SoundscapeEncounterPhase>("off");
   const decision = resolveSoundscapeRoute(pathname, encounterPhase);
@@ -119,7 +120,7 @@ function SoundscapeRuntime({ children }: Props) {
 
   return <>
     {children}
-    {hydrated && activeSoundscape ? (
+    {!paused && hydrated && activeSoundscape ? (
       <SoundscapeControl
         preference={preference}
         soundscape={activeSoundscape}
