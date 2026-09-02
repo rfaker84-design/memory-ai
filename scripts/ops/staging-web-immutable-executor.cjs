@@ -33,6 +33,9 @@ const FORMAL_STAGING_RUNNER_WRAPPER_BLOBS = new Set([
   // The installed 5a8 runner used by the serving Staging process. A formal
   // runner may use this blob only from its SHA-named, private tool directory.
   "e1f6b46df71a460d0afc6f18f709ea6fd22df71672a5992c4a1ed7ea10c46b16",
+  // Current formal wrapper installed with the c245 runner. The path, owner,
+  // device, permissions, link count, and release-local launcher remain required.
+  "ee019e7d71b26935edf0123124072e5b207f1ea2066b967bbcfb1df6b2547529",
 ]);
 const RECONCILIATION_AUTHORIZATION = "STAGING_WEB_RECONCILIATION_AUTHORIZED_2026-08-27";
 const RECONCILIATION_LINEAGE = [
