@@ -11,6 +11,7 @@ import { DatabaseDependencyError, safeDatabaseErrorLog } from "@/src/server/data
 import { mediaService } from "@/app/api/media/_lib";
 import { hasApprovedMemoryConsent } from "@/features/consent/trust-consent-postgres";
 import { applyAuthNoStore } from "@/src/server/security/auth-cache";
+import { verifyStagingVoiceCloneSampleUrl } from "@/src/server/voice-clone/staging-signed-audio-url";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{16,128}$/;
@@ -26,6 +27,7 @@ type ConsentVerifier = (input: {
   consentType: "voice_clone";
   memoryId: string;
 }) => Promise<boolean>;
+type SignedUrlVerifier = (input: { url: string; expectedBody: Buffer; expiresAt: string }) => Promise<void>;
 
 const json = (body: Record<string, unknown>, init?: ResponseInit) =>
   applyAuthNoStore(NextResponse.json(body, init));
@@ -58,6 +60,7 @@ export function createQwenVoiceCloneHandlers(
   sessionResolver?: SessionResolver,
   betaAccess: BetaAccess = (externalUserId) => canAccessInternalBeta("qwen-audio-tts-flash-voice-clone", externalUserId),
   consentVerifier: ConsentVerifier = hasApprovedMemoryConsent,
+  signedUrlVerifier: SignedUrlVerifier = verifyStagingVoiceCloneSampleUrl,
 ) {
   async function authorize(request: NextRequest) {
     const owner = await resolveSessionOwner(request, undefined, sessionResolver);
@@ -95,11 +98,12 @@ export function createQwenVoiceCloneHandlers(
           return json({ error: "VOICE_SAMPLE_TOO_LARGE" }, { status: 413 });
         }
 
+        const body = Buffer.from(await file.arrayBuffer());
         const storage = getMediaService();
         const uploaded = await storage.upload({
           externalUserId: owner.externalUserId,
           memoryId,
-          file: { name: file.name, type: file.type, body: Buffer.from(await file.arrayBuffer()) },
+          file: { name: file.name, type: file.type, body },
         });
         if (uploaded.asset.mediaType !== "audio") {
           return json({ error: "INVALID_VOICE_SAMPLE" }, { status: 400 });
@@ -116,6 +120,7 @@ export function createQwenVoiceCloneHandlers(
 
         try {
           const download = await storage.createDownloadUrl(uploaded.asset.id, owner.externalUserId, 900);
+          await signedUrlVerifier({ url: download.url, expectedBody: body, expiresAt: download.expiresAt });
           const result = await service.create(reservation, { memoryId, sampleUrl: download.url });
           await service.complete({ reservation, memoryId, result });
           return json(responseJob({ ...reservation, status: "ready" }), { status: 201 });

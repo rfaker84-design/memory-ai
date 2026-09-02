@@ -77,6 +77,9 @@ function fakes() {
         return { url: "https://example.test/signed", expiresAt: "2026-08-27T00:00:00.000Z" };
       },
     },
+    async signedUrlVerifier() {
+      calls.push("signed-url-verified");
+    },
   };
 }
 
@@ -88,7 +91,7 @@ const sessionResolver = async () => ({
 
 test("Qwen voice cloning is invisible before any upload when beta access is denied", async () => {
   const fake = fakes();
-  const handlers = createQwenVoiceCloneHandlers(() => fake.service, () => fake.media as never, sessionResolver, () => false, async () => true);
+  const handlers = createQwenVoiceCloneHandlers(() => fake.service, () => fake.media as never, sessionResolver, () => false, async () => true, fake.signedUrlVerifier);
   const response = await handlers.POST(request(), context);
   assert.equal(response.status, 404);
   assert.deepEqual(await response.json(), { error: "BETA_NOT_AVAILABLE" });
@@ -97,7 +100,7 @@ test("Qwen voice cloning is invisible before any upload when beta access is deni
 
 test("Qwen voice cloning requires recorded consent before storing an audio sample", async () => {
   const fake = fakes();
-  const handlers = createQwenVoiceCloneHandlers(() => fake.service, () => fake.media as never, sessionResolver, () => true, async () => false);
+  const handlers = createQwenVoiceCloneHandlers(() => fake.service, () => fake.media as never, sessionResolver, () => true, async () => false, fake.signedUrlVerifier);
   const response = await handlers.POST(request(), context);
   assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), { error: "VOICE_CLONE_CONSENT_REQUIRED" });
@@ -106,19 +109,35 @@ test("Qwen voice cloning requires recorded consent before storing an audio sampl
 
 test("an allowed, consented beta account creates one owned Qwen clone without exposing provider details", async () => {
   const fake = fakes();
-  const handlers = createQwenVoiceCloneHandlers(() => fake.service, () => fake.media as never, sessionResolver, () => true, async () => true);
+  const handlers = createQwenVoiceCloneHandlers(() => fake.service, () => fake.media as never, sessionResolver, () => true, async () => true, fake.signedUrlVerifier);
   const response = await handlers.POST(request(), context);
   assert.equal(response.status, 201);
   assert.deepEqual(await response.json(), { job: { id: "job-1", status: "ready" } });
-  assert.deepEqual(fake.calls, ["upload", "reserve", "signed-url", "create", "complete"]);
+  assert.deepEqual(fake.calls, ["upload", "reserve", "signed-url", "signed-url-verified", "create", "complete"]);
 });
 
 test("an existing idempotent job does not mint a second Qwen voice", async () => {
   const fake = fakes();
   fake.service.reserve = async () => ({ jobId: "job-existing", storageKey: "staging/voice.wav", existing: true, status: "ready", voiceId: "existing-voice" });
-  const handlers = createQwenVoiceCloneHandlers(() => fake.service, () => fake.media as never, sessionResolver, () => true, async () => true);
+  const handlers = createQwenVoiceCloneHandlers(() => fake.service, () => fake.media as never, sessionResolver, () => true, async () => true, fake.signedUrlVerifier);
   const response = await handlers.POST(request(), context);
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { job: { id: "job-existing", status: "ready" } });
   assert.deepEqual(fake.calls, ["upload"]);
+});
+
+test("a signed URL byte mismatch fails before the Qwen provider is called", async () => {
+  const fake = fakes();
+  const handlers = createQwenVoiceCloneHandlers(
+    () => fake.service,
+    () => fake.media as never,
+    sessionResolver,
+    () => true,
+    async () => true,
+    async () => { throw new Error("VOICE_SAMPLE_URL_BYTE_MISMATCH"); },
+  );
+  const response = await handlers.POST(request(), context);
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), { error: "QWEN_VOICE_CLONE_PROVIDER_FAILED" });
+  assert.deepEqual(fake.calls, ["upload", "reserve", "signed-url", "fail"]);
 });
