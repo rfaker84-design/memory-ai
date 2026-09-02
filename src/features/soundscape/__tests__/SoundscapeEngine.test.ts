@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createDeterministicPinkNoiseBlock, FADE_TO_STOP_MS, ROLLING_NOISE_BLOCK_SECONDS, SoundscapeEngine } from "../SoundscapeEngine";
+import { createDeterministicPinkNoiseBlock, FADE_TO_STOP_MS, FIRST_SHIMMER_DELAY_MS, PRIMARY_DRONE_GAIN, ROLLING_NOISE_BLOCK_SECONDS, SECONDARY_DRONE_GAIN, SoundscapeEngine } from "../SoundscapeEngine";
+import { SOUNDSCAPE_PRESETS } from "../presets";
 
 function createParam() {
   return {
@@ -48,6 +49,17 @@ test("the engine does not allocate Web Audio before an explicit activation", () 
   });
   assert.equal(engine.hasAudioContext, false);
   assert.equal(calls, 0);
+});
+
+test("the first audible response is prompt and the bed remains audible on small speakers", () => {
+  assert.ok(FIRST_SHIMMER_DELAY_MS <= 250);
+  assert.ok(PRIMARY_DRONE_GAIN >= 0.1);
+  assert.ok(SECONDARY_DRONE_GAIN >= 0.05);
+  for (const preset of Object.values(SOUNDSCAPE_PRESETS)) {
+    assert.ok(preset.droneHz[0] >= 120);
+    assert.ok(preset.droneHz[1] >= 180);
+    assert.ok(preset.noiseGain >= 0.025);
+  }
 });
 
 test("video pauses and recovers while voice is ducked without changing foreground media", () => {
