@@ -69,7 +69,14 @@ export function SoundscapeControl({
         type="button"
         aria-expanded={expanded}
         aria-label={expanded ? "收起环境声播放器" : "展开环境声播放器"}
-        onClick={() => setExpanded((current) => !current)}
+        onClick={() => {
+          if (!expanded) {
+            setExpanded(true);
+            if (!playing) onPrimaryAction();
+            return;
+          }
+          setExpanded(false);
+        }}
       >
         <span
           className={`${styles.disc} ${playing ? styles.spinning : ""}`}
