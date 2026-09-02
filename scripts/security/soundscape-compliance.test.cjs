@@ -53,6 +53,24 @@ test("encounter reunion is explicitly gated by existing read-only presentation p
   assert.match(encounterPage, /<SoundscapeEncounterPhaseAdapter phase=\{soundscapePhase\} \/>/);
   const phaseBlock = encounterPage.slice(encounterPage.indexOf("const soundscapePhase"), encounterPage.indexOf("return <main"));
   assert.doesNotMatch(phaseBlock, /setTimeout|setInterval|setState/u);
+  assert.match(encounterPage, /<video[^>]+data-soundscape-priority="true"/);
+});
+
+test("soundscape control is a compact edge-mounted rotating disc and hydration is deterministic", () => {
+  const control = readFileSync(path.join(soundscapeRoot, "SoundscapeControl.tsx"), "utf8");
+  const controlCss = readFileSync(path.join(soundscapeRoot, "SoundscapeControl.module.css"), "utf8");
+  const provider = readFileSync(path.join(soundscapeRoot, "SoundscapeProvider.tsx"), "utf8");
+  assert.match(control, /styles\.discLabel/);
+  assert.doesNotMatch(control, /<img|\.png|\.mp3|\.wav|\.m4a/);
+  assert.match(control, /onPrevious/);
+  assert.match(control, /onNext/);
+  assert.match(controlCss, /z-index:\s*60/);
+  assert.match(controlCss, /width:\s*180px/);
+  assert.match(controlCss, /soundscape-disc-spin/);
+  assert.match(controlCss, /prefers-reduced-motion/);
+  assert.match(provider, /DEFAULT_SOUNDSCAPE_PREFERENCE/);
+  assert.match(provider, /setPreference\(readSoundscapePreference\(window\.localStorage\)\)/);
+  assert.match(provider, /hydrated && activeSoundscape/);
 });
 
 test("the only enabled non-HTML voice producer is bridged without changing chat", () => {
