@@ -7,17 +7,13 @@ const VIDEO_FADE_MS = 240;
 const VIDEO_RECOVER_MS = 1000;
 const VOICE_DUCK_RATIO = 0.15;
 const VOICE_RECOVER_MS = 750;
-export const ROLLING_NOISE_BLOCK_SECONDS = 12;
-export const ROLLING_NOISE_CROSSFADE_SECONDS = 1.2;
-export const FIRST_SHIMMER_DELAY_MS = 180;
-export const PRIMARY_DRONE_GAIN = 0.12;
-export const SECONDARY_DRONE_GAIN = 0.055;
+export const FIRST_NOTE_DELAY_MS = 90;
+export const MUSICAL_BAR_BEATS = 4;
 
 type ContextFactory = () => AudioContext;
 type ActiveLayer = {
   preset: SoundscapePreset;
   gain: GainNode;
-  noiseFilter: BiquadFilterNode;
   sources: AudioScheduledSourceNode[];
   nodes: AudioNode[];
   timers: Set<ReturnType<typeof setTimeout>>;
@@ -34,18 +30,6 @@ export function seededRandom(seed: string): () => number {
     value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
     return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
   };
-}
-
-/** Deterministic, non-looping pink-noise block with unique adjacent seed material. */
-export function createDeterministicPinkNoiseBlock(frames: number, seed: string, blockIndex: number): Float32Array {
-  const random = seededRandom(`${seed}:pink-noise:${blockIndex}`);
-  const samples = new Float32Array(Math.max(1, frames));
-  let pink = 0;
-  for (let index = 0; index < samples.length; index += 1) {
-    pink = pink * 0.985 + (random() * 2 - 1) * 0.015;
-    samples[index] = pink;
-  }
-  return samples;
 }
 
 function browserAudioContext(): AudioContext {
@@ -121,7 +105,7 @@ export class SoundscapeEngine {
     const previous = this.active;
     this.active = next;
     this.currentId = id;
-    this.scheduleRollingNoise(context, next, next.noiseFilter);
+    this.scheduleComposition(context, next);
     equalPowerCrossfade(next.gain.gain, context.currentTime, true);
     if (previous) {
       equalPowerCrossfade(previous.gain.gain, context.currentTime, false);
@@ -191,123 +175,89 @@ export class SoundscapeEngine {
 
     const sources: AudioScheduledSourceNode[] = [];
     const nodes: AudioNode[] = [layerGain, reverb, dryGain, wetGain];
-    const makeDrone = (frequency: number, type: OscillatorType, gainLevel: number, pan: number) => {
-      const oscillator = context.createOscillator();
-      const filter = context.createBiquadFilter();
-      const gain = context.createGain();
-      const panner = context.createStereoPanner();
-      oscillator.type = type;
-      oscillator.frequency.value = frequency;
-      filter.type = "lowpass";
-      filter.frequency.value = Math.max(420, frequency * 8);
-      filter.Q.value = 0.28;
-      gain.gain.value = gainLevel;
-      panner.pan.value = pan;
-      oscillator.connect(filter);
-      filter.connect(gain);
-      gain.connect(panner);
-      panner.connect(layerGain);
-      oscillator.start();
-      sources.push(oscillator);
-      nodes.push(filter, gain, panner);
-    };
-    // Keep the bed audible on phone and laptop speakers. The previous
-    // sub-bass-only bed (55–110 Hz at very low gain) could be technically
-    // running while sounding silent on small speakers.
-    makeDrone(preset.droneHz[0], "sine", PRIMARY_DRONE_GAIN, -preset.stereoWidth);
-    makeDrone(preset.droneHz[1], "triangle", SECONDARY_DRONE_GAIN, preset.stereoWidth);
-
-    const noiseFilter = context.createBiquadFilter();
-    noiseFilter.type = "lowpass";
-    noiseFilter.frequency.value = preset.noiseFilterHz;
-    noiseFilter.Q.value = 0.42;
-    noiseFilter.connect(layerGain);
-    nodes.push(noiseFilter);
-
-    const lfo = context.createOscillator();
-    const lfoDepth = context.createGain();
-    lfo.type = "sine";
-    lfo.frequency.value = 0.021 + random() * 0.015;
-    lfoDepth.gain.value = 0.014;
-    lfo.connect(lfoDepth);
-    lfoDepth.connect(layerGain.gain);
-    lfo.start();
-    sources.push(lfo);
-    nodes.push(lfoDepth);
-
-    const layer: ActiveLayer = { preset, gain: layerGain, noiseFilter, sources, nodes, timers: new Set() };
+    const layer: ActiveLayer = { preset, gain: layerGain, sources, nodes, timers: new Set() };
     this.layers.add(layer);
-    this.scheduleShimmer(context, layer, random);
     return layer;
   }
 
-  private scheduleShimmer(context: AudioContext, layer: ActiveLayer, random: () => number): void {
-    const emit = () => {
-      if (this.active !== layer || !this.context || this.context.state === "closed") return;
-      const oscillator = context.createOscillator();
-      const filter = context.createBiquadFilter();
-      const gain = context.createGain();
-      const panner = context.createStereoPanner();
-      const frequency = layer.preset.shimmerHz[0] + random() * (layer.preset.shimmerHz[1] - layer.preset.shimmerHz[0]);
-      const duration = 1.6 + random() * 2.1;
-      oscillator.type = "sine";
-      oscillator.frequency.value = frequency;
-      filter.type = "bandpass";
-      filter.frequency.value = frequency;
-      filter.Q.value = 1.6;
-      panner.pan.value = (random() * 2 - 1) * layer.preset.stereoWidth;
-      oscillator.connect(filter);
-      filter.connect(gain);
-      gain.connect(panner);
-      panner.connect(layer.gain);
-      const now = context.currentTime;
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.011 + random() * 0.008, now + duration * 0.35);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-      oscillator.start(now);
-      oscillator.stop(now + duration + 0.02);
-      layer.sources.push(oscillator);
-      layer.nodes.push(filter, gain, panner);
-      oscillator.onended = () => {
-        this.removeSourceAndNodes(layer, oscillator, [filter, gain, panner]);
-      };
-      const [minimum, maximum] = layer.preset.shimmerIntervalMs;
-      this.defer(layer, emit, minimum + random() * (maximum - minimum));
-    };
-    // Give immediate audible feedback after the user gesture. Later shimmer
-    // events still keep their long, non-mechanical spacing.
-    this.defer(layer, emit, FIRST_SHIMMER_DELAY_MS);
+  private semitone(base: number, offset: number): number {
+    return base * 2 ** (offset / 12);
   }
 
-  private scheduleRollingNoise(context: AudioContext, layer: ActiveLayer, filter: BiquadFilterNode): void {
-    let blockIndex = 0;
-    const schedule = () => {
+  private scheduleComposition(context: AudioContext, layer: ActiveLayer): void {
+    const random = seededRandom(`${layer.preset.seed}:arrangement`);
+    const beatSeconds = 60 / layer.preset.tempoBpm;
+    const barSeconds = beatSeconds * MUSICAL_BAR_BEATS;
+    let barIndex = 0;
+    let melodyIndex = 0;
+    const scheduleBar = () => {
       if (this.active !== layer || !this.layers.has(layer) || !this.context || this.context.state === "closed") return;
-      const source = context.createBufferSource();
-      const gain = context.createGain();
-      const frames = Math.max(1, Math.floor(context.sampleRate * ROLLING_NOISE_BLOCK_SECONDS));
-      const buffer = context.createBuffer(1, frames, context.sampleRate);
-      buffer.getChannelData(0).set(createDeterministicPinkNoiseBlock(frames, layer.preset.seed, blockIndex));
-      blockIndex += 1;
-      source.buffer = buffer;
-      source.loop = false;
-      source.connect(gain);
-      gain.connect(filter);
-      const now = context.currentTime;
-      const fade = ROLLING_NOISE_CROSSFADE_SECONDS;
-      const end = now + ROLLING_NOISE_BLOCK_SECONDS;
-      gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(layer.preset.noiseGain, now + fade);
-      gain.gain.setValueAtTime(layer.preset.noiseGain, end - fade);
-      gain.gain.linearRampToValueAtTime(0, end);
-      source.start(now);
-      source.stop(end + 0.03);
-      layer.sources.push(source);
-      layer.nodes.push(gain);
-      source.onended = () => this.removeSourceAndNodes(layer, source, [gain]);
-      this.defer(layer, schedule, (ROLLING_NOISE_BLOCK_SECONDS - fade) * 1000);
+      const chordIndex = barIndex % layer.preset.chordRoots.length;
+      const rootOffset = layer.preset.chordRoots[chordIndex] ?? 0;
+      const voicing = layer.preset.chordVoicings[chordIndex] ?? [0, 4, 7];
+      const when = context.currentTime + FIRST_NOTE_DELAY_MS / 1000;
+
+      // A slow four-note pad gives each track a recognisable harmonic movement.
+      voicing.forEach((interval, voiceIndex) => {
+        const pan = ((voiceIndex / Math.max(1, voicing.length - 1)) * 2 - 1) * layer.preset.stereoWidth;
+        this.scheduleVoice(context, layer, this.semitone(layer.preset.tonicHz, rootOffset + interval), when, barSeconds * 1.08, layer.preset.padGain, pan, "pad");
+      });
+
+      // Four deliberately written motif steps per bar. Nulls are musical rests,
+      // so the result breathes instead of becoming a mechanical arpeggiator.
+      for (let beat = 0; beat < MUSICAL_BAR_BEATS; beat += 1) {
+        const note = layer.preset.melody[melodyIndex % layer.preset.melody.length];
+        melodyIndex += 1;
+        if (note === null || note === undefined) continue;
+        const velocity = 0.88 + random() * 0.18;
+        const pan = (random() * 2 - 1) * layer.preset.stereoWidth;
+        this.scheduleVoice(context, layer, this.semitone(layer.preset.tonicHz, note + 12), when + beat * beatSeconds, beatSeconds * 1.75, layer.preset.melodyGain * velocity, pan, "felt");
+      }
+
+      // A restrained root pulse anchors the harmony without the old continuous drone.
+      this.scheduleVoice(context, layer, this.semitone(layer.preset.tonicHz, rootOffset), when, beatSeconds * 2.5, layer.preset.padGain * 1.35, -layer.preset.stereoWidth * 0.25, "bass");
+      barIndex += 1;
+      this.defer(layer, scheduleBar, barSeconds * 1000);
     };
-    schedule();
+    scheduleBar();
+  }
+
+  private scheduleVoice(
+    context: AudioContext,
+    layer: ActiveLayer,
+    frequency: number,
+    when: number,
+    duration: number,
+    level: number,
+    pan: number,
+    character: "pad" | "felt" | "bass",
+  ): void {
+    const oscillator = context.createOscillator();
+    const filter = context.createBiquadFilter();
+    const gain = context.createGain();
+    const panner = context.createStereoPanner();
+    oscillator.type = character === "felt" ? "triangle" : "sine";
+    oscillator.frequency.value = frequency;
+    filter.type = "lowpass";
+    filter.frequency.value = character === "felt" ? Math.min(3200, frequency * 5.5) : Math.min(1800, frequency * 4);
+    filter.Q.value = character === "felt" ? 0.72 : 0.3;
+    panner.pan.value = pan;
+    oscillator.connect(filter);
+    filter.connect(gain);
+    gain.connect(panner);
+    panner.connect(layer.gain);
+
+    const attack = character === "pad" ? Math.min(1.15, duration * 0.28) : character === "felt" ? 0.035 : 0.16;
+    const peak = Math.max(0.0002, level);
+    gain.gain.setValueAtTime(0.0001, when);
+    gain.gain.exponentialRampToValueAtTime(peak, when + attack);
+    if (character === "felt") gain.gain.exponentialRampToValueAtTime(peak * 0.42, when + Math.min(duration * 0.42, 0.7));
+    gain.gain.exponentialRampToValueAtTime(0.0001, when + duration);
+    oscillator.start(when);
+    oscillator.stop(when + duration + 0.03);
+    layer.sources.push(oscillator);
+    layer.nodes.push(filter, gain, panner);
+    oscillator.onended = () => this.removeSourceAndNodes(layer, oscillator, [filter, gain, panner]);
   }
 
   private createImpulse(context: AudioContext, preset: SoundscapePreset, random: () => number): AudioBuffer {
