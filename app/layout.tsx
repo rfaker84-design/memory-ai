@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import MobileAppShell from "../src/components/MobileAppShell";
 import { GuestCreateContinuationProvider } from "../src/components/create-memory/GuestCreateContinuationProvider";
+import { SoundscapeProvider } from "../src/features/soundscape/SoundscapeProvider";
 import "./globals.css";
 import { RootDocument } from "./root-document";
 
@@ -21,9 +22,11 @@ export const viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <RootDocument>
-      <GuestCreateContinuationProvider>
-        <MobileAppShell>{children}</MobileAppShell>
-      </GuestCreateContinuationProvider>
+      <SoundscapeProvider>
+        <GuestCreateContinuationProvider>
+          <MobileAppShell>{children}</MobileAppShell>
+        </GuestCreateContinuationProvider>
+      </SoundscapeProvider>
     </RootDocument>
   );
 }
