@@ -1,6 +1,7 @@
 {
   "version": 1,
   "scope": "MemoryAI original procedural instrumental compositions",
+  "rightsBasis": "original_code_authored_composition_no_third_party_audio",
   "routePolicy": {
     "glow": ["/"],
     "companion": ["/companion", "/guest/companion"],
