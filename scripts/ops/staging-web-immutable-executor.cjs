@@ -40,6 +40,12 @@ const RECONCILIATION_LINEAGE = [
   "91a844e33d18c2aa1444054b706106dd755c9895",
   "68f52a752d88c0370cc8218d6afe105a0d0545ff",
 ];
+const SERVING_APP_NAME = "memoryai-staging";
+const SERVING_PORT = "3100";
+const CANDIDATE_PORT = "3110";
+const CANDIDATE_APP_PREFIX = "memoryai-staging-candidate-";
+const QWEN_RUNTIME_ENVIRONMENT_KEYS = ["DASHSCOPE_API_KEY", "DASHSCOPE_VOICE_CLONE_ENDPOINT"];
+const QWEN_BETA_ENVIRONMENT_KEY = "MEMORYAI_QWEN_AUDIO_TTS_FLASH_VOICE_CLONE_BETA_ENABLED";
 
 function fail(code, detail) {
   throw new Error(`${code}${detail === undefined ? "" : `:${detail}`}`);
@@ -112,6 +118,10 @@ function releasePath(root, value, code) {
   return { sha: checked, path: `${root}/releases/${checked}` };
 }
 
+function candidateAppName(sourceSha) {
+  return `${CANDIDATE_APP_PREFIX}${sha(sourceSha, "WEB_EXECUTOR_CANDIDATE_NAME_SHA_INVALID").slice(0, 12)}`;
+}
+
 function assertArchiveInput(input) {
   const root = rootPath(input.remoteRoot);
   const expectedSourceSha = sha(input.expectedSourceSha, "WEB_EXECUTOR_EXPECTED_SOURCE_SHA_INVALID");
@@ -123,7 +133,7 @@ function assertArchiveInput(input) {
   if (!evidence || typeof evidence !== "object") fail("WEB_EXECUTOR_EVIDENCE_INPUT_MISSING");
   const evidenceSha256 = Object.fromEntries(REQUIRED_EVIDENCE.map((name) => [name, sha256(evidence[name], `WEB_EXECUTOR_EVIDENCE_SHA_INVALID_${name}`)]));
   const candidatePort = positive(input.candidatePort, "WEB_EXECUTOR_CANDIDATE_PORT_INVALID");
-  if (candidatePort === 3100 || candidatePort > 65535) fail("WEB_EXECUTOR_CANDIDATE_PORT_INVALID", candidatePort);
+  if (candidatePort !== Number(CANDIDATE_PORT)) fail("WEB_EXECUTOR_CANDIDATE_PORT_INVALID", candidatePort);
   if (input.component !== "web") fail("WEB_EXECUTOR_COMPONENT_INVALID", input.component);
   return { root, expectedSourceSha, expectedCurrentSha, expectedRollbackSha, archivePath, archiveSha256, evidenceSha256, candidatePort };
 }
@@ -249,9 +259,15 @@ function verifyBundle(directory, plan) {
   return { runtimeDigest, manifest, releaseManifest };
 }
 
-function parsePm2Record(raw, appName = "memoryai-staging") {
+function parsePm2Records(raw) {
   let records;
-  try { records = JSON.parse(raw).filter((value) => value?.name === appName); } catch { fail("WEB_EXECUTOR_PM2_JLIST_INVALID"); }
+  try { records = JSON.parse(raw); } catch { fail("WEB_EXECUTOR_PM2_JLIST_INVALID"); }
+  if (!Array.isArray(records)) fail("WEB_EXECUTOR_PM2_JLIST_INVALID");
+  return records;
+}
+
+function parsePm2Record(raw, appName = SERVING_APP_NAME) {
+  const records = parsePm2Records(raw).filter((value) => value?.name === appName);
   if (records.length !== 1) fail("WEB_EXECUTOR_PM2_APP_COUNT_INVALID", records.length);
   const record = records[0];
   const env = record.pm2_env ?? {};
@@ -269,8 +285,16 @@ function parsePm2Record(raw, appName = "memoryai-staging") {
   };
 }
 
-function pm2Record(appName = "memoryai-staging") {
-  return parsePm2Record(command("pm2", ["jlist"]), appName);
+function pm2Records() {
+  return parsePm2Records(command("pm2", ["jlist"]));
+}
+
+function pm2RecordFromRecords(records, appName = SERVING_APP_NAME) {
+  return parsePm2Record(JSON.stringify(records), appName);
+}
+
+function pm2Record(appName = SERVING_APP_NAME) {
+  return pm2RecordFromRecords(pm2Records(), appName);
 }
 
 function lstatExact(file, expectedType, code, dependencies) {
@@ -388,19 +412,56 @@ function usesVersionedSecretWrapper(release, execPath, dependencies = {}) {
   }
 }
 
-function assertServingPm2Identity(release, record, dependencies = {}) {
+function assertNoQwenCandidateEnvironment(environment) {
+  if (QWEN_RUNTIME_ENVIRONMENT_KEYS.some((key) => Object.hasOwn(environment ?? {}, key)) || environment?.[QWEN_BETA_ENVIRONMENT_KEY] !== "false") {
+    fail("WEB_EXECUTOR_CANDIDATE_QWEN_ENVIRONMENT_INVALID");
+  }
+}
+
+function assertPm2IdentityCommon(release, record, expectedName, expectedPort, identityCode, targetCode, dependencies = {}, requireSourceSha = false) {
   const runtime = `${release.path}/runtime`;
-  if (record?.name !== "memoryai-staging" || record.status !== "online" || record.unstableRestarts !== 0 || record.cwd !== runtime || String(record.port) !== "3100") {
-    fail("WEB_EXECUTOR_CURRENT_PM2_INVALID");
+  if (record?.name !== expectedName || record.status !== "online" || record.unstableRestarts !== 0 || record.cwd !== runtime || String(record.port) !== expectedPort) {
+    fail(identityCode);
   }
-  if (record.environment?.MEMORYAI_RELEASE_ROOT !== runtime || record.environment?.MEMORYAI_PM2_APP_NAME !== "memoryai-staging" || String(record.environment?.MEMORYAI_PORT) !== "3100") {
-    fail("WEB_EXECUTOR_CURRENT_PM2_RELEASE_TARGET_INVALID");
+  if (
+    record.environment?.MEMORYAI_RELEASE_ROOT !== runtime
+    || (requireSourceSha && record.environment?.MEMORYAI_RELEASE_SOURCE_SHA !== release.sha)
+    || record.environment?.MEMORYAI_PM2_APP_NAME !== expectedName
+    || String(record.environment?.MEMORYAI_PORT) !== expectedPort
+    || record.environment?.HOSTNAME !== "127.0.0.1"
+    || record.environment?.AUTH_PROXY_LOOPBACK_ONLY !== "true"
+  ) {
+    fail(targetCode);
   }
-  if (!usesVersionedSecretWrapper(release, record.execPath, dependencies)) fail("WEB_EXECUTOR_CURRENT_PM2_INVALID");
+  try { assertFormalStagingRunnerWrapper(release, record.execPath, dependencies); } catch { fail(identityCode); }
   const launcher = `${runtime}/run-standalone-from-manifest.cjs`;
   const activeDependencies = formalRunnerDependencies(dependencies);
   assertReleaseLauncher(launcher, activeDependencies);
   return { runtime, launcher, wrapper: record.execPath };
+}
+
+function assertServingPm2Identity(release, record, dependencies = {}) {
+  return assertPm2IdentityCommon(release, record, SERVING_APP_NAME, SERVING_PORT, "WEB_EXECUTOR_CURRENT_PM2_INVALID", "WEB_EXECUTOR_CURRENT_PM2_RELEASE_TARGET_INVALID", dependencies);
+}
+
+function assertCandidatePm2Identity(release, record, dependencies = {}) {
+  const expectedName = candidateAppName(release.sha);
+  assertNoQwenCandidateEnvironment(record?.environment);
+  return assertPm2IdentityCommon(release, record, expectedName, CANDIDATE_PORT, "WEB_EXECUTOR_CANDIDATE_PM2_INVALID", "WEB_EXECUTOR_CANDIDATE_PM2_RELEASE_TARGET_INVALID", dependencies, true);
+}
+
+function assertPm2RolePopulation(records, role, expectedCandidateApp) {
+  const serving = records.filter((record) => record?.name === SERVING_APP_NAME);
+  if (serving.length !== 1) fail("WEB_EXECUTOR_PM2_APP_COUNT_INVALID", serving.length);
+  const candidates = records.filter((record) => typeof record?.name === "string" && record.name.startsWith(CANDIDATE_APP_PREFIX));
+  if (role === "serving") {
+    if (candidates.length !== 0) fail("WEB_EXECUTOR_CANDIDATE_RESIDUE_INVALID", candidates.length);
+    return { serving: pm2RecordFromRecords(records, SERVING_APP_NAME), candidate: null };
+  }
+  if (role !== "candidate" || typeof expectedCandidateApp !== "string" || candidates.length !== 1 || candidates[0].name !== expectedCandidateApp) {
+    fail("WEB_EXECUTOR_CANDIDATE_POPULATION_INVALID", candidates.length);
+  }
+  return { serving: pm2RecordFromRecords(records, SERVING_APP_NAME), candidate: pm2RecordFromRecords(records, expectedCandidateApp) };
 }
 
 function verifyInstalledRelease(release) {
@@ -434,6 +495,30 @@ function httpStatus(port, pathname, token) {
     });
     request.setTimeout(7000, () => { request.destroy(); resolve(false); });
     request.on("error", () => resolve(false));
+  });
+}
+
+function httpHealth(port, token) {
+  return new Promise((resolve) => {
+    const request = http.get({ host: "127.0.0.1", port, path: "/api/health", headers: token ? { "X-MemoryAI-Staging-Access": token } : {} }, (response) => {
+      let body = "";
+      let overflow = false;
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => {
+        if (body.length + chunk.length > 8192) { overflow = true; response.destroy(); return; }
+        body += chunk;
+      });
+      response.on("end", () => {
+        if (overflow || response.statusCode !== 200) { resolve({ health200: false, sourceSha: null }); return; }
+        try {
+          const parsed = JSON.parse(body);
+          resolve({ health200: parsed?.status === "ok", sourceSha: typeof parsed?.sourceSha === "string" ? parsed.sourceSha : null });
+        } catch { resolve({ health200: false, sourceSha: null }); }
+      });
+      response.on("error", () => resolve({ health200: false, sourceSha: null }));
+    });
+    request.setTimeout(7000, () => { request.destroy(); resolve({ health200: false, sourceSha: null }); });
+    request.on("error", () => resolve({ health200: false, sourceSha: null }));
   });
 }
 
@@ -476,36 +561,66 @@ function createHostOperations(plan) {
   const lockPath = path.join(lockDirectory, "memoryai-staging-web-immutable-promotion.lock");
   let candidateDirectory = null;
   let capturedPm2 = null;
-  let candidateApp = `memoryai-staging-candidate-${plan.expectedSourceSha.slice(0, 12)}`;
+  let candidateApp = candidateAppName(plan.expectedSourceSha);
+  let servingRelease = null;
   const pm2Config = path.join(__dirname, "staging-web-pm2-manifest.config.cjs");
 
   const pm2 = (args, environment) => command("pm2", args, { env: environment });
   const pm2Environment = (release, port, appName) => {
-    const { DASHSCOPE_API_KEY: _apiKey, DASHSCOPE_VOICE_CLONE_ENDPOINT: _endpoint, ...inherited } = capturedPm2.environment;
+    const {
+      DASHSCOPE_API_KEY: _apiKey,
+      DASHSCOPE_VOICE_CLONE_ENDPOINT: _endpoint,
+      [QWEN_BETA_ENVIRONMENT_KEY]: _beta,
+      ...inherited
+    } = capturedPm2.environment;
     return {
       ...inherited,
       MEMORYAI_RELEASE_ROOT: path.join(release.path, "runtime"),
+      MEMORYAI_RELEASE_SOURCE_SHA: release.sha,
       MEMORYAI_PM2_APP_NAME: appName,
       MEMORYAI_PORT: String(port),
       MEMORYAI_STAGING_SECRET_FILE: "/home/ubuntu/memoryai-staging/secrets/qwen-voice-clone.env",
+      HOSTNAME: "127.0.0.1",
+      AUTH_PROXY_LOOPBACK_ONLY: "true",
+      [QWEN_BETA_ENVIRONMENT_KEY]: "false",
     };
   };
-  const health = async (release, port, appName) => {
+  const health = async (release, port, role) => {
     const token = capturedPm2.environment.STAGING_ACCESS_TOKEN;
-    const [health200, databaseHealth200] = await Promise.all([
-      httpStatus(port, "/api/health", token),
+    const [healthProbe, databaseHealth200] = await Promise.all([
+      httpHealth(port, token),
       httpStatus(port, "/api/health/database", token),
     ]);
-    const record = pm2Record(appName);
+    let population;
+    try { population = assertPm2RolePopulation(pm2Records(), role, candidateApp); } catch {
+      return {
+        pm2Online: false,
+        pm2CwdMatchesManifest: false,
+        pm2ExecMatchesRunner: false,
+        manifestVerified: existsSync(path.join(release.path, "runtime", "standalone-manifest.json")),
+        checksumsVerified: true,
+        health200: healthProbe.health200,
+        healthSourceMatchesRelease: release.sha !== plan.expectedSourceSha || healthProbe.sourceSha === release.sha,
+        databaseHealth200,
+        unstableRestarts: 1,
+      };
+    }
+    const record = role === "candidate" ? population.candidate : population.serving;
     return {
       pm2Online: record.status === "online",
       pm2CwdMatchesManifest: record.cwd === path.join(release.path, "runtime"),
       pm2ExecMatchesRunner: (() => {
-        try { assertServingPm2Identity(release, record); return true; } catch { return false; }
+        try {
+          assertServingPm2Identity(servingRelease ?? release, population.serving);
+          if (role === "candidate") assertCandidatePm2Identity(release, record);
+          else assertServingPm2Identity(release, record);
+          return true;
+        } catch { return false; }
       })(),
       manifestVerified: existsSync(path.join(release.path, "runtime", "standalone-manifest.json")),
       checksumsVerified: true,
-      health200,
+      health200: healthProbe.health200,
+      healthSourceMatchesRelease: release.sha !== plan.expectedSourceSha || healthProbe.sourceSha === release.sha,
       databaseHealth200,
       unstableRestarts: record.unstableRestarts,
     };
@@ -516,8 +631,11 @@ function createHostOperations(plan) {
       const selections = currentSelections(root);
       verifyInstalledRelease(selections.current);
       verifyInstalledRelease(selections.rollback);
-      capturedPm2 = pm2Record();
+      const records = pm2Records();
+      const population = assertPm2RolePopulation(records, "serving");
+      capturedPm2 = population.serving;
       assertServingPm2Identity(selections.current, capturedPm2);
+      servingRelease = selections.current;
       return { ...selections, pm2: capturedPm2 };
     },
     acquireLock: () => {
@@ -567,12 +685,13 @@ function createHostOperations(plan) {
       pm2(["start", pm2Config, "--only", candidateApp, "--update-env"], pm2Environment(candidate, plan.candidatePort, candidateApp));
       for (let attempt = 0; attempt < 8; attempt += 1) {
         await sleep(1000);
-        const result = await health(candidate, plan.candidatePort, candidateApp);
+        const result = await health(candidate, plan.candidatePort, "candidate");
         if (result.pm2Online && result.health200 && result.databaseHealth200) return result;
       }
-      return { pm2Online: false, pm2CwdMatchesManifest: false, manifestVerified: false, checksumsVerified: false, health200: false, databaseHealth200: false, unstableRestarts: 1 };
+      return { pm2Online: false, pm2CwdMatchesManifest: false, manifestVerified: false, checksumsVerified: false, health200: false, healthSourceMatchesRelease: false, databaseHealth200: false, unstableRestarts: 1 };
     },
     stopCandidate: () => { try { pm2(["stop", candidateApp]); } catch { /* retain PM2 record and logs for diagnosis */ } },
+    removeCandidate: () => { pm2(["delete", candidateApp]); },
     switchSelections: (current, rollback) => { atomicSelectionPair(root, current, rollback); },
     restoreSelections: (current, rollback) => { atomicSelectionPair(root, current, rollback); },
     startServing: async (release) => {
@@ -580,10 +699,10 @@ function createHostOperations(plan) {
       for (const args of servingPm2Actions(pm2Config)) pm2(args, environment);
       for (let attempt = 0; attempt < 8; attempt += 1) {
         await sleep(1000);
-        const result = await health(release, 3100, "memoryai-staging");
+        const result = await health(release, 3100, "serving");
         if (result.pm2Online && result.pm2CwdMatchesManifest && result.health200 && result.databaseHealth200 && result.unstableRestarts === 0) return result;
       }
-      return { pm2Online: false, pm2CwdMatchesManifest: false, manifestVerified: false, checksumsVerified: false, health200: false, databaseHealth200: false, unstableRestarts: 1 };
+      return { pm2Online: false, pm2CwdMatchesManifest: false, manifestVerified: false, checksumsVerified: false, health200: false, healthSourceMatchesRelease: false, databaseHealth200: false, unstableRestarts: 1 };
     },
     releaseDirectory: () => candidateDirectory,
     journalPath,
@@ -591,7 +710,7 @@ function createHostOperations(plan) {
 }
 
 function healthy(checks) {
-  return checks?.pm2Online === true && checks?.pm2CwdMatchesManifest === true && checks?.pm2ExecMatchesRunner === true && checks?.manifestVerified === true && checks?.checksumsVerified === true && checks?.health200 === true && checks?.databaseHealth200 === true && checks?.unstableRestarts === 0;
+  return checks?.pm2Online === true && checks?.pm2CwdMatchesManifest === true && checks?.pm2ExecMatchesRunner === true && checks?.manifestVerified === true && checks?.checksumsVerified === true && checks?.health200 === true && checks?.healthSourceMatchesRelease === true && checks?.databaseHealth200 === true && checks?.unstableRestarts === 0;
 }
 
 async function executeImmutableWebPromotion(input, operations = null) {
@@ -622,11 +741,11 @@ async function executeImmutableWebPromotion(input, operations = null) {
       journal("aborted_before_cutover", { candidateChecks, candidateRetained: true });
       return { phase: "aborted_before_cutover", current: observed.current, rollback: observed.rollback, candidateRetained: true };
     }
+    ops.removeCandidate();
     cutoverAttempted = true;
     ops.switchSelections({ sha: plan.expectedSourceSha, path: `${plan.root}/releases/${plan.expectedSourceSha}` }, observed.current);
     const servingChecks = await ops.startServing({ sha: plan.expectedSourceSha, path: `${plan.root}/releases/${plan.expectedSourceSha}` });
     if (healthy(servingChecks)) {
-      try { command("pm2", ["delete", `memoryai-staging-candidate-${plan.expectedSourceSha.slice(0, 12)}`]); } catch { /* serving release is already healthy */ }
       journal("promoted", { current: plan.expectedSourceSha, rollback: observed.current.sha, servingChecks });
       return { phase: "promoted", current: { sha: plan.expectedSourceSha }, rollback: observed.current, candidateRetained: true };
     }
@@ -729,12 +848,17 @@ module.exports = {
   assertFormalStagingRunnerWrapper,
   assertArchiveInput,
   assertReconciliationInput,
+  assertCandidatePm2Identity,
+  assertPm2RolePopulation,
   assertServingPm2Identity,
+  candidateAppName,
   createHostOperations,
   executeImmutableWebPromotion,
   healthy,
+  httpHealth,
   httpStatus,
   parsePm2Record,
+  parsePm2Records,
   requiredPromotionBytes,
   reconcileStagingWebHistory,
   runtimeIdentity,

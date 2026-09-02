@@ -13,9 +13,13 @@ const {
   appendJsonLine,
   assertFormalStagingRunnerWrapper,
   assertArchiveInput,
+  assertCandidatePm2Identity,
+  assertPm2RolePopulation,
   assertReconciliationInput,
   assertServingPm2Identity,
+  candidateAppName,
   executeImmutableWebPromotion,
+  httpHealth,
   httpStatus,
   requiredPromotionBytes,
   runtimeIdentity,
@@ -56,7 +60,7 @@ function input(overrides = {}) {
 }
 
 function healthy() {
-  return { pm2Online: true, pm2CwdMatchesManifest: true, pm2ExecMatchesRunner: true, manifestVerified: true, checksumsVerified: true, health200: true, databaseHealth200: true, unstableRestarts: 0 };
+  return { pm2Online: true, pm2CwdMatchesManifest: true, pm2ExecMatchesRunner: true, manifestVerified: true, checksumsVerified: true, health200: true, healthSourceMatchesRelease: true, databaseHealth200: true, unstableRestarts: 0 };
 }
 
 function operations(calls, overrides = {}) {
@@ -71,6 +75,7 @@ function operations(calls, overrides = {}) {
     materialize: () => { calls.push("materialize"); return { candidateUnpackedBytes: 100, availableBytes: 9 * 1024 ** 3, requiredBytes: 8 * 1024 ** 3 }; },
     startCandidate: async () => { calls.push("candidate-health"); return healthy(); },
     stopCandidate: () => calls.push("stop-candidate"),
+    removeCandidate: () => calls.push("remove-candidate"),
     switchSelections: (next, previous) => calls.push(`switch:${next.sha}:${previous.sha}`),
     restoreSelections: (previous, rollbackBefore) => calls.push(`restore:${previous.sha}:${rollbackBefore.sha}`),
     startServing: async (release) => { calls.push(`serving:${release.sha}`); return healthy(); },
@@ -93,7 +98,7 @@ test("successful execute preserves archive evidence and advances rollback to pri
   assert.equal(result.rollback.sha, CURRENT);
   assert.deepEqual(calls, [
     "lock", "journal:prepared", "verify-archive", "materialize", "journal:candidate_materialized", "candidate-health",
-    `switch:${CANDIDATE}:${CURRENT}`, `serving:${CANDIDATE}`, "journal:promoted", "unlock",
+    "remove-candidate", `switch:${CANDIDATE}:${CURRENT}`, `serving:${CANDIDATE}`, "journal:promoted", "unlock",
   ]);
 });
 
@@ -240,6 +245,17 @@ test("a promotion accepts only a private, nlink=2 formal Staging runner wrapper 
   assert.equal(usesVersionedSecretWrapper(release, `${ROOT}/tools/staging-web-immutable-runner-not-a-sha/staging-web-secret-runtime-wrapper.cjs`), false);
 });
 
+test("candidate source-SHA health mismatch injects before cutover and leaves selected releases unchanged", async () => {
+  const calls = [];
+  const result = await executeImmutableWebPromotion(input(), operations(calls, {
+    startCandidate: async () => { calls.push("candidate-health"); return { ...healthy(), healthSourceMatchesRelease: false }; },
+  }));
+  assert.equal(result.phase, "aborted_before_cutover");
+  assert.equal(result.current.sha, CURRENT);
+  assert.ok(!calls.some((value) => value.startsWith("switch:")));
+  assert.ok(calls.includes("stop-candidate"));
+});
+
 test("formal wrapper validation rejects path escapes, links, wrong ownership, writable directories, mounts, hard links, and unpinned content", () => {
   const release = { path: `${ROOT}/releases/${CURRENT}` };
   const fixture = formalWrapperFixture(release);
@@ -262,19 +278,68 @@ test("formal wrapper validation rejects path escapes, links, wrong ownership, wr
   assert.throws(() => assertFormalStagingRunnerWrapper(release, fixture.wrapper, { ...fixture.dependencies, realpathSync: (target) => target === fixture.wrapper ? `${ROOT}/outside` : target }), /WEB_EXECUTOR_FORMAL_WRAPPER_FILE_INVALID/);
 });
 
-test("serving PM2 identity binds one app, port 3100, cwd, environment, formal wrapper, and release-local launcher", () => {
-  const release = { path: `${ROOT}/releases/${CURRENT}` };
+test("serving PM2 identity binds one app, port 3100, loopback, source SHA, cwd, formal wrapper, and release-local launcher", () => {
+  const release = { sha: CURRENT, path: `${ROOT}/releases/${CURRENT}` };
   const fixture = formalWrapperFixture(release);
   const record = {
     name: "memoryai-staging", status: "online", unstableRestarts: 0, cwd: `${release.path}/runtime`, port: "3100", execPath: fixture.wrapper,
-    environment: { MEMORYAI_RELEASE_ROOT: `${release.path}/runtime`, MEMORYAI_PM2_APP_NAME: "memoryai-staging", MEMORYAI_PORT: "3100" },
+    environment: {
+      MEMORYAI_RELEASE_ROOT: `${release.path}/runtime`, MEMORYAI_RELEASE_SOURCE_SHA: CURRENT, MEMORYAI_PM2_APP_NAME: "memoryai-staging", MEMORYAI_PORT: "3100",
+      HOSTNAME: "127.0.0.1", AUTH_PROXY_LOOPBACK_ONLY: "true",
+    },
   };
   assert.equal(assertServingPm2Identity(release, record, fixture.dependencies).launcher, `${release.path}/runtime/run-standalone-from-manifest.cjs`);
+  assert.throws(() => assertServingPm2Identity(release, { ...record, name: candidateAppName(CURRENT) }, fixture.dependencies), /WEB_EXECUTOR_CURRENT_PM2_INVALID/);
   assert.throws(() => assertServingPm2Identity(release, { ...record, cwd: `${ROOT}/releases/${ROLLBACK}/runtime` }, fixture.dependencies), /WEB_EXECUTOR_CURRENT_PM2_INVALID/);
   assert.throws(() => assertServingPm2Identity(release, { ...record, port: "3110" }, fixture.dependencies), /WEB_EXECUTOR_CURRENT_PM2_INVALID/);
+  assert.throws(() => assertServingPm2Identity(release, { ...record, environment: { ...record.environment, HOSTNAME: "0.0.0.0" } }, fixture.dependencies), /WEB_EXECUTOR_CURRENT_PM2_RELEASE_TARGET_INVALID/);
   assert.throws(() => assertServingPm2Identity(release, { ...record, environment: { ...record.environment, MEMORYAI_RELEASE_ROOT: `${ROOT}/releases/${ROLLBACK}/runtime` } }, fixture.dependencies), /WEB_EXECUTOR_CURRENT_PM2_RELEASE_TARGET_INVALID/);
   const raw = JSON.stringify([{ name: "memoryai-staging", pid: 1, pm2_env: { status: "online", unstable_restarts: 0, pm_cwd: record.cwd, pm_exec_path: record.execPath, env: record.environment } }, { name: "memoryai-staging", pid: 2, pm2_env: { status: "online", unstable_restarts: 0, pm_cwd: record.cwd, pm_exec_path: record.execPath, env: record.environment } }]);
   assert.throws(() => parsePm2Record(raw), /WEB_EXECUTOR_PM2_APP_COUNT_INVALID/);
+});
+
+test("candidate PM2 identity is SHA-derived, loopback-only, source-bound, and cannot carry Qwen configuration", () => {
+  const current = { sha: CURRENT, path: `${ROOT}/releases/${CURRENT}` };
+  const candidate = { sha: CANDIDATE, path: `${ROOT}/releases/${CANDIDATE}` };
+  const fixture = formalWrapperFixture(candidate);
+  const candidateRecord = {
+    name: candidateAppName(CANDIDATE), status: "online", unstableRestarts: 0, cwd: `${candidate.path}/runtime`, port: "3110", execPath: fixture.wrapper,
+    environment: {
+      MEMORYAI_RELEASE_ROOT: `${candidate.path}/runtime`, MEMORYAI_RELEASE_SOURCE_SHA: CANDIDATE, MEMORYAI_PM2_APP_NAME: candidateAppName(CANDIDATE), MEMORYAI_PORT: "3110",
+      HOSTNAME: "127.0.0.1", AUTH_PROXY_LOOPBACK_ONLY: "true", MEMORYAI_QWEN_AUDIO_TTS_FLASH_VOICE_CLONE_BETA_ENABLED: "false",
+    },
+  };
+  assert.equal(assertCandidatePm2Identity(candidate, candidateRecord, fixture.dependencies).launcher, `${candidate.path}/runtime/run-standalone-from-manifest.cjs`);
+  assert.throws(() => assertCandidatePm2Identity(candidate, { ...candidateRecord, name: "memoryai-staging" }, fixture.dependencies), /WEB_EXECUTOR_CANDIDATE_PM2_INVALID/);
+  assert.throws(() => assertCandidatePm2Identity(candidate, { ...candidateRecord, port: "3100" }, fixture.dependencies), /WEB_EXECUTOR_CANDIDATE_PM2_INVALID/);
+  assert.throws(() => assertCandidatePm2Identity(candidate, { ...candidateRecord, name: "memoryai-staging-candidate-333333333333-extra" }, fixture.dependencies), /WEB_EXECUTOR_CANDIDATE_PM2_INVALID/);
+  assert.throws(() => assertCandidatePm2Identity(candidate, { ...candidateRecord, cwd: `${current.path}/runtime` }, fixture.dependencies), /WEB_EXECUTOR_CANDIDATE_PM2_INVALID/);
+  assert.throws(() => assertCandidatePm2Identity(candidate, { ...candidateRecord, execPath: `${candidate.path}/runtime/run-standalone-from-manifest.cjs` }, fixture.dependencies), /WEB_EXECUTOR_CANDIDATE_PM2_INVALID/);
+  assert.throws(() => assertCandidatePm2Identity(candidate, { ...candidateRecord, environment: { ...candidateRecord.environment, MEMORYAI_RELEASE_SOURCE_SHA: CURRENT } }, fixture.dependencies), /WEB_EXECUTOR_CANDIDATE_PM2_RELEASE_TARGET_INVALID/);
+  assert.throws(() => assertCandidatePm2Identity(candidate, { ...candidateRecord, environment: { ...candidateRecord.environment, HOSTNAME: "0.0.0.0" } }, fixture.dependencies), /WEB_EXECUTOR_CANDIDATE_PM2_RELEASE_TARGET_INVALID/);
+  assert.throws(() => assertCandidatePm2Identity(candidate, { ...candidateRecord, environment: { ...candidateRecord.environment, DASHSCOPE_API_KEY: "fake" } }, fixture.dependencies), /WEB_EXECUTOR_CANDIDATE_QWEN_ENVIRONMENT_INVALID/);
+  assert.throws(() => assertCandidatePm2Identity(candidate, { ...candidateRecord, environment: { ...candidateRecord.environment, MEMORYAI_QWEN_AUDIO_TTS_FLASH_VOICE_CLONE_BETA_ENABLED: "true" } }, fixture.dependencies), /WEB_EXECUTOR_CANDIDATE_QWEN_ENVIRONMENT_INVALID/);
+});
+
+test("PM2 role populations reject duplicates, residual candidates, cross-role replacement, and arbitrary prefixes", () => {
+  const release = { path: `${ROOT}/releases/${CURRENT}` };
+  const fixture = formalWrapperFixture(release);
+  const serving = {
+    name: "memoryai-staging", pid: 1, pm2_env: { status: "online", unstable_restarts: 0, pm_cwd: `${release.path}/runtime`, pm_exec_path: fixture.wrapper, env: {
+      MEMORYAI_RELEASE_ROOT: `${release.path}/runtime`, MEMORYAI_RELEASE_SOURCE_SHA: CURRENT, MEMORYAI_PM2_APP_NAME: "memoryai-staging", MEMORYAI_PORT: "3100", HOSTNAME: "127.0.0.1", AUTH_PROXY_LOOPBACK_ONLY: "true",
+    } },
+  };
+  const candidate = {
+    name: candidateAppName(CANDIDATE), pid: 2, pm2_env: { status: "online", unstable_restarts: 0, pm_cwd: `${ROOT}/releases/${CANDIDATE}/runtime`, pm_exec_path: fixture.wrapper, env: {
+      MEMORYAI_RELEASE_ROOT: `${ROOT}/releases/${CANDIDATE}/runtime`, MEMORYAI_RELEASE_SOURCE_SHA: CANDIDATE, MEMORYAI_PM2_APP_NAME: candidateAppName(CANDIDATE), MEMORYAI_PORT: "3110", HOSTNAME: "127.0.0.1", AUTH_PROXY_LOOPBACK_ONLY: "true", MEMORYAI_QWEN_AUDIO_TTS_FLASH_VOICE_CLONE_BETA_ENABLED: "false",
+    } },
+  };
+  assert.throws(() => assertPm2RolePopulation([serving, candidate], "serving"), /WEB_EXECUTOR_CANDIDATE_RESIDUE_INVALID/);
+  assert.deepEqual(assertPm2RolePopulation([serving, candidate], "candidate", candidate.name).candidate.name, candidate.name);
+  assert.throws(() => assertPm2RolePopulation([serving, { ...candidate, name: "memoryai-staging-candidate-aaaaaaaaaaaa" }], "candidate", candidate.name), /WEB_EXECUTOR_CANDIDATE_POPULATION_INVALID/);
+  assert.throws(() => assertPm2RolePopulation([serving, candidate, { ...candidate, pid: 3 }], "candidate", candidate.name), /WEB_EXECUTOR_CANDIDATE_POPULATION_INVALID/);
+  assert.throws(() => assertPm2RolePopulation([{ ...serving, name: candidate.name, pid: 3 }, candidate], "candidate", candidate.name), /WEB_EXECUTOR_PM2_APP_COUNT_INVALID/);
+  assert.throws(() => assertPm2RolePopulation([{ ...serving, name: "memoryai-staging-candidateish" }], "serving"), /WEB_EXECUTOR_PM2_APP_COUNT_INVALID/);
 });
 
 test("health probes send the dedicated Staging access header", async () => {
@@ -289,6 +354,22 @@ test("health probes send the dedicated Staging access header", async () => {
     const address = server.address();
     assert.equal(typeof address, "object");
     assert.equal(await httpStatus(address.port, "/api/health", token), true);
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("health identity requires an OK response with the release source SHA", async () => {
+  const token = "b".repeat(48);
+  const server = http.createServer((request, response) => {
+    assert.equal(request.headers["x-memoryai-staging-access"], token);
+    response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ status: "ok", sourceSha: CANDIDATE }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.equal(typeof address, "object");
+    assert.deepEqual(await httpHealth(address.port, token), { health200: true, sourceSha: CANDIDATE });
   } finally {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }

@@ -1,7 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { mkdtempSync, readFileSync, rmSync, writeFileSync } = require("node:fs");
+const { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
@@ -201,25 +201,58 @@ test("dry-run CLI remains read-only even though execute is an explicit separate 
 test("Web PM2 config launches the versioned secret wrapper with a release-local manifest launcher", () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), "memoryai-web-pm2-manifest-"));
   try {
-    writeFileSync(path.join(directory, "standalone-manifest.json"), "{}\n");
-    writeFileSync(path.join(directory, "run-standalone-from-manifest.cjs"), "\n");
+    const releaseRoot = path.join(directory, "releases", CANDIDATE_SHA, "runtime");
+    mkdirSync(releaseRoot, { recursive: true });
+    writeFileSync(path.join(releaseRoot, "standalone-manifest.json"), "{}\n");
+    writeFileSync(path.join(releaseRoot, "run-standalone-from-manifest.cjs"), "\n");
     const config = path.join(__dirname, "staging-web-pm2-manifest.config.cjs");
     const output = spawnSync(process.execPath, ["-e", "const x=require(process.argv[1]); console.log(JSON.stringify(x.apps[0]))", config], {
       env: {
         ...process.env,
-        MEMORYAI_RELEASE_ROOT: directory,
+        MEMORYAI_RELEASE_ROOT: releaseRoot,
+        MEMORYAI_RELEASE_SOURCE_SHA: CANDIDATE_SHA,
         MEMORYAI_PM2_APP_NAME: "memoryai-staging",
         MEMORYAI_PORT: "3100",
         MEMORYAI_STAGING_SECRET_FILE: "/home/ubuntu/memoryai-staging/secrets/qwen-voice-clone.env",
+        MEMORYAI_QWEN_AUDIO_TTS_FLASH_VOICE_CLONE_BETA_ENABLED: "false",
       },
       encoding: "utf8",
     });
     assert.equal(output.status, 0, output.stderr);
     const app = JSON.parse(output.stdout);
-    assert.equal(app.cwd, directory);
+    assert.equal(app.cwd, releaseRoot);
     assert.equal(app.script, path.join(__dirname, "staging-web-secret-runtime-wrapper.cjs"));
     assert.equal(app.env.PORT, "3100");
     assert.equal(app.env.AUTH_PROXY_LOOPBACK_ONLY, "true");
+    assert.equal(app.env.MEMORYAI_RELEASE_SOURCE_SHA, CANDIDATE_SHA);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("Web PM2 config accepts only the exact serving or SHA-derived candidate role with beta disabled", () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "memoryai-web-pm2-role-"));
+  try {
+    const releaseRoot = path.join(directory, "releases", CANDIDATE_SHA, "runtime");
+    mkdirSync(releaseRoot, { recursive: true });
+    writeFileSync(path.join(releaseRoot, "standalone-manifest.json"), "{}\n");
+    writeFileSync(path.join(releaseRoot, "run-standalone-from-manifest.cjs"), "\n");
+    const config = path.join(__dirname, "staging-web-pm2-manifest.config.cjs");
+    const base = {
+      ...process.env,
+      MEMORYAI_RELEASE_ROOT: releaseRoot,
+      MEMORYAI_RELEASE_SOURCE_SHA: CANDIDATE_SHA,
+      MEMORYAI_PM2_APP_NAME: `memoryai-staging-candidate-${CANDIDATE_SHA.slice(0, 12)}`,
+      MEMORYAI_PORT: "3110",
+      MEMORYAI_STAGING_SECRET_FILE: "/home/ubuntu/memoryai-staging/secrets/qwen-voice-clone.env",
+      MEMORYAI_QWEN_AUDIO_TTS_FLASH_VOICE_CLONE_BETA_ENABLED: "false",
+    };
+    const invoke = (overrides = {}) => spawnSync(process.execPath, ["-e", "require(process.argv[1])", config], { env: { ...base, ...overrides }, encoding: "utf8" });
+    assert.equal(invoke().status, 0);
+    assert.notEqual(invoke({ MEMORYAI_PORT: "3100" }).status, 0);
+    assert.notEqual(invoke({ MEMORYAI_PM2_APP_NAME: "memoryai-staging-candidate-aaaaaaaaaaaa" }).status, 0);
+    assert.notEqual(invoke({ MEMORYAI_QWEN_AUDIO_TTS_FLASH_VOICE_CLONE_BETA_ENABLED: "true" }).status, 0);
+    assert.notEqual(invoke({ DASHSCOPE_API_KEY: "synthetic-only" }).status, 0);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
