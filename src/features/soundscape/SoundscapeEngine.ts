@@ -9,6 +9,9 @@ const VOICE_DUCK_RATIO = 0.15;
 const VOICE_RECOVER_MS = 750;
 export const ROLLING_NOISE_BLOCK_SECONDS = 12;
 export const ROLLING_NOISE_CROSSFADE_SECONDS = 1.2;
+export const FIRST_SHIMMER_DELAY_MS = 180;
+export const PRIMARY_DRONE_GAIN = 0.12;
+export const SECONDARY_DRONE_GAIN = 0.055;
 
 type ContextFactory = () => AudioContext;
 type ActiveLayer = {
@@ -208,8 +211,11 @@ export class SoundscapeEngine {
       sources.push(oscillator);
       nodes.push(filter, gain, panner);
     };
-    makeDrone(preset.droneHz[0], "sine", 0.055, -preset.stereoWidth);
-    makeDrone(preset.droneHz[1], "triangle", 0.026, preset.stereoWidth);
+    // Keep the bed audible on phone and laptop speakers. The previous
+    // sub-bass-only bed (55–110 Hz at very low gain) could be technically
+    // running while sounding silent on small speakers.
+    makeDrone(preset.droneHz[0], "sine", PRIMARY_DRONE_GAIN, -preset.stereoWidth);
+    makeDrone(preset.droneHz[1], "triangle", SECONDARY_DRONE_GAIN, preset.stereoWidth);
 
     const noiseFilter = context.createBiquadFilter();
     noiseFilter.type = "lowpass";
@@ -268,8 +274,9 @@ export class SoundscapeEngine {
       const [minimum, maximum] = layer.preset.shimmerIntervalMs;
       this.defer(layer, emit, minimum + random() * (maximum - minimum));
     };
-    const [minimum, maximum] = layer.preset.shimmerIntervalMs;
-    this.defer(layer, emit, minimum + random() * (maximum - minimum));
+    // Give immediate audible feedback after the user gesture. Later shimmer
+    // events still keep their long, non-mechanical spacing.
+    this.defer(layer, emit, FIRST_SHIMMER_DELAY_MS);
   }
 
   private scheduleRollingNoise(context: AudioContext, layer: ActiveLayer, filter: BiquadFilterNode): void {
