@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "scope": "MemoryAI original procedural ambient soundscape",
+  "scope": "MemoryAI original procedural instrumental compositions",
   "routePolicy": {
     "glow": ["/"],
     "companion": ["/companion", "/guest/companion"],
@@ -8,9 +8,9 @@
     "reunion": ["/memory/:id/encounter#preparing", "/memory/:id/encounter#settling"]
   },
   "entries": [
-    { "id": "glow", "title": "微光", "sourceType": "procedural_internal", "engineVersion": "1", "seed": "memoryai-glow-v1", "thirdPartyAudio": false, "samples": [], "remoteSources": [], "aiGenerated": false, "exportAllowed": false, "territory": "CN", "expiresAt": null },
-    { "id": "companion", "title": "相伴", "sourceType": "procedural_internal", "engineVersion": "1", "seed": "memoryai-companion-v1", "thirdPartyAudio": false, "samples": [], "remoteSources": [], "aiGenerated": false, "exportAllowed": false, "territory": "CN", "expiresAt": null },
-    { "id": "stardust", "title": "星尘", "sourceType": "procedural_internal", "engineVersion": "1", "seed": "memoryai-stardust-v1", "thirdPartyAudio": false, "samples": [], "remoteSources": [], "aiGenerated": false, "exportAllowed": false, "territory": "CN", "expiresAt": null },
-    { "id": "reunion", "title": "重逢", "sourceType": "procedural_internal", "engineVersion": "1", "seed": "memoryai-reunion-v1", "thirdPartyAudio": false, "samples": [], "remoteSources": [], "aiGenerated": false, "exportAllowed": false, "territory": "CN", "expiresAt": null }
+    { "id": "glow", "title": "晨光", "sourceType": "procedural_internal", "engineVersion": "2", "seed": "memoryai-glow-v2", "thirdPartyAudio": false, "samples": [], "remoteSources": [], "aiGenerated": false, "exportAllowed": false, "territory": "CN", "expiresAt": null },
+    { "id": "companion", "title": "相伴", "sourceType": "procedural_internal", "engineVersion": "2", "seed": "memoryai-companion-v2", "thirdPartyAudio": false, "samples": [], "remoteSources": [], "aiGenerated": false, "exportAllowed": false, "territory": "CN", "expiresAt": null },
+    { "id": "stardust", "title": "星河", "sourceType": "procedural_internal", "engineVersion": "2", "seed": "memoryai-stardust-v2", "thirdPartyAudio": false, "samples": [], "remoteSources": [], "aiGenerated": false, "exportAllowed": false, "territory": "CN", "expiresAt": null },
+    { "id": "reunion", "title": "重逢", "sourceType": "procedural_internal", "engineVersion": "2", "seed": "memoryai-reunion-v2", "thirdPartyAudio": false, "samples": [], "remoteSources": [], "aiGenerated": false, "exportAllowed": false, "territory": "CN", "expiresAt": null }
   ]
 }
