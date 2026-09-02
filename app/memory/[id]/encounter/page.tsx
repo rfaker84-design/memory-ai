@@ -178,7 +178,7 @@ function EncounterPageContent({ params }: { params: Promise<{ id: string }> }) {
       <h1 style={{ margin: 0 }}>与 {state.name} 的第一次遇见</h1>
       {playbackComplete && <p role="status" aria-live="polite">影像播放结束，正在进入相伴。</p>}
       {state.playbackUrl && !useStaticEncounter && !encounterViewed ? <div style={{ position: "relative" }}>
-        <video src={state.playbackUrl} autoPlay loop={state.playbackKind === "approved-idle"} playsInline controls={false} controlsList="nodownload noremoteplayback" disablePictureInPicture onPlay={(event) => { playbackLastTime.current = event.currentTarget.currentTime; markEncounterViewed(); }} onSeeking={(event) => { playbackLastTime.current = event.currentTarget.currentTime; }} onTimeUpdate={(event) => observePlayback(event.currentTarget, state.playbackJobId)} onEnded={afterPlayback} style={{ display: "block", width: "100%", maxHeight: "calc(100dvh - 190px)", aspectRatio: "9 / 16", objectFit: "contain", borderRadius: 20, background: "#231a13" }} aria-label={`${state.name} 的首次相遇影像`} />
+        <video src={state.playbackUrl} autoPlay loop={state.playbackKind === "approved-idle"} playsInline controls={false} controlsList="nodownload noremoteplayback" disablePictureInPicture data-soundscape-priority="true" onPlay={(event) => { playbackLastTime.current = event.currentTarget.currentTime; markEncounterViewed(); }} onSeeking={(event) => { playbackLastTime.current = event.currentTarget.currentTime; }} onTimeUpdate={(event) => observePlayback(event.currentTarget, state.playbackJobId)} onEnded={afterPlayback} style={{ display: "block", width: "100%", maxHeight: "calc(100dvh - 190px)", aspectRatio: "9 / 16", objectFit: "contain", borderRadius: 20, background: "#231a13" }} aria-label={`${state.name} 的首次相遇影像`} />
         <span data-ai-generated-overlay="true" aria-hidden="true" style={{ position: "absolute", top: 12, right: 12, pointerEvents: "none", borderRadius: 999, padding: "4px 8px", background: "rgba(35,26,19,0.78)", color: "#fff", fontSize: 12 }}>AI生成</span>
       </div> : <>
         {state.portraitUrl ? <img src={state.portraitUrl} alt={`${state.name} 的照片`} style={{ width: "100%", aspectRatio: "9 / 16", objectFit: "contain", borderRadius: 20, background: "#231a13" }} /> : <div role="img" aria-label={`${state.name} 的静态形象`} style={{ minHeight: 360, display: "grid", placeItems: "center", borderRadius: 20, background: "#231a13", color: "#fff" }}>{state.name}</div>}
@@ -190,3 +190,4 @@ function EncounterPageContent({ params }: { params: Promise<{ id: string }> }) {
     </section>
   </main>;
 }
+
