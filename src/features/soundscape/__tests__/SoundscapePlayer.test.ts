@@ -13,9 +13,9 @@ test("the miniature player cycles all procedural soundscapes in both directions"
 
 test("the player exposes stable Chinese soundscape labels", () => {
   assert.deepEqual(SOUNDSCAPE_PLAYER_LABELS, {
-    glow: "暖光",
+    glow: "晨光",
     companion: "相伴",
-    stardust: "星尘",
+    stardust: "星河",
     reunion: "重逢",
   });
 });
