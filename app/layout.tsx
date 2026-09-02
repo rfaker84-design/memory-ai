@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import MobileAppShell from "../src/components/MobileAppShell";
 import { GuestCreateContinuationProvider } from "../src/components/create-memory/GuestCreateContinuationProvider";
-// Kept mounted for build-contract compatibility; the provider is product-paused and renders no audio UI.\nimport { SoundscapeProvider } from "../src/features/soundscape/SoundscapeProvider";
+// Kept mounted for build-contract compatibility; the provider is product-paused and renders no audio UI.
+import { SoundscapeProvider } from "../src/features/soundscape/SoundscapeProvider";
 import "./globals.css";
 import { RootDocument } from "./root-document";
 
