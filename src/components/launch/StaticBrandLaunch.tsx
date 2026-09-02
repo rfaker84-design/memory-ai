@@ -16,6 +16,7 @@ type StaticBrandLaunchProps = {
 
 export default function StaticBrandLaunch({ onComplete, ready }: StaticBrandLaunchProps) {
   const [minimumElapsed, setMinimumElapsed] = useState(false);
+  const [backgroundReady, setBackgroundReady] = useState(false);
   const [exiting, setExiting] = useState(false);
 
   useEffect(() => {
@@ -24,11 +25,11 @@ export default function StaticBrandLaunch({ onComplete, ready }: StaticBrandLaun
   }, []);
 
   useEffect(() => {
-    if (!minimumElapsed || !ready) return;
+    if (!minimumElapsed || !ready || !backgroundReady) return;
     setExiting(true);
     const timer = window.setTimeout(onComplete, BRAND_LAUNCH_EXIT_MS);
     return () => window.clearTimeout(timer);
-  }, [minimumElapsed, onComplete, ready]);
+  }, [backgroundReady, minimumElapsed, onComplete, ready]);
 
   return (
     <section className={`${styles.launch} ${exiting ? styles.exiting : ""}`} aria-label="忆见，见一人 忆一生">
@@ -53,9 +54,12 @@ export default function StaticBrandLaunch({ onComplete, ready }: StaticBrandLaun
         aria-hidden="true"
         className={styles.background}
         fill
+        onLoad={(event) => {
+          void event.currentTarget.decode().catch(() => undefined).finally(() => setBackgroundReady(true));
+        }}
         priority
         sizes="100vw"
-        src="/splash/owner-confirmed-warm-presence.png"
+        src="/home-hero-assets/elderly-woman.home-v2.poster.webp"
       />
       <div aria-hidden="true" className={styles.tone} />
       <div className={styles.content}>

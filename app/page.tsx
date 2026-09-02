@@ -37,8 +37,8 @@ export default function HomePage() {
 
   return (
     <MotionProvider>
+      {stage !== "login" && <GuestExperience onLogin={openLogin} onStart={beginCreation} playbackActive={stage === "home"} />}
       {stage === "launch" && <StaticBrandLaunch onComplete={enterHome} ready />}
-      {stage === "home" && <GuestExperience onLogin={openLogin} onStart={beginCreation} />}
       {stage === "login" && (
         <OriginalHomeLogin
           onAuthenticated={completeAuthentication}

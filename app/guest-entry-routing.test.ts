@@ -11,7 +11,7 @@ test("every cold root launch renders the approved opening immediately and then m
   assert.match(home, /useState<HomeStage>\("launch"\)/);
   assert.match(home, /<StaticBrandLaunch onComplete=\{enterHome\} ready \/>/);
   assert.match(home, /const enterHome = useCallback\(\(\) => setStage\("home"\), \[\]\)/);
-  assert.match(home, /stage === "home" && <GuestExperience onLogin=\{openLogin\} onStart=\{beginCreation\} \/>/);
+  assert.match(home, /stage !== "login" && <GuestExperience onLogin=\{openLogin\} onStart=\{beginCreation\} playbackActive=\{stage === "home"\} \/>/);
   assert.doesNotMatch(home, /router\.(?:push|replace)\("\/companion"\)/);
   assert.doesNotMatch(home, /fetchCompanionHomeMemoriesJson|resolvePostLoginDestination|localStorage|sessionStorage/);
 
@@ -20,7 +20,7 @@ test("every cold root launch renders the approved opening immediately and then m
 });
 
 test("the public carousel does not force a guest login or request private memories", () => {
-  assert.match(home, /<GuestExperience onLogin=\{openLogin\} onStart=\{beginCreation\} \/>/);
+  assert.match(home, /<GuestExperience onLogin=\{openLogin\} onStart=\{beginCreation\} playbackActive=\{stage === "home"\} \/>/);
   assert.match(home, /const openLogin = useCallback\(\(\) => \{[\s\S]*?setStage\("login"\)/);
   assert.match(home, /<OriginalHomeLogin[\s\S]*?onAuthenticated=\{completeAuthentication\}/);
   assert.doesNotMatch(home, /router\.replace\("\/login"\)/);

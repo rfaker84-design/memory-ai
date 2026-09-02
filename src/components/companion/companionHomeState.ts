@@ -121,6 +121,23 @@ export function persistCompanionPrimaryPreference(
   writeStorage(storage, companionPrimaryStorageKey(ownerId), memoryId);
 }
 
+/**
+ * Creation is the single exception to the fixed-home rule: when the freshly
+ * created TA is provably the Owner's only TA, it becomes the current person.
+ * A later creation can never replace an existing choice because this requires
+ * a one-item, Owner-scoped list that contains the new id.
+ */
+export function persistFirstCreatedCompanion<T extends CompanionHomeMemory>(
+  storage: CompanionPrimaryStorage,
+  ownerId: string,
+  createdMemoryId: string,
+  memories: readonly T[],
+): boolean {
+  if (memories.length !== 1 || memories[0]?.id !== createdMemoryId) return false;
+  persistCompanionPrimaryPreference(storage, ownerId, createdMemoryId);
+  return true;
+}
+
 export function clearCompanionPrimaryPreference(
   storage: CompanionPrimaryStorage,
   ownerId: string,

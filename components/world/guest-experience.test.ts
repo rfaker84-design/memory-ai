@@ -6,7 +6,7 @@ const experience = readFileSync(new URL("./GuestExperience.tsx", import.meta.url
 const carousel = readFileSync(new URL("./HomeCarousel.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("./GuestExperience.module.css", import.meta.url), "utf8");
 
-test("the approved homepage keeps the five existing, separate synthetic stories in fixed order", () => {
+test("the approved homepage keeps the five separate synthetic stories in fixed order", () => {
   const expected = ["elderly-woman", "elderly-man", "child-drawing", "young-woman", "younger-man"];
   let previous = -1;
   for (const slug of expected) {
@@ -18,77 +18,80 @@ test("the approved homepage keeps the five existing, separate synthetic stories 
   assert.match(carousel, /mobilePosition:/);
   assert.match(carousel, /const HOME_ASSET_VERSION = "home-v2"/);
   assert.match(carousel, /\$\{story\.slug\}\.\$\{HOME_ASSET_VERSION\}\.\$\{extension\}/);
-  assert.match(carousel, /data-carousel-visible-index/);
 });
 
-test("each homepage story uses a new versioned MP4 and a poster extracted alongside it", () => {
+test("every story uses its versioned home-v2 film and matching first-frame poster", () => {
   for (const slug of ["elderly-woman", "elderly-man", "child-drawing", "young-woman", "younger-man"]) {
     const video = new URL(`../../public/home-hero-assets/${slug}.home-v2.mp4`, import.meta.url);
     const poster = new URL(`../../public/home-hero-assets/${slug}.home-v2.poster.webp`, import.meta.url);
     assert.ok(existsSync(video), `missing versioned video for ${slug}`);
-    assert.ok(existsSync(poster), `missing versioned poster for ${slug}`);
+    assert.ok(existsSync(poster), `missing matching poster for ${slug}`);
     assert.ok(statSync(video).size > 1_000_000, `versioned video for ${slug} is unexpectedly small`);
     assert.ok(statSync(poster).size > 10_000, `versioned poster for ${slug} is unexpectedly small`);
   }
 });
 
-test("the hidden native layer only preloads at time zero and gates the dissolve on playable data", () => {
-  assert.match(carousel, /video\.pause\(\);[\s\S]*?video\.currentTime = 0;[\s\S]*?video\.preload = "auto";[\s\S]*?video\.load\(\)/);
-  assert.match(carousel, /if \(prepared \|\| video\.readyState < HTMLMediaElement\.HAVE_CURRENT_DATA\) return;[\s\S]*?video\.pause\(\);[\s\S]*?video\.currentTime = 0;[\s\S]*?setIncomingReady\(true\)/);
-  assert.match(carousel, /let prepared = false;[\s\S]*?if \(prepared \|\| video\.readyState < HTMLMediaElement\.HAVE_CURRENT_DATA\) return;[\s\S]*?prepared = true;[\s\S]*?detachReadyListeners\(\)/);
-  assert.match(carousel, /if \(!videoEnabled \|\| !incomingReady \|\| crossfading \|\| transitionInFlightRef\.current\) return;/);
-  assert.match(carousel, /incomingVideo\.readyState < HTMLMediaElement\.HAVE_CURRENT_DATA/);
-  assert.match(carousel, /if \(video\.duration - video\.currentTime <= END_WINDOW_SECONDS\) void beginTransition\(\);/);
-  assert.match(carousel, /const videoARef = useRef<HTMLVideoElement>\(null\);/);
-  assert.match(carousel, /const videoBRef = useRef<HTMLVideoElement>\(null\);/);
+test("the launch waits for a fully buffered first film and preloads the next paused at zero", () => {
+  assert.match(carousel, /opening\.loop = false/);
+  assert.match(carousel, /next\.loop = false/);
+  assert.match(carousel, /opening\.pause\(\);[\s\S]*?opening\.currentTime = 0;[\s\S]*?opening\.preload = "auto";[\s\S]*?opening\.load\(\)/);
+  assert.match(carousel, /if \(cancelled \|\| openingStartedRef\.current \|\| !isReadyForContinuousPlayback\(opening\)\) return;/);
+  assert.match(carousel, /next\.pause\(\);[\s\S]*?next\.currentTime = 0;[\s\S]*?next\.preload = "auto";[\s\S]*?next\.load\(\)/);
+  assert.match(carousel, /video\.readyState < HTMLMediaElement\.HAVE_FUTURE_DATA/);
+  assert.match(carousel, /const requiredEnd = Math\.max\(0, video\.duration - 0\.12\)/);
+  assert.match(carousel, /video\.buffered\.end\(index\) >= requiredEnd/);
+  assert.match(carousel, /next\.addEventListener\("loadeddata", markReady\)/);
+  assert.match(carousel, /next\.addEventListener\("canplay", markReady\)/);
+  assert.match(carousel, /next\.addEventListener\("canplaythrough", markReady\)/);
+  assert.match(carousel, /next\.addEventListener\("progress", markReady\)/);
+  assert.match(carousel, /if \(video\.duration - video\.currentTime <= HANDOFF_LEAD_SECONDS\) beginHandoff\(\)/);
+  assert.match(carousel, /onEnded=\{\(\) => \{[\s\S]*?beginHandoff\(\)/);
+  assert.doesNotMatch(carousel, /\n\s+loop(?:\s|\/?>)/);
+  assert.doesNotMatch(carousel, /\.loop = true/);
+});
+
+test("an unready or failed incoming film never starts a handoff or replays the current person", () => {
+  assert.match(carousel, /handoffRef\.current !== "steady" \|\| handoffLockedRef\.current \|\| !nextReadyRef\.current/);
+  assert.match(carousel, /if \(!outgoing \|\| !incoming \|\| !isReadyForContinuousPlayback\(incoming\)\)/);
+  assert.match(carousel, /if \(nextReadyRef\.current\) beginHandoff\(\);[\s\S]*?else showPosterFallback\(\);/);
+  assert.match(carousel, /setFilmStarted\(false\);/);
+  assert.doesNotMatch(carousel, /\.loop = true/);
+});
+
+test("the one-second handoff fades completely out before the next film begins", () => {
+  assert.match(carousel, /const FADE_MS = 500/);
+  assert.match(carousel, /type Handoff = "steady" \| "fading-out" \| "fading-in"/);
+  assert.match(styles, /--home-transition: 500ms cubic-bezier\(0\.22, 1, 0\.36, 1\)/);
+  assert.match(styles, /\.videoCurrent \{ opacity: 0\.92; \}/);
+  assert.match(styles, /\.videoNext, \.videoFadingOut \{ opacity: 0; \}/);
+  assert.doesNotMatch(styles, /transitionPlate|radial-gradient\(circle at 24% 44%/);
+
+  assert.match(carousel, /onTransitionEnd=\{\(event\) => \{[\s\S]*?handoffRef\.current === "fading-out"[\s\S]*?promotePreparedFilm\(\)/);
+  assert.match(carousel, /const promotePreparedFilm[\s\S]*?handoffRef\.current !== "fading-out"[\s\S]*?outgoing\.pause\(\);[\s\S]*?const playback = incoming\.play\(\);[\s\S]*?setHandoff\("fading-in"\)/);
+  assert.match(carousel, /void playback\.catch\(\(\) => \{[\s\S]*?setFilmStarted\(false\);/);
+
+  assert.match(carousel, /data-carousel-handoff=\{handoff\}/);
+  assert.match(carousel, /const opacity = Number\(getComputedStyle\(outgoing\)\.opacity\);[\s\S]*?opacity <= 0\.02[\s\S]*?void promotePreparedFilm\(\)/);
+  assert.match(carousel, /window\.requestAnimationFrame\(waitUntilOutgoingIsInvisible\)/);
+  assert.doesNotMatch(carousel, /waiting|transitionPlate|lightVeil|warm plate/);
+});
+
+test("the two video DOM layers are stable and only recycled after the incoming fade completes", () => {
+  assert.doesNotMatch(carousel, /key=\{/);
   assert.match(carousel, /ref=\{layer === "a" \? videoARef : videoBRef\}/);
-  assert.match(carousel, /data-carousel-layer=\{layer\}/);
-  assert.match(carousel, /preload="auto"/);
-  assert.match(carousel, /useLayoutEffect\(\(\) => \{[\s\S]*?const video = videoForLayer\(activeLayer\);[\s\S]*?void video\.play\(\)\.catch\(\(\) => undefined\);/);
-  assert.doesNotMatch(carousel, /key=\{`(?:active|incoming)-/);
-  assert.doesNotMatch(carousel, /requestVideoFrameCallback|canplaythrough|seek\(|0\.05|NEUTRAL_CUT_MS/);
+  assert.match(carousel, /const completeHandoff[\s\S]*?handoffRef\.current !== "fading-in"[\s\S]*?setLayerStories/,
+    "the recycled layer source must change only after the incoming fade is complete");
 });
 
-test("the approved original dissolve promotes the already-playing fixed layer without restarting it", () => {
-  assert.match(carousel, /const CROSSFADE_MS = 1_000/);
-  assert.match(carousel, /setCrossfading\(true\);[\s\S]*?window\.setTimeout\([\s\S]*?completeTransition\(incomingLayer, incomingIndex\)[\s\S]*?CROSSFADE_MS/);
-  const complete = carousel.indexOf("const completeTransition");
-  const pauseOutgoing = carousel.indexOf("outgoingVideo?.pause()", complete);
-  const swapLayer = carousel.indexOf("setActiveLayer(nextLayer)", complete);
-  const recycleHidden = carousel.indexOf("[outgoingLayer]: (nextIndex + 1) % HOME_STORIES.length", complete);
-  const changeLabel = carousel.indexOf("onActiveStoryChange(HOME_STORIES[nextIndex])", complete);
-  assert.ok(complete >= 0 && pauseOutgoing > complete && swapLayer > pauseOutgoing && recycleHidden > swapLayer && changeLabel > recycleHidden, "the playing incoming layer is promoted before only the hidden layer is recycled and the label changes");
-  assert.match(carousel, /const \[activeLayer, setActiveLayer\] = useState<Layer>\("a"\);/);
-  assert.match(carousel, /const \[layerStories, setLayerStories\] = useState<LayerStories>\(\{ a: 0, b: 1 \}\);/);
-  assert.match(carousel, /incomingVideo\.currentTime = 0;[\s\S]*?await incomingVideo\.play\(\);[\s\S]*?setCrossfading\(true\)/);
-  assert.match(carousel, /Only then does[\s\S]*?hidden node receive the following person at time zero/);
-  assert.doesNotMatch(carousel, /setActiveIndex\(|key=\{|incomingVideoRef|activeVideoRef/);
-  assert.match(styles, /--home-transition: 1s cubic-bezier\(0\.22, 1, 0\.36, 1\)/);
-  assert.match(styles, /\.video \{ z-index: 1; opacity: 0\.92; transition: opacity var\(--home-transition\);/);
-  assert.match(styles, /\.videoOutgoing, \.videoIncoming \{ opacity: 0; \}/);
-  assert.match(styles, /\.videoIncomingVisible \{ opacity: 0\.92; \}/);
-  assert.doesNotMatch(carousel, /lightVeil|veilStage|neutral-fade|atomic-layer-swap|preparing-next|next-frame-ready/);
-});
-
-test("outside the one-second dissolve only the active layer is permitted to play", () => {
-  assert.match(carousel, /const isActive = layer === activeLayer;/);
-  assert.match(carousel, /!isActive \? styles\.videoIncoming : ""/);
-  assert.match(carousel, /crossfading && !isActive \? styles\.videoIncomingVisible : ""/);
-  assert.match(carousel, /if \(layer !== activeLayer \|\| crossfading \|\| !incomingReady/);
-  assert.match(carousel, /outgoingVideo\?\.pause\(\);[\s\S]*?outgoingVideo\.currentTime = 0;/);
-});
-
-test("mobile keeps per-story focal metadata while the approved media fills the entire viewport", () => {
+test("mobile retains per-story focal metadata and all media fill the full viewport", () => {
   assert.match(styles, /object-position: var\(--story-desktop-position/);
   assert.match(styles, /@media \(max-aspect-ratio: 3 \/ 4\)[\s\S]*?object-position: var\(--story-mobile-position/);
   assert.match(styles, /\.media, \.poster, \.video, \.mediaVeil \{ position: absolute; inset: 0; width: 100%; height: 100%; \}/);
   assert.doesNotMatch(styles, /height: min\(58dvh, 490px\)/);
-  assert.doesNotMatch(styles, /object-position:\s*center/);
-  assert.match(styles, /100dvh/);
 });
 
-test("the public homepage remains minimal and does not read private data or write business data", () => {
-  assert.match(experience, /<HomeCarousel reducedMotion=\{reducedMotion\} onActiveStoryChange=\{setActiveStory\} \/>/);
+test("the public homepage stays minimal and does not access private data or write business data", () => {
+  assert.match(experience, /<HomeCarousel reducedMotion=\{reducedMotion\} playbackActive=\{playbackActive\} onActiveStoryChange=\{setActiveStory\} \/>/);
   assert.match(experience, /<PublicProductNavigation active="home" overMedia \/>/);
   for (const rejected of ["从一张照片开始", "一张照片，一个称呼", "体验一次遇见", "<h1", "<h2"]) {
     assert.doesNotMatch(experience, new RegExp(rejected));

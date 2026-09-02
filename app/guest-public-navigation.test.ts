@@ -31,7 +31,8 @@ test("creation is a child flow, so it leaves every primary navigation item unsel
 
 test("guest companion and memory are synthetic, local, and defer authentication to the real action", () => {
   assert.match(surfaces, /AI 合成示例/);
-  assert.match(surfaces, /home-hero-assets\/elderly-woman\.mp4/);
+  assert.match(surfaces, /home-hero-assets\/elderly-woman\.home-v2\.mp4/);
+  assert.match(surfaces, /home-hero-assets\/elderly-woman\.home-v2\.poster\.webp/);
   assert.match(surfaces, /你来了。/);
   assert.match(surfaces, /guest-secondary-assets\/memories-hero-approved\.png/);
   assert.match(surfaces, /guest-secondary-assets\/memory-spring-approved\.png/);
@@ -68,7 +69,35 @@ test("each secondary-page hero is eagerly prioritized while memory thumbnails re
   ]) {
     assert.match(surfaces, new RegExp(`${hero.replaceAll(".", "\\.")}"[^>]*loading="eager"[^>]*fetchPriority="high"`));
   }
-  assert.match(surfaces, /src=\{item\.image\} alt="" loading="lazy" fetchPriority="low"/);
+  assert.match(surfaces, /src=\{item\.image\} alt="" style=\{previewStyle\(item\.preview\)\} loading="lazy" fetchPriority="low"/);
+});
+
+test("secondary imagery keeps a matching lightweight preview instead of a blank brown or white shell", () => {
+  for (const preview of [
+    "memories-hero-approved.preview.webp",
+    "account-album-approved.preview.webp",
+    "create-empty-frame-approved.preview.webp",
+    "memory-spring-approved.preview.webp",
+    "memory-summer-approved.preview.webp",
+    "memory-today-approved.preview.webp",
+  ]) {
+    assert.match(surfaces, new RegExp(preview.replaceAll(".", "\\.")));
+  }
+  assert.match(surfaces, /function previewStyle\(preview: string\)/);
+  const styles = read("components/world/GuestPublicExperience.module.css");
+  assert.match(styles, /\.paperPage \{ padding-bottom: calc\(124px \+ env\(safe-area-inset-bottom\)\); \}/);
+  assert.match(styles, /\.memoriesHero, \.accountHero, \.createHero \{[^}]*background: #e8decd/);
+});
+
+test("the public timeline uses concrete moments, not feature-manual copy", () => {
+  for (const copy of [
+    "她每天早上把花盆转半圈，说这样每片叶子都能晒到太阳。",
+    "傍晚买菜回来，他总把最重的袋子换到自己手里。",
+    "那句“路上慢点”，以前天天听，后来才发现一直记得。",
+  ]) assert.match(surfaces, new RegExp(copy));
+  for (const rejected of ["一张照片和一句话，留住当时的光。", "把一个真实片段慢慢写下来。", "每一次确认，都会成为可回看的记忆。"]) {
+    assert.doesNotMatch(surfaces, new RegExp(rejected));
+  }
 });
 
 test("contextual login has a close path and only calls authentication endpoints from explicit actions", () => {
