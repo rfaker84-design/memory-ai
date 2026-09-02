@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createDeterministicPinkNoiseBlock, FADE_TO_STOP_MS, FIRST_SHIMMER_DELAY_MS, PRIMARY_DRONE_GAIN, ROLLING_NOISE_BLOCK_SECONDS, SECONDARY_DRONE_GAIN, SoundscapeEngine } from "../SoundscapeEngine";
+import { FADE_TO_STOP_MS, FIRST_NOTE_DELAY_MS, MUSICAL_BAR_BEATS, SoundscapeEngine } from "../SoundscapeEngine";
 import { SOUNDSCAPE_PRESETS } from "../presets";
 
 function createParam() {
@@ -51,14 +51,19 @@ test("the engine does not allocate Web Audio before an explicit activation", () 
   assert.equal(calls, 0);
 });
 
-test("the first audible response is prompt and the bed remains audible on small speakers", () => {
-  assert.ok(FIRST_SHIMMER_DELAY_MS <= 250);
-  assert.ok(PRIMARY_DRONE_GAIN >= 0.1);
-  assert.ok(SECONDARY_DRONE_GAIN >= 0.05);
+test("each original composition starts promptly and contains harmony, melody, rests, and phone-audible notes", () => {
+  assert.ok(FIRST_NOTE_DELAY_MS <= 120);
+  assert.equal(MUSICAL_BAR_BEATS, 4);
   for (const preset of Object.values(SOUNDSCAPE_PRESETS)) {
-    assert.ok(preset.droneHz[0] >= 120);
-    assert.ok(preset.droneHz[1] >= 180);
-    assert.ok(preset.noiseGain >= 0.025);
+    assert.equal(preset.engineVersion, "2");
+    assert.ok(preset.tonicHz >= 120);
+    assert.ok(preset.tempoBpm >= 50 && preset.tempoBpm <= 65);
+    assert.equal(preset.chordRoots.length, 4);
+    assert.equal(preset.chordVoicings.length, 4);
+    assert.ok(preset.chordVoicings.every((chord) => chord.length >= 4));
+    assert.ok(preset.melody.filter((note) => note !== null).length >= 9);
+    assert.ok(preset.melody.some((note) => note === null));
+    assert.ok(preset.melodyGain > preset.padGain);
   }
 });
 
@@ -79,18 +84,11 @@ test("video pauses and recovers while voice is ducked without changing foregroun
   assert.equal(context.closed, 1);
 });
 
-test("rolling noise is deterministic, adjacent blocks differ, and disposal stops every scheduled source", () => {
-  const first = createDeterministicPinkNoiseBlock(32, "memoryai-glow-v1", 0);
-  const repeated = createDeterministicPinkNoiseBlock(32, "memoryai-glow-v1", 0);
-  const adjacent = createDeterministicPinkNoiseBlock(32, "memoryai-glow-v1", 1);
-  assert.deepEqual(first, repeated);
-  assert.notDeepEqual(first, adjacent);
-  assert.ok(ROLLING_NOISE_BLOCK_SECONDS < 60);
-
+test("the musical arrangement schedules pitched voices and disposal stops every source", () => {
   let stopped = 0;
   const { context, masterGain } = createContext();
-  const source = context.createBufferSource;
-  context.createBufferSource = () => ({ ...source(), stop: () => { stopped += 1; } });
+  const source = context.createOscillator;
+  context.createOscillator = () => ({ ...source(), stop: () => { stopped += 1; }, onended: null });
   const engine = new SoundscapeEngine(() => context as unknown as AudioContext);
   engine.play("glow");
   engine.fadeToStop();
