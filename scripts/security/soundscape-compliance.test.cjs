@@ -36,7 +36,7 @@ test("procedural soundscape ledger is complete and forbids third-party audio", (
   assert.deepEqual(ledger.entries.map((entry) => entry.id), ["glow", "companion", "stardust", "reunion"]);
   for (const entry of ledger.entries) {
     assert.equal(entry.sourceType, "procedural_internal");
-    assert.equal(entry.engineVersion, "1");
+    assert.equal(entry.engineVersion, "2");
     assert.equal(entry.thirdPartyAudio, false);
     assert.deepEqual(entry.samples, []);
     assert.deepEqual(entry.remoteSources, []);
@@ -64,6 +64,8 @@ test("soundscape control is a compact edge-mounted rotating disc and hydration i
   assert.doesNotMatch(control, /<img|\.png|\.mp3|\.wav|\.m4a/);
   assert.match(control, /onPrevious/);
   assert.match(control, /onNext/);
+  assert.match(control, /上一首音乐/);
+  assert.match(control, /下一首音乐/);
   assert.match(controlCss, /z-index:\s*60/);
   assert.match(controlCss, /width:\s*180px/);
   assert.match(controlCss, /soundscape-disc-spin/);
