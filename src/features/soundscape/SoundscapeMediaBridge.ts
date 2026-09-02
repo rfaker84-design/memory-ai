@@ -2,7 +2,8 @@ import type { ForegroundAudioKind, SoundscapeMediaEvent } from "./types";
 
 import { SOUNDSCAPE_ENCOUNTER_PHASE_EVENT, type SoundscapeEncounterPhaseDetail } from "./SoundscapeEncounterPhaseAdapter";
 
-type MediaDocument = Pick<Document, "addEventListener" | "removeEventListener" | "visibilityState">;
+type MediaDocument = Pick<Document, "addEventListener" | "removeEventListener" | "visibilityState"> &
+  Partial<Pick<Document, "querySelectorAll">>;
 type ForegroundAudioDetail = Readonly<{ token: string; type: ForegroundAudioKind; active: boolean }>;
 
 export const SOUNDSCAPE_FOREGROUND_AUDIO_EVENT = "memoryai:soundscape:foreground-audio";
@@ -15,6 +16,15 @@ function mediaElementFromEvent(event: Event): HTMLMediaElement | null {
 
 function mediaType(media: HTMLMediaElement): "video" | "audio" {
   return media instanceof HTMLVideoElement ? "video" : "audio";
+}
+
+function isPriorityMedia(media: HTMLMediaElement): boolean {
+  if (media instanceof HTMLAudioElement) return true;
+  return media.dataset.soundscapePriority === "true" || (!media.muted && media.volume > 0);
+}
+
+function isPlaying(media: HTMLMediaElement): boolean {
+  return !media.paused && !media.ended;
 }
 
 function eventDetail(event: Event): ForegroundAudioDetail | null {
@@ -56,13 +66,22 @@ export function attachSoundscapeMediaBridge(documentRef: MediaDocument, notify: 
     if (!active || !active.delete(media) || active.size > 0) return;
     notify({ type, active: false });
   };
-  const start = (event: Event) => {
-    const media = mediaElementFromEvent(event);
-    if (media) beginMedia(mediaType(media), media);
-  };
   const finish = (event: Event) => {
     const media = mediaElementFromEvent(event);
     if (media) endMedia(mediaType(media), media);
+  };
+  const sync = (media: HTMLMediaElement) => {
+    const type = mediaType(media);
+    if (isPlaying(media) && isPriorityMedia(media)) beginMedia(type, media);
+    else endMedia(type, media);
+  };
+  const start = (event: Event) => {
+    const media = mediaElementFromEvent(event);
+    if (media) sync(media);
+  };
+  const volume = (event: Event) => {
+    const media = mediaElementFromEvent(event);
+    if (media) sync(media);
   };
   const foreground = (event: Event) => {
     const detail = eventDetail(event);
@@ -83,13 +102,16 @@ export function attachSoundscapeMediaBridge(documentRef: MediaDocument, notify: 
   documentRef.addEventListener("playing", start, true);
   documentRef.addEventListener("pause", finish, true);
   documentRef.addEventListener("ended", finish, true);
+  documentRef.addEventListener("volumechange", volume, true);
   documentRef.addEventListener(SOUNDSCAPE_FOREGROUND_AUDIO_EVENT, foreground as EventListener);
   documentRef.addEventListener("visibilitychange", visibility);
+  documentRef.querySelectorAll?.("audio, video").forEach((media) => sync(media as HTMLMediaElement));
   return () => {
     documentRef.removeEventListener("play", start, true);
     documentRef.removeEventListener("playing", start, true);
     documentRef.removeEventListener("pause", finish, true);
     documentRef.removeEventListener("ended", finish, true);
+    documentRef.removeEventListener("volumechange", volume, true);
     documentRef.removeEventListener(SOUNDSCAPE_FOREGROUND_AUDIO_EVENT, foreground as EventListener);
     documentRef.removeEventListener("visibilitychange", visibility);
   };
@@ -107,3 +129,4 @@ export function attachSoundscapeEncounterPhaseBridge(
   documentRef.addEventListener(SOUNDSCAPE_ENCOUNTER_PHASE_EVENT, listener as EventListener);
   return () => documentRef.removeEventListener(SOUNDSCAPE_ENCOUNTER_PHASE_EVENT, listener as EventListener);
 }
+
