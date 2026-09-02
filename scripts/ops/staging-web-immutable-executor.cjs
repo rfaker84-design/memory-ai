@@ -388,12 +388,19 @@ function usesVersionedSecretWrapper(release, execPath, dependencies = {}) {
   }
 }
 
-function assertServingPm2Identity(release, record, dependencies = {}) {
+function assertServingPm2Identity(
+  release,
+  record,
+  dependencies = {},
+  expected = { appName: "memoryai-staging", port: 3100 },
+) {
   const runtime = `${release.path}/runtime`;
-  if (record?.name !== "memoryai-staging" || record.status !== "online" || record.unstableRestarts !== 0 || record.cwd !== runtime || String(record.port) !== "3100") {
+  const appName = expected.appName ?? "memoryai-staging";
+  const port = String(expected.port ?? 3100);
+  if (record?.name !== appName || record.status !== "online" || record.unstableRestarts !== 0 || record.cwd !== runtime || String(record.port) !== port) {
     fail("WEB_EXECUTOR_CURRENT_PM2_INVALID");
   }
-  if (record.environment?.MEMORYAI_RELEASE_ROOT !== runtime || record.environment?.MEMORYAI_PM2_APP_NAME !== "memoryai-staging" || String(record.environment?.MEMORYAI_PORT) !== "3100") {
+  if (record.environment?.MEMORYAI_RELEASE_ROOT !== runtime || record.environment?.MEMORYAI_PM2_APP_NAME !== appName || String(record.environment?.MEMORYAI_PORT) !== port) {
     fail("WEB_EXECUTOR_CURRENT_PM2_RELEASE_TARGET_INVALID");
   }
   if (!usesVersionedSecretWrapper(release, record.execPath, dependencies)) fail("WEB_EXECUTOR_CURRENT_PM2_INVALID");
@@ -501,7 +508,7 @@ function createHostOperations(plan) {
       pm2Online: record.status === "online",
       pm2CwdMatchesManifest: record.cwd === path.join(release.path, "runtime"),
       pm2ExecMatchesRunner: (() => {
-        try { assertServingPm2Identity(release, record); return true; } catch { return false; }
+        try { assertServingPm2Identity(release, record, {}, { appName, port }); return true; } catch { return false; }
       })(),
       manifestVerified: existsSync(path.join(release.path, "runtime", "standalone-manifest.json")),
       checksumsVerified: true,
