@@ -6,9 +6,10 @@ import { usePathname } from "next/navigation";
 import { SoundscapeControl } from "./SoundscapeControl";
 import { SoundscapeEngine } from "./SoundscapeEngine";
 import { attachSoundscapeEncounterPhaseBridge, attachSoundscapeMediaBridge } from "./SoundscapeMediaBridge";
+import { adjacentSoundscape } from "./SoundscapePlayer";
 import { isSoundscapeFeatureEnabled, resolveSoundscapeRoute } from "./SoundscapePolicy";
-import { readSoundscapePreference, withSoundscapeEnabled, withSoundscapeVolume, writeSoundscapePreference } from "./SoundscapePreference";
-import type { SoundscapeEncounterPhase, SoundscapePreference } from "./types";
+import { DEFAULT_SOUNDSCAPE_PREFERENCE, readSoundscapePreference, withSoundscapeEnabled, withSoundscapeVolume, writeSoundscapePreference } from "./SoundscapePreference";
+import type { SoundscapeEncounterPhase, SoundscapeId, SoundscapePreference } from "./types";
 
 // Next.js replaces this value at the production build boundary.
 const SOUNDSCAPE_FEATURE_ENABLED = isSoundscapeFeatureEnabled(process.env.NEXT_PUBLIC_SOUNDSCAPE_ENABLED);
@@ -24,11 +25,20 @@ function SoundscapeRuntime({ children }: Props) {
   const pathname = usePathname();
   const [encounterPhase, setEncounterPhase] = useState<SoundscapeEncounterPhase>("off");
   const decision = resolveSoundscapeRoute(pathname, encounterPhase);
-  const [preference, setPreference] = useState<SoundscapePreference>(() => (
-    typeof window === "undefined" ? { version: 1, enabled: false, volume: 0.22 } : readSoundscapePreference(window.localStorage)
-  ));
+  // Keep the server render and first browser render identical. The persisted
+  // preference is intentionally restored only after hydration and never starts
+  // an AudioContext without a fresh user gesture.
+  const [preference, setPreference] = useState<SoundscapePreference>(() => ({ ...DEFAULT_SOUNDSCAPE_PREFERENCE }));
+  const [hydrated, setHydrated] = useState(false);
   const [sessionActivated, setSessionActivated] = useState(false);
+  const [selectedSoundscape, setSelectedSoundscape] = useState<SoundscapeId | null>(decision.soundscape);
   const engineRef = useRef<SoundscapeEngine | null>(null);
+  const activeSoundscape = selectedSoundscape ?? decision.soundscape;
+
+  useEffect(() => {
+    setPreference(readSoundscapePreference(window.localStorage));
+    setHydrated(true);
+  }, []);
 
   const persist = useCallback((next: SoundscapePreference) => {
     setPreference(next);
@@ -36,13 +46,13 @@ function SoundscapeRuntime({ children }: Props) {
   }, []);
 
   const begin = useCallback((next: SoundscapePreference) => {
-    if (!decision.soundscape) return;
+    if (!activeSoundscape) return;
     try {
       const engine = engineRef.current ?? new SoundscapeEngine();
       engineRef.current = engine;
       engine.activate();
       engine.setVolume(next.volume);
-      engine.play(decision.soundscape);
+      engine.play(activeSoundscape);
       setSessionActivated(true);
     } catch {
       // Sound remains a progressive enhancement and cannot alter product flows.
@@ -50,7 +60,7 @@ function SoundscapeRuntime({ children }: Props) {
       engineRef.current = null;
       setSessionActivated(false);
     }
-  }, [decision.soundscape]);
+  }, [activeSoundscape]);
 
   const stopAndDispose = useCallback(() => {
     engineRef.current?.dispose();
@@ -80,14 +90,23 @@ function SoundscapeRuntime({ children }: Props) {
     else engineRef.current?.setVolume(next.volume);
   }, [begin, persist, preference, sessionActivated]);
 
+  const selectAdjacentSoundscape = useCallback((direction: -1 | 1) => {
+    if (!activeSoundscape) return;
+    setSelectedSoundscape(adjacentSoundscape(activeSoundscape, direction));
+  }, [activeSoundscape]);
+
+  useEffect(() => {
+    setSelectedSoundscape(decision.soundscape);
+  }, [decision.soundscape]);
+
   useEffect(() => {
     if (!sessionActivated) return;
     const engine = engineRef.current;
     if (!engine) return;
     engine.setVolume(preference.volume);
-    if (preference.enabled && decision.soundscape) engine.play(decision.soundscape);
+    if (preference.enabled && activeSoundscape) engine.play(activeSoundscape);
     else engine.fadeToStop();
-  }, [decision.soundscape, preference.enabled, preference.volume, sessionActivated]);
+  }, [activeSoundscape, preference.enabled, preference.volume, sessionActivated]);
 
   useEffect(() => attachSoundscapeEncounterPhaseBridge(document, ({ phase }) => setEncounterPhase(phase)), []);
 
@@ -100,6 +119,18 @@ function SoundscapeRuntime({ children }: Props) {
 
   return <>
     {children}
-    {decision.soundscape ? <SoundscapeControl preference={preference} awaitingActivation={preference.enabled && !sessionActivated} onPrimaryAction={onPrimaryAction} onVolumeChange={onVolumeChange} /> : null}
+    {hydrated && activeSoundscape ? (
+      <SoundscapeControl
+        preference={preference}
+        soundscape={activeSoundscape}
+        awaitingActivation={preference.enabled && !sessionActivated}
+        playing={preference.enabled && sessionActivated}
+        onPrimaryAction={onPrimaryAction}
+        onPrevious={() => selectAdjacentSoundscape(-1)}
+        onNext={() => selectAdjacentSoundscape(1)}
+        onVolumeChange={onVolumeChange}
+      />
+    ) : null}
   </>;
 }
+
