@@ -288,9 +288,45 @@ function assertExactRealPath(file, code, dependencies) {
   if (resolved !== file) fail(code, file);
 }
 
-function assertPrivateRunnerEntry(file, expectedType, code, dependencies) {
-  const metadata = lstatExact(file, expectedType, code, dependencies);
-  if (metadata.uid !== dependencies.expectedUid || (metadata.mode & 0o077) !== 0 || metadata.nlink !== 1) fail(code, file);
+function mountPath(value) {
+  return value.replace(/\\([0-7]{3})/gu, (_match, octal) => String.fromCharCode(Number.parseInt(octal, 8)));
+}
+
+function assertNotMountedDirectory(directory, code, dependencies) {
+  let mountInfo;
+  try { mountInfo = dependencies.readMountInfo(); } catch { fail(code, directory); }
+  if (typeof mountInfo !== "string") fail(code, directory);
+  for (const line of mountInfo.split("\n")) {
+    const fields = line.split(" ");
+    // Linux mountinfo field 5 is the mount point. A separately mounted or
+    // bind-mounted runner directory is not an immutable deployment tool.
+    if (fields.length >= 5 && mountPath(fields[4]) === directory) fail(code, directory);
+  }
+}
+
+function assertControlledRunnerDirectory(directory, code, dependencies, options = {}) {
+  const metadata = lstatExact(directory, "directory", code, dependencies);
+  if (
+    metadata.uid !== dependencies.expectedUid
+    || metadata.gid !== dependencies.expectedGid
+    || (metadata.mode & 0o022) !== 0
+    || (options.expectedDevice !== undefined && metadata.dev !== options.expectedDevice)
+    || (options.requiredNlink !== undefined && metadata.nlink !== options.requiredNlink)
+  ) fail(code, directory);
+  assertExactRealPath(directory, code, dependencies);
+  assertNotMountedDirectory(directory, code, dependencies);
+  return metadata;
+}
+
+function assertPrivateRunnerFile(file, code, dependencies, expectedDevice) {
+  const metadata = lstatExact(file, "file", code, dependencies);
+  if (
+    metadata.uid !== dependencies.expectedUid
+    || metadata.gid !== dependencies.expectedGid
+    || (metadata.mode & 0o077) !== 0
+    || metadata.nlink !== 1
+    || metadata.dev !== expectedDevice
+  ) fail(code, file);
   assertExactRealPath(file, code, dependencies);
   return metadata;
 }
@@ -306,9 +342,11 @@ function formalRunnerDependencies(overrides = {}) {
   return {
     root: "/home/ubuntu/memoryai-staging",
     expectedUid: typeof process.getuid === "function" ? process.getuid() : null,
+    expectedGid: typeof process.getgid === "function" ? process.getgid() : null,
     lstatSync,
     realpathSync,
     hashFile,
+    readMountInfo: () => readFileSync("/proc/self/mountinfo", "utf8"),
     ...overrides,
   };
 }
@@ -321,10 +359,18 @@ function assertFormalStagingRunnerWrapper(release, execPath, overrides = {}) {
   if (!matched || execPath.includes("..")) fail("WEB_EXECUTOR_FORMAL_WRAPPER_PATH_INVALID", execPath);
   const tools = `${root}/tools`;
   const runner = `${tools}/staging-web-immutable-runner-${matched[1]}`;
-  lstatExact(tools, "directory", "WEB_EXECUTOR_FORMAL_TOOLS_DIRECTORY_INVALID", dependencies);
-  assertExactRealPath(tools, "WEB_EXECUTOR_FORMAL_TOOLS_DIRECTORY_INVALID", dependencies);
-  assertPrivateRunnerEntry(runner, "directory", "WEB_EXECUTOR_FORMAL_WRAPPER_DIRECTORY_INVALID", dependencies);
-  assertPrivateRunnerEntry(execPath, "file", "WEB_EXECUTOR_FORMAL_WRAPPER_FILE_INVALID", dependencies);
+  // Realpath on each segment proves that the absolute, SHA-named runner path
+  // stays beneath the controlled Staging root. Every controlled directory is
+  // owned by the deployment account and cannot be group/world-written. The
+  // leaf directory has exactly two links (it has no child directories), while
+  // the executable wrapper itself must remain an unshared regular file.
+  const controlledRoot = assertControlledRunnerDirectory(root, "WEB_EXECUTOR_FORMAL_ROOT_DIRECTORY_INVALID", dependencies);
+  assertControlledRunnerDirectory(tools, "WEB_EXECUTOR_FORMAL_TOOLS_DIRECTORY_INVALID", dependencies, { expectedDevice: controlledRoot.dev });
+  assertControlledRunnerDirectory(runner, "WEB_EXECUTOR_FORMAL_WRAPPER_DIRECTORY_INVALID", dependencies, {
+    expectedDevice: controlledRoot.dev,
+    requiredNlink: 2,
+  });
+  assertPrivateRunnerFile(execPath, "WEB_EXECUTOR_FORMAL_WRAPPER_FILE_INVALID", dependencies, controlledRoot.dev);
   if (!FORMAL_STAGING_RUNNER_WRAPPER_BLOBS.has(dependencies.hashFile(execPath))) fail("WEB_EXECUTOR_FORMAL_WRAPPER_IDENTITY_INVALID", runner);
   const runtime = `${release.path}/runtime`;
   const launcher = `${runtime}/run-standalone-from-manifest.cjs`;

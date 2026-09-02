@@ -185,8 +185,10 @@ test("serving cutover replaces the previous PM2 record with the release-local ma
 function privateMetadata(type = "file", overrides = {}) {
   return {
     uid: 1000,
+    gid: 1000,
     mode: type === "directory" ? 0o40700 : 0o100600,
-    nlink: 1,
+    nlink: type === "directory" ? 2 : 1,
+    dev: 700,
     isFile: () => type === "file",
     isDirectory: () => type === "directory",
     isSymbolicLink: () => false,
@@ -199,7 +201,8 @@ function formalWrapperFixture(release, overrides = {}) {
   const wrapper = `${runner}/staging-web-secret-runtime-wrapper.cjs`;
   const launcher = `${release.path}/runtime/run-standalone-from-manifest.cjs`;
   const metadata = new Map([
-    [`${ROOT}/tools`, privateMetadata("directory", { mode: 0o40755 })],
+    [ROOT, privateMetadata("directory", { mode: 0o40700, nlink: 23 })],
+    [`${ROOT}/tools`, privateMetadata("directory", { mode: 0o40755, nlink: 17 })],
     [runner, privateMetadata("directory")],
     [wrapper, privateMetadata("file")],
     [launcher, privateMetadata("file")],
@@ -209,18 +212,20 @@ function formalWrapperFixture(release, overrides = {}) {
     dependencies: {
       root: ROOT,
       expectedUid: 1000,
+      expectedGid: 1000,
       lstatSync: (target) => {
         if (!metadata.has(target)) throw new Error("ENOENT");
         return metadata.get(target);
       },
       realpathSync: (target) => target,
       hashFile: (target) => target === wrapper ? FORMAL_WRAPPER_HASH : HASH,
+      readMountInfo: () => "",
       ...overrides,
     },
   };
 }
 
-test("a promotion accepts only a private, hash-pinned formal Staging wrapper or the legacy launcher", () => {
+test("a promotion accepts only a private, nlink=2 formal Staging runner wrapper or the legacy launcher", () => {
   const release = { path: `${ROOT}/releases/${CURRENT}` };
   assert.equal(usesVersionedSecretWrapper(release, `${release.path}/runtime/run-standalone-from-manifest.cjs`), true);
   const fixture = formalWrapperFixture(release);
@@ -235,12 +240,24 @@ test("a promotion accepts only a private, hash-pinned formal Staging wrapper or 
   assert.equal(usesVersionedSecretWrapper(release, `${ROOT}/tools/staging-web-immutable-runner-not-a-sha/staging-web-secret-runtime-wrapper.cjs`), false);
 });
 
-test("formal wrapper validation rejects path escapes, links, weak permissions, unpinned content, and wrong launcher", () => {
+test("formal wrapper validation rejects path escapes, links, wrong ownership, writable directories, mounts, hard links, and unpinned content", () => {
   const release = { path: `${ROOT}/releases/${CURRENT}` };
   const fixture = formalWrapperFixture(release);
+  const runner = `${ROOT}/tools/staging-web-immutable-runner-${FORMAL_RUNNER}`;
   assert.throws(() => assertFormalStagingRunnerWrapper(release, `${ROOT}/tools/staging-web-immutable-runner-${FORMAL_RUNNER}/../staging-web-secret-runtime-wrapper.cjs`, fixture.dependencies), /WEB_EXECUTOR_FORMAL_WRAPPER_PATH_INVALID/);
   assert.throws(() => assertFormalStagingRunnerWrapper(release, fixture.wrapper, { ...fixture.dependencies, hashFile: () => "b".repeat(64) }), /WEB_EXECUTOR_FORMAL_WRAPPER_IDENTITY_INVALID/);
+  assert.throws(() => assertFormalStagingRunnerWrapper(release, fixture.wrapper, { ...fixture.dependencies, lstatSync: (target) => target === runner ? privateMetadata("directory", { nlink: 1 }) : fixture.dependencies.lstatSync(target) }), /WEB_EXECUTOR_FORMAL_WRAPPER_DIRECTORY_INVALID/);
+  assert.throws(() => assertFormalStagingRunnerWrapper(release, fixture.wrapper, { ...fixture.dependencies, lstatSync: (target) => target === runner ? privateMetadata("directory", { mode: 0o40720 }) : fixture.dependencies.lstatSync(target) }), /WEB_EXECUTOR_FORMAL_WRAPPER_DIRECTORY_INVALID/);
+  assert.throws(() => assertFormalStagingRunnerWrapper(release, fixture.wrapper, { ...fixture.dependencies, lstatSync: (target) => target === runner ? privateMetadata("directory", { uid: 2000 }) : fixture.dependencies.lstatSync(target) }), /WEB_EXECUTOR_FORMAL_WRAPPER_DIRECTORY_INVALID/);
+  assert.throws(() => assertFormalStagingRunnerWrapper(release, fixture.wrapper, { ...fixture.dependencies, lstatSync: (target) => target === runner ? privateMetadata("directory", { gid: 2000 }) : fixture.dependencies.lstatSync(target) }), /WEB_EXECUTOR_FORMAL_WRAPPER_DIRECTORY_INVALID/);
+  assert.throws(() => assertFormalStagingRunnerWrapper(release, fixture.wrapper, { ...fixture.dependencies, lstatSync: (target) => target === ROOT ? privateMetadata("directory", { isSymbolicLink: () => true }) : fixture.dependencies.lstatSync(target) }), /WEB_EXECUTOR_FORMAL_ROOT_DIRECTORY_INVALID/);
+  assert.throws(() => assertFormalStagingRunnerWrapper(release, fixture.wrapper, { ...fixture.dependencies, lstatSync: (target) => target === `${ROOT}/tools` ? privateMetadata("directory", { isSymbolicLink: () => true }) : fixture.dependencies.lstatSync(target) }), /WEB_EXECUTOR_FORMAL_TOOLS_DIRECTORY_INVALID/);
+  assert.throws(() => assertFormalStagingRunnerWrapper(release, fixture.wrapper, { ...fixture.dependencies, lstatSync: (target) => target === `${ROOT}/tools` ? privateMetadata("directory", { mode: 0o40775 }) : fixture.dependencies.lstatSync(target) }), /WEB_EXECUTOR_FORMAL_TOOLS_DIRECTORY_INVALID/);
+  assert.throws(() => assertFormalStagingRunnerWrapper(release, fixture.wrapper, { ...fixture.dependencies, realpathSync: (target) => target === `${ROOT}/tools` ? `${ROOT}/outside` : target }), /WEB_EXECUTOR_FORMAL_TOOLS_DIRECTORY_INVALID/);
+  assert.throws(() => assertFormalStagingRunnerWrapper(release, fixture.wrapper, { ...fixture.dependencies, readMountInfo: () => `1 0 8:1 / ${runner} rw - ext4 /dev/sda rw` }), /WEB_EXECUTOR_FORMAL_WRAPPER_DIRECTORY_INVALID/);
   assert.throws(() => assertFormalStagingRunnerWrapper(release, fixture.wrapper, { ...fixture.dependencies, lstatSync: (target) => target === fixture.wrapper ? privateMetadata("file", { isSymbolicLink: () => true }) : fixture.dependencies.lstatSync(target) }), /WEB_EXECUTOR_FORMAL_WRAPPER_FILE_INVALID/);
+  assert.throws(() => assertFormalStagingRunnerWrapper(release, fixture.wrapper, { ...fixture.dependencies, lstatSync: (target) => target === fixture.wrapper ? privateMetadata("file", { nlink: 2 }) : fixture.dependencies.lstatSync(target) }), /WEB_EXECUTOR_FORMAL_WRAPPER_FILE_INVALID/);
+  assert.throws(() => assertFormalStagingRunnerWrapper(release, fixture.wrapper, { ...fixture.dependencies, lstatSync: (target) => target === fixture.wrapper ? privateMetadata("file", { gid: 2000 }) : fixture.dependencies.lstatSync(target) }), /WEB_EXECUTOR_FORMAL_WRAPPER_FILE_INVALID/);
   assert.throws(() => assertFormalStagingRunnerWrapper(release, fixture.wrapper, { ...fixture.dependencies, lstatSync: (target) => target === fixture.wrapper ? privateMetadata("file", { mode: 0o100640 }) : fixture.dependencies.lstatSync(target) }), /WEB_EXECUTOR_FORMAL_WRAPPER_FILE_INVALID/);
   assert.throws(() => assertFormalStagingRunnerWrapper(release, fixture.wrapper, { ...fixture.dependencies, realpathSync: (target) => target === fixture.wrapper ? `${ROOT}/outside` : target }), /WEB_EXECUTOR_FORMAL_WRAPPER_FILE_INVALID/);
 });
