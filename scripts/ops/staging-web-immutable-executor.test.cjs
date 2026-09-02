@@ -277,6 +277,28 @@ test("serving PM2 identity binds one app, port 3100, cwd, environment, formal wr
   assert.throws(() => parsePm2Record(raw), /WEB_EXECUTOR_PM2_APP_COUNT_INVALID/);
 });
 
+test("candidate PM2 identity binds the candidate app name and candidate port", () => {
+  const release = { path: `${ROOT}/releases/${CANDIDATE}` };
+  const fixture = formalWrapperFixture(release);
+  const appName = `memoryai-staging-candidate-${CANDIDATE.slice(0, 12)}`;
+  const record = {
+    name: appName, status: "online", unstableRestarts: 0, cwd: `${release.path}/runtime`, port: "3110", execPath: fixture.wrapper,
+    environment: { MEMORYAI_RELEASE_ROOT: `${release.path}/runtime`, MEMORYAI_PM2_APP_NAME: appName, MEMORYAI_PORT: "3110" },
+  };
+  assert.equal(
+    assertServingPm2Identity(release, record, fixture.dependencies, { appName, port: 3110 }).runtime,
+    `${release.path}/runtime`,
+  );
+  assert.throws(
+    () => assertServingPm2Identity(release, { ...record, name: "memoryai-staging" }, fixture.dependencies, { appName, port: 3110 }),
+    /WEB_EXECUTOR_CURRENT_PM2_INVALID/,
+  );
+  assert.throws(
+    () => assertServingPm2Identity(release, { ...record, port: "3111" }, fixture.dependencies, { appName, port: 3110 }),
+    /WEB_EXECUTOR_CURRENT_PM2_INVALID/,
+  );
+});
+
 test("health probes send the dedicated Staging access header", async () => {
   const token = "a".repeat(48);
   const server = http.createServer((request, response) => {
