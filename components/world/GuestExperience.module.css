@@ -15,25 +15,17 @@
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
 }
 
-.media, .poster, .video, .mediaVeil { position: absolute; inset: 0; width: 100%; height: 100%; }
+.media, .poster, .poster img, .video { position: absolute; inset: 0; width: 100%; height: 100%; }
 .media { z-index: -1; overflow: hidden; background: var(--home-warm-black); }
-.poster, .video {
+.poster img, .video {
   object-fit: cover;
-  object-position: var(--story-desktop-position, 50% 50%);
 }
 .poster { z-index: 0; opacity: 0.92; }
 [data-home-carousel][data-video-enabled="true"] .poster { opacity: 0; }
-.video { z-index: 1; opacity: 0.92; transition: opacity var(--home-transition); will-change: opacity; }
-.videoOutgoing, .videoIncoming { opacity: 0; }
-.videoIncomingVisible { opacity: 0.92; }
-.mediaVeil {
-  z-index: 3;
-  background: linear-gradient(180deg, rgba(10, 7, 5, 0.18), rgba(10, 7, 5, 0.04) 44%, rgba(10, 7, 5, 0.72)), linear-gradient(90deg, rgba(10, 7, 5, 0.06), transparent 45%, rgba(10, 7, 5, 0.12));
-  pointer-events: none;
-}
+.video { z-index: 1; opacity: 0.92; }
 
 @media (max-aspect-ratio: 3 / 4) {
-  .poster, .video { object-position: var(--story-mobile-position, 50% 50%); }
+  .poster img, .video { object-position: 50% 50%; }
 }
 
 .heroHeader {
@@ -109,8 +101,5 @@
   .heroPrimaryAction { min-height: 48px; }
   .heroDisclosure { bottom: max(78px, calc(env(safe-area-inset-bottom) + 68px)); }
 }
-@media (prefers-reduced-motion: reduce) {
-  .video { transition: none; }
-  .heroPrimaryAction { transition: none; }
-}
+@media (prefers-reduced-motion: reduce) { .heroPrimaryAction { transition: none; } }
 

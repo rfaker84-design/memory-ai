@@ -6,88 +6,96 @@ const experience = readFileSync(new URL("./GuestExperience.tsx", import.meta.url
 const carousel = readFileSync(new URL("./HomeCarousel.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("./GuestExperience.module.css", import.meta.url), "utf8");
 
-test("the approved homepage keeps the five existing, separate synthetic stories in fixed order", () => {
-  const expected = ["elderly-woman", "elderly-man", "child-drawing", "young-woman", "younger-man"];
+const stories = ["elderly-woman", "elderly-man", "child-drawing", "young-woman", "younger-man"];
+const masterAssets = [
+  ["home-master-v1.desktop.mp4", 15_000_000],
+  ["home-master-v1.mobile.mp4", 7_000_000],
+  ["home-master-v1.desktop.poster.webp", 10_000],
+  ["home-master-v1.mobile.poster.webp", 10_000],
+] as const;
+
+test("the approved synthetic stories retain their five-person order and corrected accessible names", () => {
   let previous = -1;
-  for (const slug of expected) {
+  for (const slug of stories) {
     const position = carousel.indexOf(`slug: "${slug}"`);
-    assert.ok(position > previous, `${slug} must retain its approved carousel order`);
+    assert.ok(position > previous, `${slug} must retain its approved display order`);
     previous = position;
   }
-  assert.match(carousel, /desktopPosition:/);
-  assert.match(carousel, /mobilePosition:/);
-  assert.match(carousel, /const HOME_ASSET_VERSION = "home-v2"/);
-  assert.match(carousel, /\$\{story\.slug\}\.\$\{HOME_ASSET_VERSION\}\.\$\{extension\}/);
-  assert.match(carousel, /data-carousel-visible-index/);
+  assert.match(carousel, /label: "窗边的母亲"/);
+  assert.match(carousel, /label: "安静的父亲"/);
+  assert.match(carousel, /label: "窗边写字的孩子"/);
+  assert.match(carousel, /label: "熟悉的伴侣"/);
+  assert.match(carousel, /label: "眼镜男士"/);
 });
 
-test("each homepage story uses a new versioned MP4 and a poster extracted alongside it", () => {
-  for (const slug of ["elderly-woman", "elderly-man", "child-drawing", "young-woman", "younger-man"]) {
-    const video = new URL(`../../public/home-hero-assets/${slug}.home-v2.mp4`, import.meta.url);
-    const poster = new URL(`../../public/home-hero-assets/${slug}.home-v2.poster.webp`, import.meta.url);
-    assert.ok(existsSync(video), `missing versioned video for ${slug}`);
-    assert.ok(existsSync(poster), `missing versioned poster for ${slug}`);
-    assert.ok(statSync(video).size > 1_000_000, `versioned video for ${slug} is unexpectedly small`);
-    assert.ok(statSync(poster).size > 10_000, `versioned poster for ${slug} is unexpectedly small`);
+test("the five approved home-v2 sources remain available while versioned desktop and mobile masters are present", () => {
+  for (const slug of stories) {
+    const source = new URL(`../../public/home-hero-assets/${slug}.home-v2.mp4`, import.meta.url);
+    assert.ok(existsSync(source), `missing approved source for ${slug}`);
+    assert.ok(statSync(source).size > 1_000_000, `approved source for ${slug} is unexpectedly small`);
+  }
+  for (const [name, minimumSize] of masterAssets) {
+    const asset = new URL(`../../public/home-hero-assets/${name}`, import.meta.url);
+    assert.ok(existsSync(asset), `missing master asset ${name}`);
+    assert.ok(statSync(asset).size > minimumSize, `${name} is unexpectedly small`);
   }
 });
 
-test("the hidden native layer only preloads at time zero and gates the dissolve on playable data", () => {
-  assert.match(carousel, /video\.pause\(\);[\s\S]*?video\.currentTime = 0;[\s\S]*?video\.preload = "auto";[\s\S]*?video\.load\(\)/);
-  assert.match(carousel, /if \(prepared \|\| video\.readyState < HTMLMediaElement\.HAVE_CURRENT_DATA\) return;[\s\S]*?video\.pause\(\);[\s\S]*?video\.currentTime = 0;[\s\S]*?setIncomingReady\(true\)/);
-  assert.match(carousel, /let prepared = false;[\s\S]*?if \(prepared \|\| video\.readyState < HTMLMediaElement\.HAVE_CURRENT_DATA\) return;[\s\S]*?prepared = true;[\s\S]*?detachReadyListeners\(\)/);
-  assert.match(carousel, /if \(!videoEnabled \|\| !incomingReady \|\| crossfading \|\| transitionInFlightRef\.current\) return;/);
-  assert.match(carousel, /incomingVideo\.readyState < HTMLMediaElement\.HAVE_CURRENT_DATA/);
-  assert.match(carousel, /if \(video\.duration - video\.currentTime <= END_WINDOW_SECONDS\) void beginTransition\(\);/);
-  assert.match(carousel, /const videoARef = useRef<HTMLVideoElement>\(null\);/);
-  assert.match(carousel, /const videoBRef = useRef<HTMLVideoElement>\(null\);/);
-  assert.match(carousel, /ref=\{layer === "a" \? videoARef : videoBRef\}/);
-  assert.match(carousel, /data-carousel-layer=\{layer\}/);
-  assert.match(carousel, /preload="auto"/);
-  assert.match(carousel, /useLayoutEffect\(\(\) => \{[\s\S]*?const video = videoForLayer\(activeLayer\);[\s\S]*?void video\.play\(\)\.catch\(\(\) => undefined\);/);
-  assert.doesNotMatch(carousel, /key=\{`(?:active|incoming)-/);
-  assert.doesNotMatch(carousel, /requestVideoFrameCallback|canplaythrough|seek\(|0\.05|NEUTRAL_CUT_MS/);
+test("both masters are progressive faststart MP4s, so metadata is readable before media payload", () => {
+  for (const name of ["home-master-v1.desktop.mp4", "home-master-v1.mobile.mp4"]) {
+    const media = readFileSync(new URL(`../../public/home-hero-assets/${name}`, import.meta.url));
+    const moovOffset = media.indexOf(Buffer.from("moov"));
+    const mdatOffset = media.indexOf(Buffer.from("mdat"));
+    assert.ok(moovOffset >= 0 && mdatOffset >= 0, `${name} must contain moov and mdat atoms`);
+    assert.ok(moovOffset < mdatOffset, `${name} must place moov before mdat for progressive playback`);
+  }
 });
 
-test("the approved original dissolve promotes the already-playing fixed layer without restarting it", () => {
-  assert.match(carousel, /const CROSSFADE_MS = 1_000/);
-  assert.match(carousel, /setCrossfading\(true\);[\s\S]*?window\.setTimeout\([\s\S]*?completeTransition\(incomingLayer, incomingIndex\)[\s\S]*?CROSSFADE_MS/);
-  const complete = carousel.indexOf("const completeTransition");
-  const pauseOutgoing = carousel.indexOf("outgoingVideo?.pause()", complete);
-  const swapLayer = carousel.indexOf("setActiveLayer(nextLayer)", complete);
-  const recycleHidden = carousel.indexOf("[outgoingLayer]: (nextIndex + 1) % HOME_STORIES.length", complete);
-  const changeLabel = carousel.indexOf("onActiveStoryChange(HOME_STORIES[nextIndex])", complete);
-  assert.ok(complete >= 0 && pauseOutgoing > complete && swapLayer > pauseOutgoing && recycleHidden > swapLayer && changeLabel > recycleHidden, "the playing incoming layer is promoted before only the hidden layer is recycled and the label changes");
-  assert.match(carousel, /const \[activeLayer, setActiveLayer\] = useState<Layer>\("a"\);/);
-  assert.match(carousel, /const \[layerStories, setLayerStories\] = useState<LayerStories>\(\{ a: 0, b: 1 \}\);/);
-  assert.match(carousel, /incomingVideo\.currentTime = 0;[\s\S]*?await incomingVideo\.play\(\);[\s\S]*?setCrossfading\(true\)/);
-  assert.match(carousel, /Only then does[\s\S]*?hidden node receive the following person at time zero/);
-  assert.doesNotMatch(carousel, /setActiveIndex\(|key=\{|incomingVideoRef|activeVideoRef/);
-  assert.match(styles, /--home-transition: 1s cubic-bezier\(0\.22, 1, 0\.36, 1\)/);
-  assert.match(styles, /\.video \{ z-index: 1; opacity: 0\.92; transition: opacity var\(--home-transition\);/);
-  assert.match(styles, /\.videoOutgoing, \.videoIncoming \{ opacity: 0; \}/);
-  assert.match(styles, /\.videoIncomingVisible \{ opacity: 0\.92; \}/);
-  assert.doesNotMatch(carousel, /lightVeil|veilStage|neutral-fade|atomic-layer-swap|preparing-next|next-frame-ready/);
+test("the homepage has exactly one real video player and no A/B handoff controller", () => {
+  const videoTags = carousel.match(/<video\b/g) ?? [];
+  assert.equal(videoTags.length, 1, "the carousel must render exactly one video element");
+  assert.match(carousel, /data-carousel-player="single-master"/);
+  assert.match(carousel, /autoPlay[\s\S]*?loop[\s\S]*?muted[\s\S]*?playsInline[\s\S]*?preload="auto"/);
+  for (const rejected of [
+    "videoARef",
+    "videoBRef",
+    "nextReady",
+    "incomingReady",
+    "crossfading",
+    "activeLayer",
+    "layerStories",
+    "setTimeout",
+    "requestVideoFrameCallback",
+    "currentTime = 0",
+  ]) {
+    assert.doesNotMatch(carousel, new RegExp(rejected));
+  }
 });
 
-test("outside the one-second dissolve only the active layer is permitted to play", () => {
-  assert.match(carousel, /const isActive = layer === activeLayer;/);
-  assert.match(carousel, /!isActive \? styles\.videoIncoming : ""/);
-  assert.match(carousel, /crossfading && !isActive \? styles\.videoIncomingVisible : ""/);
-  assert.match(carousel, /if \(layer !== activeLayer \|\| crossfading \|\| !incomingReady/);
-  assert.match(carousel, /outgoingVideo\?\.pause\(\);[\s\S]*?outgoingVideo\.currentTime = 0;/);
+test("desktop and mobile download only their matching master source and poster", () => {
+  assert.match(carousel, /window\.matchMedia\("\(max-aspect-ratio: 3 \/ 4\)"\)/);
+  assert.match(carousel, /<source media="\(max-aspect-ratio: 3 \/ 4\)" srcSet=\{posterMobile\}/);
+  assert.match(carousel, /\{hasVideo && \([\s\S]*?src=\{masterAssetPath\(variant, "mp4"\)\}/);
+  assert.match(carousel, /poster=\{masterAssetPath\(variant, "poster\.webp"\)\}/);
+  assert.doesNotMatch(carousel, /<source[^>]+home-v2/);
 });
 
-test("mobile keeps per-story focal metadata while the approved media fills the entire viewport", () => {
-  assert.match(styles, /object-position: var\(--story-desktop-position/);
-  assert.match(styles, /@media \(max-aspect-ratio: 3 \/ 4\)[\s\S]*?object-position: var\(--story-mobile-position/);
-  assert.match(styles, /\.media, \.poster, \.video, \.mediaVeil \{ position: absolute; inset: 0; width: 100%; height: 100%; \}/);
+test("the accessible story indicator follows master time only and never controls playback", () => {
+  assert.match(carousel, /export function masterStoryIndexAt\(time: number\)/);
+  assert.match(carousel, /Math\.floor\(time \/ HOME_MASTER_SEGMENT_SECONDS\)/);
+  assert.match(carousel, /onTimeUpdate=\{\(event\) => updateActiveStory\(event\.currentTarget\.currentTime\)\}/);
+  assert.doesNotMatch(carousel, /\.pause\(\)|\.load\(\)|\.play\(\).*setActiveIndex/);
+});
+
+test("the single master keeps approved full-viewport coverage without a veil or mobile black lower panel", () => {
+  assert.match(styles, /\.media, \.poster, \.poster img, \.video \{ position: absolute; inset: 0; width: 100%; height: 100%; \}/);
+  assert.match(styles, /\.poster img, \.video \{[\s\S]*?object-fit: cover;/);
+  assert.doesNotMatch(styles, /mediaVeil|videoIncoming|videoOutgoing|videoIncomingVisible/);
   assert.doesNotMatch(styles, /height: min\(58dvh, 490px\)/);
-  assert.doesNotMatch(styles, /object-position:\s*center/);
   assert.match(styles, /100dvh/);
 });
 
-test("the public homepage remains minimal and does not read private data or write business data", () => {
+test("the public homepage remains minimal and cannot read private data or write business data", () => {
   assert.match(experience, /<HomeCarousel reducedMotion=\{reducedMotion\} onActiveStoryChange=\{setActiveStory\} \/>/);
   assert.match(experience, /<PublicProductNavigation active="home" overMedia \/>/);
   for (const rejected of ["从一张照片开始", "一张照片，一个称呼", "体验一次遇见", "<h1", "<h2"]) {
