@@ -8,6 +8,8 @@ const { execFileSync } = require("node:child_process");
 const { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } = require("node:fs");
 const path = require("node:path");
 const { loadStagingQwenSecrets } = require("./staging-web-secret-runtime-wrapper.cjs");
+const { auditAndNormalizeWav } = require("./staging-qwen-audio-evidence.cjs");
+const { validateCanonicalWav } = require("./staging-qwen-audio-gate.cjs");
 
 const ROOT = "/home/ubuntu/memoryai-staging";
 const APP = "memoryai-staging";
@@ -17,6 +19,7 @@ const COOKIE = "__Host-memoryai_session";
 const SYNTHETIC_ID = /^stg-qwen-vc-beta-[a-z0-9]{16}$/u;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const PREVIEW_DIRECTORY = `${ROOT}/private-e2e`;
+const SYNTHESIS_SEED = 19_027;
 
 function fail(code) {
   const error = new Error(code);
@@ -106,7 +109,12 @@ async function providerJson(endpoint, apiKey, payload) {
   return { response, body };
 }
 
-async function synthesize(endpoint, apiKey, voice, text) {
+function audioEvidenceLabel(runId, kind) {
+  if (!UUID.test(runId) || !/^(?:source|preview)$/u.test(kind)) fail("STAGING_QWEN_E2E_AUDIO_EVIDENCE_INVALID");
+  return `${runId}-${kind}`;
+}
+
+async function synthesize(endpoint, apiKey, voice, text, runId, kind) {
   const { response, body } = await providerJson(endpoint, apiKey, {
     model: MODEL,
     input: {
@@ -116,6 +124,7 @@ async function synthesize(endpoint, apiKey, voice, text) {
       sample_rate: 24000,
       language_hints: ["zh"],
       enable_aigc_tag: true,
+      seed: SYNTHESIS_SEED,
     },
   });
   const audioUrl = body?.output?.audio?.url;
@@ -136,30 +145,11 @@ async function synthesize(endpoint, apiKey, voice, text) {
     if (error?.code?.startsWith("STAGING_")) throw error;
     fail("STAGING_QWEN_E2E_AUDIO_DOWNLOAD_FAILED");
   }
-  return { audio, wav: parseWav(audio) };
+  return auditAndNormalizeWav(audio, { evidenceDirectory: PREVIEW_DIRECTORY, label: audioEvidenceLabel(runId, kind) });
 }
 
 function parseWav(audio) {
-  if (!Buffer.isBuffer(audio) || audio.length < 44 || audio.subarray(0, 4).toString("ascii") !== "RIFF" || audio.subarray(8, 12).toString("ascii") !== "WAVE") {
-    fail("STAGING_QWEN_E2E_WAV_INVALID");
-  }
-  let offset = 12;
-  let byteRate = 0;
-  let dataBytes = 0;
-  while (offset + 8 <= audio.length) {
-    const name = audio.subarray(offset, offset + 4).toString("ascii");
-    const size = audio.readUInt32LE(offset + 4);
-    const start = offset + 8;
-    if (start + size > audio.length) fail("STAGING_QWEN_E2E_WAV_INVALID");
-    if (name === "fmt " && size >= 16) byteRate = audio.readUInt32LE(start + 8);
-    if (name === "data") dataBytes = size;
-    offset = start + size + (size % 2);
-  }
-  const durationMilliseconds = Math.round((dataBytes / byteRate) * 1000);
-  if (!Number.isFinite(durationMilliseconds) || dataBytes < 1024 || durationMilliseconds < 3000 || durationMilliseconds > 90000) {
-    fail("STAGING_QWEN_E2E_WAV_DURATION_INVALID");
-  }
-  return { bytes: audio.length, durationMilliseconds };
+  return validateCanonicalWav(audio);
 }
 
 async function identity(client, externalUserId) {
@@ -379,7 +369,7 @@ async function run(runId) {
     const session = signedSession(environment, owner);
     const logs = logSnapshot(record);
     const tts = ttsEndpoint(secret.DASHSCOPE_VOICE_CLONE_ENDPOINT);
-    const source = await synthesize(tts, secret.DASHSCOPE_API_KEY, "longanhuan_v3.6", "这是一个仅用于隔离内部测试的合成语音样本。它不对应任何真实用户，也不会用于生产环境。完成验证后，相关音色和临时数据将被立即删除。");
+    const source = await synthesize(tts, secret.DASHSCOPE_API_KEY, "longanhuan_v3.6", "这是忆见 Staging 的隔离内部测试语音样本。它完全由系统语音合成，不代表任何真实用户，也不会用于生产环境。本次测试只验证声音复刻流程，不保存个人声音。完成验证后，样本、试听和音色都会立即删除。", runId, "source");
     const idempotencyKey = `qwen-e2e-${runId}`;
     await assertPermissionGate(environment, session);
     const first = await callClone(environment, session, owner, idempotencyKey, source.audio);
@@ -388,7 +378,7 @@ async function run(runId) {
     if (repeated.response.status !== 200 || repeated.body?.job?.status !== "ready" || repeated.body?.job?.id !== first.body.job.id) fail("STAGING_QWEN_E2E_IDEMPOTENCY_FAILED");
     job = await createdJob(client, owner, idempotencyKey);
     await assertProviderVoice(secret.DASHSCOPE_VOICE_CLONE_ENDPOINT, secret.DASHSCOPE_API_KEY, job.voiceId, true);
-    const preview = await synthesize(tts, secret.DASHSCOPE_API_KEY, job.voiceId, "这是忆见 Staging 的内部试听。该声音仅用于合成测试，验证完成后已从供应商删除，并且不会在生产环境使用。");
+    const preview = await synthesize(tts, secret.DASHSCOPE_API_KEY, job.voiceId, "这是忆见 Staging 的内部试听。该声音只用于本次隔离验证，不会用于生产环境。验证完成后，供应商音色和所有临时样本都会立即删除。", runId, "preview");
     const target = previewPath(runId);
     if (existsSync(target)) fail("STAGING_QWEN_E2E_PREVIEW_COLLISION");
     mkdirSync(PREVIEW_DIRECTORY, { recursive: true, mode: 0o700 });

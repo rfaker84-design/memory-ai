@@ -1,0 +1,131 @@
+"use strict";
+
+const crypto = require("node:crypto");
+
+const CANONICAL = Object.freeze({
+  maxBytes: 10 * 1024 * 1024,
+  minDurationMilliseconds: 10_000,
+  maxDurationMilliseconds: 20_000,
+  channels: 1,
+  sampleRate: 24_000,
+  bitsPerSample: 16,
+  pcmFormat: 1,
+});
+
+function fail(code) {
+  const error = new Error(code);
+  error.code = code;
+  throw error;
+}
+
+function isWavHeader(audio) {
+  return Buffer.isBuffer(audio)
+    && audio.length >= 12
+    && audio.subarray(0, 4).toString("ascii") === "RIFF"
+    && audio.subarray(8, 12).toString("ascii") === "WAVE";
+}
+
+function parseRiffWav(audio) {
+  if (!isWavHeader(audio)) fail("STAGING_QWEN_AUDIO_RIFF_WAVE_REQUIRED");
+  const declaredEnd = audio.readUInt32LE(4) + 8;
+  if (declaredEnd !== audio.length) fail("STAGING_QWEN_AUDIO_RIFF_LENGTH_INVALID");
+
+  let offset = 12;
+  let format = null;
+  const chunks = [];
+  const dataChunks = [];
+  while (offset < declaredEnd) {
+    if (offset + 8 > declaredEnd) fail("STAGING_QWEN_AUDIO_CHUNK_HEADER_TRUNCATED");
+    const id = audio.subarray(offset, offset + 4).toString("ascii");
+    const size = audio.readUInt32LE(offset + 4);
+    const start = offset + 8;
+    const end = start + size;
+    const paddedEnd = end + (size % 2);
+    if (end > declaredEnd || paddedEnd > declaredEnd) fail("STAGING_QWEN_AUDIO_CHUNK_TRUNCATED");
+    chunks.push({ id, size });
+    if (id === "fmt ") {
+      if (format || size < 16) fail("STAGING_QWEN_AUDIO_FMT_INVALID");
+      format = {
+        audioFormat: audio.readUInt16LE(start),
+        channels: audio.readUInt16LE(start + 2),
+        sampleRate: audio.readUInt32LE(start + 4),
+        byteRate: audio.readUInt32LE(start + 8),
+        blockAlign: audio.readUInt16LE(start + 12),
+        bitsPerSample: audio.readUInt16LE(start + 14),
+        size,
+      };
+    } else if (id === "data") {
+      dataChunks.push({ size });
+    }
+    offset = paddedEnd;
+  }
+  if (!format || dataChunks.length === 0) fail("STAGING_QWEN_AUDIO_WAV_REQUIRED_CHUNK_MISSING");
+  const dataBytes = dataChunks.reduce((total, chunk) => total + chunk.size, 0);
+  if (!Number.isSafeInteger(dataBytes)) fail("STAGING_QWEN_AUDIO_DATA_SIZE_INVALID");
+  const durationMilliseconds = format.byteRate > 0 ? Math.round((dataBytes / format.byteRate) * 1000) : NaN;
+  return { bytes: audio.length, chunks, dataBytes, durationMilliseconds, ...format };
+}
+
+function validateCanonicalWav(audio) {
+  if (!Buffer.isBuffer(audio) || audio.length === 0 || audio.length > CANONICAL.maxBytes) fail("STAGING_QWEN_AUDIO_SIZE_INVALID");
+  const parsed = parseRiffWav(audio);
+  if (parsed.audioFormat !== CANONICAL.pcmFormat) fail("STAGING_QWEN_AUDIO_PCM_REQUIRED");
+  if (parsed.channels !== CANONICAL.channels) fail("STAGING_QWEN_AUDIO_MONO_REQUIRED");
+  if (parsed.sampleRate < CANONICAL.sampleRate) fail("STAGING_QWEN_AUDIO_SAMPLE_RATE_INVALID");
+  if (parsed.bitsPerSample !== CANONICAL.bitsPerSample) fail("STAGING_QWEN_AUDIO_BIT_DEPTH_INVALID");
+  const expectedBlockAlign = parsed.channels * (parsed.bitsPerSample / 8);
+  const expectedByteRate = parsed.sampleRate * expectedBlockAlign;
+  if (parsed.blockAlign !== expectedBlockAlign || parsed.byteRate !== expectedByteRate || parsed.dataBytes % parsed.blockAlign !== 0) {
+    fail("STAGING_QWEN_AUDIO_PCM_LAYOUT_INVALID");
+  }
+  if (!Number.isFinite(parsed.durationMilliseconds)
+    || parsed.durationMilliseconds < CANONICAL.minDurationMilliseconds
+    || parsed.durationMilliseconds > CANONICAL.maxDurationMilliseconds) {
+    fail("STAGING_QWEN_AUDIO_DURATION_INVALID");
+  }
+  return parsed;
+}
+
+function classifyNonWav(audio) {
+  if (!Buffer.isBuffer(audio) || audio.length === 0) return "empty";
+  const prefix = audio.subarray(0, Math.min(audio.length, 512)).toString("utf8").trimStart().toLowerCase();
+  if (prefix.startsWith("<!doctype") || prefix.startsWith("<html") || prefix.startsWith("<?xml")) return "html_or_xml";
+  if (prefix.startsWith("{") || prefix.startsWith("[")) return "json_or_text_error";
+  if (audio.length < 44) return "truncated_or_short";
+  return "raw_pcm_or_unknown_binary";
+}
+
+function redactedPrefixEvidence(audio) {
+  const prefix = Buffer.isBuffer(audio) ? audio.subarray(0, Math.min(audio.length, 64)) : Buffer.alloc(0);
+  const printable = prefix.toString("utf8");
+  const unsafe = /(?:https?:\/\/|signature=|authorization:|sk-[a-z0-9._-]+)/iu.test(printable);
+  return unsafe
+    ? { bytes: prefix.length, sha256: crypto.createHash("sha256").update(prefix).digest("hex"), redacted: true }
+    : { bytes: prefix.length, hex: prefix.toString("hex"), redacted: false };
+}
+
+function canonicalFixture(milliseconds = 12_000) {
+  const sampleRate = CANONICAL.sampleRate;
+  const samples = Math.round((milliseconds / 1000) * sampleRate);
+  const data = Buffer.alloc(samples * 2);
+  // A deterministic, non-human voiced waveform. It is a transport fixture only;
+  // real E2E source speech is generated by Qwen after this gate has passed.
+  for (let index = 0; index < samples; index += 1) {
+    const seconds = index / sampleRate;
+    const envelope = (index % sampleRate) < sampleRate * 0.82 ? 0.28 : 0.04;
+    const value = envelope * (
+      Math.sin(2 * Math.PI * 185 * seconds)
+      + 0.45 * Math.sin(2 * Math.PI * 370 * seconds)
+      + 0.2 * Math.sin(2 * Math.PI * 620 * seconds)
+    );
+    data.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(value * 32767))), index * 2);
+  }
+  const output = Buffer.alloc(44 + data.length);
+  output.write("RIFF", 0); output.writeUInt32LE(output.length - 8, 4); output.write("WAVE", 8);
+  output.write("fmt ", 12); output.writeUInt32LE(16, 16); output.writeUInt16LE(1, 20); output.writeUInt16LE(1, 22);
+  output.writeUInt32LE(sampleRate, 24); output.writeUInt32LE(sampleRate * 2, 28); output.writeUInt16LE(2, 32); output.writeUInt16LE(16, 34);
+  output.write("data", 36); output.writeUInt32LE(data.length, 40); data.copy(output, 44);
+  return output;
+}
+
+module.exports = { CANONICAL, canonicalFixture, classifyNonWav, parseRiffWav, redactedPrefixEvidence, validateCanonicalWav };
