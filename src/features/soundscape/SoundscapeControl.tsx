@@ -39,15 +39,15 @@ export function SoundscapeControl({
       data-expanded={expanded ? "true" : "false"}
     >
       <section className={styles.controls} aria-hidden={!expanded}>
-        <button className={styles.stepButton} type="button" onClick={onPrevious} tabIndex={expanded ? 0 : -1} aria-label="上一个声景">
-          上一景
+        <button className={styles.stepButton} type="button" onClick={onPrevious} tabIndex={expanded ? 0 : -1} aria-label="上一首音乐">
+          上一首
         </button>
         <button className={styles.primaryButton} type="button" onClick={onPrimaryAction} tabIndex={expanded ? 0 : -1} aria-label={`${title}，${action}`}>
           <span className={styles.title}>{title}</span>
           <span className={styles.action}>{action}</span>
         </button>
-        <button className={styles.stepButton} type="button" onClick={onNext} tabIndex={expanded ? 0 : -1} aria-label="下一个声景">
-          下一景
+        <button className={styles.stepButton} type="button" onClick={onNext} tabIndex={expanded ? 0 : -1} aria-label="下一首音乐">
+          下一首
         </button>
         <label className={styles.volume}>
           <span className={styles.visuallyHidden}>环境声音量</span>
