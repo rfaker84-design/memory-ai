@@ -76,6 +76,8 @@ async function watchThreeLoops(page) {
     previous = video;
     await page.waitForTimeout(100);
   }
+  // Save raw evidence before validation, including on a rejected run.
+  await fs.writeFile(path.join(output, `raw-playback-${page.viewportSize().width}-${Date.now()}.json`), JSON.stringify({ samples, events, wraps }, null, 2));
   assert.equal(wraps, 3);
   // Chromium emits a zero-time waiting/playing pair when native loop seeks.
   // Preserve it in evidence and reject any mid-film wait or visible loop pause.
