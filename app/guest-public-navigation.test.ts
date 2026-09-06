@@ -23,10 +23,12 @@ test("public navigation exposes all four product surfaces without routing a gues
 });
 
 test("creation is a child flow, so it leaves every primary navigation item unselected", () => {
-  assert.match(surfaces, /<PublicFrame active=\{null\} variant="create">/);
-  assert.match(navigation, /active: PublicProductTab \| null/);
-  assert.match(navigation, /const selected = tab\.key === active/);
-  assert.doesNotMatch(surfaces, /<PublicFrame active="home" variant="create">/);
+  assert.match(surfaces, /<PublicFrame variant="create">/);
+  assert.match(navigation, /const pathname = usePathname\(\)/);
+  assert.match(navigation, /const selected = pathname === tab\.path/);
+  assert.match(navigation, /<Link key=\{tab\.key\} href=\{tab\.path\}/);
+  assert.doesNotMatch(navigation, /useState|setActive|active:|router\.push/);
+  assert.doesNotMatch(surfaces, /PublicFrame active=/);
 });
 
 test("guest companion and memory are synthetic, local, and defer authentication to the real action", () => {

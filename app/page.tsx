@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { GuestExperience } from "../components/world/GuestExperience";
 import { OriginalHomeLogin } from "../components/world/OriginalHomeLogin";
 import StaticBrandLaunch from "../src/components/launch/StaticBrandLaunch";
+import { useAppLaunch } from "../src/components/launch/AppLaunchProvider";
 import { MotionProvider } from "../src/motion";
 
 type HomeStage = "launch" | "home" | "login";
@@ -17,9 +18,10 @@ type HomeStage = "launch" | "home" | "login";
  */
 export default function HomePage() {
   const router = useRouter();
-  const [stage, setStage] = useState<HomeStage>("launch");
+  const { complete, finish } = useAppLaunch();
+  const [stage, setStage] = useState<HomeStage>(complete ? "home" : "launch");
 
-  const enterHome = useCallback(() => setStage("home"), []);
+  const enterHome = useCallback(() => { finish(); setStage("home"); }, [finish]);
 
   const openLogin = useCallback(() => {
     setStage("login");

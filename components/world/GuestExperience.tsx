@@ -28,7 +28,7 @@ export function GuestExperience({ onLogin, onStart, showLogin = true }: GuestExp
         <button className={styles.heroPrimaryAction} type="button" onClick={onStart}>创建 TA</button>
       </section>
       <p className={styles.heroDisclosure} role="note">{DISCLOSURE}</p>
-      <PublicProductNavigation active="home" overMedia />
+      <PublicProductNavigation overMedia />
       <p className={styles.srOnly} aria-live="polite">正在展示：{activeStory.label}</p>
     </main>
   );

@@ -5,12 +5,12 @@ import { useRouter } from "next/navigation";
 
 import { GUEST_CREATE_CONTINUATION_URL, useGuestCreateContinuation } from "../../src/components/create-memory/GuestCreateContinuationProvider";
 import { GuestLoginPanel } from "./GuestLoginPanel";
-import { PublicProductNavigation, PublicProductTab } from "./PublicProductNavigation";
+import { PublicProductNavigation } from "./PublicProductNavigation";
 import styles from "./GuestPublicExperience.module.css";
 
 type PublicPageVariant = "account" | "companion" | "create" | "memories";
 
-function PublicFrame({ active, children, variant }: { active: PublicProductTab | null; children: ReactNode; variant: PublicPageVariant }) {
+function PublicFrame({ children, variant }: { children: ReactNode; variant: PublicPageVariant }) {
   const className = variant === "companion"
     ? `${styles.publicPage} ${styles.companionPage}`
     : `${styles.publicPage} ${styles.paperPage}`;
@@ -18,7 +18,7 @@ function PublicFrame({ active, children, variant }: { active: PublicProductTab |
   return (
     <main className={className}>
       {children}
-      <PublicProductNavigation active={active} overMedia={variant === "companion"} />
+      <PublicProductNavigation overMedia={variant === "companion"} />
     </main>
   );
 }
@@ -37,7 +37,7 @@ export function GuestCompanionSurface() {
   const [loginOpen, setLoginOpen] = useState(false);
 
   return (
-    <PublicFrame active="companion" variant="companion">
+    <PublicFrame variant="companion">
       <section className={styles.companionStage} aria-label="AI 合成相伴示例">
         <video
           src="/home-hero-assets/elderly-woman.mp4"
@@ -77,7 +77,7 @@ export function GuestMemorySurface() {
   const [loginOpen, setLoginOpen] = useState(false);
 
   return (
-    <PublicFrame active="memory" variant="memories">
+    <PublicFrame variant="memories">
       <section className={styles.memoriesHero}>
         <img src="/guest-secondary-assets/memories-hero-approved.png" alt="公开合成示例：窗边的老人和一盆花" loading="eager" fetchPriority="high" decoding="async" />
         <SceneHeader marker="公开示例" tone="light" />
@@ -109,7 +109,7 @@ export function GuestAccountSurface() {
   const [loginOpen, setLoginOpen] = useState(false);
 
   return (
-    <PublicFrame active="account" variant="account">
+    <PublicFrame variant="account">
       <section className={styles.accountHero}>
         <img src="/guest-secondary-assets/account-album-approved.png" alt="窗边相册与信封" loading="eager" fetchPriority="high" decoding="async" />
         <SceneHeader tone="light" />
@@ -143,7 +143,7 @@ export function GuestCreateSurface() {
   };
 
   return (
-    <PublicFrame active={null} variant="create">
+    <PublicFrame variant="create">
       <section className={styles.createHero}>
         <img src="/guest-secondary-assets/create-empty-frame-approved.png" alt="普通家庭环境中的空相框与空白纸条" loading="eager" fetchPriority="high" decoding="async" />
         <SceneHeader marker="第一步" tone="light" />

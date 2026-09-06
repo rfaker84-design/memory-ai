@@ -97,7 +97,7 @@ test("the single master keeps approved full-viewport coverage without a veil or 
 
 test("the public homepage remains minimal and cannot read private data or write business data", () => {
   assert.match(experience, /<HomeCarousel reducedMotion=\{reducedMotion\} onActiveStoryChange=\{setActiveStory\} \/>/);
-  assert.match(experience, /<PublicProductNavigation active="home" overMedia \/>/);
+  assert.match(experience, /<PublicProductNavigation overMedia \/>/);
   for (const rejected of ["从一张照片开始", "一张照片，一个称呼", "体验一次遇见", "<h1", "<h2"]) {
     assert.doesNotMatch(experience, new RegExp(rejected));
   }

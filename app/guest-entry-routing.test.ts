@@ -8,9 +8,9 @@ const guest = readFileSync(new URL("../components/world/GuestExperience.tsx", im
 
 test("every cold root launch renders the approved opening immediately and then mounts the public carousel in place", () => {
   assert.match(home, /type HomeStage = "launch" \| "home" \| "login"/);
-  assert.match(home, /useState<HomeStage>\("launch"\)/);
+  assert.match(home, /useState<HomeStage>\(complete \? "home" : "launch"\)/);
   assert.match(home, /<StaticBrandLaunch onComplete=\{enterHome\} ready \/>/);
-  assert.match(home, /const enterHome = useCallback\(\(\) => setStage\("home"\), \[\]\)/);
+  assert.match(home, /const enterHome = useCallback\(\(\) => \{ finish\(\); setStage\("home"\); \}, \[finish\]\)/);
   assert.match(home, /stage === "home" && <GuestExperience onLogin=\{openLogin\} onStart=\{beginCreation\} \/>/);
   assert.doesNotMatch(home, /router\.(?:push|replace)\("\/companion"\)/);
   assert.doesNotMatch(home, /fetchCompanionHomeMemoriesJson|resolvePostLoginDestination|localStorage|sessionStorage/);

@@ -88,13 +88,13 @@
 .textAction { justify-self: center; min-height: 38px; border: 0; padding: 8px 18px; color: #785d3e; background: transparent; font: 15px/1 "Songti SC", "STSong", "Noto Serif SC", serif; cursor: pointer; }
 
 .publicNavigation { position: fixed; z-index: 80; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(4, 1fr); min-height: 78px; box-sizing: border-box; padding: 0 max(14px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(14px, env(safe-area-inset-left)); border-top: 1px solid rgba(89, 59, 29, .16); background: rgba(247, 240, 229, .96); }
-.publicNavigation button { position: relative; min-height: 64px; border: 0; color: #947e62; background: transparent; font: 600 15px/1 "Songti SC", "STSong", "Noto Serif SC", serif; cursor: pointer; }
-.publicNavigation button[aria-current="page"] { color: #3b2716; }
-.publicNavigation button[aria-current="page"]::after { position: absolute; right: 50%; bottom: 9px; width: 7px; height: 7px; border-radius: 50%; content: ""; background: #9c7441; transform: translateX(50%); }
+.publicNavigation a { display: grid; place-items: center; text-decoration: none; position: relative; min-height: 64px; border: 0; color: #947e62; background: transparent; font: 600 15px/1 "Songti SC", "STSong", "Noto Serif SC", serif; cursor: pointer; }
+.publicNavigation a[aria-current="page"] { color: #3b2716; }
+.publicNavigation a[aria-current="page"]::after { position: absolute; right: 50%; bottom: 9px; width: 7px; height: 7px; border-radius: 50%; content: ""; background: #9c7441; transform: translateX(50%); }
 .publicNavigationOverMedia { border-color: transparent; background: rgba(10, 7, 4, .74); }
-.publicNavigationOverMedia button { color: rgba(241, 222, 191, .62); text-shadow: 0 1px 12px rgba(0, 0, 0, .55); }
-.publicNavigationOverMedia button[aria-current="page"] { color: #e0b777; }
-.publicNavigationOverMedia button[aria-current="page"]::after { background: #d7a96b; }
+.publicNavigationOverMedia a { color: rgba(241, 222, 191, .62); text-shadow: 0 1px 12px rgba(0, 0, 0, .55); }
+.publicNavigationOverMedia a[aria-current="page"] { color: #e0b777; }
+.publicNavigationOverMedia a[aria-current="page"]::after { background: #d7a96b; }
 
 .publicPage button:focus-visible, .publicPage input:focus-visible, .publicPage a:focus-visible { outline: 3px solid #d9ad70; outline-offset: 3px; }
 .srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; clip-path: inset(50%); }

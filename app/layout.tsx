@@ -4,6 +4,7 @@ import { GuestCreateContinuationProvider } from "../src/components/create-memory
 import { SoundscapeProvider } from "../src/features/soundscape/SoundscapeProvider";
 import "./globals.css";
 import { RootDocument } from "./root-document";
+import { AppLaunchProvider } from "../src/components/launch/AppLaunchProvider";
 
 export const metadata: Metadata = {
   title: "忆见",
@@ -24,7 +25,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <RootDocument>
       <SoundscapeProvider>
         <GuestCreateContinuationProvider>
-          <MobileAppShell>{children}</MobileAppShell>
+          <AppLaunchProvider><MobileAppShell>{children}</MobileAppShell></AppLaunchProvider>
         </GuestCreateContinuationProvider>
       </SoundscapeProvider>
     </RootDocument>
