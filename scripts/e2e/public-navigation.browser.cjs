@@ -51,7 +51,7 @@ async function watchThreeLoops(page) {
   await page.exposeFunction(reporter, data => events.push(data));
   await page.evaluate(reporter => {
     const v = document.querySelector('video');
-    for (const type of ['waiting', 'stalled', 'error']) v.addEventListener(type, () => window[reporter]({ type, time: v.currentTime }));
+    for (const type of ['waiting', 'stalled', 'error', 'playing']) v.addEventListener(type, () => window[reporter]({ type, time: v.currentTime, now: performance.now() }));
   }, reporter);
   let wraps = 0;
   let previous = null;
@@ -77,8 +77,21 @@ async function watchThreeLoops(page) {
     await page.waitForTimeout(100);
   }
   assert.equal(wraps, 3);
-  assert.deepEqual(events, []);
-  return { samples, events, wraps, elapsedMs: Date.now() - started };
+  // Chromium emits a zero-time waiting/playing pair when native loop seeks.
+  // Preserve it in evidence and reject any mid-film wait or visible loop pause.
+  const loopWaits = [];
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i];
+    if (event.type === 'playing') continue;
+    assert.equal(event.type, 'waiting', JSON.stringify(event));
+    const before = samples.findLast(s => s.now < event.now)?.videos[0];
+    const resumed = events.slice(i + 1).find(e => e.type === 'playing');
+    assert.ok(event.time < 0.1 && before && before.currentTime > before.duration - 0.5, 'mid-film waiting event');
+    assert.ok(resumed && resumed.now - event.now < 250, 'visible pause at native loop');
+    loopWaits.push({ time: event.time, milliseconds: resumed.now - event.now });
+  }
+  await fs.writeFile(path.join(output, `playback-${page.viewportSize().width}-${Date.now()}.json`), JSON.stringify({ samples, events, loopWaits }, null, 2));
+  return { samples, events, loopWaits, wraps, elapsedMs: Date.now() - started };
 }
 
 async function runViewport(browser, viewport) {
