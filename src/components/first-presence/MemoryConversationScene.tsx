@@ -1,5 +1,7 @@
 "use client";
 
+import { guestActionHandoff, guestActionSessionOwner } from "../auth/guestActionContinuation";
+
 import { FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 
@@ -131,6 +133,20 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
   const notificationEligibilityCheckedRef = useRef(false);
   const motionTimersRef = useRef<number[]>([]);
   const titleId = useId();
+
+  useEffect(() => {
+    if (phase !== "ready" || !guestActionHandoff.hasPending()) return;
+    const controller = new AbortController();
+    void guestActionSessionOwner(fetch, controller.signal).then((ownerId) => {
+      if (controller.signal.aborted) return;
+      if (!ownerId) { guestActionHandoff.clear(); return; }
+      const text = guestActionHandoff.takeChat(ownerId, memoryId);
+      if (text !== null) setDraft((current) => current || text);
+    }).catch(() => {
+      if (!controller.signal.aborted) setNotice("刚才的话仍待恢复，请稍后重新进入这段对话。");
+    });
+    return () => controller.abort();
+  }, [memoryId, phase]);
 
   const restore = useCallback(async (signal?: AbortSignal) => {
     const snapshot = await loadConversation(memoryId, signal);
@@ -471,7 +487,7 @@ export function MemoryConversationScene({ memoryId, memoryName, firstGreetingKey
 
   const isBusy = phase === "loading" || phase === "greeting" || phase === "sending" || phase === "replying" || phase === "recovering";
   const completedRounds = completedConversationRounds(messages, activeSessionId);
-  const status = phase === "sending" ? "正在发送" : phase === "replying" || phase === "greeting" ? "正在生成" : phase === "recovering" ? "正在加载" : "";
+  const status = phase === "sending" ? "正在发送" : phase === "replying" || phase === "greeting" ? "忆见正在整理回复" : phase === "recovering" ? "正在加载" : "";
 
   return (
     <section className={`${styles.scene} ${reducedMotion ? styles.reduced : ""}`} aria-labelledby={titleId}>

@@ -1,5 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const ts = require("typescript");
+const { spawnSync } = require("node:child_process");
 
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
@@ -8,10 +10,20 @@ const assert = (condition, message) => {
   if (!condition) failures.push(message);
 };
 
-const route = read("app/api/memories/route.ts");
+// Follow the actual local handler import, so a thin route is checked together
+// with the implementation it invokes. Missing imports are not silently ignored.
+function routeImplementation(file) {
+  const source = read(file);
+  const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+  const implementations = tree.statements.filter((node) => ts.isImportDeclaration(node)
+    && ts.isStringLiteral(node.moduleSpecifier)
+    && /^\.\/_handlers?$/.test(node.moduleSpecifier.text));
+  return [source, ...implementations.map((node) => read(path.join(path.dirname(file), node.moduleSpecifier.text + ".ts")))].join("\n");
+}
+const route = routeImplementation("app/api/memories/route.ts");
 const health = read("app/api/health/database/route.ts");
 const dataSource = read("features/memory/memory-postgres-datasource.ts");
-const chatRoute = read("app/api/memory-chat/route.ts");
+const chatRoute = routeImplementation("app/api/memory-chat/route.ts");
 const contextBuilder = read("features/memory-engine/context-builder.ts");
 const migrationRunner = read("scripts/postgresql/apply-migrations.sh");
 const idempotencyMigration = read("database/migrations/005_memory_creation_idempotency.sql");
@@ -24,7 +36,7 @@ assert(!health.toLowerCase().includes("supabase"), "Database health still refere
 assert(dataSource.includes("withPostgresTransaction"), "Memory writes do not use transactions");
 assert(dataSource.includes("creation_idempotency_key"), "Memory datasource does not persist request idempotency keys");
 assert(dataSource.includes("$1"), "Memory datasource lacks parameterized SQL markers");
-assert(chatRoute.includes("ChatPostgresDataSource"), "Memory chat is not wired to PostgreSQL");
+assert(chatRoute.includes("new MemoryChatTurnPostgresDataSource("), "Memory chat is not wired to PostgreSQL atomic turns");
 assert(!chatRoute.includes("ChatSupabaseDataSource"), "Memory chat still selects Supabase");
 assert(contextBuilder.includes("MemoryPostgresDataSource"), "Memory engine context still selects Supabase memory data");
 assert(contextBuilder.includes("ChatPostgresDataSource"), "Memory engine context still selects Supabase chat data");
@@ -48,4 +60,10 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("PostgreSQL architecture verification passed.");
+// Structural wiring is only one gate. Exercise idempotency/consent, ownership,
+// and actual public playback JSON without requiring a live database.
+const behavioral = spawnSync(process.execPath, ["--import", "tsx", "--test",
+  "app/api/memories/route.test.ts", "app/api/memories/memory-collection-auth.test.ts",
+  "app/api/first-presence-video/playback/playback-route.test.ts"], { cwd: root, stdio: "inherit" });
+if (behavioral.error || behavioral.status !== 0) process.exit(behavioral.status || 1);
+console.log("PostgreSQL architecture and route behavior verification passed.");

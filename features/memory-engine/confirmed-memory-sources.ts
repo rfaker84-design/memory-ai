@@ -1,6 +1,7 @@
 import type { ConfirmedMemorySource } from "./types";
 
 const SOURCE_TRAILER = /\s*\[\[MEMORYAI_SOURCES:([0-9a-fA-F-]+(?:,[0-9a-fA-F-]+)*)\]\]\s*$/;
+const INTERNAL_SOURCE_MARKER = /\[{1,2}\s*MEMORYAI_SOURCES\b(?:(?!\]\])[\s\S])*(?:\]\]|$)/gi;
 
 export interface ExtractedConfirmedMemorySources {
   content: string;
@@ -17,7 +18,8 @@ export function extractConfirmedMemorySources(
   allowedSources: ConfirmedMemorySource[],
 ): ExtractedConfirmedMemorySources {
   const match = SOURCE_TRAILER.exec(content);
-  if (!match) return { content: content.trim(), sources: [] };
+  const visibleContent = content.replace(INTERNAL_SOURCE_MARKER, "").trim();
+  if (!match) return { content: visibleContent, sources: [] };
 
   const allowed = new Map(allowedSources.map((source) => [source.id.toLowerCase(), source]));
   const seen = new Set<string>();
@@ -31,5 +33,5 @@ export function extractConfirmedMemorySources(
     }
   }
 
-  return { content: content.slice(0, match.index).trim(), sources };
+  return { content: visibleContent, sources };
 }

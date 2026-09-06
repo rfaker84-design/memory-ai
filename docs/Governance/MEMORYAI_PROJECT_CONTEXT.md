@@ -1,6 +1,8 @@
-﻿# MemoryAI（忆见）项目上下文规范
+# MemoryAI（忆见）项目上下文规范
 
 文档状态：ACTIVE
+
+当前决策摘要：以 `docs/Blueprint/MemoryAI_Master_Blueprint.md` 第 0 节（2026-09-06）为入口。历史 Sprint 完成不代表当前上线验收通过。
 
 规范级别：PROJECT BASELINE
 
@@ -20,7 +22,7 @@
 
 目标市场：中国大陆
 
-产品类型：AI 亲人数字生命与长期情感陪伴产品。
+产品类型：私人 AI 关系记忆空间与长期情感陪伴产品；不预设 TA 已离世，生成内容不代表真人意识或真实意图。
 
 核心产品能力：
 
@@ -198,9 +200,11 @@ AI Coding Agent 自主判断永远是最低优先级。
 - PM2
 - HTTPS
 
-所有正式验收优先基于：
+当前候选体验先在隔离 Staging 验证：
 
-`https://yijianmemory.cn`
+`https://app.staging.yijianmemory.cn`
+
+正式域名仍为 `https://yijianmemory.cn`，Production 操作继续需要明确授权；验收状态不得混用。
 
 localhost 不是最终产品验收标准。
 

@@ -9,7 +9,7 @@ const login = readFileSync(new URL("../../src/components/first-presence/FirstPre
 
 test("help content gives a real, safe support path for first-use and failures", () => {
   for (const value of [
-    "AI 纪念内容",
+    "基于你确认资料的 AI 陪伴内容",
     "20MB",
     "首次影像可能需要排队和人工审核",
     "身份证号、银行卡号、密码、验证码",
@@ -18,7 +18,7 @@ test("help content gives a real, safe support path for first-use and failures", 
   ]) assert.match(help, new RegExp(value));
   for (const value of [
     "常见问题",
-    "不是。忆见提供的是 AI 纪念陪伴内容",
+    "不是。忆见提供的是基于你确认资料的 AI 陪伴内容",
     "聊天内容会自动成为长期记忆吗？",
     "未发送的文字会保留在输入框中",
     "投诉、退款或数据权利请求",

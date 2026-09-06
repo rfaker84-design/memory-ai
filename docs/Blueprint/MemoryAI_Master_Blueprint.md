@@ -1,12 +1,34 @@
 # MemoryAI Master Blueprint
 
+## 0. 当前决策入口（2026-09-06）
+
+本节是本文件的当前摘要；下方 Sprint00–15 记录保留为历史，不能将旧快照当作当前产品指令或现网状态。当前任务明确指令仍优先；架构分层、安全边界与既有审批规则继续有效。
+
+| 范围 | 当前基准 | 依据 |
+| --- | --- | --- |
+| 产品 | 私人 AI 关系记忆空间；TA 可为生活中的重要之人，不预设死亡，不宣称真人意识 | Owner 近期产品决策；2026-09-06 审查及修复授权 |
+| 用户主链 | 公开浏览，主动创建/上传/发言/保存时确认会话；登录后承接同一次动作；仅使用正式 Owner 数据 | `components/world/GuestPublicSurface.tsx`；`src/components/auth/guestActionContinuation.ts` |
+| 人物选择 | 使用 Owner 范围的主人物选择；多人物不按最新创建自动抢占；新账户先创建 | `src/components/companion/companionHomeState.ts` |
+| 记忆 | 用户确认后才作为可引用资料；原话、整理稿和来源可追溯；普通聊天不自动变成确认记忆 | 拾忆路由；`features/memory-engine/confirmed-memory-sources.ts` |
+| 影像与权益 | 首个符合条件 TA 免费首次预览，不要求先聊天、不扣次数、不可保存；后续影像另满足两轮有效聊天等条件；49/99/199 元对应永久 2/6/15 次；审核成功才扣，失败释放 | 现有 Commerce、Video 合同；`app/help/page.tsx#entitlements` |
+| 视觉与导航 | 保留当前五人首页视频资产及布局；暖象牙纸张与自然生活影像构成二级页；首页/相伴/拾忆/我的四入口 | 当前批准页面与 `PublicProductNavigation.tsx`；本任务仅作具体可读性/交互修复 |
+| 声音与音乐 | 声音复刻仅受控 Staging internal beta，默认关闭；音乐按当前暂停决定处理 | 当前供应商开关和 2026-09-02 后决策；不以旧音乐规格判断缺陷 |
+| 技术 | Next.js 15 / React 19 / TypeScript；Feature→Service→Repository→DataSource；正式 PostgreSQL、私有 COS；Supabase 为历史兼容/导出适配器 | Sprint15A 后正式服务及数据源；不得另建架构 |
+| 运行环境 | 源码、构建、Staging 运行、Production 必须分别举证；固定 Node 20.20.2 / npm 10.8.2 | `package.json`；不可变发布合同 |
+| 上线状态 | 本修复不构成商业上线批准；服务器/Worker/Schema/备份/回滚/真实业务验收缺项必须如实标记 | `docs/product/MEMORYAI_LAUNCH_ACCEPTANCE.yaml`；修复验收记录 |
+
+工程入口仍为 `AGENTS.md` 和五份必读文档。历史模块名（如 Subscription）不是恢复订阅计费的依据；历史深色规格不是把批准暖象牙页面改回深色的依据。技术栈清单也不等于第三方服务已经配置或公开开放。
+
+## 历史架构与 Sprint 记录（保留溯源）
+
+
 ## 1. Project Vision
-(TODO)
+历史占位；当前产品方向见第 0 节。
 
 ---
 
 ## 2. Product Position
-(TODO)
+历史占位；当前产品定位见第 0 节。
 
 ---
 

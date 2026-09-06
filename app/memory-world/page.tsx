@@ -21,6 +21,7 @@ import {
 } from "../../src/components/companion/companionHomeState";
 import { CompanionHomeRequestError, fetchCompanionHomeMemoriesJson } from "../../src/components/companion/companionHomeRequest";
 import { loadOwnedMediaUrl } from "../../src/components/memory/ownedMemoryClient";
+import { guestActionHandoff, guestActionSessionOwner } from "../../src/components/auth/guestActionContinuation";
 import styles from "./page.module.css";
 
 type MemoryWorldItem = {
@@ -110,6 +111,23 @@ function MemoryWorldContent() {
       });
     return () => controller.abort();
   }, [primary?.id, primary?.photoAssetId, primary?.photoUrl]);
+
+  useEffect(() => {
+    if (state !== "ready" || !primary || !guestActionHandoff.hasPending()) return;
+    const controller = new AbortController();
+    void guestActionSessionOwner(fetch, controller.signal).then((sessionOwner) => {
+      if (controller.signal.aborted) return;
+      if (!sessionOwner) { guestActionHandoff.clear(); return; }
+      const pending = guestActionHandoff.read(sessionOwner);
+      if (!pending || pending.memoryId) return;
+      const route = guestActionHandoff.bind(sessionOwner, primary.id);
+      if (route) {
+        if (pending.intent.kind === "pickup") guestActionHandoff.clear();
+        router.replace(route);
+      }
+    }).catch(() => { /* Keep the explicit handoff available for a later retry. */ });
+    return () => controller.abort();
+  }, [state, primary?.id, router]);
 
   const choosePrimary = (memory: MemoryWorldItem) => {
     if (!ownerId) return;

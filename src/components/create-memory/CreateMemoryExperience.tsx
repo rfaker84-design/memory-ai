@@ -95,7 +95,7 @@ export function CreateMemoryExperience() {
     const validationError = validateStage(1, draft, birthDate);
     if (validationError) {
       setError(validationError === "birth-date-required"
-        ? "请填写生日，用于年龄确认和安全保护。"
+        ? "请填写你的生日（账户持有人），用于年龄确认和安全保护。"
         : "请确认资料使用权与隐私说明后再继续。");
       return;
     }
@@ -270,8 +270,8 @@ export function CreateMemoryExperience() {
           <div className={styles.detailPaper}>
             <h1>放上一张照片</h1>
             <label className={styles.paperField}>
-              <span>生日</span>
-              <input aria-label="生日" type="date" value={birthDate} onChange={(event: ChangeEvent<HTMLInputElement>) => setBirthDate(event.currentTarget.value)} required />
+              <span>你的生日（账户持有人）</span>
+              <input aria-label="你的生日（账户持有人）" aria-describedby="account-birthday-purpose" type="date" value={birthDate} onChange={(event: ChangeEvent<HTMLInputElement>) => setBirthDate(event.currentTarget.value)} required />
             </label>
             <label className={styles.paperField}>
               <span>补充一句（可选）</span>
@@ -279,7 +279,7 @@ export function CreateMemoryExperience() {
               <small>{draft.catchPhrases.length} / 30</small>
             </label>
             <label className={styles.consent}><input type="checkbox" checked={draft.consent} onChange={(event) => update("consent", event.target.checked)} /><span>我确认有权使用这张照片，并了解生成内容由 AI 合成。</span></label>
-            <p className={styles.safetyCopy}>生日仅用于年龄与安全确认。我们只处理你主动提交的照片和文字资料。</p>
+            <p id="account-birthday-purpose" className={styles.safetyCopy}>此处填写账户持有人的生日，用于年龄与安全确认，不是 TA 的生日。我们只处理你主动提交的照片和文字资料。</p>
             {error && <p className={styles.error} role="alert">{error}</p>}
             <div className={styles.actions}>
               <MemoryButton className={styles.primaryAction} loading={status === "submitting" || status === "uploading"} onClick={creationUncertain ? recoverCreation : create} rightSlot={<span aria-hidden="true">→</span>}>{creationUncertain ? "确认结果" : "完成"}</MemoryButton>
