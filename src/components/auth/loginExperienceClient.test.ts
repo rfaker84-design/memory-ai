@@ -10,6 +10,8 @@ import {
   resolveWeChatLoginAction,
   resolveSmsLoginAction,
   smsSendFailureNotice,
+  smsVerifyFailureNotice,
+  authFailureReference,
 } from "./loginExperienceClient";
 
 test("WeChat provider status accepts only the frozen safe response", async () => {
@@ -36,6 +38,17 @@ test("WeChat provider status accepts only the frozen safe response", async () =>
     await loadWeChatProviderState(async () => new Response(null, { status: 503 })),
     "unavailable",
   );
+});
+
+test("access and service failures are not blamed on the phone or verification code", () => {
+  for (const status of [403, 502, 503, 200]) {
+    assert.doesNotMatch(smsSendFailureNotice(status), /号码|手机号/);
+    assert.doesNotMatch(smsVerifyFailureNotice(status), /验证码无效/);
+  }
+  assert.match(smsSendFailureNotice(403), /访问/);
+  assert.match(smsVerifyFailureNotice(429), /频繁/);
+  assert.equal(authFailureReference(new Response(null, { headers: { "x-request-id": "request-12345678" } })), "请求编号：request-12345678");
+  assert.equal(authFailureReference(new Response(null, { headers: { "x-request-id": "https://secret.example/?token=private" } })), "");
 });
 
 test("agreement and provider guards never invent a WeChat success path", () => {

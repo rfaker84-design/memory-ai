@@ -84,7 +84,8 @@
     "verify:staging-source-seal": "npm ci --ignore-scripts && npm test && npm run typecheck && npm run build && npm run test:standalone-media && npm --prefix mobile ci --ignore-scripts && npm --prefix mobile run test:secure-session-contract && npm --prefix mobile run typecheck && npm --prefix mobile run verify:config && npm --prefix mobile run build",
     "start": "node scripts/ops/retired-source-start.cjs",
     "start:staging": "node scripts/ops/retired-source-start.cjs",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:audit-fixes": "node --import tsx --test src/components/auth/guestActionContinuation.test.ts src/components/auth/useGuestAction.test.ts src/components/auth/modalFocus.test.ts src/components/auth/loginExperienceClient.test.ts src/components/auth/authRequestClient.test.ts features/memory-engine/confirmed-memory-sources.test.ts app/help/page.test.tsx app/guest-public-navigation.test.ts app/api/api-policy.test.ts src/components/create-memory/createMemoryLogic.test.ts src/components/create-memory/useCreateMemoryDraft.test.ts src/components/create-memory/CreateMemoryExperience.recovery.test.ts src/components/companion/companionHomeState.test.ts features/commerce/commerce.test.ts features/payment/payment-refund-safety.test.ts app/no-fake-controls.test.ts app/memory-chat/[id]/page.accessibility.test.ts src/components/first-presence/memory-conversation-ai-disclosure.test.ts features/memory-engine/response-pipeline.test.ts && node --test scripts/ops/read-staging-release-status.test.cjs && npm run verify:postgres-architecture"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.1",

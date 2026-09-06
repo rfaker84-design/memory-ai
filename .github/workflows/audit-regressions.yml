@@ -1,0 +1,25 @@
+name: Product audit regression and build
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify product repairs and build with the pinned runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -e NEXT_TELEMETRY_DISABLED=1 \
+            -v "$PWD:/app" -w /app \
+            node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 \
+            sh -ec 'apk add --no-cache git libc6-compat; node --version; npm --version; npm ci; npm run test:audit-fixes; npm run typecheck; npm run build'

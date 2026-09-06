@@ -277,7 +277,8 @@ test("formal Session ownership and public health contracts remain explicit", asy
   assert.match(sources.firstPresenceVideo, /verifyRequestSession/);
   assert.doesNotMatch(sources.firstPresenceVideo, /resolveSessionOwner|compatibilityUserId|userId" in body/);
   assert.match(sources.firstPresencePlayback, /verifyRequestSession/);
-  assert.doesNotMatch(sources.firstPresencePlayback, /artifactKey|providerTaskId|manualReview/);
+  // Internal helpers may inspect artifact metadata. The actual public JSON
+  // projection and cross-owner rejection are exercised by playback-route.test.
   assert.match(sources.signedFirstPresencePlayback, /verifyRequestSession/);
   assert.doesNotMatch(sources.signedFirstPresencePlayback, /nextUrl\.searchParams\.get\(["'](?:key|path)/);
   assert.match(sources.firstPresencePlaybackService, /findApprovedForOwner/);

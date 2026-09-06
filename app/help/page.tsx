@@ -15,8 +15,8 @@ export default function HelpPage() {
           <p className="text-sm text-[#8a6438]">忆见帮助</p>
           <h1 className="mt-2 text-3xl font-bold">开始前，你需要知道的事</h1>
           <p className="mt-4 leading-7 text-[#5d4b3a]">
-            忆见生成的是 AI 纪念内容，不是现实中的 TA，也不具有意识、记忆或真实意图。
-            请只提交你有权使用、且愿意用于纪念体验的资料。
+            忆见是保存你与重要之人关系记忆的私人空间，提供基于你确认资料的 AI 陪伴内容；生成内容不代表真人的意识、真实经历或意图。
+            TA 可以是生活中的家人、伴侣或朋友。请只提交你有权使用、且愿意用于 AI 陪伴体验的资料。
           </p>
         </header>
 
@@ -29,6 +29,18 @@ export default function HelpPage() {
           </ul>
         </section>
 
+        <section id="entitlements" style={sectionStyle}>
+          <h2 className="text-xl font-semibold">权益与服务说明</h2>
+          <ul className="mt-3 list-disc space-y-2 pl-5 leading-7 text-[#5d4b3a]">
+            <li>首个符合条件的 TA 有一次免费首次影像预览，无需先完成聊天，不扣付费次数；这次预览不支持保存或分享。</li>
+            <li>后续影像在完成两轮有效聊天并满足页面所列条件后开放，使用购买或符合条件的奖励次数。</li>
+            <li>影像次数包为一次性购买：49 元 2 次、99 元 6 次、199 元 15 次。次数长期有效，不是按月订阅，也不会自动续费。</li>
+            <li>生成时先预留次数，只有生成成功且人工审核通过才实际扣除；失败或判废会释放预留次数。生成结果暂未确认时，会先核对结果，请勿重复提交。</li>
+            <li>付费影像审核通过后，按对应权益开放保存；免费首次预览不可保存或分享。奖励影像的可用操作，以对应影像旁显示的权益为准。</li>
+            <li>首次影像可能需要排队和人工审核，页面会显示当前状态；没有固定的完成时间承诺。</li>
+          </ul>
+        </section>
+
         <section style={sectionStyle}>
           <h2 className="text-xl font-semibold">首次影像与聊天</h2>
           <ul className="mt-3 list-disc space-y-2 pl-5 leading-7 text-[#5d4b3a]">
@@ -38,7 +50,7 @@ export default function HelpPage() {
           </ul>
         </section>
 
-        <section style={sectionStyle}>
+        <section id="support" style={sectionStyle}>
           <h2 className="text-xl font-semibold">遇到问题怎么办</h2>
           <ul className="mt-3 list-disc space-y-2 pl-5 leading-7 text-[#5d4b3a]">
             <li>登录、上传、生成或播放失败时，请记录页面显示的请求编号和发生时间；已登录用户可通过投诉与删除入口提交可追踪工单。</li>
@@ -60,7 +72,7 @@ export default function HelpPage() {
           <dl className="mt-3 space-y-4 leading-7 text-[#5d4b3a]">
             <div>
               <dt className="font-semibold text-[#302820]">这是真实的 TA 吗？</dt>
-              <dd className="mt-1">不是。忆见提供的是 AI 纪念陪伴内容，不代表真实人物具有意识、真实意图或正在现实中行动。</dd>
+              <dd className="mt-1">不是。忆见提供的是基于你确认资料的 AI 陪伴内容，不代表真实人物具有意识、真实意图或正在现实中行动。</dd>
             </div>
             <div>
               <dt className="font-semibold text-[#302820]">聊天内容会自动成为长期记忆吗？</dt>

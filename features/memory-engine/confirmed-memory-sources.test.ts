@@ -24,6 +24,17 @@ test("unknown or malformed provider source markers never create a visible refere
   assert.deepEqual(unknown.sources, []);
 
   const malformed = extractConfirmedMemorySources("普通回复 [[MEMORYAI_SOURCES:not-an-id]]", [first]);
-  assert.equal(malformed.content, "普通回复 [[MEMORYAI_SOURCES:not-an-id]]");
+  assert.equal(malformed.content, "普通回复");
   assert.deepEqual(malformed.sources, []);
+});
+
+test("invalid, repeated, inline, and truncated protocol markers are never visible or trusted", () => {
+  for (const marker of ["[[MEMORYAI_SOURCES:garbage]]", "[[MEMORYAI_SOURCES:", "[[MEMORYAI_SOURCES", "[MEMORYAI_SOURCES:broken", `[[MEMORYAI_SOURCES:${first.id}]] 后面还有文字`]) {
+    const result = extractConfirmedMemorySources(`普通回复 ${marker}`, [first]);
+    assert.doesNotMatch(result.content, /MEMORYAI_SOURCES/);
+    assert.deepEqual(result.sources, []);
+  }
+  const result = extractConfirmedMemorySources(`开头 [[MEMORYAI_SOURCES:bad]] 正文\n[[MEMORYAI_SOURCES:${first.id}]]`, [first]);
+  assert.equal(result.content, "开头  正文");
+  assert.deepEqual(result.sources, [first]);
 });

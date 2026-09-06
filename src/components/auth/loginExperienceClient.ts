@@ -55,8 +55,21 @@ export function resolveSmsLoginAction(
 
 export function smsSendFailureNotice(status: number) {
   if (status === 400) return "请输入有效的中国大陆手机号。";
+  if (status === 401 || status === 403) return "当前访问暂不支持短信登录，请联系支持人员确认访问条件。";
   if (status === 429) return "请求过于频繁，请稍后再试。";
   if (status === 503) return "短信登录暂时不可用，请稍后重试。";
   return "短信登录暂时不可用，请稍后重试。";
+}
+
+export function smsVerifyFailureNotice(status: number) {
+  if (status === 400 || status === 401) return "验证码无效或已过期，请重新获取。";
+  if (status === 403) return "当前访问暂不支持登录，请联系支持人员确认访问条件。";
+  if (status === 429) return "验证过于频繁，请稍后再试。";
+  return "暂时无法确认登录结果，请稍后重试。";
+}
+
+export function authFailureReference(response: Response) {
+  const requestId = response.headers.get("x-request-id");
+  return requestId && /^[a-zA-Z0-9_-]{8,80}$/.test(requestId) ? `请求编号：${requestId}` : "";
 }
 import { fetchAuthRequestJson } from "./authRequestClient";
